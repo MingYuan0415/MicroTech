@@ -1,0 +1,12 @@
+[submodule "bsp"]
+	path = layers/bsp
+	url = https://github.com/MingYuan0415/bsp.git
+[submodule "middleware"]
+	path = layers/middleware
+	url = https://github.com/MingYuan0415/middleware.git
+[submodule "app_manager"]
+	path = layers/app_manager
+	url = https://github.com/MingYuan0415/app_manager.git
+[submodule "apps"]
+	path = layers/apps
+	url = https://github.com/MingYuan0415/apps.git
