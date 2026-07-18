@@ -2,6 +2,7 @@
 #define __CROSS_LAYER_RUNTIME_H__
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "lvgl.h"
 
@@ -26,5 +27,9 @@ bool host_lv_click_back(void);
  * @return true when visible; false otherwise.
  */
 bool host_lv_has_text(const char *text);
+/** @brief Return the number of live LVGL objects excluding the root screen. */
+size_t host_lv_live_object_count(void);
+/** @brief Return the number of live LVGL timers. */
+size_t host_lv_live_timer_count(void);
 
 #endif /* __CROSS_LAYER_RUNTIME_H__ */

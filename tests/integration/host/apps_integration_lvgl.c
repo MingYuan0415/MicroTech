@@ -345,3 +345,23 @@ bool host_lv_has_text(const char *text)
     }
     return false;
 }
+
+size_t host_lv_live_object_count(void)
+{
+    size_t count = 0;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        count += s_objects[index].live ? 1U : 0U;
+    }
+    return count;
+}
+
+size_t host_lv_live_timer_count(void)
+{
+    size_t count = 0;
+    for (size_t index = 0; index < HOST_LV_TIMER_CAPACITY; ++index)
+    {
+        count += s_timers[index].live ? 1U : 0U;
+    }
+    return count;
+}
