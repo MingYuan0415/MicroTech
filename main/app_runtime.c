@@ -147,7 +147,7 @@ static esp_err_t _app_runtime_stop_active_services(void)
         result = system_pm_cancel_standby();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.system_pm_cancelable = false;
     }
@@ -156,7 +156,7 @@ static esp_err_t _app_runtime_stop_active_services(void)
         result = ble_service_deinit();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.ble_attempted = false;
     }
@@ -165,7 +165,7 @@ static esp_err_t _app_runtime_stop_active_services(void)
         result = wifi_service_deinit(WIFI_SERVICE_WAIT_FOREVER);
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.wifi_owned = false;
         app_runtime_pm_set_wifi_participant(false);
@@ -175,13 +175,11 @@ static esp_err_t _app_runtime_stop_active_services(void)
         result = power_service_deinit();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.power_attempted = false;
         app_runtime_pm_clear_power();
     }
-
-exit:
     return result;
 }
 
@@ -193,7 +191,7 @@ static esp_err_t _app_runtime_stop_app_services(void)
         result = _app_runtime_unregister_wake_requester();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
     }
     if (s_ownership.app_manager_attempted)
@@ -201,7 +199,7 @@ static esp_err_t _app_runtime_stop_app_services(void)
         result = app_manager_deinit();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.app_manager_attempted = false;
     }
@@ -210,11 +208,9 @@ static esp_err_t _app_runtime_stop_app_services(void)
         result = _app_runtime_unregister_ui_dispatch();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
     }
-
-exit:
     return result;
 }
 
@@ -227,7 +223,7 @@ static esp_err_t _app_runtime_stop_platform_services(void)
         result = system_pm_deinit();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.system_pm_attempted = false;
     }
@@ -236,12 +232,10 @@ static esp_err_t _app_runtime_stop_platform_services(void)
         result = time_service_deinit();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
         s_ownership.time_attempted = false;
     }
-
-exit:
     return result;
 }
 
@@ -306,7 +300,7 @@ static esp_err_t _app_runtime_unwind(void)
         memset(&s_ownership, 0, sizeof(s_ownership));
         app_runtime_pm_reset();
         atomic_store(&s_runtime_state, APP_RUNTIME_STOPPED);
-        goto exit;
+        return result;
     }
     if (result == ESP_OK)
     {
@@ -315,8 +309,6 @@ static esp_err_t _app_runtime_unwind(void)
 
 blocked:
     atomic_store(&s_runtime_state, APP_RUNTIME_CLEANUP_PENDING);
-
-exit:
     return result;
 }
 
@@ -325,7 +317,7 @@ static esp_err_t _app_runtime_start_foundations(void)
     esp_err_t result = mt_log_init();
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     LOG_I("microtech connectivity runtime startup");
 
@@ -333,19 +325,17 @@ static esp_err_t _app_runtime_start_foundations(void)
     result = nv_storage_init();
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     s_ownership.fs_attempted = true;
     result = fs_storage_init();
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     result = event_bus_init();
-
-exit:
     return result;
 }
 
@@ -357,7 +347,7 @@ static esp_err_t _app_runtime_start_platform(
     result = bsp_init();
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     context->capabilities = bsp_get_capabilities();
@@ -367,7 +357,7 @@ static esp_err_t _app_runtime_start_platform(
     if ((context->capabilities & required_capabilities) != required_capabilities)
     {
         result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return result;
     }
 
     s_ownership.time_attempted = true;
@@ -377,7 +367,7 @@ static esp_err_t _app_runtime_start_platform(
         if (rtc == NULL)
         {
             result = ESP_ERR_INVALID_STATE;
-            goto exit;
+            return result;
         }
         const time_service_rtc_ops_t rtc_ops =
         {
@@ -388,7 +378,7 @@ static esp_err_t _app_runtime_start_platform(
         result = time_service_register_rtc_ops(&rtc_ops);
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
     }
     else
@@ -398,7 +388,7 @@ static esp_err_t _app_runtime_start_platform(
     result = time_service_init();
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     context->screen = bsp_hal_get_screen();
@@ -406,14 +396,14 @@ static esp_err_t _app_runtime_start_platform(
     if (context->screen == NULL || context->display == NULL)
     {
         result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return result;
     }
 
     system_pm_config_t system_pm_config;
     result = app_runtime_pm_build_system_config(&system_pm_config);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     s_ownership.system_pm_attempted = true;
     result = system_pm_init(&system_pm_config);
@@ -421,8 +411,6 @@ static esp_err_t _app_runtime_start_platform(
     {
         s_ownership.system_pm_cancelable = true;
     }
-
-exit:
     return result;
 }
 
@@ -474,18 +462,18 @@ static esp_err_t _app_runtime_start_app_services(
     result = app_manager_init(&app_config);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     result = app_manager_get_ui_dispatch_fn(&s_ownership.ui_dispatch);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     result = event_bus_register_ui_dispatch(s_ownership.ui_dispatch);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     s_ownership.ui_dispatch_registered = true;
 
@@ -493,7 +481,7 @@ static esp_err_t _app_runtime_start_app_services(
                  app_manager_pm_notify_user_activity);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     s_ownership.wake_requester_registered = true;
 
@@ -501,11 +489,9 @@ static esp_err_t _app_runtime_start_app_services(
     result = app_runtime_pm_prepare_power(context->capabilities);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     result = power_service_init();
-
-exit:
     return result;
 }
 
@@ -527,7 +513,7 @@ static esp_err_t _app_runtime_start_connectivity(void)
             {
                 s_ownership.wifi_owned = true;
                 app_runtime_pm_set_wifi_participant(true);
-                goto exit;
+                return result;
             }
             LOG_W("WiFi unavailable; continuing offline: %s",
                   esp_err_to_name(result));
@@ -542,8 +528,6 @@ static esp_err_t _app_runtime_start_connectivity(void)
 
     s_ownership.ble_attempted = true;
     result = ble_service_init();
-
-exit:
     return result;
 }
 
@@ -555,7 +539,7 @@ static esp_err_t _app_runtime_start_initial_app(void)
     if (!_app_runtime_required_apps_present())
     {
         result = ESP_ERR_NOT_FOUND;
-        goto exit;
+        return result;
     }
 
     const app_manager_nav_request_t request =
@@ -569,18 +553,12 @@ static esp_err_t _app_runtime_start_initial_app(void)
     result = app_manager_navigate(&request, UINT32_MAX);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     /* The BSP keeps SH8601 hidden after cold init. Build and fence the first
      * LVGL frame before committing display-on and the physical touch IRQ. */
     result = app_manager_display_commit_initial();
-    if (result != ESP_OK)
-    {
-        goto exit;
-    }
-
-exit:
     return result;
 }
 
@@ -602,19 +580,18 @@ esp_err_t app_runtime_start(void)
         (app_runtime_state_t)atomic_load(&s_runtime_state);
     if (state == APP_RUNTIME_READY)
     {
-        goto exit;
+        return result;
     }
     if (state == APP_RUNTIME_STARTING || state == APP_RUNTIME_STOPPING)
     {
-        result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return ESP_ERR_INVALID_STATE;
     }
     if (state == APP_RUNTIME_CLEANUP_PENDING)
     {
         result = app_runtime_stop();
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
     }
 
@@ -662,13 +639,10 @@ esp_err_t app_runtime_start(void)
 
     atomic_store(&s_runtime_state, APP_RUNTIME_READY);
     app_runtime_pm_open_admission();
-    goto exit;
+    return result;
 
 failed:
-    result = _app_runtime_start_failed(result);
-
-exit:
-    return result;
+    return _app_runtime_start_failed(result);
 }
 
 esp_err_t app_runtime_stop(void)
@@ -678,16 +652,13 @@ esp_err_t app_runtime_stop(void)
         (app_runtime_state_t)atomic_load(&s_runtime_state);
     if (state == APP_RUNTIME_STOPPED && !_app_runtime_has_owned_resources())
     {
-        goto exit;
+        return result;
     }
     if (state == APP_RUNTIME_STARTING || state == APP_RUNTIME_STOPPING)
     {
-        result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return ESP_ERR_INVALID_STATE;
     }
     result = _app_runtime_unwind();
-
-exit:
     return result;
 }
 

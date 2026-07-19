@@ -367,7 +367,7 @@ int main(int argc, char **argv)
     if (argc != 2)
     {
         fprintf(stderr, "usage: %s <scenario>\n", argv[0]);
-        goto exit;
+        return result;
     }
 
     for (size_t index = 0; index < sizeof(s_tests) / sizeof(s_tests[0]);
@@ -377,12 +377,9 @@ int main(int argc, char **argv)
         {
             s_tests[index].run();
             printf("network runtime scenario passed: %s\n", argv[1]);
-            result = 0;
-            goto exit;
+            return 0;
         }
     }
     fprintf(stderr, "unknown scenario: %s\n", argv[1]);
-
-exit:
     return result;
 }

@@ -434,19 +434,16 @@ static esp_err_t _publish_scan_and_pause_on_ui(void *arg)
                            &request->snapshot, sizeof(request->snapshot));
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     result = event_bus_unsubscribe(request->probe_subscription);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     request->probe_subscription = EVENT_BUS_SUB_HANDLE_INVALID;
     app_manager_back_gesture_screen_suspend();
-    result = app_manager_lifecycle_screen_pause();
-
-exit:
-    return result;
+    return app_manager_lifecycle_screen_pause();
 }
 
 static esp_err_t _click_action_on_ui(void *arg)
@@ -1108,17 +1105,14 @@ static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
                            EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     const app_manager_nav_request_t request =
     {
         .operation = APP_MANAGER_NAV_OP_EXIT,
         .app_id = APP_MANAGER_ID_SETUP,
     };
-    result = app_manager_navigate_async(&request, NULL, NULL);
-
-exit:
-    return result;
+    return app_manager_navigate_async(&request, NULL, NULL);
 }
 
 static void _test_latest_wifi_backpressure_and_reopen(void)

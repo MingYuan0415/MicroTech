@@ -88,19 +88,18 @@ static esp_err_t _fs_storage_mount_data(
     esp_err_t result = esp_vfs_littlefs_register(config);
     if (result != ESP_FAIL)
     {
-        goto exit;
+        return result;
     }
 
     bool is_erased = false;
     result = _fs_storage_data_partition_is_erased(&is_erased);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
     if (!is_erased)
     {
-        result = ESP_FAIL;
-        goto exit;
+        return ESP_FAIL;
     }
 
     LOG_W("provisioning erased data partition");
@@ -109,8 +108,6 @@ static esp_err_t _fs_storage_mount_data(
     {
         result = esp_vfs_littlefs_register(config);
     }
-
-exit:
     return result;
 }
 
@@ -138,14 +135,13 @@ esp_err_t fs_storage_init(void)
     int state = atomic_load(&s_state);
     if (state == FS_STORAGE_READY)
     {
-        goto exit;
+        return result;
     }
     int expected = FS_STORAGE_UNINITIALIZED;
     if (!atomic_compare_exchange_strong(&s_state, &expected,
                                         FS_STORAGE_INITIALIZING))
     {
-        result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return ESP_ERR_INVALID_STATE;
     }
 
     s_res_mounted = false;
@@ -196,14 +192,12 @@ esp_err_t fs_storage_init(void)
             LOG_E("mount rollback failed: %s",
                   esp_err_to_name(cleanup_result));
         }
-        goto exit;
+        return result;
     }
 
     s_data_mounted = true;
     atomic_store(&s_state, FS_STORAGE_READY);
     LOG_I("data partition mounted at %s", FS_DATA_MOUNT_PATH);
-
-exit:
     return result;
 }
 
@@ -213,7 +207,7 @@ esp_err_t fs_storage_deinit(void)
     int state = atomic_load(&s_state);
     if (state == FS_STORAGE_UNINITIALIZED)
     {
-        goto exit;
+        return result;
     }
     if (state == FS_STORAGE_READY)
     {
@@ -221,14 +215,12 @@ esp_err_t fs_storage_deinit(void)
         if (!atomic_compare_exchange_strong(&s_state, &expected,
                                             FS_STORAGE_DEINITIALIZING))
         {
-            result = ESP_ERR_INVALID_STATE;
-            goto exit;
+            return ESP_ERR_INVALID_STATE;
         }
     }
     else if (state != FS_STORAGE_DEINITIALIZING)
     {
-        result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return ESP_ERR_INVALID_STATE;
     }
 
     result = _fs_storage_unmount_owned();
@@ -236,8 +228,6 @@ esp_err_t fs_storage_deinit(void)
     {
         atomic_store(&s_state, FS_STORAGE_UNINITIALIZED);
     }
-
-exit:
     return result;
 }
 

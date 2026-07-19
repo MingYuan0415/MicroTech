@@ -52,19 +52,17 @@ static network_runtime_resource_state_t _network_runtime_result_state(
 esp_err_t network_runtime_init(void)
 {
     esp_err_t result = ESP_OK;
-    bool init_owned = false;
     if (network_runtime_is_ready())
     {
-        goto exit;
+        return result;
     }
 
     if (atomic_flag_test_and_set_explicit(&s_init_busy,
                                           memory_order_acquire))
     {
         result = network_runtime_is_ready() ? ESP_OK : ESP_ERR_INVALID_STATE;
-        goto exit;
+        return result;
     }
-    init_owned = true;
 
     network_runtime_status_t status = network_runtime_get_status();
     if (!_network_runtime_resource_ready(status.netif))
@@ -94,9 +92,6 @@ esp_err_t network_runtime_init(void)
     result = ESP_OK;
 
 exit:
-    if (init_owned)
-    {
-        atomic_flag_clear_explicit(&s_init_busy, memory_order_release);
-    }
+    atomic_flag_clear_explicit(&s_init_busy, memory_order_release);
     return result;
 }

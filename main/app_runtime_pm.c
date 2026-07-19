@@ -99,7 +99,7 @@ static esp_err_t _app_runtime_pm_power_get_info(power_info_t *output)
     esp_err_t result = ESP_ERR_INVALID_STATE;
     if (output == NULL || s_bsp_power == NULL || s_bsp_power->get_info == NULL)
     {
-        goto exit;
+        return result;
     }
 
     bsp_power_info_t board_info;
@@ -111,8 +111,6 @@ static esp_err_t _app_runtime_pm_power_get_info(power_info_t *output)
         output->is_charging = board_info.is_charging;
         output->is_vbus_connected = board_info.is_vbus_connected;
     }
-
-exit:
     return result;
 }
 
@@ -176,12 +174,12 @@ static esp_err_t _app_runtime_pm_input_register(app_manager_input_cb_t callback,
     if (callback == NULL || s_bsp_input == NULL ||
             s_bsp_input->register_handler == NULL)
     {
-        goto exit;
+        return result;
     }
     if (s_app_input_callback != NULL)
     {
         result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return result;
     }
 
     s_app_input_callback = callback;
@@ -193,8 +191,6 @@ static esp_err_t _app_runtime_pm_input_register(app_manager_input_cb_t callback,
         s_app_input_callback = NULL;
         s_app_input_context = NULL;
     }
-
-exit:
     return result;
 }
 
@@ -203,7 +199,7 @@ static esp_err_t _app_runtime_pm_input_unregister(void)
     esp_err_t result = ESP_ERR_INVALID_STATE;
     if (s_bsp_input == NULL || s_bsp_input->unregister_handler == NULL)
     {
-        goto exit;
+        return result;
     }
     result = s_bsp_input->unregister_handler();
     if (result == ESP_OK)
@@ -211,8 +207,6 @@ static esp_err_t _app_runtime_pm_input_unregister(void)
         s_app_input_callback = NULL;
         s_app_input_context = NULL;
     }
-
-exit:
     return result;
 }
 
@@ -240,7 +234,7 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         result = _app_runtime_pm_complete_sleep(timeout_ms, sleep);
         if (result != ESP_OK)
         {
-            goto exit;
+            return result;
         }
     }
 
@@ -272,13 +266,10 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         result = ESP_ERR_INVALID_STATE;
         goto rollback;
     }
-    goto exit;
+    return result;
 
 rollback:
-    result = _app_runtime_pm_prepare_failed(sleep, timeout_ms, result);
-
-exit:
-    return result;
+    return _app_runtime_pm_prepare_failed(sleep, timeout_ms, result);
 }
 
 static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
@@ -355,14 +346,14 @@ esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
     s_bsp_input = bsp_hal_get_input();
     if (s_bsp_input == NULL)
     {
-        goto exit;
+        return result;
     }
 
     bsp_wakeup_descriptor_t descriptor;
     result = bsp_get_wakeup_descriptor(&descriptor);
     if (result != ESP_OK)
     {
-        goto exit;
+        return result;
     }
 
     memset(config, 0, sizeof(*config));
@@ -376,7 +367,7 @@ esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
         if (config->wake_source_count == SYSTEM_PM_MAX_WAKE_SOURCES)
         {
             result = ESP_ERR_INVALID_SIZE;
-            goto exit;
+            return result;
         }
         system_pm_wake_source_t *source =
             &config->wake_sources[config->wake_source_count++];
@@ -388,7 +379,7 @@ esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
     if (config->wake_source_count == 0)
     {
         result = ESP_ERR_INVALID_STATE;
-        goto exit;
+        return result;
     }
 
     s_sleep_context.input = s_bsp_input;
@@ -400,8 +391,6 @@ esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
     config->commit_guard = _app_runtime_pm_commit_guard;
     config->commit_callback = _app_runtime_pm_commit_callback;
     config->commit_context = NULL;
-
-exit:
     return result;
 }
 
@@ -432,7 +421,7 @@ esp_err_t app_runtime_pm_prepare_power(bsp_capabilities_t capabilities)
         if (s_bsp_power == NULL)
         {
             result = ESP_ERR_INVALID_STATE;
-            goto exit;
+            return result;
         }
         const power_service_power_ops_t power_ops =
         {
@@ -445,8 +434,6 @@ esp_err_t app_runtime_pm_prepare_power(bsp_capabilities_t capabilities)
     {
         LOG_W("PMU unavailable; power snapshots remain invalid");
     }
-
-exit:
     return result;
 }
 
