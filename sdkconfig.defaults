@@ -28,6 +28,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16m_ota_res_data.csv"
 # MicroTech Project Config
 #
 CONFIG_BSP_DISPLAY_TE_SYNC=n
+CONFIG_SYSTEM_PM_DEVELOPMENT_MODE=n
 # end of MicroTech Project Config
 
 #

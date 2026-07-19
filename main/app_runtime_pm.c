@@ -11,6 +11,10 @@
 #include "time_service.h"
 #include "wifi_service.h"
 
+#if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
+    #include "driver/usb_serial_jtag.h"
+#endif
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -42,6 +46,15 @@ static const bsp_power_ops_t *s_bsp_power;
 static const bsp_input_ops_t *s_bsp_input;
 static app_manager_input_cb_t s_app_input_callback;
 static void *s_app_input_context;
+
+static bool _app_runtime_pm_is_standby_allowed(void)
+{
+#if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
+    return !usb_serial_jtag_is_connected();
+#else
+    return true;
+#endif
+}
 
 static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
         void *context);
@@ -89,7 +102,8 @@ static bool _app_runtime_pm_standby_request_begin(void)
 static esp_err_t _app_runtime_pm_request_standby(void)
 {
     esp_err_t result = ESP_ERR_INVALID_STATE;
-    if (_app_runtime_pm_standby_request_begin())
+    if (_app_runtime_pm_is_standby_allowed() &&
+            _app_runtime_pm_standby_request_begin())
     {
         result = system_pm_request_standby();
         atomic_fetch_sub_explicit(&s_standby_request_users, 1U,
@@ -487,6 +501,7 @@ app_manager_standby_ops_t app_runtime_pm_get_standby_ops(void)
     {
         .request_standby = _app_runtime_pm_request_standby,
         .cancel_standby = _app_runtime_pm_cancel_standby,
+        .is_standby_allowed = _app_runtime_pm_is_standby_allowed,
     };
 }
 

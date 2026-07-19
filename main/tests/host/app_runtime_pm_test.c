@@ -553,6 +553,8 @@ static void _test_standby_admission(void)
 {
     _test_reset();
     app_manager_standby_ops_t ops = app_runtime_pm_get_standby_ops();
+    assert(ops.is_standby_allowed != NULL);
+    assert(ops.is_standby_allowed());
     assert(ops.request_standby() == ESP_ERR_INVALID_STATE);
     assert(ops.cancel_standby() == ESP_OK);
     const test_call_t canceled[] = {TEST_CALL_SYSTEM_CANCEL};
