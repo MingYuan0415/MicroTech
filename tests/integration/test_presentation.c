@@ -92,6 +92,12 @@ static void _test_barrier_and_fast_forward(void)
 {
     host_lv_reset();
     assert(app_manager_presentation_init() == ESP_OK);
+    assert(host_lv_system_object_count() == 1U);
+    host_lv_system_object_snapshot_t blocker;
+    assert(host_lv_system_object_snapshot(0U, &blocker));
+    assert(!blocker.visible);
+    assert((blocker.flags & LV_OBJ_FLAG_CLICKABLE) != 0U);
+    assert(blocker.width == 368 && blocker.height == 448);
     lv_obj_t *source = app_manager_presentation_create_page_screen();
     lv_obj_t *target = app_manager_presentation_create_page_screen();
     assert(source != NULL && target != NULL);
@@ -107,22 +113,41 @@ static void _test_barrier_and_fast_forward(void)
     assert(host_lv_click_action("action"));
     assert(s_click_count == 1U);
 
+    lv_obj_t *system_underlay = lv_obj_create(lv_layer_sys());
+    assert(system_underlay != NULL);
+    lv_obj_set_size(system_underlay, LV_PCT(100), LV_PCT(100));
+
     s_completion_count = 0U;
     assert(app_manager_presentation_start(
                source, target, APP_MANAGER_TRANSITION_PUSH_LEFT, 220U,
                _transition_completed, &s_completion_count) == ESP_OK);
+    assert(host_lv_system_object_snapshot(0U, &blocker));
+    assert(blocker.visible);
+    host_lv_system_object_snapshot_t pointer_target;
+    assert(host_lv_touch_press(184, 224));
+    assert(host_lv_pointer_target_snapshot(&pointer_target));
+    assert(pointer_target.object == blocker.object);
+    assert(host_lv_touch_move(185, 225));
+    assert(host_lv_pointer_target_snapshot(&pointer_target));
+    assert(pointer_target.object == blocker.object);
+    assert(host_lv_touch_release(185, 225));
+    assert(!host_lv_pointer_target_snapshot(&pointer_target));
     assert(!host_lv_click_action("action"));
     app_manager_presentation_finish_now();
+    assert(host_lv_system_object_snapshot(0U, &blocker));
+    assert(!blocker.visible);
     assert(s_completion_count == 1U);
     assert(lv_screen_active() == target);
     app_manager_presentation_finish_now();
     assert(s_completion_count == 1U);
+    lv_obj_delete(system_underlay);
 
     assert(app_manager_presentation_load_immediate(
                app_manager_presentation_neutral_screen()) == ESP_OK);
     assert(app_manager_presentation_delete_page_screen(source) == ESP_OK);
     assert(app_manager_presentation_delete_page_screen(target) == ESP_OK);
     assert(app_manager_presentation_deinit() == ESP_OK);
+    assert(host_lv_system_object_count() == 0U);
 }
 
 int main(void)

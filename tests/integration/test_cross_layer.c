@@ -1,6 +1,7 @@
 #include "apps_integration_runtime.h"
 
 #include "app_manager.h"
+#include "app_manager_back_gesture.h"
 #include "app_manager_builtin.h"
 #include "app_manager_lifecycle.h"
 #include "app_manager_mailbox.h"
@@ -382,13 +383,19 @@ static lv_resource_counts_t _lv_resource_counts(void)
 static esp_err_t _screen_pause_on_ui(void *arg)
 {
     (void)arg;
+    app_manager_back_gesture_screen_suspend();
     return app_manager_lifecycle_screen_pause();
 }
 
 static esp_err_t _screen_resume_on_ui(void *arg)
 {
     (void)arg;
-    return app_manager_lifecycle_screen_resume();
+    esp_err_t result = app_manager_lifecycle_screen_resume();
+    if (result == ESP_OK)
+    {
+        app_manager_back_gesture_screen_resume();
+    }
+    return result;
 }
 
 static void _noop_callback(void *arg)
@@ -435,6 +442,7 @@ static esp_err_t _publish_scan_and_pause_on_ui(void *arg)
         goto exit;
     }
     request->probe_subscription = EVENT_BUS_SUB_HANDLE_INVALID;
+    app_manager_back_gesture_screen_suspend();
     result = app_manager_lifecycle_screen_pause();
 
 exit:
@@ -458,6 +466,61 @@ typedef struct text_query
     bool found;
 } text_query_t;
 
+typedef enum touch_action
+{
+    TOUCH_ACTION_PRESS = 0,
+    TOUCH_ACTION_MOVE,
+    TOUCH_ACTION_RELEASE,
+    TOUCH_ACTION_RESET,
+} touch_action_t;
+
+typedef struct touch_request
+{
+    touch_action_t action;
+    int32_t x;
+    int32_t y;
+    bool handled;
+} touch_request_t;
+
+typedef struct system_gesture_snapshot
+{
+    size_t object_count;
+    size_t visible_edge_count;
+    bool left_edge_found;
+    bool right_edge_found;
+    bool indicator_found;
+    bool indicator_visible;
+    bool arrow_found;
+    bool arrow_visible;
+    bool pointer_target_found;
+    bool active_screen_found;
+    host_lv_system_object_snapshot_t left_edge;
+    host_lv_system_object_snapshot_t right_edge;
+    host_lv_system_object_snapshot_t indicator;
+    host_lv_system_object_snapshot_t arrow;
+    host_lv_system_object_snapshot_t pointer_target;
+    host_lv_system_object_snapshot_t active_screen;
+} system_gesture_snapshot_t;
+
+#define GESTURE_EDGE_WIDTH         29
+#define GESTURE_TRIGGER_DISTANCE   55
+#define GESTURE_DIRECTION_SLOP     11
+#define GESTURE_CANVAS_WIDTH       64
+#define GESTURE_CANVAS_HEIGHT      144
+#define GESTURE_CURVE_SAMPLE_COUNT 5U
+
+typedef struct gesture_curve_snapshot
+{
+    const lv_obj_t *canvas;
+    bool valid;
+    lv_opa_t alpha[GESTURE_CURVE_SAMPLE_COUNT][GESTURE_CANVAS_WIDTH];
+} gesture_curve_snapshot_t;
+
+static const int32_t s_gesture_curve_sample_y[GESTURE_CURVE_SAMPLE_COUNT] =
+{
+    0, 36, 71, 107, 143,
+};
+
 static esp_err_t _query_text_on_ui(void *arg)
 {
     text_query_t *query = arg;
@@ -472,16 +535,118 @@ static esp_err_t _query_transition_target_text_on_ui(void *arg)
     return ESP_OK;
 }
 
+static esp_err_t _touch_on_ui(void *arg)
+{
+    touch_request_t *request = arg;
+    if (request->action == TOUCH_ACTION_PRESS)
+    {
+        request->handled = host_lv_touch_press(request->x, request->y);
+    }
+    else if (request->action == TOUCH_ACTION_MOVE)
+    {
+        request->handled = host_lv_touch_move(request->x, request->y);
+    }
+    else if (request->action == TOUCH_ACTION_RELEASE)
+    {
+        request->handled = host_lv_touch_release(request->x, request->y);
+    }
+    else
+    {
+        host_lv_touch_reset();
+        request->handled = true;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t _query_system_gesture_on_ui(void *arg)
+{
+    system_gesture_snapshot_t *state = arg;
+    memset(state, 0, sizeof(*state));
+    state->object_count = host_lv_system_object_count();
+    for (size_t index = 0; index < state->object_count; ++index)
+    {
+        host_lv_system_object_snapshot_t object;
+        assert(host_lv_system_object_snapshot(index, &object));
+        if (object.text != NULL && strcmp(object.text, LV_SYMBOL_LEFT) == 0)
+        {
+            state->arrow_found = true;
+            state->arrow_visible = object.visible;
+            state->arrow = object;
+        }
+        else if (object.width == GESTURE_EDGE_WIDTH && object.height == 448)
+        {
+            if (object.x == 0)
+            {
+                state->left_edge_found = true;
+                state->left_edge = object;
+            }
+            else
+            {
+                state->right_edge_found = true;
+                state->right_edge = object;
+            }
+            if (object.visible &&
+                    (object.flags & LV_OBJ_FLAG_CLICKABLE) != 0U)
+            {
+                ++state->visible_edge_count;
+            }
+        }
+        else if (object.canvas && object.width == GESTURE_CANVAS_WIDTH &&
+                 object.height == GESTURE_CANVAS_HEIGHT)
+        {
+            state->indicator_found = true;
+            state->indicator_visible = object.visible;
+            state->indicator = object;
+        }
+    }
+    state->pointer_target_found = host_lv_pointer_target_snapshot(
+                                      &state->pointer_target);
+    state->active_screen_found = host_lv_active_screen_snapshot(
+                                     &state->active_screen);
+    return ESP_OK;
+}
+
+static esp_err_t _query_gesture_curve_on_ui(void *arg)
+{
+    gesture_curve_snapshot_t *snapshot = arg;
+    snapshot->valid = true;
+    for (size_t row = 0U; row < GESTURE_CURVE_SAMPLE_COUNT; ++row)
+    {
+        for (int32_t x = 0; x < GESTURE_CANVAS_WIDTH; ++x)
+        {
+            if (!host_lv_canvas_alpha_snapshot(
+                        snapshot->canvas, x, s_gesture_curve_sample_y[row],
+                        &snapshot->alpha[row][x]))
+            {
+                snapshot->valid = false;
+                return ESP_OK;
+            }
+        }
+    }
+    return ESP_OK;
+}
+
 static esp_err_t _presentation_init_on_ui(void *arg)
 {
     (void)arg;
     return app_manager_presentation_init();
 }
 
+static esp_err_t _back_gesture_init_on_ui(void *arg)
+{
+    (void)arg;
+    return app_manager_back_gesture_init(lv_display_get_default(),
+                                         host_lv_pointer_indev());
+}
+
 static esp_err_t _runtime_deinit_on_ui(void *arg)
 {
     (void)arg;
     esp_err_t result = app_manager_lifecycle_deinit();
+    if (result == ESP_OK)
+    {
+        result = app_manager_back_gesture_deinit();
+    }
     if (result == ESP_OK)
     {
         result = app_manager_presentation_deinit();
@@ -503,6 +668,108 @@ static bool _transition_target_has_text(const char *text)
     assert(app_manager_ui_call(_query_transition_target_text_on_ui, &query,
                                UI_TIMEOUT_MS) == ESP_OK);
     return query.found;
+}
+
+static bool _touch(touch_action_t action, int32_t x, int32_t y)
+{
+    touch_request_t request =
+    {
+        .action = action,
+        .x = x,
+        .y = y,
+    };
+    assert(app_manager_ui_call(_touch_on_ui, &request,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return request.handled;
+}
+
+static system_gesture_snapshot_t _system_gesture_snapshot(void)
+{
+    system_gesture_snapshot_t state;
+    assert(app_manager_ui_call(_query_system_gesture_on_ui, &state,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return state;
+}
+
+static gesture_curve_snapshot_t _gesture_curve_snapshot(
+    const lv_obj_t *canvas)
+{
+    gesture_curve_snapshot_t snapshot = {.canvas = canvas};
+    assert(app_manager_ui_call(_query_gesture_curve_on_ui, &snapshot,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(snapshot.valid);
+    return snapshot;
+}
+
+static size_t _gesture_curve_coverage(const lv_opa_t *row)
+{
+    size_t coverage = GESTURE_CANVAS_WIDTH;
+    while (coverage > 0U && row[coverage - 1U] == LV_OPA_TRANSP)
+    {
+        --coverage;
+    }
+    return coverage;
+}
+
+static void _assert_left_gesture_curve(
+    const gesture_curve_snapshot_t *curve)
+{
+    static const size_t expected_coverage[GESTURE_CURVE_SAMPLE_COUNT] =
+    {
+        28U, 46U, 62U, 46U, 28U,
+    };
+
+    for (size_t row = 0U; row < GESTURE_CURVE_SAMPLE_COUNT; ++row)
+    {
+        assert(_gesture_curve_coverage(curve->alpha[row]) ==
+               expected_coverage[row]);
+        assert(curve->alpha[row][0] == LV_OPA_COVER);
+    }
+    assert(memcmp(curve->alpha[0], curve->alpha[4],
+                  GESTURE_CANVAS_WIDTH) == 0);
+    assert(memcmp(curve->alpha[1], curve->alpha[3],
+                  GESTURE_CANVAS_WIDTH) == 0);
+    assert(curve->alpha[1][44] == LV_OPA_COVER);
+    assert(curve->alpha[1][45] == 46);
+    assert(curve->alpha[1][46] == LV_OPA_TRANSP);
+    assert(curve->alpha[2][60] == LV_OPA_COVER);
+    assert(curve->alpha[2][61] == 253);
+    assert(curve->alpha[2][62] == LV_OPA_TRANSP);
+}
+
+static void _assert_mirrored_gesture_curve(
+    const gesture_curve_snapshot_t *left,
+    const gesture_curve_snapshot_t *right)
+{
+    for (size_t row = 0U; row < GESTURE_CURVE_SAMPLE_COUNT; ++row)
+    {
+        for (size_t x = 0U; x < GESTURE_CANVAS_WIDTH; ++x)
+        {
+            assert(right->alpha[row][x] ==
+                   left->alpha[row][GESTURE_CANVAS_WIDTH - x - 1U]);
+        }
+    }
+}
+
+static void _assert_same_screen(
+    const host_lv_system_object_snapshot_t *expected,
+    const host_lv_system_object_snapshot_t *actual)
+{
+    assert(expected->object == actual->object);
+    assert(expected->x == actual->x);
+    assert(expected->y == actual->y);
+    assert(expected->width == actual->width);
+    assert(expected->height == actual->height);
+    assert(expected->opacity == actual->opacity);
+}
+
+static void _assert_indicator_hidden(void)
+{
+    const system_gesture_snapshot_t system = _system_gesture_snapshot();
+    assert(system.indicator_found);
+    assert(!system.indicator_visible);
+    assert(system.arrow_found);
+    assert(!system.arrow_visible);
 }
 
 static void _click_action(const char *title)
@@ -602,6 +869,7 @@ static void _assert_event_slot_headroom(size_t occupied)
 static void _initialize_stack(void)
 {
     host_runtime_reset();
+    assert(!app_manager_back_gesture_is_enabled());
     assert(app_theme_init() == ESP_OK);
     for (int id = 0; id < APP_THEME_FONT_MAX; ++id)
     {
@@ -634,6 +902,8 @@ static void _initialize_stack(void)
                NULL, NULL, NULL, NULL) == ESP_OK);
     assert(app_manager_lifecycle_init(0) == ESP_OK);
     assert(app_manager_navigation_init() == ESP_OK);
+    assert(app_manager_ui_call(_back_gesture_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
     memset(s_lifecycle_observations, 0,
            sizeof(s_lifecycle_observations));
     s_lifecycle_observation_count = 0;
@@ -1342,6 +1612,318 @@ static void _test_setup_screen_lifecycle(void)
     _assert_event_slot_headroom(1);
 }
 
+static void _test_system_edge_back_gesture(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(app_manager_back_gesture_is_enabled());
+    system_gesture_snapshot_t system = _system_gesture_snapshot();
+    assert(system.object_count == 5U);
+    assert(system.left_edge_found && system.right_edge_found);
+    assert(system.indicator_found && system.arrow_found);
+    assert(system.indicator.canvas);
+    assert(system.indicator.canvas_color_format == LV_COLOR_FORMAT_A8);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.height == GESTURE_CANVAS_HEIGHT);
+    assert(system.indicator.image_recolor == lv_color_hex(0x202124U));
+    assert(system.indicator.image_opacity == 220);
+    assert(system.indicator.canvas_flush_count == 1U);
+    assert(system.indicator.invalidation_count == 1U);
+    assert(system.active_screen_found);
+    assert(system.visible_edge_count == 0U);
+    _assert_indicator_hidden();
+
+    /* Home remains non-interactive even when an App history target exists. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    system = _system_gesture_snapshot();
+    assert(system.visible_edge_count == 0U);
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    system = _system_gesture_snapshot();
+    assert(system.visible_edge_count == 2U);
+
+    const host_lv_system_object_snapshot_t menu_screen = system.active_screen;
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    system = _system_gesture_snapshot();
+    assert(system.pointer_target_found);
+    assert(system.pointer_target.object == system.left_edge.object);
+    assert(system.indicator_visible);
+    assert(system.indicator.x == -GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.y == 148);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.height == GESTURE_CANVAS_HEIGHT);
+    assert(system.indicator.image_opacity == 220);
+    assert(system.indicator.canvas_flush_count == 1U);
+    assert(system.indicator.invalidation_count == 1U);
+    const gesture_curve_snapshot_t left_curve =
+        _gesture_curve_snapshot(system.indicator.object);
+    _assert_left_gesture_curve(&left_curve);
+    _assert_same_screen(&menu_screen, &system.active_screen);
+    assert(_touch(TOUCH_ACTION_MOVE, 28, 230));
+    system = _system_gesture_snapshot();
+    assert(system.indicator.x == -31);
+    assert(system.indicator.y == 148);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.image_opacity == 220);
+    _assert_same_screen(&menu_screen, &system.active_screen);
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 280));
+    system = _system_gesture_snapshot();
+    assert(system.indicator.x == 0 && system.indicator.y == 148);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.image_opacity == 220);
+    assert(system.arrow_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 44, 180));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_system_gesture_snapshot().indicator.y == 148);
+    assert(_touch(TOUCH_ACTION_MOVE, 43, 140));
+    system = _system_gesture_snapshot();
+    assert(!system.arrow_visible && system.indicator.y == 148);
+    assert(_touch(TOUCH_ACTION_RELEASE, 43, 140));
+    system = _system_gesture_snapshot();
+    assert(!system.pointer_target_found);
+    _assert_indicator_hidden();
+    _assert_same_screen(&menu_screen, &system.active_screen);
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 0));
+    system = _system_gesture_snapshot();
+    assert(system.indicator_visible && system.indicator.y == 8);
+    assert(_touch(TOUCH_ACTION_MOVE, 33, 10));
+    assert(_system_gesture_snapshot().indicator.y == 8);
+    assert(_touch(TOUCH_ACTION_RELEASE, 33, 10));
+    _assert_indicator_hidden();
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 447));
+    system = _system_gesture_snapshot();
+    assert(system.indicator_visible && system.indicator.y == 296);
+    assert(_touch(TOUCH_ACTION_MOVE, 33, 437));
+    assert(_system_gesture_snapshot().indicator.y == 296);
+    assert(_touch(TOUCH_ACTION_RELEASE, 33, 437));
+    _assert_indicator_hidden();
+
+    /* The 29 px left strip includes x=28 and excludes x=29. */
+    assert(_touch(TOUCH_ACTION_PRESS, 29, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 84, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 84, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    assert(_touch(TOUCH_ACTION_PRESS, 28, 220));
+    system = _system_gesture_snapshot();
+    assert(system.pointer_target_found);
+    assert(system.pointer_target.object == system.left_edge.object);
+    assert(_touch(TOUCH_ACTION_MOVE, 83, 220));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 72, 220));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 71, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 71, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    /* A 2:1 diagonal locks horizontally but 54 px remains sub-threshold. */
+    size_t lifecycle_before = s_lifecycle_observation_count;
+    lv_resource_counts_t resources_before = _lv_resource_counts();
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_DIRECTION_SLOP, 242));
+    assert(_system_gesture_snapshot().indicator_visible);
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 54, 328));
+    assert(_system_gesture_snapshot().indicator_visible);
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(s_lifecycle_observation_count == lifecycle_before);
+    assert(!app_manager_is_transitioning());
+    assert(_lv_resource_counts().screens == resources_before.screens);
+    assert(_touch(TOUCH_ACTION_RELEASE, 54, 328));
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 5, 243));
+    _assert_indicator_hidden();
+    assert(_touch(TOUCH_ACTION_RELEASE, 5, 243));
+    _assert_indicator_hidden();
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 40, 220));
+    assert(_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_RESET, 0, 0));
+    system = _system_gesture_snapshot();
+    assert(!system.pointer_target_found);
+    _assert_indicator_hidden();
+    assert(!_touch(TOUCH_ACTION_RELEASE, 40, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    lifecycle_before = s_lifecycle_observation_count;
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(s_lifecycle_observation_count == lifecycle_before);
+    assert(!app_manager_is_transitioning());
+    assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE,
+                     APP_MANAGER_ID_SETTINGS, "power") == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
+    lifecycle_before = s_lifecycle_observation_count;
+    resources_before = _lv_resource_counts();
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 120));
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 120));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(s_lifecycle_observation_count == lifecycle_before);
+    assert(_lv_resource_counts().screens == resources_before.screens);
+    assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 120));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "power"));
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 40, 220));
+    assert(_system_gesture_snapshot().indicator_visible);
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    system = _system_gesture_snapshot();
+    assert(!system.pointer_target_found);
+    _assert_indicator_hidden();
+    assert(!_touch(TOUCH_ACTION_RELEASE, 40, 220));
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_system_gesture_snapshot().visible_edge_count == 2U);
+
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_back_gesture_set_enabled(false) == ESP_OK);
+    assert(!app_manager_back_gesture_is_enabled());
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_system_gesture_snapshot().visible_edge_count == 0U);
+    assert(app_manager_back_gesture_set_enabled(true) == ESP_OK);
+    assert(_system_gesture_snapshot().visible_edge_count == 2U);
+
+    assert(app_manager_back_gesture_set_enabled(false) == ESP_OK);
+    assert(!app_manager_back_gesture_is_enabled());
+    assert(_system_gesture_snapshot().visible_edge_count == 0U);
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+
+    assert(app_manager_back_gesture_set_enabled(true) == ESP_OK);
+    assert(app_manager_back_gesture_is_enabled());
+    assert(_system_gesture_snapshot().visible_edge_count == 2U);
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(app_manager_back_gesture_set_enabled(false) == ESP_OK);
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_system_gesture_snapshot().visible_edge_count == 0U);
+    assert(!_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(app_manager_back_gesture_set_enabled(true) == ESP_OK);
+    assert(_system_gesture_snapshot().visible_edge_count == 2U);
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 40, 220));
+    assert(_system_gesture_snapshot().indicator_visible);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    system = _system_gesture_snapshot();
+    assert(!system.pointer_target_found);
+    _assert_indicator_hidden();
+    assert(!_touch(TOUCH_ACTION_RELEASE, 40, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    system = _system_gesture_snapshot();
+    assert(system.visible_edge_count == 2U);
+
+    /* The 29 px right strip includes x=339 and excludes x=338. */
+    assert(_touch(TOUCH_ACTION_PRESS, 338, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 283, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 283, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+
+    assert(_touch(TOUCH_ACTION_PRESS, 339, 220));
+    system = _system_gesture_snapshot();
+    assert(system.pointer_target_found);
+    assert(system.pointer_target.object == system.right_edge.object);
+    assert(_touch(TOUCH_ACTION_MOVE, 284, 220));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 296, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 296, 220));
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+
+    const host_lv_system_object_snapshot_t settings_screen =
+        system.active_screen;
+    assert(_touch(TOUCH_ACTION_PRESS, 367, 220));
+    system = _system_gesture_snapshot();
+    assert(system.pointer_target_found);
+    assert(system.pointer_target.object == system.right_edge.object);
+    assert(system.indicator.x == 368);
+    assert(system.indicator.y == 148);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.height == GESTURE_CANVAS_HEIGHT);
+    assert(system.indicator.image_opacity == 220);
+    assert(system.indicator.canvas_flush_count == 2U);
+    assert(system.indicator.invalidation_count == 2U);
+    const gesture_curve_snapshot_t right_curve =
+        _gesture_curve_snapshot(system.indicator.object);
+    _assert_mirrored_gesture_curve(&left_curve, &right_curve);
+    assert(_touch(TOUCH_ACTION_MOVE, 339, 230));
+    system = _system_gesture_snapshot();
+    assert(system.indicator.x == 335 && system.indicator.y == 148);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.image_opacity == 220);
+    _assert_same_screen(&settings_screen, &system.active_screen);
+    assert(_touch(TOUCH_ACTION_MOVE, 312, 280));
+    system = _system_gesture_snapshot();
+    assert(system.arrow_visible);
+    assert(system.indicator.x == 304 && system.indicator.y == 148);
+    assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
+    assert(system.indicator.image_opacity == 220);
+    _assert_same_screen(&settings_screen, &system.active_screen);
+    assert(_touch(TOUCH_ACTION_RELEASE, 312, 280));
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
+    const wifi_service_session_id_t session =
+        host_wifi_service_current_session();
+    const wifi_service_operation_id_t operation =
+        host_wifi_service_current_operation();
+    assert(session != 0 && operation != 0);
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
+    assert(_touch(TOUCH_ACTION_MOVE, 40, 300));
+    assert(_touch(TOUCH_ACTION_RELEASE, 40, 300));
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+    assert(host_wifi_service_current_session() == session);
+    assert(host_wifi_service_current_operation() == operation);
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
+    assert(_touch(TOUCH_ACTION_MOVE, 56, 300));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 56, 300));
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(host_wifi_service_current_session() == 0);
+    assert(host_wifi_service_current_operation() == 0);
+    assert(_system_gesture_snapshot().visible_edge_count == 0U);
+}
+
 int main(void)
 {
     _initialize_stack();
@@ -1354,12 +1936,16 @@ int main(void)
     _test_screen_pause_finishes_transition();
     _test_home_screen_lifecycle();
     _test_setup_screen_lifecycle();
+    _test_system_edge_back_gesture();
 
+    assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
     assert(app_manager_navigation_deinit() == ESP_OK);
     assert(app_manager_lifecycle_shutdown_begin_and_wait() == ESP_OK);
     assert(app_manager_ui_call(_runtime_deinit_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
+    assert(!app_manager_back_gesture_is_enabled());
     assert(_lv_resource_counts().screens == 0U);
+    assert(_system_gesture_snapshot().object_count == 0U);
     assert(app_manager_builtin_registry_reset() == ESP_OK);
 
     host_task_shutdown();

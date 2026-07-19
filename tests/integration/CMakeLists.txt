@@ -21,6 +21,7 @@ add_executable(test_cross_layer
     host/host_services.c
     host/wifi_service_fake.c
     "${APP_CORE}/src/app_manager_mailbox.c"
+    "${APP_CORE}/src/app_manager_back_gesture.c"
     "${APP_CORE}/src/app_manager_builtin.c"
     "${APP_CORE}/src/app_manager_lifecycle.c"
     "${APP_CORE}/src/app_manager_lifecycle_api.c"
