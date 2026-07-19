@@ -23,6 +23,16 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 0.5.3
+  espressif/esp_codec_dev:
+    component_hash: 8a58569aed3c6e8d858da5419eba4d54ee905d7709cdbe01c42101c1ed0c5319
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.6.1
   espressif/esp_io_expander:
     component_hash: 7b7f91270172e46ca4597e3874f48d8412e280e8c295559f5922ec38656e3e5f
     dependencies:
@@ -268,12 +278,13 @@ dependencies:
       type: service
     version: 9.5.0
 direct_dependencies:
+- espressif/esp_codec_dev
 - espressif/esp_io_expander
 - espressif/esp_lcd_sh8601
 - espressif/esp_lcd_touch_ft5x06
 - espressif/esp_lvgl_adapter
 - idf
 - joltwallet/littlefs
-manifest_hash: 4562d318551489051e07769da5792c8e5e1b8ae1f893ebdc6c11822650fff381
+manifest_hash: 82b39f81578fcd1bb8c37d6cf4c8e454e223e7a5ae435ee5f56e495ed63ade1e
 target: esp32s3
 version: 3.0.0

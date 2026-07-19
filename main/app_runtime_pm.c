@@ -5,7 +5,10 @@
 #include "app_runtime_pm.h"
 
 #include "app_manager.h"
+#include "audio_service.h"
+#include "imu_service.h"
 #include "power_service.h"
+#include "time_service.h"
 #include "wifi_service.h"
 
 #include "freertos/FreeRTOS.h"
@@ -21,7 +24,13 @@ typedef struct app_runtime_sleep_context
 {
     const bsp_input_ops_t *input;
     bool wifi_participant;
+    bool imu_participant;
+    bool audio_participant;
+    bool time_participant;
     bool wifi_resume_required;
+    bool imu_resume_required;
+    bool audio_resume_required;
+    bool time_resume_required;
     bool power_resume_required;
     bool input_resume_required;
 } app_runtime_sleep_context_t;
@@ -112,6 +121,16 @@ static esp_err_t _app_runtime_pm_power_get_info(power_info_t *output)
         output->is_vbus_connected = board_info.is_vbus_connected;
     }
     return result;
+}
+
+static esp_err_t _app_runtime_pm_power_poll_irq(uint32_t *status)
+{
+    if (status == NULL || s_bsp_power == NULL ||
+            s_bsp_power->poll_irq == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return s_bsp_power->poll_irq(status);
 }
 
 static void _app_runtime_pm_bsp_input_callback(bsp_key_t key,
@@ -228,8 +247,9 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 {
     app_runtime_sleep_context_t *sleep = context;
     esp_err_t result = ESP_OK;
-    if (sleep->wifi_resume_required || sleep->power_resume_required ||
-            sleep->input_resume_required)
+    if (sleep->wifi_resume_required || sleep->imu_resume_required ||
+            sleep->audio_resume_required || sleep->time_resume_required ||
+            sleep->power_resume_required || sleep->input_resume_required)
     {
         result = _app_runtime_pm_complete_sleep(timeout_ms, sleep);
         if (result != ESP_OK)
@@ -242,6 +262,37 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
     {
         sleep->wifi_resume_required = true;
         result = wifi_service_suspend(timeout_ms);
+        if (result != ESP_OK)
+        {
+            goto rollback;
+        }
+    }
+
+    if (sleep->audio_participant)
+    {
+        bool resume_required = false;
+        result = audio_service_suspend(timeout_ms, &resume_required);
+        sleep->audio_resume_required = resume_required;
+        if (result != ESP_OK)
+        {
+            goto rollback;
+        }
+    }
+
+    if (sleep->imu_participant)
+    {
+        sleep->imu_resume_required = true;
+        result = imu_service_suspend(timeout_ms);
+        if (result != ESP_OK)
+        {
+            goto rollback;
+        }
+    }
+
+    if (sleep->time_participant)
+    {
+        sleep->time_resume_required = true;
+        result = time_service_suspend(timeout_ms);
         if (result != ESP_OK)
         {
             goto rollback;
@@ -294,6 +345,33 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
         if (result == ESP_OK)
         {
             sleep->power_resume_required = false;
+        }
+    }
+    if (sleep->time_resume_required)
+    {
+        const esp_err_t result = time_service_resume(timeout_ms);
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->time_resume_required = false;
+        }
+    }
+    if (sleep->imu_resume_required)
+    {
+        const esp_err_t result = imu_service_resume(timeout_ms);
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->imu_resume_required = false;
+        }
+    }
+    if (sleep->audio_resume_required)
+    {
+        const esp_err_t result = audio_service_resume(timeout_ms);
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->audio_resume_required = false;
         }
     }
     if (sleep->wifi_resume_required)
@@ -427,6 +505,7 @@ esp_err_t app_runtime_pm_prepare_power(bsp_capabilities_t capabilities)
         {
             .is_available = s_bsp_power->is_available,
             .get_info = _app_runtime_pm_power_get_info,
+            .poll_irq = _app_runtime_pm_power_poll_irq,
         };
         result = power_service_register_power_ops(&power_ops);
     }
@@ -445,6 +524,21 @@ void app_runtime_pm_clear_power(void)
 void app_runtime_pm_set_wifi_participant(bool enabled)
 {
     s_sleep_context.wifi_participant = enabled;
+}
+
+void app_runtime_pm_set_imu_participant(bool enabled)
+{
+    s_sleep_context.imu_participant = enabled;
+}
+
+void app_runtime_pm_set_audio_participant(bool enabled)
+{
+    s_sleep_context.audio_participant = enabled;
+}
+
+void app_runtime_pm_set_time_participant(bool enabled)
+{
+    s_sleep_context.time_participant = enabled;
 }
 
 void app_runtime_pm_detach_bsp(void)

@@ -3,13 +3,16 @@
 #include "app_manager.h"
 #include "app_manager_config.h"
 #include "app_runtime_pm.h"
+#include "audio_service.h"
 #include "ble_service.h"
 #include "bsp_hal.h"
 #include "event_bus.h"
 #include "fs_storage/fs_storage.h"
+#include "imu_service.h"
 #include "network_runtime.h"
 #include "nv_storage.h"
 #include "power_service.h"
+#include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
 #include "wifi_service.h"
@@ -41,6 +44,11 @@ typedef enum
     TEST_EVENT_REGISTER_WAKE_REQUESTER,
     TEST_EVENT_PM_PREPARE_POWER,
     TEST_EVENT_POWER_INIT,
+    TEST_EVENT_IMU_REGISTER,
+    TEST_EVENT_IMU_INIT,
+    TEST_EVENT_AUDIO_INIT,
+    TEST_EVENT_SD_REGISTER,
+    TEST_EVENT_SD_INIT,
     TEST_EVENT_NETWORK_INIT,
     TEST_EVENT_WIFI_INIT,
     TEST_EVENT_BLE_INIT,
@@ -52,6 +60,9 @@ typedef enum
     TEST_EVENT_SYSTEM_PM_CANCEL,
     TEST_EVENT_BLE_DEINIT,
     TEST_EVENT_WIFI_DEINIT,
+    TEST_EVENT_SD_DEINIT,
+    TEST_EVENT_AUDIO_DEINIT,
+    TEST_EVENT_IMU_DEINIT,
     TEST_EVENT_POWER_DEINIT,
     TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
     TEST_EVENT_APP_MANAGER_DEINIT,
@@ -69,10 +80,21 @@ typedef struct test_runtime
     size_t event_count;
     test_event_t failure_event;
     esp_err_t failure_result;
+    test_event_t secondary_failure_event;
+    esp_err_t secondary_failure_result;
     bsp_capabilities_t capabilities;
     bool network_ready;
     bool wifi_cleanup_pending;
     bool required_apps_present;
+    bool wifi_participant;
+    bool imu_participant;
+    bool audio_participant;
+    bool time_participant;
+    bool sd_mounted;
+    uint32_t imu_sample_rate_hz;
+    esp_err_t sd_mount_result;
+    sd_storage_service_mount_ops_t sd_mount_ops;
+    imu_service_imu_ops_t imu_ops;
 } test_runtime_t;
 
 static test_runtime_t s_test;
@@ -106,7 +128,12 @@ static void _test_record(test_event_t event)
 static esp_err_t _test_result(test_event_t event)
 {
     _test_record(event);
-    return s_test.failure_event == event ? s_test.failure_result : ESP_OK;
+    if (s_test.failure_event == event)
+    {
+        return s_test.failure_result;
+    }
+    return s_test.secondary_failure_event == event ?
+           s_test.secondary_failure_result : ESP_OK;
 }
 
 static void _test_reset(void)
@@ -114,10 +141,14 @@ static void _test_reset(void)
     memset(&s_test, 0, sizeof(s_test));
     s_test.capabilities = BSP_CAPABILITY_DISPLAY | BSP_CAPABILITY_TOUCH |
                           BSP_CAPABILITY_INPUT | BSP_CAPABILITY_RTC |
-                          BSP_CAPABILITY_POWER;
+                          BSP_CAPABILITY_POWER | BSP_CAPABILITY_IMU |
+                          BSP_CAPABILITY_AUDIO | BSP_CAPABILITY_SD;
     s_test.network_ready = true;
     s_test.required_apps_present = true;
     s_test.failure_result = ESP_FAIL;
+    s_test.secondary_failure_result = ESP_FAIL;
+    s_test.sd_mounted = true;
+    s_test.sd_mount_result = ESP_OK;
 }
 
 static void _test_clear_events(void)
@@ -165,6 +196,37 @@ static esp_err_t _test_rtc_write(const struct tm *timeinfo)
     return ESP_OK;
 }
 
+static esp_err_t _test_rtc_alarm_configure(
+    const bsp_rtc_alarm_config_t *config)
+{
+    assert(config != NULL);
+    return ESP_OK;
+}
+
+static esp_err_t _test_rtc_alarm_disable(void)
+{
+    return ESP_OK;
+}
+
+static esp_err_t _test_rtc_alarm_get_status(bsp_rtc_alarm_status_t *status)
+{
+    assert(status != NULL);
+    memset(status, 0, sizeof(*status));
+    return ESP_OK;
+}
+
+static esp_err_t _test_rtc_alarm_clear(void)
+{
+    return ESP_OK;
+}
+
+static esp_err_t _test_rtc_alarm_poll_interrupt(bool *active)
+{
+    assert(active != NULL);
+    *active = false;
+    return ESP_OK;
+}
+
 static bool _test_screen_available(void)
 {
     return true;
@@ -207,6 +269,11 @@ static const bsp_rtc_ops_t s_rtc_ops =
     .is_available = _test_rtc_available,
     .read = _test_rtc_read,
     .write = _test_rtc_write,
+    .alarm_configure = _test_rtc_alarm_configure,
+    .alarm_disable = _test_rtc_alarm_disable,
+    .alarm_get_status = _test_rtc_alarm_get_status,
+    .alarm_clear = _test_rtc_alarm_clear,
+    .alarm_poll_interrupt = _test_rtc_alarm_poll_interrupt,
 };
 
 static const bsp_screen_ops_t s_screen_ops =
@@ -222,6 +289,88 @@ static const bsp_screen_ops_t s_screen_ops =
     .get_brightness = _test_get_brightness,
     .set_enabled = _test_set_enabled,
     .set_power = _test_set_enabled,
+};
+
+static bool _test_imu_available(void)
+{
+    return true;
+}
+
+static esp_err_t _test_imu_read(bsp_imu_sample_t *sample)
+{
+    assert(sample != NULL);
+    memset(sample, 0, sizeof(*sample));
+    return ESP_OK;
+}
+
+static esp_err_t _test_imu_configure(uint32_t sample_rate_hz)
+{
+    s_test.imu_sample_rate_hz = sample_rate_hz;
+    return ESP_OK;
+}
+
+static esp_err_t _test_imu_set_enabled(bool enabled)
+{
+    (void)enabled;
+    return ESP_OK;
+}
+
+static bool _test_imu_data_ready(void)
+{
+    return true;
+}
+
+static esp_err_t _test_imu_interrupt_level(bool *active)
+{
+    assert(active != NULL);
+    *active = false;
+    return ESP_OK;
+}
+
+static const bsp_imu_ops_t s_imu_ops =
+{
+    .is_available = _test_imu_available,
+    .configure = _test_imu_configure,
+    .read = _test_imu_read,
+    .set_enabled = _test_imu_set_enabled,
+    .get_data_ready = _test_imu_data_ready,
+    .get_interrupt_level = _test_imu_interrupt_level,
+};
+
+static bool _test_sd_available(void)
+{
+    return true;
+}
+
+static esp_err_t _test_sd_mount(const bsp_sd_config_t *config)
+{
+    assert(config != NULL);
+    return s_test.sd_mount_result;
+}
+
+static esp_err_t _test_sd_unmount(void)
+{
+    s_test.sd_mounted = false;
+    return ESP_OK;
+}
+
+static bool _test_sd_mounted(void)
+{
+    return s_test.sd_mounted;
+}
+
+static const char *_test_sd_mount_point(void)
+{
+    return "/sdcard";
+}
+
+static const bsp_sd_ops_t s_sd_ops =
+{
+    .is_available = _test_sd_available,
+    .mount = _test_sd_mount,
+    .unmount = _test_sd_unmount,
+    .is_mounted = _test_sd_mounted,
+    .get_mount_point = _test_sd_mount_point,
 };
 
 static const bsp_display_port_t s_display_port;
@@ -336,6 +485,16 @@ const bsp_screen_ops_t *bsp_hal_get_screen(void)
     return &s_screen_ops;
 }
 
+const bsp_imu_ops_t *bsp_hal_get_imu(void)
+{
+    return &s_imu_ops;
+}
+
+const bsp_sd_ops_t *bsp_hal_get_sd(void)
+{
+    return &s_sd_ops;
+}
+
 const bsp_display_port_t *bsp_display_get_port(void)
 {
     return &s_display_port;
@@ -344,6 +503,11 @@ const bsp_display_port_t *bsp_display_get_port(void)
 esp_err_t time_service_register_rtc_ops(const time_service_rtc_ops_t *ops)
 {
     assert(ops != NULL);
+    assert(ops->alarm_configure != NULL);
+    assert(ops->alarm_disable != NULL);
+    assert(ops->alarm_get_status != NULL);
+    assert(ops->alarm_clear != NULL);
+    assert(ops->alarm_poll_interrupt != NULL);
     return _test_result(TEST_EVENT_TIME_REGISTER_RTC);
 }
 
@@ -404,7 +568,22 @@ void app_runtime_pm_clear_power(void)
 
 void app_runtime_pm_set_wifi_participant(bool enabled)
 {
-    (void)enabled;
+    s_test.wifi_participant = enabled;
+}
+
+void app_runtime_pm_set_imu_participant(bool enabled)
+{
+    s_test.imu_participant = enabled;
+}
+
+void app_runtime_pm_set_audio_participant(bool enabled)
+{
+    s_test.audio_participant = enabled;
+}
+
+void app_runtime_pm_set_time_participant(bool enabled)
+{
+    s_test.time_participant = enabled;
 }
 
 void app_runtime_pm_detach_bsp(void)
@@ -522,6 +701,78 @@ esp_err_t power_service_deinit(void)
     return _test_result(TEST_EVENT_POWER_DEINIT);
 }
 
+esp_err_t imu_service_register_imu_ops(const imu_service_imu_ops_t *ops)
+{
+    assert(ops != NULL);
+    assert(ops->is_available != NULL);
+    assert(ops->configure != NULL);
+    assert(ops->read != NULL);
+    assert(ops->set_enabled != NULL);
+    assert(ops->poll_interrupt != NULL);
+    const esp_err_t result = _test_result(TEST_EVENT_IMU_REGISTER);
+    if (result == ESP_OK)
+    {
+        s_test.imu_ops = *ops;
+    }
+    return result;
+}
+
+esp_err_t imu_service_init(void)
+{
+    esp_err_t result = _test_result(TEST_EVENT_IMU_INIT);
+    if (result == ESP_OK && s_test.imu_ops.configure != NULL)
+    {
+        result = s_test.imu_ops.configure(100U);
+    }
+    return result;
+}
+
+esp_err_t imu_service_deinit(void)
+{
+    esp_err_t result = _test_result(TEST_EVENT_IMU_DEINIT);
+    if (result == ESP_OK && s_test.imu_ops.set_enabled != NULL)
+    {
+        result = s_test.imu_ops.set_enabled(false);
+    }
+    return result;
+}
+
+esp_err_t audio_service_init(void)
+{
+    return _test_result(TEST_EVENT_AUDIO_INIT);
+}
+
+esp_err_t audio_service_deinit(void)
+{
+    return _test_result(TEST_EVENT_AUDIO_DEINIT);
+}
+
+esp_err_t sd_storage_service_register_mount_ops(
+    const sd_storage_service_mount_ops_t *ops)
+{
+    assert(ops != NULL);
+    assert(ops->context == &s_sd_ops);
+    assert(ops->mount != NULL);
+    assert(ops->unmount != NULL);
+    assert(ops->is_mounted != NULL);
+    esp_err_t result = _test_result(TEST_EVENT_SD_REGISTER);
+    if (result == ESP_OK)
+    {
+        s_test.sd_mount_ops = *ops;
+    }
+    return result;
+}
+
+esp_err_t sd_storage_service_init(void)
+{
+    return _test_result(TEST_EVENT_SD_INIT);
+}
+
+esp_err_t sd_storage_service_deinit(void)
+{
+    return _test_result(TEST_EVENT_SD_DEINIT);
+}
+
 esp_err_t network_runtime_init(void)
 {
     return _test_result(TEST_EVENT_NETWORK_INIT);
@@ -585,6 +836,11 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_REGISTER_WAKE_REQUESTER,
         TEST_EVENT_PM_PREPARE_POWER,
         TEST_EVENT_POWER_INIT,
+        TEST_EVENT_IMU_REGISTER,
+        TEST_EVENT_IMU_INIT,
+        TEST_EVENT_AUDIO_INIT,
+        TEST_EVENT_SD_REGISTER,
+        TEST_EVENT_SD_INIT,
         TEST_EVENT_BUILTIN_DISCOVER,
         TEST_EVENT_APP_NAVIGATE,
         TEST_EVENT_DISPLAY_COMMIT,
@@ -596,6 +852,9 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_WIFI_DEINIT,
+        TEST_EVENT_SD_DEINIT,
+        TEST_EVENT_AUDIO_DEINIT,
+        TEST_EVENT_IMU_DEINIT,
         TEST_EVENT_POWER_DEINIT,
         TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
         TEST_EVENT_APP_MANAGER_DEINIT,
@@ -610,11 +869,20 @@ static void _test_successful_lifecycle(void)
     _test_reset();
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
+    assert(s_test.wifi_participant);
+    assert(s_test.imu_participant);
+    assert(s_test.audio_participant);
+    assert(s_test.time_participant);
+    assert(s_test.imu_sample_rate_hz == 100U);
     size_t event_count = s_test.event_count;
     assert(app_runtime_start() == ESP_OK);
     assert(s_test.event_count == event_count);
     assert(app_runtime_stop() == ESP_OK);
     assert(!app_runtime_is_running());
+    assert(!s_test.wifi_participant);
+    assert(!s_test.imu_participant);
+    assert(!s_test.audio_participant);
+    assert(!s_test.time_participant);
     _test_expect_events(expected, sizeof(expected) / sizeof(expected[0]));
     event_count = s_test.event_count;
     assert(app_runtime_stop() == ESP_OK);
@@ -640,6 +908,8 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_REGISTER_WAKE_REQUESTER,
         TEST_EVENT_PM_PREPARE_POWER,
         TEST_EVENT_POWER_INIT,
+        TEST_EVENT_IMU_REGISTER,
+        TEST_EVENT_SD_REGISTER,
         TEST_EVENT_BLE_INIT,
         TEST_EVENT_APP_NAVIGATE,
         TEST_EVENT_DISPLAY_COMMIT,
@@ -695,6 +965,9 @@ static void _test_every_cleanup_failure_is_retryable(void)
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_WIFI_DEINIT,
+        TEST_EVENT_SD_DEINIT,
+        TEST_EVENT_AUDIO_DEINIT,
+        TEST_EVENT_IMU_DEINIT,
         TEST_EVENT_POWER_DEINIT,
         TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
         TEST_EVENT_APP_MANAGER_DEINIT,
@@ -726,6 +999,78 @@ static void _test_every_cleanup_failure_is_retryable(void)
             assert(!_test_event_seen(TEST_EVENT_SYSTEM_PM_CANCEL));
         }
     }
+}
+
+static void _test_degradable_hardware_failures(void)
+{
+    static const struct
+    {
+        test_event_t init_event;
+        test_event_t deinit_event;
+    } cases[] =
+    {
+        {TEST_EVENT_IMU_INIT, TEST_EVENT_IMU_DEINIT},
+        {TEST_EVENT_AUDIO_INIT, TEST_EVENT_AUDIO_DEINIT},
+        {TEST_EVENT_SD_INIT, TEST_EVENT_SD_DEINIT},
+    };
+
+    for (size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index)
+    {
+        _test_reset();
+        s_test.failure_event = cases[index].init_event;
+        assert(app_runtime_start() == ESP_OK);
+        assert(app_runtime_is_running());
+        assert(_test_event_seen(cases[index].deinit_event));
+
+        _test_clear_events();
+        s_test.failure_event = TEST_EVENT_NONE;
+        assert(app_runtime_stop() == ESP_OK);
+        assert(!_test_event_seen(cases[index].deinit_event));
+    }
+}
+
+static void _test_imu_init_cleanup_retry_keeps_bridge(void)
+{
+    _test_reset();
+    s_test.failure_event = TEST_EVENT_IMU_INIT;
+    s_test.secondary_failure_event = TEST_EVENT_IMU_DEINIT;
+    assert(app_runtime_start() == ESP_FAIL);
+    assert(!app_runtime_is_running());
+    assert(_test_event_seen(TEST_EVENT_IMU_DEINIT));
+
+    _test_clear_events();
+    s_test.secondary_failure_event = TEST_EVENT_NONE;
+    assert(app_runtime_stop() == ESP_OK);
+    assert(!app_runtime_is_running());
+    assert(_test_event_seen(TEST_EVENT_IMU_DEINIT));
+}
+
+static void _test_sd_mount_error_exposes_cleanup_handle(void)
+{
+    _test_reset();
+    assert(app_runtime_start() == ESP_OK);
+    assert(s_test.sd_mount_ops.mount != NULL);
+    assert(s_test.sd_mount_ops.unmount != NULL);
+    assert(s_test.sd_mount_ops.is_mounted != NULL);
+
+    const sd_storage_service_config_t config =
+    {
+        .mount_path = "/sdcard",
+        .format_if_mount_failed = false,
+        .max_files = 5,
+        .allocation_unit_size = 16U * 1024U,
+    };
+    s_test.sd_mount_result = ESP_FAIL;
+    s_test.sd_mounted = false;
+    void *handle = NULL;
+    assert(s_test.sd_mount_ops.mount(s_test.sd_mount_ops.context,
+                                     &config, &handle) == ESP_FAIL);
+    assert(handle == &s_sd_ops);
+    assert(!s_test.sd_mount_ops.is_mounted(s_test.sd_mount_ops.context,
+                                           handle));
+    assert(s_test.sd_mount_ops.unmount(s_test.sd_mount_ops.context,
+                                       handle) == ESP_OK);
+    assert(app_runtime_stop() == ESP_OK);
 }
 
 static void _test_degradable_connectivity_failures(void)
@@ -767,6 +1112,9 @@ int main(void)
     _test_cleanup_retry_before_restart();
     _test_every_cleanup_failure_is_retryable();
     _test_degradable_connectivity_failures();
+    _test_degradable_hardware_failures();
+    _test_imu_init_cleanup_retry_keeps_bridge();
+    _test_sd_mount_error_exposes_cleanup_handle();
     _test_wifi_cleanup_pending_is_fatal();
     return 0;
 }

@@ -16,6 +16,9 @@ idf_component_register(
         time_service
         system_pm
         power_service
+        imu_service
+        audio_service
+        sd_storage_service
         wifi_service
         ble_service
         app_core

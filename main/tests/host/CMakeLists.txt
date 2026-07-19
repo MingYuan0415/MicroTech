@@ -72,10 +72,13 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/app_manager/app_theme/include
     ../../../layers/bsp/include
     ../../../layers/middleware/components/ble_service/include
+    ../../../layers/middleware/components/audio_service/include
     ../../../layers/middleware/components/event_bus/include
     ../../../layers/middleware/components/mt_log/include
     ../../../layers/middleware/components/nv_storage/include
     ../../../layers/middleware/components/power_service/include
+    ../../../layers/middleware/components/imu_service/include
+    ../../../layers/middleware/components/sd_storage_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
     ../../../layers/middleware/components/wifi_service/include
@@ -95,9 +98,12 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/app_manager/app_theme/include
     ../../../layers/bsp/include
     ../../../layers/middleware/components/event_bus/include
+    ../../../layers/middleware/components/audio_service/include
+    ../../../layers/middleware/components/imu_service/include
     ../../../layers/middleware/components/mt_log/include
     ../../../layers/middleware/components/power_service/include
     ../../../layers/middleware/components/system_pm/include
+    ../../../layers/middleware/components/time_service/include
     ../../../layers/middleware/components/wifi_service/include
 )
 target_link_libraries(app_runtime_pm_test PRIVATE Threads::Threads)

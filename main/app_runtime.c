@@ -7,13 +7,16 @@
 
 #include "app_manager.h"
 #include "app_manager_config.h"
+#include "audio_service.h"
 #include "ble_service.h"
 #include "bsp_hal.h"
 #include "event_bus.h"
 #include "fs_storage/fs_storage.h"
+#include "imu_service.h"
 #include "network_runtime.h"
 #include "nv_storage.h"
 #include "power_service.h"
+#include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
 #include "wifi_service.h"
@@ -44,6 +47,9 @@ typedef struct app_runtime_ownership
     bool ui_dispatch_registered;
     bool wake_requester_registered;
     bool power_attempted;
+    bool imu_attempted;
+    bool audio_attempted;
+    bool sd_attempted;
     bool wifi_owned;
     bool ble_attempted;
     app_manager_ui_dispatch_fn ui_dispatch;
@@ -58,6 +64,9 @@ typedef struct app_runtime_start_context
 
 static atomic_int s_runtime_state = ATOMIC_VAR_INIT(APP_RUNTIME_STOPPED);
 static app_runtime_ownership_t s_ownership;
+static const bsp_rtc_ops_t *s_runtime_rtc;
+static const bsp_imu_ops_t *s_runtime_imu;
+static const bsp_sd_ops_t *s_runtime_sd;
 
 static void _app_runtime_record_first_error(esp_err_t *first_error,
         esp_err_t result)
@@ -68,6 +77,166 @@ static void _app_runtime_record_first_error(esp_err_t *first_error,
     }
 }
 
+static esp_err_t _app_runtime_rtc_alarm_configure(
+    const time_service_alarm_config_t *config)
+{
+    if (config == NULL || s_runtime_rtc == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const bsp_rtc_alarm_config_t board_config =
+    {
+        .match_second = config->match_second,
+        .second = config->second,
+        .match_minute = config->match_minute,
+        .minute = config->minute,
+        .match_hour = config->match_hour,
+        .hour = config->hour,
+        .match_day = config->match_day,
+        .day = config->day,
+        .match_weekday = config->match_weekday,
+        .weekday = config->weekday,
+    };
+    return s_runtime_rtc->alarm_configure(&board_config);
+}
+
+static esp_err_t _app_runtime_rtc_alarm_disable(void)
+{
+    return s_runtime_rtc == NULL ? ESP_ERR_INVALID_STATE :
+           s_runtime_rtc->alarm_disable();
+}
+
+static esp_err_t _app_runtime_rtc_alarm_get_status(
+    time_service_alarm_status_t *status)
+{
+    if (status == NULL || s_runtime_rtc == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    bsp_rtc_alarm_status_t board_status;
+    esp_err_t result = s_runtime_rtc->alarm_get_status(&board_status);
+    if (result == ESP_OK)
+    {
+        *status = (time_service_alarm_status_t)
+        {
+            .enabled = board_status.enabled,
+            .pending = board_status.pending,
+            .interrupt_active = false,
+        };
+    }
+    return result;
+}
+
+static esp_err_t _app_runtime_rtc_alarm_clear(void)
+{
+    return s_runtime_rtc == NULL ? ESP_ERR_INVALID_STATE :
+           s_runtime_rtc->alarm_clear();
+}
+
+static esp_err_t _app_runtime_rtc_alarm_poll_interrupt(bool *active)
+{
+    if (active == NULL || s_runtime_rtc == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return s_runtime_rtc->alarm_poll_interrupt(active);
+}
+
+static bool _app_runtime_imu_is_available(void)
+{
+    return s_runtime_imu != NULL && s_runtime_imu->is_available();
+}
+
+static esp_err_t _app_runtime_imu_configure(uint32_t sample_rate_hz)
+{
+    return s_runtime_imu == NULL ? ESP_ERR_INVALID_STATE :
+           s_runtime_imu->configure(sample_rate_hz);
+}
+
+static esp_err_t _app_runtime_imu_read(imu_service_sample_t *sample)
+{
+    if (sample == NULL || s_runtime_imu == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    bsp_imu_sample_t board_sample = {0};
+    esp_err_t result = s_runtime_imu->read(&board_sample);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+
+    sample->acceleration_mps2.x = board_sample.accel_mps2[0];
+    sample->acceleration_mps2.y = board_sample.accel_mps2[1];
+    sample->acceleration_mps2.z = board_sample.accel_mps2[2];
+    sample->angular_velocity_dps.x = board_sample.gyro_dps[0];
+    sample->angular_velocity_dps.y = board_sample.gyro_dps[1];
+    sample->angular_velocity_dps.z = board_sample.gyro_dps[2];
+    sample->temperature_c = board_sample.temperature_c;
+    sample->sensor_timestamp = board_sample.sensor_timestamp;
+    sample->status_int = board_sample.status_int;
+    sample->status0 = board_sample.status0;
+    sample->status1 = board_sample.status1;
+    sample->data_ready = board_sample.data_ready;
+    sample->interrupt_active = board_sample.interrupt_active;
+    sample->interrupt_level_valid = board_sample.interrupt_level_valid;
+    return ESP_OK;
+}
+
+static esp_err_t _app_runtime_imu_set_enabled(bool enabled)
+{
+    return s_runtime_imu == NULL ? ESP_ERR_INVALID_STATE :
+           s_runtime_imu->set_enabled(enabled);
+}
+
+static esp_err_t _app_runtime_imu_poll_interrupt(bool *active)
+{
+    if (active == NULL || s_runtime_imu == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return s_runtime_imu->get_interrupt_level(active);
+}
+
+static esp_err_t _app_runtime_sd_mount(
+    void *context, const sd_storage_service_config_t *config,
+    void **out_handle)
+{
+    const bsp_sd_ops_t *ops = context;
+    if (ops == NULL || config == NULL || out_handle == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const bsp_sd_config_t board_config =
+    {
+        .mount_point = config->mount_path,
+        .format_if_mount_failed = config->format_if_mount_failed,
+        .max_files = config->max_files,
+        .allocation_unit_size = config->allocation_unit_size,
+    };
+    *out_handle = (void *)ops;
+    return ops->mount(&board_config);
+}
+
+static esp_err_t _app_runtime_sd_unmount(void *context, void *handle)
+{
+    const bsp_sd_ops_t *ops = context;
+    if (ops == NULL || handle != ops)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ops->unmount();
+}
+
+static bool _app_runtime_sd_is_mounted(void *context, void *handle)
+{
+    const bsp_sd_ops_t *ops = context;
+    return ops != NULL && handle == ops && ops->is_mounted();
+}
+
 static bool _app_runtime_has_owned_resources(void)
 {
     return s_ownership.nv_attempted || s_ownership.fs_attempted ||
@@ -76,7 +245,9 @@ static bool _app_runtime_has_owned_resources(void)
            s_ownership.app_manager_attempted ||
            s_ownership.ui_dispatch_registered ||
            s_ownership.wake_requester_registered ||
-           s_ownership.power_attempted || s_ownership.wifi_owned ||
+           s_ownership.power_attempted || s_ownership.imu_attempted ||
+           s_ownership.audio_attempted || s_ownership.sd_attempted ||
+           s_ownership.wifi_owned ||
            s_ownership.ble_attempted;
 }
 
@@ -170,6 +341,37 @@ static esp_err_t _app_runtime_stop_active_services(void)
         s_ownership.wifi_owned = false;
         app_runtime_pm_set_wifi_participant(false);
     }
+    if (s_ownership.sd_attempted)
+    {
+        result = sd_storage_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.sd_attempted = false;
+        s_runtime_sd = NULL;
+    }
+    if (s_ownership.audio_attempted)
+    {
+        result = audio_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.audio_attempted = false;
+        app_runtime_pm_set_audio_participant(false);
+    }
+    if (s_ownership.imu_attempted)
+    {
+        result = imu_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.imu_attempted = false;
+        s_runtime_imu = NULL;
+        app_runtime_pm_set_imu_participant(false);
+    }
     if (s_ownership.power_attempted)
     {
         result = power_service_deinit();
@@ -235,6 +437,8 @@ static esp_err_t _app_runtime_stop_platform_services(void)
             return result;
         }
         s_ownership.time_attempted = false;
+        s_runtime_rtc = NULL;
+        app_runtime_pm_set_time_participant(false);
     }
     return result;
 }
@@ -369,15 +573,22 @@ static esp_err_t _app_runtime_start_platform(
             result = ESP_ERR_INVALID_STATE;
             return result;
         }
+        s_runtime_rtc = rtc;
         const time_service_rtc_ops_t rtc_ops =
         {
             .is_available = rtc->is_available,
             .read = rtc->read,
             .write = rtc->write,
+            .alarm_configure = _app_runtime_rtc_alarm_configure,
+            .alarm_disable = _app_runtime_rtc_alarm_disable,
+            .alarm_get_status = _app_runtime_rtc_alarm_get_status,
+            .alarm_clear = _app_runtime_rtc_alarm_clear,
+            .alarm_poll_interrupt = _app_runtime_rtc_alarm_poll_interrupt,
         };
         result = time_service_register_rtc_ops(&rtc_ops);
         if (result != ESP_OK)
         {
+            s_runtime_rtc = NULL;
             return result;
         }
     }
@@ -390,6 +601,7 @@ static esp_err_t _app_runtime_start_platform(
     {
         return result;
     }
+    app_runtime_pm_set_time_participant(true);
 
     context->screen = bsp_hal_get_screen();
     context->display = bsp_display_get_port();
@@ -492,7 +704,107 @@ static esp_err_t _app_runtime_start_app_services(
         return result;
     }
     result = power_service_init();
-    return result;
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+
+    if ((context->capabilities & BSP_CAPABILITY_IMU) != 0)
+    {
+        s_runtime_imu = bsp_hal_get_imu();
+        if (s_runtime_imu == NULL)
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
+        const imu_service_imu_ops_t imu_ops =
+        {
+            .is_available = _app_runtime_imu_is_available,
+            .configure = _app_runtime_imu_configure,
+            .read = _app_runtime_imu_read,
+            .set_enabled = _app_runtime_imu_set_enabled,
+            .poll_interrupt = _app_runtime_imu_poll_interrupt,
+        };
+        result = imu_service_register_imu_ops(&imu_ops);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.imu_attempted = true;
+        result = imu_service_init();
+        if (result != ESP_OK)
+        {
+            const esp_err_t cleanup_result = imu_service_deinit();
+            s_ownership.imu_attempted = cleanup_result != ESP_OK;
+            if (cleanup_result == ESP_OK)
+            {
+                s_runtime_imu = NULL;
+            }
+            if (cleanup_result != ESP_OK)
+            {
+                return cleanup_result;
+            }
+            LOG_W("IMU service unavailable: %s", esp_err_to_name(result));
+        }
+        else
+        {
+            app_runtime_pm_set_imu_participant(true);
+        }
+    }
+
+    if ((context->capabilities & BSP_CAPABILITY_AUDIO) != 0)
+    {
+        s_ownership.audio_attempted = true;
+        result = audio_service_init();
+        if (result != ESP_OK)
+        {
+            const esp_err_t cleanup_result = audio_service_deinit();
+            s_ownership.audio_attempted = cleanup_result != ESP_OK;
+            if (cleanup_result != ESP_OK)
+            {
+                return cleanup_result;
+            }
+            LOG_W("audio service unavailable: %s", esp_err_to_name(result));
+        }
+        else
+        {
+            app_runtime_pm_set_audio_participant(true);
+        }
+    }
+
+    if ((context->capabilities & BSP_CAPABILITY_SD) != 0)
+    {
+        s_runtime_sd = bsp_hal_get_sd();
+        if (s_runtime_sd == NULL)
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
+        const sd_storage_service_mount_ops_t sd_ops =
+        {
+            .context = (void *)s_runtime_sd,
+            .mount = _app_runtime_sd_mount,
+            .unmount = _app_runtime_sd_unmount,
+            .is_mounted = _app_runtime_sd_is_mounted,
+        };
+        result = sd_storage_service_register_mount_ops(&sd_ops);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.sd_attempted = true;
+        result = sd_storage_service_init();
+        if (result != ESP_OK)
+        {
+            const esp_err_t cleanup_result = sd_storage_service_deinit();
+            s_ownership.sd_attempted = cleanup_result != ESP_OK;
+            s_runtime_sd = NULL;
+            if (cleanup_result != ESP_OK)
+            {
+                return cleanup_result;
+            }
+            LOG_W("SD card unavailable: %s", esp_err_to_name(result));
+        }
+    }
+    return ESP_OK;
 }
 
 static esp_err_t _app_runtime_start_connectivity(void)
@@ -598,6 +910,9 @@ esp_err_t app_runtime_start(void)
     atomic_store(&s_runtime_state, APP_RUNTIME_STARTING);
     app_runtime_pm_close_admission();
     memset(&s_ownership, 0, sizeof(s_ownership));
+    s_runtime_rtc = NULL;
+    s_runtime_imu = NULL;
+    s_runtime_sd = NULL;
     app_runtime_pm_reset();
 
     app_runtime_start_context_t context = {0};

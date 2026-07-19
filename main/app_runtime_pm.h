@@ -71,6 +71,15 @@ void app_runtime_pm_clear_power(void);
  */
 void app_runtime_pm_set_wifi_participant(bool enabled);
 
+/** @brief Set whether the IMU worker participates in sleep transactions. */
+void app_runtime_pm_set_imu_participant(bool enabled);
+
+/** @brief Set whether audio streaming participates in sleep transactions. */
+void app_runtime_pm_set_audio_participant(bool enabled);
+
+/** @brief Set whether RTC polling participates in sleep transactions. */
+void app_runtime_pm_set_time_participant(bool enabled);
+
 /**
  * @brief Detach BSP-backed input state after BSP shutdown.
  */
