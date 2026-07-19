@@ -45,9 +45,10 @@ typedef enum
     TEST_EVENT_WIFI_INIT,
     TEST_EVENT_BLE_INIT,
     TEST_EVENT_BUILTIN_DISCOVER,
-    TEST_EVENT_APP_RUN,
+    TEST_EVENT_APP_NAVIGATE,
     TEST_EVENT_DISPLAY_COMMIT,
     TEST_EVENT_SCREEN_COMMIT,
+    TEST_EVENT_STARTUP_COMMIT,
     TEST_EVENT_SYSTEM_PM_CANCEL,
     TEST_EVENT_BLE_DEINIT,
     TEST_EVENT_WIFI_DEINIT,
@@ -76,14 +77,24 @@ typedef struct test_runtime
 
 static test_runtime_t s_test;
 
-static esp_err_t _test_app_entry(void);
-
-static const app_builtin_app_desc_t s_required_apps[] =
+static const app_manager_app_desc_t s_required_apps[] =
 {
-    {.id = APP_MANAGER_ID_HOME, .entry = _test_app_entry},
-    {.id = APP_MANAGER_ID_MENU, .entry = _test_app_entry},
-    {.id = APP_MANAGER_ID_SETTINGS, .entry = _test_app_entry},
-    {.id = APP_MANAGER_ID_SETUP, .entry = _test_app_entry},
+    {
+        .name = "home", .id = APP_MANAGER_ID_HOME, .root_page_id = "root",
+        .type = APP_MANAGER_APP_BUILTIN,
+    },
+    {
+        .name = "menu", .id = APP_MANAGER_ID_MENU, .root_page_id = "root",
+        .type = APP_MANAGER_APP_BUILTIN,
+    },
+    {
+        .name = "settings", .id = APP_MANAGER_ID_SETTINGS,
+        .root_page_id = "root", .type = APP_MANAGER_APP_BUILTIN,
+    },
+    {
+        .name = "setup", .id = APP_MANAGER_ID_SETUP, .root_page_id = "root",
+        .type = APP_MANAGER_APP_BUILTIN,
+    },
 };
 
 static void _test_record(test_event_t event)
@@ -135,11 +146,6 @@ static void _test_expect_events(const test_event_t *expected, size_t count)
     {
         assert(s_test.events[index] == expected[index]);
     }
-}
-
-static esp_err_t _test_app_entry(void)
-{
-    return ESP_OK;
 }
 
 static bool _test_rtc_available(void)
@@ -424,6 +430,19 @@ esp_err_t system_pm_cancel_standby(void)
 esp_err_t app_manager_init(const struct app_manager_config *config)
 {
     assert(config != NULL);
+    const app_manager_config_t *app_config = config;
+    assert(app_config->max_resident_apps == APP_MANAGER_MAX_RESIDENT_APPS);
+    assert(app_config->resident_policy == APP_MANAGER_RESIDENT_REJECT);
+    assert(app_config->app_forward_transition.effect ==
+           APP_MANAGER_TRANSITION_FADE);
+    assert(app_config->app_back_transition.effect ==
+           APP_MANAGER_TRANSITION_FADE);
+    assert(app_config->page_forward_transition.effect ==
+           APP_MANAGER_TRANSITION_PUSH_LEFT);
+    assert(app_config->page_back_transition.effect ==
+           APP_MANAGER_TRANSITION_PUSH_RIGHT);
+    assert(app_config->app_forward_transition.duration_ms ==
+           APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS);
     return _test_result(TEST_EVENT_APP_MANAGER_INIT);
 }
 
@@ -453,29 +472,44 @@ int app_manager_builtin_discover(void)
     return (int)(sizeof(s_required_apps) / sizeof(s_required_apps[0]));
 }
 
-const app_builtin_app_desc_t *app_manager_builtin_list_open(void)
+const app_manager_app_desc_t *app_manager_builtin_list_open(void)
 {
     return s_test.required_apps_present ? &s_required_apps[0] : NULL;
 }
 
-const app_builtin_app_desc_t *app_manager_builtin_list_get_next(
-    const app_builtin_app_desc_t *previous)
+const app_manager_app_desc_t *app_manager_builtin_list_get_next(
+    const app_manager_app_desc_t *previous)
 {
-    const app_builtin_app_desc_t *next = previous + 1;
-    const app_builtin_app_desc_t *limit =
+    const app_manager_app_desc_t *next = previous + 1;
+    const app_manager_app_desc_t *limit =
         &s_required_apps[sizeof(s_required_apps) / sizeof(s_required_apps[0])];
     return next < limit ? next : NULL;
 }
 
-esp_err_t app_manager_run(const char *app_id)
+esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
+                               uint32_t timeout_ms)
 {
-    assert(strcmp(app_id, APP_MANAGER_ID_HOME) == 0);
-    return _test_result(TEST_EVENT_APP_RUN);
+    assert(request != NULL);
+    assert(request->operation == APP_MANAGER_NAV_OP_RUN);
+    assert(strcmp(request->app_id, APP_MANAGER_ID_HOME) == 0);
+    assert(request->transition.effect == APP_MANAGER_TRANSITION_NONE);
+    assert(timeout_ms == UINT32_MAX);
+    return _test_result(TEST_EVENT_APP_NAVIGATE);
 }
 
 esp_err_t app_manager_display_commit_initial(void)
 {
-    return _test_result(TEST_EVENT_DISPLAY_COMMIT);
+    esp_err_t result = _test_result(TEST_EVENT_DISPLAY_COMMIT);
+    if (result == ESP_OK)
+    {
+        result = _test_result(TEST_EVENT_SCREEN_COMMIT);
+    }
+    return result;
+}
+
+esp_err_t app_manager_startup_commit(void)
+{
+    return _test_result(TEST_EVENT_STARTUP_COMMIT);
 }
 
 esp_err_t power_service_init(void)
@@ -551,13 +585,14 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_REGISTER_WAKE_REQUESTER,
         TEST_EVENT_PM_PREPARE_POWER,
         TEST_EVENT_POWER_INIT,
+        TEST_EVENT_BUILTIN_DISCOVER,
+        TEST_EVENT_APP_NAVIGATE,
+        TEST_EVENT_DISPLAY_COMMIT,
+        TEST_EVENT_SCREEN_COMMIT,
         TEST_EVENT_NETWORK_INIT,
         TEST_EVENT_WIFI_INIT,
         TEST_EVENT_BLE_INIT,
-        TEST_EVENT_BUILTIN_DISCOVER,
-        TEST_EVENT_APP_RUN,
-        TEST_EVENT_DISPLAY_COMMIT,
-        TEST_EVENT_SCREEN_COMMIT,
+        TEST_EVENT_STARTUP_COMMIT,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_WIFI_DEINIT,
@@ -606,9 +641,10 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_PM_PREPARE_POWER,
         TEST_EVENT_POWER_INIT,
         TEST_EVENT_BLE_INIT,
-        TEST_EVENT_APP_RUN,
+        TEST_EVENT_APP_NAVIGATE,
         TEST_EVENT_DISPLAY_COMMIT,
         TEST_EVENT_SCREEN_COMMIT,
+        TEST_EVENT_STARTUP_COMMIT,
     };
 
     for (size_t index = 0;

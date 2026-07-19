@@ -27,8 +27,16 @@ bool host_lv_click_back(void);
  * @return true when visible; false otherwise.
  */
 bool host_lv_has_text(const char *text);
+/**
+ * @brief Report whether the pending transition target contains exact text.
+ * @param text is the label text to match.
+ * @return true when the target Screen contains the label; false otherwise.
+ */
+bool host_lv_transition_target_has_text(const char *text);
 /** @brief Return the number of live LVGL objects excluding the root screen. */
 size_t host_lv_live_object_count(void);
+/** @brief Return the number of live dynamically created LVGL screens. */
+size_t host_lv_live_screen_count(void);
 /** @brief Return the number of live LVGL timers. */
 size_t host_lv_live_timer_count(void);
 

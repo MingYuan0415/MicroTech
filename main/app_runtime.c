@@ -91,14 +91,14 @@ static bool _app_runtime_required_apps_present(void)
     };
     bool found[sizeof(required_ids) / sizeof(required_ids[0])] = {false};
     bool all_found = true;
-    const app_builtin_app_desc_t *app = app_manager_builtin_list_open();
+    const app_manager_app_desc_t *app = app_manager_builtin_list_open();
     while (app != NULL)
     {
         for (size_t i = 0; i < sizeof(required_ids) / sizeof(required_ids[0]); ++i)
         {
             if (app->id != NULL && strcmp(app->id, required_ids[i]) == 0)
             {
-                found[i] = app->entry != NULL;
+                found[i] = app->root_page_id != NULL;
             }
         }
         app = app_manager_builtin_list_get_next(app);
@@ -449,6 +449,24 @@ static esp_err_t _app_runtime_start_app_services(
         .input_ops = app_runtime_pm_get_input_ops(),
         .standby_ops = app_runtime_pm_get_standby_ops(),
         .page_memory_bytes = 32U * 1024U,
+        .max_resident_apps = APP_MANAGER_MAX_RESIDENT_APPS,
+        .resident_policy = APP_MANAGER_RESIDENT_REJECT,
+        .app_forward_transition = {
+            .effect = APP_MANAGER_TRANSITION_FADE,
+            .duration_ms = APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS,
+        },
+        .app_back_transition = {
+            .effect = APP_MANAGER_TRANSITION_FADE,
+            .duration_ms = APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS,
+        },
+        .page_forward_transition = {
+            .effect = APP_MANAGER_TRANSITION_PUSH_LEFT,
+            .duration_ms = APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS,
+        },
+        .page_back_transition = {
+            .effect = APP_MANAGER_TRANSITION_PUSH_RIGHT,
+            .duration_ms = APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS,
+        },
     };
 
     esp_err_t result = ESP_OK;
@@ -529,8 +547,7 @@ exit:
     return result;
 }
 
-static esp_err_t _app_runtime_start_initial_app(
-    const app_runtime_start_context_t *context)
+static esp_err_t _app_runtime_start_initial_app(void)
 {
     esp_err_t result = ESP_OK;
     const int app_count = app_manager_builtin_discover();
@@ -541,7 +558,15 @@ static esp_err_t _app_runtime_start_initial_app(
         goto exit;
     }
 
-    result = app_manager_run(APP_MANAGER_ID_HOME);
+    const app_manager_nav_request_t request =
+    {
+        .operation = APP_MANAGER_NAV_OP_RUN,
+        .app_id = APP_MANAGER_ID_HOME,
+        .transition = {
+            .effect = APP_MANAGER_TRANSITION_NONE,
+        },
+    };
+    result = app_manager_navigate(&request, UINT32_MAX);
     if (result != ESP_OK)
     {
         goto exit;
@@ -554,7 +579,6 @@ static esp_err_t _app_runtime_start_initial_app(
     {
         goto exit;
     }
-    result = context->screen->resume_commit();
 
 exit:
     return result;
@@ -618,13 +642,19 @@ esp_err_t app_runtime_start(void)
         goto failed;
     }
 
+    result = _app_runtime_start_initial_app();
+    if (result != ESP_OK)
+    {
+        goto failed;
+    }
+
     result = _app_runtime_start_connectivity();
     if (result != ESP_OK)
     {
         goto failed;
     }
 
-    result = _app_runtime_start_initial_app(&context);
+    result = app_manager_startup_commit();
     if (result != ESP_OK)
     {
         goto failed;

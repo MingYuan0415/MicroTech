@@ -1,8 +1,11 @@
 #include "apps_integration_runtime.h"
 
 #include "app_manager.h"
+#include "app_manager_builtin.h"
 #include "app_manager_lifecycle.h"
 #include "app_manager_mailbox.h"
+#include "app_manager_navigation.h"
+#include "app_manager_presentation.h"
 #include "app_theme.h"
 #include "event_bus.h"
 #include "host_wifi_service.h"
@@ -18,13 +21,15 @@
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
 #define BUILTIN_APP_COUNT 4U
-#define LIFECYCLE_OBSERVATION_CAPACITY 256U
+#define LIFECYCLE_OBSERVATION_CAPACITY 1024U
 #define LIFECYCLE_ID_BYTES 32U
 
 EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
 
-extern const app_builtin_app_desc_t _app_builtin_apps_start[];
-extern const app_builtin_app_desc_t _app_builtin_apps_end[];
+extern const app_manager_app_desc_t _app_manager_apps_start[];
+extern const app_manager_app_desc_t _app_manager_apps_end[];
+extern const app_manager_page_desc_t _app_manager_pages_start[];
+extern const app_manager_page_desc_t _app_manager_pages_end[];
 
 static atomic_uint s_noop_count;
 static atomic_uint s_queued_scan_probe_count;
@@ -42,8 +47,44 @@ typedef struct lifecycle_observation
 typedef struct lv_resource_counts
 {
     size_t objects;
+    size_t screens;
     size_t timers;
 } lv_resource_counts_t;
+
+typedef struct first_frame_probe_config
+{
+    const char *app_id;
+    const char *page_id;
+    const char *expected_text;
+    const char *forbidden_text;
+} first_frame_probe_config_t;
+
+typedef struct first_frame_probe
+{
+    bool armed;
+    char app_id[LIFECYCLE_ID_BYTES];
+    char page_id[LIFECYCLE_ID_BYTES];
+    const char *expected_text;
+    const char *forbidden_text;
+    lv_obj_t *screen;
+    uint64_t sequence;
+    uint64_t mount_after_sequence;
+    uint64_t resume_after_sequence;
+    uint64_t load_start_sequence;
+    uint64_t loaded_sequence;
+    uint64_t completion_sequence;
+    size_t mount_after_count;
+    size_t resume_after_count;
+    size_t load_start_count;
+    size_t loaded_count;
+    size_t completion_count;
+    size_t load_start_timers;
+    esp_err_t completion_result;
+    bool load_start_active_target;
+    bool loaded_active_target;
+    bool expected_text_at_load_start;
+    bool forbidden_text_at_load_start;
+} first_frame_probe_t;
 
 typedef struct queued_scan_pause_request
 {
@@ -54,6 +95,95 @@ typedef struct queued_scan_pause_request
 static lifecycle_observation_t
 s_lifecycle_observations[LIFECYCLE_OBSERVATION_CAPACITY];
 static size_t s_lifecycle_observation_count;
+static first_frame_probe_t s_first_frame_probe;
+
+static uint64_t _first_frame_next_sequence(void)
+{
+    return ++s_first_frame_probe.sequence;
+}
+
+static bool _first_frame_target_matches(const char *app_id,
+                                        const char *page_id)
+{
+    return s_first_frame_probe.armed && strcmp(s_first_frame_probe.app_id,
+            app_id) == 0 && strcmp(s_first_frame_probe.page_id, page_id) == 0;
+}
+
+static void _first_frame_screen_event(lv_event_t *event)
+{
+    lv_obj_t *screen = lv_event_get_target_obj(event);
+    assert(s_first_frame_probe.armed);
+    assert(screen == s_first_frame_probe.screen);
+
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_SCREEN_LOAD_START)
+    {
+        ++s_first_frame_probe.load_start_count;
+        if (s_first_frame_probe.load_start_sequence == 0U)
+        {
+            s_first_frame_probe.load_start_sequence =
+                _first_frame_next_sequence();
+        }
+        s_first_frame_probe.load_start_active_target =
+            lv_screen_active() == screen;
+        s_first_frame_probe.load_start_timers = host_lv_live_timer_count();
+        s_first_frame_probe.expected_text_at_load_start =
+            host_lv_transition_target_has_text(
+                s_first_frame_probe.expected_text);
+        s_first_frame_probe.forbidden_text_at_load_start =
+            host_lv_transition_target_has_text(
+                s_first_frame_probe.forbidden_text);
+    }
+    else if (code == LV_EVENT_SCREEN_LOADED)
+    {
+        ++s_first_frame_probe.loaded_count;
+        if (s_first_frame_probe.loaded_sequence == 0U)
+        {
+            s_first_frame_probe.loaded_sequence =
+                _first_frame_next_sequence();
+        }
+        s_first_frame_probe.loaded_active_target = lv_screen_active() == screen;
+    }
+}
+
+static void _first_frame_observe_lifecycle(
+    const char *app_id, const char *page_id,
+    app_manager_msg_type_t message,
+    app_manager_lifecycle_observer_phase_t phase)
+{
+    if (!_first_frame_target_matches(app_id, page_id) ||
+            phase != APP_MANAGER_LIFECYCLE_OBSERVER_AFTER)
+    {
+        return;
+    }
+
+    if (message == APP_MANAGER_MSG_ONMOUNT)
+    {
+        ++s_first_frame_probe.mount_after_count;
+        if (s_first_frame_probe.mount_after_sequence == 0U)
+        {
+            s_first_frame_probe.mount_after_sequence =
+                _first_frame_next_sequence();
+            s_first_frame_probe.screen = app_manager_this_page_screen();
+            assert(s_first_frame_probe.screen != NULL);
+            assert(lv_obj_add_event_cb(
+                       s_first_frame_probe.screen, _first_frame_screen_event,
+                       LV_EVENT_SCREEN_LOAD_START, NULL) != NULL);
+            assert(lv_obj_add_event_cb(
+                       s_first_frame_probe.screen, _first_frame_screen_event,
+                       LV_EVENT_SCREEN_LOADED, NULL) != NULL);
+        }
+    }
+    else if (message == APP_MANAGER_MSG_ONRESUME)
+    {
+        ++s_first_frame_probe.resume_after_count;
+        if (s_first_frame_probe.resume_after_sequence == 0U)
+        {
+            s_first_frame_probe.resume_after_sequence =
+                _first_frame_next_sequence();
+        }
+    }
+}
 
 static void _sleep_one_ms(void)
 {
@@ -69,6 +199,18 @@ static esp_err_t _ui_barrier(void *arg)
 {
     (void)arg;
     return ESP_OK;
+}
+
+static esp_err_t _navigate(app_manager_nav_operation_t operation,
+                           const char *app_id, const char *page_id)
+{
+    const app_manager_nav_request_t request =
+    {
+        .operation = operation,
+        .app_id = app_id,
+        .page_id = page_id,
+    };
+    return app_manager_navigate(&request, UI_TIMEOUT_MS);
 }
 
 static void _lifecycle_observer(
@@ -88,6 +230,7 @@ static void _lifecycle_observer(
     observation->phase = phase;
     observation->live_objects = host_lv_live_object_count();
     observation->live_timers = host_lv_live_timer_count();
+    _first_frame_observe_lifecycle(app_id, page_id, message, phase);
 }
 
 static size_t _lifecycle_observed(const char *app_id, const char *page_id,
@@ -110,10 +253,120 @@ static size_t _lifecycle_observed(const char *app_id, const char *page_id,
     return count;
 }
 
+static esp_err_t _first_frame_probe_arm_on_ui(void *arg)
+{
+    const first_frame_probe_config_t *config = arg;
+    assert(config != NULL);
+    assert(config->app_id != NULL && config->page_id != NULL);
+    assert(config->expected_text != NULL && config->forbidden_text != NULL);
+
+    memset(&s_first_frame_probe, 0, sizeof(s_first_frame_probe));
+    (void)snprintf(s_first_frame_probe.app_id,
+                   sizeof(s_first_frame_probe.app_id), "%s", config->app_id);
+    (void)snprintf(s_first_frame_probe.page_id,
+                   sizeof(s_first_frame_probe.page_id), "%s", config->page_id);
+    s_first_frame_probe.expected_text = config->expected_text;
+    s_first_frame_probe.forbidden_text = config->forbidden_text;
+    s_first_frame_probe.armed = true;
+    return ESP_OK;
+}
+
+static esp_err_t _first_frame_probe_snapshot_on_ui(void *arg)
+{
+    first_frame_probe_t *snapshot = arg;
+    assert(snapshot != NULL);
+    *snapshot = s_first_frame_probe;
+    return ESP_OK;
+}
+
+static first_frame_probe_t _first_frame_probe_snapshot(void)
+{
+    first_frame_probe_t snapshot;
+    assert(app_manager_ui_call(_first_frame_probe_snapshot_on_ui, &snapshot,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return snapshot;
+}
+
+static void _first_frame_navigation_completed(esp_err_t result, void *context)
+{
+    first_frame_probe_t *probe = context;
+    assert(probe == &s_first_frame_probe);
+    assert(probe->armed);
+    ++probe->completion_count;
+    if (probe->completion_sequence == 0U)
+    {
+        probe->completion_sequence = _first_frame_next_sequence();
+    }
+    probe->completion_result = result;
+}
+
+static void _start_first_frame_navigation(
+    app_manager_nav_operation_t operation, const char *app_id,
+    const char *page_id, const char *expected_text,
+    const char *forbidden_text)
+{
+    const first_frame_probe_config_t config =
+    {
+        .app_id = app_id,
+        .page_id = page_id,
+        .expected_text = expected_text,
+        .forbidden_text = forbidden_text,
+    };
+    assert(app_manager_ui_call(_first_frame_probe_arm_on_ui, (void *)&config,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    const app_manager_nav_request_t request =
+    {
+        .operation = operation,
+        .app_id = app_id,
+        .page_id = page_id,
+    };
+    assert(app_manager_navigate_async(
+               &request, _first_frame_navigation_completed,
+               &s_first_frame_probe) == ESP_OK);
+}
+
+static bool _wait_for_first_frame_completion(void)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        const first_frame_probe_t snapshot = _first_frame_probe_snapshot();
+        if (snapshot.completion_count > 0U)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static void _assert_first_frame_probe(size_t expected_timers)
+{
+    const first_frame_probe_t probe = _first_frame_probe_snapshot();
+    assert(probe.armed);
+    assert(probe.completion_result == ESP_OK);
+    assert(probe.mount_after_count == 1U);
+    assert(probe.resume_after_count == 1U);
+    assert(probe.load_start_count == 1U);
+    assert(probe.loaded_count == 1U);
+    assert(probe.completion_count == 1U);
+    assert(probe.mount_after_sequence > 0U);
+    assert(probe.mount_after_sequence < probe.resume_after_sequence);
+    assert(probe.resume_after_sequence < probe.load_start_sequence);
+    assert(probe.load_start_sequence < probe.loaded_sequence);
+    assert(probe.loaded_sequence < probe.completion_sequence);
+    assert(probe.load_start_active_target);
+    assert(probe.loaded_active_target);
+    assert(probe.expected_text_at_load_start);
+    assert(!probe.forbidden_text_at_load_start);
+    assert(probe.load_start_timers == expected_timers);
+}
+
 static esp_err_t _query_lv_resources_on_ui(void *arg)
 {
     lv_resource_counts_t *counts = arg;
     counts->objects = host_lv_live_object_count();
+    counts->screens = host_lv_live_screen_count();
     counts->timers = host_lv_live_timer_count();
     return ESP_OK;
 }
@@ -136,12 +389,6 @@ static esp_err_t _screen_resume_on_ui(void *arg)
 {
     (void)arg;
     return app_manager_lifecycle_screen_resume();
-}
-
-static void _blocked_page_handler(app_manager_msg_type_t message, void *param)
-{
-    (void)message;
-    (void)param;
 }
 
 static void _noop_callback(void *arg)
@@ -218,16 +465,42 @@ static esp_err_t _query_text_on_ui(void *arg)
     return ESP_OK;
 }
 
-static esp_err_t _lifecycle_deinit_on_ui(void *arg)
+static esp_err_t _query_transition_target_text_on_ui(void *arg)
+{
+    text_query_t *query = arg;
+    query->found = host_lv_transition_target_has_text(query->text);
+    return ESP_OK;
+}
+
+static esp_err_t _presentation_init_on_ui(void *arg)
 {
     (void)arg;
-    return app_manager_lifecycle_deinit();
+    return app_manager_presentation_init();
+}
+
+static esp_err_t _runtime_deinit_on_ui(void *arg)
+{
+    (void)arg;
+    esp_err_t result = app_manager_lifecycle_deinit();
+    if (result == ESP_OK)
+    {
+        result = app_manager_presentation_deinit();
+    }
+    return result;
 }
 
 static bool _ui_has_text(const char *text)
 {
     text_query_t query = {.text = text};
     assert(app_manager_ui_call(_query_text_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return query.found;
+}
+
+static bool _transition_target_has_text(const char *text)
+{
+    text_query_t query = {.text = text};
+    assert(app_manager_ui_call(_query_transition_target_text_on_ui, &query,
                                UI_TIMEOUT_MS) == ESP_OK);
     return query.found;
 }
@@ -272,6 +545,35 @@ static bool _wait_for_active(const char *app_id)
     return active;
 }
 
+static bool _wait_for_page_active(const char *app_id, const char *page_id)
+{
+    bool active = false;
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS && !active; ++attempt)
+    {
+        active = app_page_is_actived(app_id, page_id);
+        if (!active)
+        {
+            _sleep_one_ms();
+        }
+    }
+    return active;
+}
+
+static bool _wait_for_transitioning(void)
+{
+    bool transitioning = false;
+    for (unsigned attempt = 0;
+            attempt < WAIT_ATTEMPTS && !transitioning; ++attempt)
+    {
+        transitioning = app_manager_is_transitioning();
+        if (!transitioning)
+        {
+            _sleep_one_ms();
+        }
+    }
+    return transitioning;
+}
+
 static void _assert_event_slot_headroom(size_t occupied)
 {
     event_bus_sub_handle_t handles[EVENT_BUS_MAX_SUBSCRIBERS];
@@ -314,14 +616,24 @@ static void _initialize_stack(void)
     assert(dispatcher != NULL);
     assert(event_bus_register_ui_dispatch(dispatcher) == ESP_OK);
 
-    ptrdiff_t descriptor_count =
-        _app_builtin_apps_end - _app_builtin_apps_start;
-    assert(descriptor_count == (ptrdiff_t)BUILTIN_APP_COUNT);
-    assert(app_manager_register_builtin_apps(
-               _app_builtin_apps_start,
-               (size_t)descriptor_count) == ESP_OK);
+    const ptrdiff_t app_descriptor_count =
+        _app_manager_apps_end - _app_manager_apps_start;
+    const ptrdiff_t page_descriptor_count =
+        _app_manager_pages_end - _app_manager_pages_start;
+    assert(app_descriptor_count == (ptrdiff_t)BUILTIN_APP_COUNT);
+    assert(page_descriptor_count >= (ptrdiff_t)BUILTIN_APP_COUNT);
+    assert(app_manager_register_builtin_descriptors(
+               _app_manager_apps_start, (size_t)app_descriptor_count,
+               _app_manager_pages_start,
+               (size_t)page_descriptor_count) == ESP_OK);
     assert(app_manager_builtin_discover() == (int)BUILTIN_APP_COUNT);
+    assert(app_manager_ui_call(_presentation_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_lifecycle_configure(
+               0, APP_MANAGER_RESIDENT_REJECT,
+               NULL, NULL, NULL, NULL) == ESP_OK);
     assert(app_manager_lifecycle_init(0) == ESP_OK);
+    assert(app_manager_navigation_init() == ESP_OK);
     memset(s_lifecycle_observations, 0,
            sizeof(s_lifecycle_observations));
     s_lifecycle_observation_count = 0;
@@ -330,9 +642,11 @@ static void _initialize_stack(void)
 
 static void _test_real_app_navigation(void)
 {
-    assert(app_manager_run(APP_MANAGER_ID_HOME) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
     assert(_ui_has_text("08:30"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
+    assert(_lv_resource_counts().screens == 2U);
 
     power_service_snapshot_t snapshot =
     {
@@ -364,21 +678,31 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "root"));
 
-    _click_action("Power");
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "power"));
+    _start_first_frame_navigation(
+        APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS, "power",
+        "3910 mV", "Reading...");
+    assert(_wait_for_transitioning());
+    assert(_transition_target_has_text("3910 mV"));
+    assert(!_transition_target_has_text("Reading..."));
+    assert(_lv_resource_counts().timers == 0U);
+    _assert_event_slot_headroom(1);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
+    assert(_wait_for_first_frame_completion());
+    _assert_first_frame_probe(0U);
     assert(_ui_has_text("3910 mV"));
     _click_back();
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
     assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "power"));
 
     _click_action("About");
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "about"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
     assert(_ui_has_text("Compact ESP32-S3 wearable platform"));
     _click_back();
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
     assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "about"));
 
-    assert(app_manager_run(APP_MANAGER_ID_SETUP) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_MENU, "root"));
@@ -427,6 +751,31 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
+}
+
+static void _test_home_resume_before_first_draw(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    _click_action("Applications");
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    _start_first_frame_navigation(
+        APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, "root", "08:30", "--:--");
+    assert(_wait_for_transitioning());
+    assert(_transition_target_has_text("08:30"));
+    assert(!_transition_target_has_text("--:--"));
+    assert(_lv_resource_counts().timers == 1U);
+    _assert_event_slot_headroom(1);
+
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(_wait_for_first_frame_completion());
+    _assert_first_frame_probe(1U);
+    assert(_ui_has_text("08:30"));
+    assert(_lv_resource_counts().timers == 1U);
+    _assert_event_slot_headroom(1);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(app_manager_get_running_apps() == 1U);
 }
 
 static void _test_latest_power_backpressure(void)
@@ -491,7 +840,12 @@ static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
     {
         goto exit;
     }
-    result = app_manager_exit(APP_MANAGER_ID_SETUP);
+    const app_manager_nav_request_t request =
+    {
+        .operation = APP_MANAGER_NAV_OP_EXIT,
+        .app_id = APP_MANAGER_ID_SETUP,
+    };
+    result = app_manager_navigate_async(&request, NULL, NULL);
 
 exit:
     return result;
@@ -500,7 +854,8 @@ exit:
 static void _test_latest_wifi_backpressure_and_reopen(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
-    assert(app_manager_run(APP_MANAGER_ID_SETUP) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("Connected"));
     _click_action("Scan networks");
@@ -580,7 +935,8 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     _assert_event_slot_headroom(1);
 
-    assert(app_manager_run(APP_MANAGER_ID_SETUP) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     const wifi_service_session_id_t new_session =
         host_wifi_service_current_session();
@@ -612,7 +968,8 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
            sizeof("Current Session AP"));
     assert(host_wifi_service_publish_scan(&scan) == ESP_OK);
     assert(_wait_for_text("Current Session AP"));
-    assert(app_manager_exit(APP_MANAGER_ID_SETUP) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     _assert_event_slot_headroom(1);
 }
@@ -638,6 +995,9 @@ static void _assert_real_page_start_contract(void)
     {
         size_t starts_before = 0;
         size_t starts = 0;
+        size_t objects_before = 0;
+        size_t timers_before = 0;
+        bool awaiting_after = false;
         for (size_t index = 0; index < s_lifecycle_observation_count; ++index)
         {
             const lifecycle_observation_t *observation =
@@ -648,19 +1008,26 @@ static void _assert_real_page_start_contract(void)
                            expected_pages[page].page_id) == 0 &&
                     observation->message == APP_MANAGER_MSG_ONSTART)
             {
-                assert(observation->live_objects == 0);
-                assert(observation->live_timers == 0);
                 if (observation->phase ==
                         APP_MANAGER_LIFECYCLE_OBSERVER_BEFORE)
                 {
+                    assert(!awaiting_after);
+                    objects_before = observation->live_objects;
+                    timers_before = observation->live_timers;
+                    awaiting_after = true;
                     ++starts_before;
                 }
                 else
                 {
+                    assert(awaiting_after);
+                    assert(observation->live_objects == objects_before);
+                    assert(observation->live_timers == timers_before);
+                    awaiting_after = false;
                     ++starts;
                 }
             }
         }
+        assert(!awaiting_after);
         assert(starts > 0);
         assert(starts == starts_before);
     }
@@ -694,6 +1061,7 @@ static void _exercise_real_page_screen_lifecycle(
                                UI_TIMEOUT_MS) == ESP_OK);
     resources = _lv_resource_counts();
     assert(resources.objects == 0);
+    assert(resources.screens == 1U);
     assert(resources.timers == 0);
     _assert_event_slot_headroom(0);
     assert(!app_manager_is_actived(app_id));
@@ -707,6 +1075,7 @@ static void _exercise_real_page_screen_lifecycle(
     assert(app_manager_is_page_present(app_id, page_id));
     resources = _lv_resource_counts();
     assert(resources.objects > 0);
+    assert(resources.screens == 2U);
     assert(resources.timers == 0);
     _assert_event_slot_headroom(active_subscriptions);
     assert(_ui_has_text(visible_text));
@@ -727,39 +1096,72 @@ static void _test_other_real_app_screen_lifecycles(void)
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     assert(app_manager_get_running_apps() == 1U);
 
-    assert(app_manager_run(APP_MANAGER_ID_MENU) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_MENU, "root", "Applications", 0);
 
-    assert(app_manager_run(APP_MANAGER_ID_SETTINGS) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "root", "Settings", 0);
 
     _click_action("Power");
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "power"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "power", "3910 mV", 1);
     _click_back();
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
     _click_action("About");
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "about"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "about",
         "Compact ESP32-S3 wearable platform", 0);
     _click_back();
-    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
-    assert(app_manager_exit(APP_MANAGER_ID_SETTINGS) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    assert(app_manager_exit(APP_MANAGER_ID_MENU) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(app_manager_get_running_apps() == 1U);
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(_ui_has_text("08:30"));
     _assert_event_slot_headroom(1);
+}
+
+static void _test_screen_pause_finishes_transition(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+
+    _click_action("Applications");
+    assert(_wait_for_transitioning());
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(!app_manager_is_transitioning());
+
+    const lv_resource_counts_t paused = _lv_resource_counts();
+    assert(paused.objects == 0U);
+    assert(paused.screens == 1U);
+    assert(paused.timers == 0U);
+    _assert_event_slot_headroom(0);
+    assert(app_manager_get_running_apps() == 2U);
+
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_is_actived(APP_MANAGER_ID_MENU));
+    assert(app_page_is_actived(APP_MANAGER_ID_MENU, "root"));
+    assert(_ui_has_text("Applications"));
+    assert(_lv_resource_counts().screens == 2U);
+
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
 static void _test_home_screen_lifecycle(void)
@@ -789,6 +1191,7 @@ static void _test_home_screen_lifecycle(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     resources = _lv_resource_counts();
     assert(resources.objects == 0);
+    assert(resources.screens == 1U);
     assert(resources.timers == 0);
     _assert_event_slot_headroom(0);
     assert(!app_manager_is_actived(APP_MANAGER_ID_HOME));
@@ -797,20 +1200,20 @@ static void _test_home_screen_lifecycle(void)
     assert(app_manager_get_running_apps() == 1U);
     assert(!app_manager_is_all_closed());
 
-    assert(app_manager_run(APP_MANAGER_ID_MENU) == ESP_ERR_INVALID_STATE);
-    assert(app_manager_exit(APP_MANAGER_ID_HOME) == ESP_ERR_INVALID_STATE);
-    assert(app_manager_create_page_ext(
-               "blocked", _blocked_page_handler, NULL, 0) ==
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
            ESP_ERR_INVALID_STATE);
-    assert(app_manager_create_page_for_app_ext(
-               APP_MANAGER_ID_HOME, "blocked", _blocked_page_handler,
-               NULL, 0) == ESP_ERR_INVALID_STATE);
-    assert(app_manager_goback() == ESP_ERR_INVALID_STATE);
-    assert(app_manager_goback_to_page("root") == ESP_ERR_INVALID_STATE);
-    assert(app_manager_remove_page("root") == ESP_ERR_INVALID_STATE);
-    assert(app_manager_set_page_userdata("root", &resources) ==
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_HOME, NULL) ==
            ESP_ERR_INVALID_STATE);
-    app_manager_self_exit();
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS,
+                     "about") == ESP_ERR_INVALID_STATE);
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK, NULL, NULL) ==
+           ESP_ERR_INVALID_STATE);
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK_TO, APP_MANAGER_ID_HOME,
+                     "root") == ESP_ERR_INVALID_STATE);
+    assert(_navigate(APP_MANAGER_NAV_OP_REMOVE_PAGE, APP_MANAGER_ID_HOME,
+                     "root") == ESP_ERR_INVALID_STATE);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT_SELF, NULL, NULL) ==
+           ESP_ERR_INVALID_STATE);
     assert(app_manager_get_running_apps() == 1U);
 
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
@@ -821,6 +1224,7 @@ static void _test_home_screen_lifecycle(void)
     assert(app_manager_get_running_apps() == 1U);
     resources = _lv_resource_counts();
     assert(resources.objects > 0);
+    assert(resources.screens == 2U);
     assert(resources.timers == 1U);
     _assert_event_slot_headroom(1);
     assert(_ui_has_text("08:30"));
@@ -838,7 +1242,8 @@ static void _test_home_screen_lifecycle(void)
 
 static void _test_setup_screen_lifecycle(void)
 {
-    assert(app_manager_run(APP_MANAGER_ID_SETUP) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("Scanning..."));
 
@@ -888,6 +1293,7 @@ static void _test_setup_screen_lifecycle(void)
     lv_resource_counts_t resources = _lv_resource_counts();
     assert(atomic_load(&s_queued_scan_probe_count) == 0U);
     assert(resources.objects == 0);
+    assert(resources.screens == 1U);
     assert(resources.timers == 0);
     _assert_event_slot_headroom(0);
     assert(!app_manager_is_actived(APP_MANAGER_ID_SETUP));
@@ -908,6 +1314,7 @@ static void _test_setup_screen_lifecycle(void)
     assert(app_manager_get_running_apps() == 2U);
     resources = _lv_resource_counts();
     assert(resources.objects > 0);
+    assert(resources.screens == 2U);
     assert(resources.timers == 0);
     _assert_event_slot_headroom(2);
 
@@ -929,7 +1336,8 @@ static void _test_setup_screen_lifecycle(void)
     assert(host_wifi_service_publish_scan(&current) == ESP_OK);
     assert(_wait_for_text("Resumed Session AP"));
 
-    assert(app_manager_exit(APP_MANAGER_ID_SETUP) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     _assert_event_slot_headroom(1);
 }
@@ -938,16 +1346,21 @@ int main(void)
 {
     _initialize_stack();
     _test_real_app_navigation();
+    _test_home_resume_before_first_draw();
     _test_latest_power_backpressure();
     _test_latest_wifi_backpressure_and_reopen();
     _assert_real_page_start_contract();
     _test_other_real_app_screen_lifecycles();
+    _test_screen_pause_finishes_transition();
     _test_home_screen_lifecycle();
     _test_setup_screen_lifecycle();
 
+    assert(app_manager_navigation_deinit() == ESP_OK);
     assert(app_manager_lifecycle_shutdown_begin_and_wait() == ESP_OK);
-    assert(app_manager_ui_call(_lifecycle_deinit_on_ui, NULL,
+    assert(app_manager_ui_call(_runtime_deinit_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
+    assert(_lv_resource_counts().screens == 0U);
+    assert(app_manager_builtin_registry_reset() == ESP_OK);
 
     host_task_shutdown();
     assert(app_manager_mailbox_deinit() == ESP_OK);

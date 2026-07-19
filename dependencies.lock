@@ -274,6 +274,6 @@ direct_dependencies:
 - espressif/esp_lvgl_adapter
 - idf
 - joltwallet/littlefs
-manifest_hash: e367515bc018424bda6446c68ae44b230c09f9be86318ff47c376b9be029c8b7
+manifest_hash: be15b08a4cbe9f6c3ec7434d7370d594b1fbe73f03b28f39d98988f0d972b6d7
 target: esp32s3
 version: 3.0.0
