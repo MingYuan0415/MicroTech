@@ -9,6 +9,7 @@
 #include "app_manager_presentation.h"
 #include "app_theme.h"
 #include "event_bus.h"
+#include "host_freertos.h"
 #include "host_wifi_service.h"
 #include "power_service.h"
 #include <assert.h>
@@ -199,6 +200,13 @@ static void _sleep_one_ms(void)
 static esp_err_t _ui_barrier(void *arg)
 {
     (void)arg;
+    return ESP_OK;
+}
+
+static esp_err_t _step_lv_timers_on_ui(void *arg)
+{
+    (void)arg;
+    host_lv_timer_step();
     return ESP_OK;
 }
 
@@ -463,6 +471,19 @@ typedef struct text_query
     bool found;
 } text_query_t;
 
+typedef struct text_count_query
+{
+    const char *text;
+    size_t count;
+} text_count_query_t;
+
+typedef struct visible_slider_snapshot
+{
+    int32_t value;
+    bool pressed;
+    bool disabled;
+} visible_slider_snapshot_t;
+
 typedef enum touch_action
 {
     TOUCH_ACTION_PRESS = 0,
@@ -530,6 +551,39 @@ static esp_err_t _query_transition_target_text_on_ui(void *arg)
     text_query_t *query = arg;
     query->found = host_lv_transition_target_has_text(query->text);
     return ESP_OK;
+}
+
+static esp_err_t _query_text_count_on_ui(void *arg)
+{
+    text_count_query_t *query = arg;
+    query->count = host_lv_visible_text_count(query->text);
+    return ESP_OK;
+}
+
+static esp_err_t _drag_visible_slider_on_ui(void *arg)
+{
+    const int32_t value = *(const int32_t *)arg;
+    return host_lv_visible_slider_drag(value) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _release_visible_slider_on_ui(void *arg)
+{
+    (void)arg;
+    return host_lv_visible_slider_release() ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _cancel_visible_slider_on_ui(void *arg)
+{
+    (void)arg;
+    return host_lv_visible_slider_cancel() ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _query_visible_slider_on_ui(void *arg)
+{
+    visible_slider_snapshot_t *snapshot = arg;
+    return host_lv_visible_slider_snapshot(&snapshot->value,
+                                           &snapshot->pressed,
+                                           &snapshot->disabled) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 static esp_err_t _touch_on_ui(void *arg)
@@ -667,6 +721,43 @@ static bool _transition_target_has_text(const char *text)
     return query.found;
 }
 
+static size_t _ui_visible_text_count(const char *text)
+{
+    text_count_query_t query =
+    {
+        .text = text,
+    };
+    assert(app_manager_ui_call(_query_text_count_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return query.count;
+}
+
+static void _drag_visible_slider(int32_t value)
+{
+    assert(app_manager_ui_call(_drag_visible_slider_on_ui, &value,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _release_visible_slider(void)
+{
+    assert(app_manager_ui_call(_release_visible_slider_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _cancel_visible_slider(void)
+{
+    assert(app_manager_ui_call(_cancel_visible_slider_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static visible_slider_snapshot_t _visible_slider_snapshot(void)
+{
+    visible_slider_snapshot_t snapshot = {0};
+    assert(app_manager_ui_call(_query_visible_slider_on_ui, &snapshot,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return snapshot;
+}
+
 static bool _touch(touch_action_t action, int32_t x, int32_t y)
 {
     touch_request_t request =
@@ -795,6 +886,22 @@ static bool _wait_for_text(const char *text)
     return found;
 }
 
+static bool _wait_for_text_with_timers(const char *text)
+{
+    bool found = false;
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS && !found; ++attempt)
+    {
+        assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                                   UI_TIMEOUT_MS) == ESP_OK);
+        found = _ui_has_text(text);
+        if (!found)
+        {
+            _sleep_one_ms();
+        }
+    }
+    return found;
+}
+
 static bool _wait_for_active(const char *app_id)
 {
     bool active = false;
@@ -821,6 +928,113 @@ static bool _wait_for_page_active(const char *app_id, const char *page_id)
         }
     }
     return active;
+}
+
+static bool _wait_for_time_alarm_state(bool expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_time_alarm_is_enabled() == expected)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_time_sync_state(bool expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_time_sync_is_owned() == expected)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_time_sync_request_entered(void)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_time_sync_request_entered())
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_dynamic_task_count(size_t expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_dynamic_task_count() == expected)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_audio_read_count(unsigned minimum)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_audio_read_count() >= minimum)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_audio_volume(uint8_t expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_audio_volume() == expected)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_audio_set_volume_count(unsigned expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_audio_set_volume_count() >= expected)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_for_visible_slider_enabled(void)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                                   UI_TIMEOUT_MS) == ESP_OK);
+        const visible_slider_snapshot_t slider = _visible_slider_snapshot();
+        if (!slider.disabled)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
 }
 
 static bool _wait_for_transitioning(void)
@@ -861,6 +1075,70 @@ static void _assert_event_slot_headroom(size_t occupied)
     {
         assert(event_bus_unsubscribe(handles[index]) == ESP_OK);
     }
+}
+
+static void _exercise_audio_volume_slider(void)
+{
+    assert(_wait_for_text_with_timers("60%"));
+    const unsigned reads_before = host_audio_read_count();
+    const unsigned sets_before = host_audio_set_volume_count();
+
+    _drag_visible_slider(67);
+    assert(_ui_has_text("67%"));
+    _cancel_visible_slider();
+    visible_slider_snapshot_t slider = _visible_slider_snapshot();
+    assert(slider.value == 60);
+    assert(!slider.pressed);
+    assert(!slider.disabled);
+    assert(_ui_has_text("60%"));
+    assert(host_audio_set_volume_count() == sets_before);
+
+    _drag_visible_slider(73);
+    slider = _visible_slider_snapshot();
+    assert(slider.value == 73);
+    assert(slider.pressed);
+    assert(!slider.disabled);
+    assert(_ui_has_text("73%"));
+    assert(host_audio_volume() == 60U);
+    assert(host_audio_set_volume_count() == sets_before);
+
+    assert(_wait_for_audio_read_count(reads_before + 2U));
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    slider = _visible_slider_snapshot();
+    assert(slider.value == 73);
+    assert(slider.pressed);
+    assert(_ui_has_text("73%"));
+    assert(host_audio_volume() == 60U);
+    assert(host_audio_set_volume_count() == sets_before);
+
+    _drag_visible_slider(81);
+    assert(_ui_has_text("81%"));
+    assert(host_audio_volume() == 60U);
+    assert(host_audio_set_volume_count() == sets_before);
+
+    _release_visible_slider();
+    assert(_wait_for_audio_volume(81U));
+    assert(host_audio_set_volume_count() == sets_before + 1U);
+    assert(_wait_for_visible_slider_enabled());
+    slider = _visible_slider_snapshot();
+    assert(slider.value == 81);
+    assert(!slider.pressed);
+    assert(!slider.disabled);
+    assert(_ui_has_text("81%"));
+    assert(host_audio_set_volume_count() == sets_before + 1U);
+
+    host_audio_fail_next_volume();
+    _drag_visible_slider(92);
+    _release_visible_slider();
+    assert(_wait_for_audio_set_volume_count(sets_before + 2U));
+    assert(_wait_for_visible_slider_enabled());
+    slider = _visible_slider_snapshot();
+    assert(slider.value == 81);
+    assert(!slider.pressed);
+    assert(!slider.disabled);
+    assert(_ui_has_text("81%"));
+    assert(host_audio_volume() == 81U);
 }
 
 static void _initialize_stack(void)
@@ -932,28 +1210,138 @@ static void _test_real_app_navigation(void)
                &snapshot, sizeof(snapshot),
                EVENT_BUS_PUBLISH_FLAG_UI_LATEST) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("90% | Charging"));
+    assert(_ui_has_text("90% · 充电中"));
 
-    _click_action("Applications");
+    _click_action("演示中心");
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_MENU, "root"));
-    /* Home must cancel its power subscription as part of real ONPAUSE. */
+    /* Home must cancel both UI subscriptions as part of real ONPAUSE. */
     _assert_event_slot_headroom(0);
 
-    _click_action("Settings");
+    static const struct
+    {
+        const char *action;
+        const char *page_id;
+        const char *visible_text;
+        size_t workers;
+        size_t subscriptions;
+    } demo_pages[] =
+    {
+        {"运动传感", "motion", "原始传感器数据", 0U, 0U},
+        {"音频", "audio", "麦克风电平", 1U, 0U},
+        {"SD 存储", "storage", "读写自检", 1U, 0U},
+        {"时间与 RTC", "clock", "10 秒闹钟", 1U, 1U},
+    };
+    for (size_t index = 0U;
+            index < sizeof(demo_pages) / sizeof(demo_pages[0]); ++index)
+    {
+        if (strcmp(demo_pages[index].page_id, "audio") == 0)
+        {
+            host_audio_set_read_peak(64);
+        }
+        _click_action(demo_pages[index].action);
+        assert(_wait_for_page_active(APP_MANAGER_ID_MENU,
+                                     demo_pages[index].page_id));
+        assert(_ui_has_text(demo_pages[index].visible_text));
+        assert(_lv_resource_counts().timers == 1U);
+        assert(_wait_for_dynamic_task_count(demo_pages[index].workers));
+        _assert_event_slot_headroom(demo_pages[index].subscriptions);
+        if (strcmp(demo_pages[index].page_id, "audio") == 0)
+        {
+            assert(_wait_for_text_with_timers("实时监听中"));
+            assert(_wait_for_text_with_timers("11%"));
+            host_audio_set_read_peak(512);
+            assert(_wait_for_text_with_timers("44%"));
+            _exercise_audio_volume_slider();
+            _click_action("播放 440 Hz 测试音");
+            assert(_wait_for_text_with_timers("正在播放 440 Hz"));
+            assert(_wait_for_text_with_timers("测试音播放完成"));
+            const unsigned reads_at_completion = host_audio_read_count();
+            host_audio_set_read_peak(2048);
+            assert(_wait_for_audio_read_count(reads_at_completion + 1U));
+            assert(_wait_for_text_with_timers("66%"));
+            const unsigned reads_after_first_level = host_audio_read_count();
+            host_audio_set_read_peak(4096);
+            assert(_wait_for_audio_read_count(reads_after_first_level + 1U));
+            assert(_wait_for_text_with_timers("77%"));
+        }
+        else if (strcmp(demo_pages[index].page_id, "storage") == 0)
+        {
+            assert(_wait_for_text_with_timers("已挂载"));
+            _click_action("刷新状态");
+            assert(_wait_for_text_with_timers("已挂载"));
+        }
+        else if (strcmp(demo_pages[index].page_id, "clock") == 0)
+        {
+            _click_action("立即校时");
+            assert(_wait_for_time_sync_state(true));
+            assert(_wait_for_text_with_timers("网络时间已同步"));
+
+            _click_action("10 秒闹钟");
+            assert(_wait_for_time_alarm_state(true));
+            host_time_sync_set_blocked(true);
+            _click_action("立即校时");
+            assert(_wait_for_time_sync_request_entered());
+            assert(host_time_publish_alarm(1U) == ESP_OK);
+            assert(_wait_for_text("RTC 闹钟已触发，等待关闭"));
+            host_time_sync_set_blocked(false);
+            assert(_wait_for_text_with_timers(
+                       "RTC 闹钟已触发并关闭"));
+            assert(_wait_for_time_alarm_state(false));
+
+            _click_action("10 秒闹钟");
+            assert(_wait_for_time_alarm_state(true));
+        }
+        _click_back();
+        assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
+        assert(!app_manager_is_page_present(APP_MANAGER_ID_MENU,
+                                            demo_pages[index].page_id));
+        assert(_lv_resource_counts().timers == 0U);
+        assert(_wait_for_dynamic_task_count(0U));
+        if (strcmp(demo_pages[index].page_id, "clock") == 0)
+        {
+            assert(_wait_for_time_alarm_state(false));
+            assert(_wait_for_time_sync_state(false));
+        }
+        else if (strcmp(demo_pages[index].page_id, "audio") == 0)
+        {
+            const unsigned paused_reads = host_audio_read_count();
+            host_audio_set_read_peak(64);
+            _click_action("音频");
+            assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "audio"));
+            assert(_wait_for_dynamic_task_count(1U));
+            assert(_wait_for_audio_read_count(paused_reads + 1U));
+            assert(_wait_for_text_with_timers("实时监听中"));
+            assert(_wait_for_text_with_timers("11%"));
+            host_audio_set_read_peak(512);
+            assert(_wait_for_text_with_timers("44%"));
+            assert(_ui_has_text("81%"));
+            _click_back();
+            assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
+            assert(!app_manager_is_page_present(APP_MANAGER_ID_MENU,
+                                                "audio"));
+            assert(_lv_resource_counts().timers == 0U);
+            assert(_wait_for_dynamic_task_count(0U));
+        }
+    }
+
+    _click_action("系统设置");
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "root"));
 
     _start_first_frame_navigation(
         APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS, "power",
-        "3910 mV", "Reading...");
+        "3910 mV", "读取中");
     assert(_wait_for_transitioning());
     assert(_transition_target_has_text("3910 mV"));
-    assert(!_transition_target_has_text("Reading..."));
+    assert(!_transition_target_has_text("读取中"));
     assert(_lv_resource_counts().timers == 0U);
     _assert_event_slot_headroom(1);
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
+    assert(_ui_has_text("熄屏或待机后使用 HOME 恢复。"));
+    assert(!_ui_has_text(
+               "普通熄屏可由触摸或 HOME 恢复；进入待机后仅 HOME 可唤醒。"));
     assert(_wait_for_first_frame_completion());
     _assert_first_frame_probe(0U);
     assert(_ui_has_text("3910 mV"));
@@ -961,9 +1349,9 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
     assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "power"));
 
-    _click_action("About");
+    _click_action("关于设备");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
-    assert(_ui_has_text("Compact ESP32-S3 wearable platform"));
+    assert(_ui_has_text("test-version"));
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
     assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "about"));
@@ -992,7 +1380,7 @@ static void _test_real_app_navigation(void)
     scan.records[0].channel = 6;
     scan.records[0].security = WIFI_SERVICE_SECURITY_OPEN;
     assert(host_wifi_service_publish_scan(&scan) == ESP_OK);
-    assert(_wait_for_text("Select a network"));
+    assert(_wait_for_text("选择网络"));
     _click_action("Cross Layer AP");
     wifi_service_status_snapshot_t ready =
     {
@@ -1006,7 +1394,7 @@ static void _test_real_app_navigation(void)
     };
     memcpy(ready.ssid, "Cross Layer AP", sizeof("Cross Layer AP"));
     assert(host_wifi_service_publish_status(&ready) == ESP_OK);
-    assert(_wait_for_text("Connected"));
+    assert(_wait_for_text("已连接"));
 
     const unsigned disconnects = host_wifi_service_call_count(
                                      HOST_WIFI_SERVICE_CALL_REQUEST_DISCONNECT);
@@ -1023,7 +1411,7 @@ static void _test_real_app_navigation(void)
 static void _test_home_resume_before_first_draw(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
-    _click_action("Applications");
+    _click_action("演示中心");
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     _start_first_frame_navigation(
@@ -1032,14 +1420,14 @@ static void _test_home_resume_before_first_draw(void)
     assert(_transition_target_has_text("08:30"));
     assert(!_transition_target_has_text("--:--"));
     assert(_lv_resource_counts().timers == 1U);
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
 
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_wait_for_first_frame_completion());
     _assert_first_frame_probe(1U);
     assert(_ui_has_text("08:30"));
     assert(_lv_resource_counts().timers == 1U);
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(app_manager_get_running_apps() == 1U);
@@ -1092,7 +1480,7 @@ static void _test_latest_power_backpressure(void)
     }
     assert(atomic_load(&s_noop_count) == 23U);
     app_manager_mailbox_host_timer_pause(false);
-    assert(_ui_has_text("99% | On battery"));
+    assert(_ui_has_text("99% · 电池供电"));
 }
 
 static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
@@ -1121,8 +1509,8 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    assert(_wait_for_text("Connected"));
-    _click_action("Scan networks");
+    assert(_wait_for_text("已连接"));
+    _click_action("扫描网络");
 
     const wifi_service_session_id_t old_session =
         host_wifi_service_current_session();
@@ -1197,7 +1585,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
@@ -1224,7 +1612,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(host_wifi_service_publish_raw_scan(&stale, sizeof(stale)) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(!_ui_has_text("Old Session AP"));
-    assert(_ui_has_text("Scanning..."));
+    assert(_ui_has_text("正在扫描"));
 
     scan.session_id = new_session;
     scan.operation_id = new_operation;
@@ -1235,7 +1623,95 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
+}
+
+static void _test_optional_services_unavailable(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    host_optional_services_set_available(false);
+    const wifi_service_status_snapshot_t offline =
+    {
+        .state = WIFI_SERVICE_STATE_OFFLINE,
+        .last_error = ESP_ERR_NOT_SUPPORTED,
+        .available = false,
+    };
+    assert(host_wifi_service_publish_status(&offline) == ESP_OK);
+    assert(_wait_for_text_with_timers("时间不可用"));
+    assert(_wait_for_text_with_timers("未挂载"));
+    assert(_ui_visible_text_count("不可用") == 2U);
+
+    _click_action("演示中心");
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    static const struct
+    {
+        const char *action;
+        const char *page_id;
+        const char *unavailable_text;
+    } demo_pages[] =
+    {
+        {"运动传感", "motion", "传感器不可用"},
+        {"音频", "audio", "音频不可用"},
+        {"SD 存储", "storage", "请插卡后重启设备"},
+        {"时间与 RTC", "clock", "不可用"},
+    };
+    for (size_t index = 0U;
+            index < sizeof(demo_pages) / sizeof(demo_pages[0]); ++index)
+    {
+        _click_action(demo_pages[index].action);
+        assert(_wait_for_page_active(APP_MANAGER_ID_MENU,
+                                     demo_pages[index].page_id));
+        const size_t expected_workers =
+            strcmp(demo_pages[index].page_id, "motion") == 0 ? 0U : 1U;
+        assert(_wait_for_dynamic_task_count(expected_workers));
+        assert(_wait_for_text_with_timers(
+                   demo_pages[index].unavailable_text));
+        _click_back();
+        assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
+        assert(_wait_for_dynamic_task_count(0U));
+    }
+
+    _click_action("网络设置");
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+    assert(_wait_for_text("Wi-Fi 不可用"));
+    _click_back();
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    host_optional_services_set_available(true);
+    const wifi_service_status_snapshot_t idle =
+    {
+        .state = WIFI_SERVICE_STATE_IDLE,
+        .last_error = ESP_OK,
+        .available = true,
+    };
+    assert(host_wifi_service_publish_status(&idle) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(_wait_for_text("08:30"));
+    assert(_wait_for_text("已挂载"));
+    _assert_event_slot_headroom(2);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(app_manager_get_running_apps() == 1U);
+
+    const wifi_service_status_snapshot_t uninitialized =
+    {
+        .state = WIFI_SERVICE_STATE_OFFLINE,
+        .last_error = ESP_ERR_INVALID_STATE,
+        .available = false,
+    };
+    assert(host_wifi_service_cache_status(&uninitialized) == ESP_OK);
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("初始化中"));
+    assert(_wait_for_text_with_timers("不可用"));
+    assert(!_ui_has_text("初始化中"));
+    assert(_ui_visible_text_count("不可用") == 1U);
+    assert(host_wifi_service_publish_status(&idle) == ESP_OK);
+    assert(_wait_for_text("未连接"));
 }
 
 static void _assert_real_page_start_contract(void)
@@ -1248,6 +1724,10 @@ static void _assert_real_page_start_contract(void)
     {
         {APP_MANAGER_ID_HOME, "root"},
         {APP_MANAGER_ID_MENU, "root"},
+        {APP_MANAGER_ID_MENU, "motion"},
+        {APP_MANAGER_ID_MENU, "audio"},
+        {APP_MANAGER_ID_MENU, "storage"},
+        {APP_MANAGER_ID_MENU, "clock"},
         {APP_MANAGER_ID_SETTINGS, "root"},
         {APP_MANAGER_ID_SETTINGS, "power"},
         {APP_MANAGER_ID_SETTINGS, "about"},
@@ -1299,13 +1779,15 @@ static void _assert_real_page_start_contract(void)
 
 static void _exercise_real_page_screen_lifecycle(
     const char *app_id, const char *page_id, const char *visible_text,
+    size_t active_timers, size_t active_workers,
     size_t active_subscriptions)
 {
     assert(app_manager_is_actived(app_id));
     assert(app_page_is_actived(app_id, page_id));
     lv_resource_counts_t resources = _lv_resource_counts();
     assert(resources.objects > 0);
-    assert(resources.timers == 0);
+    assert(resources.timers == active_timers);
+    assert(_wait_for_dynamic_task_count(active_workers));
     _assert_event_slot_headroom(active_subscriptions);
 
     const size_t starts_before = _lifecycle_observed(
@@ -1326,7 +1808,8 @@ static void _exercise_real_page_screen_lifecycle(
     resources = _lv_resource_counts();
     assert(resources.objects == 0);
     assert(resources.screens == 1U);
-    assert(resources.timers == 0);
+    assert(resources.timers == 0U);
+    assert(_wait_for_dynamic_task_count(0U));
     _assert_event_slot_headroom(0);
     assert(!app_manager_is_actived(app_id));
     assert(!app_page_is_actived(app_id, page_id));
@@ -1340,7 +1823,8 @@ static void _exercise_real_page_screen_lifecycle(
     resources = _lv_resource_counts();
     assert(resources.objects > 0);
     assert(resources.screens == 2U);
-    assert(resources.timers == 0);
+    assert(resources.timers == active_timers);
+    assert(_wait_for_dynamic_task_count(active_workers));
     _assert_event_slot_headroom(active_subscriptions);
     assert(_ui_has_text(visible_text));
 
@@ -1364,26 +1848,55 @@ static void _test_other_real_app_screen_lifecycles(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_MENU, "root", "Applications", 0);
+        APP_MANAGER_ID_MENU, "root", "演示中心", 0U, 0U, 0U);
+
+    static const struct
+    {
+        const char *action;
+        const char *page_id;
+        const char *visible_text;
+        size_t workers;
+        size_t subscriptions;
+    } demo_pages[] =
+    {
+        {"运动传感", "motion", "运动传感", 0U, 0U},
+        {"音频", "audio", "音频", 1U, 0U},
+        {"SD 存储", "storage", "存储", 1U, 0U},
+        {"时间与 RTC", "clock", "时间实验", 1U, 1U},
+    };
+    for (size_t index = 0U;
+            index < sizeof(demo_pages) / sizeof(demo_pages[0]); ++index)
+    {
+        _click_action(demo_pages[index].action);
+        assert(_wait_for_page_active(APP_MANAGER_ID_MENU,
+                                     demo_pages[index].page_id));
+        _exercise_real_page_screen_lifecycle(
+            APP_MANAGER_ID_MENU, demo_pages[index].page_id,
+            demo_pages[index].visible_text, 1U,
+            demo_pages[index].workers,
+            demo_pages[index].subscriptions);
+        _click_back();
+        assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
+    }
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_SETTINGS, "root", "Settings", 0);
+        APP_MANAGER_ID_SETTINGS, "root", "系统设置", 0U, 0U, 0U);
 
-    _click_action("Power");
+    _click_action("电源状态");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_SETTINGS, "power", "3910 mV", 1);
+        APP_MANAGER_ID_SETTINGS, "power", "3910 mV", 0U, 0U, 1U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
-    _click_action("About");
+    _click_action("关于设备");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "about",
-        "Compact ESP32-S3 wearable platform", 0);
+        "test-version", 0U, 0U, 0U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
@@ -1396,14 +1909,14 @@ static void _test_other_real_app_screen_lifecycles(void)
     assert(app_manager_get_running_apps() == 1U);
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(_ui_has_text("08:30"));
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
 }
 
 static void _test_screen_pause_finishes_transition(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
 
-    _click_action("Applications");
+    _click_action("演示中心");
     assert(_wait_for_transitioning());
     assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
@@ -1420,7 +1933,7 @@ static void _test_screen_pause_finishes_transition(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_is_actived(APP_MANAGER_ID_MENU));
     assert(app_page_is_actived(APP_MANAGER_ID_MENU, "root"));
-    assert(_ui_has_text("Applications"));
+    assert(_ui_has_text("演示中心"));
     assert(_lv_resource_counts().screens == 2U);
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
@@ -1436,7 +1949,7 @@ static void _test_home_screen_lifecycle(void)
     lv_resource_counts_t resources = _lv_resource_counts();
     assert(resources.objects > 0);
     assert(resources.timers == 1U);
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
 
     const size_t starts_before = _lifecycle_observed(
                                      APP_MANAGER_ID_HOME, "root",
@@ -1490,7 +2003,7 @@ static void _test_home_screen_lifecycle(void)
     assert(resources.objects > 0);
     assert(resources.screens == 2U);
     assert(resources.timers == 1U);
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
     assert(_ui_has_text("08:30"));
 
     assert(_lifecycle_observed(
@@ -1509,7 +2022,7 @@ static void _test_setup_screen_lifecycle(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    assert(_wait_for_text("Scanning..."));
+    assert(_wait_for_text("正在扫描"));
 
     const wifi_service_session_id_t old_session =
         host_wifi_service_current_session();
@@ -1589,7 +2102,7 @@ static void _test_setup_screen_lifecycle(void)
                APP_MANAGER_ID_SETUP, "root", APP_MANAGER_MSG_ONRESUME,
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == resumes_before + 1U);
     assert(!_ui_has_text("Paused Session AP"));
-    assert(_ui_has_text("Scanning..."));
+    assert(_ui_has_text("正在扫描"));
 
     wifi_service_scan_snapshot_t current = queued_pause.snapshot;
     current.generation++;
@@ -1603,7 +2116,7 @@ static void _test_setup_screen_lifecycle(void)
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    _assert_event_slot_headroom(1);
+    _assert_event_slot_headroom(2);
 }
 
 static void _test_system_edge_back_gesture(void)
@@ -1925,6 +2438,7 @@ int main(void)
     _test_home_resume_before_first_draw();
     _test_latest_power_backpressure();
     _test_latest_wifi_backpressure_and_reopen();
+    _test_optional_services_unavailable();
     _assert_real_page_start_contract();
     _test_other_real_app_screen_lifecycles();
     _test_screen_pause_finishes_transition();
@@ -1940,6 +2454,7 @@ int main(void)
     assert(!app_manager_back_gesture_is_enabled());
     assert(_lv_resource_counts().screens == 0U);
     assert(_system_gesture_snapshot().object_count == 0U);
+    assert(_wait_for_dynamic_task_count(0U));
     assert(app_manager_builtin_registry_reset() == ESP_OK);
 
     host_task_shutdown();

@@ -38,5 +38,17 @@ esp_err_t esp_timer_delete(esp_timer_handle_t timer);
 void host_timer_set_paused(esp_timer_handle_t timer, bool paused);
 /** @brief Advance one host timer step. */
 void host_timer_step(esp_timer_handle_t timer);
+/** @brief Return the number of live dynamically allocated host tasks. */
+size_t host_dynamic_task_count(void);
+/** @brief Return the number of live tasks created with explicit stack caps. */
+size_t host_caps_task_count(void);
+/** @brief Return the stack capabilities requested by the latest caps task. */
+UBaseType_t host_last_task_stack_caps(void);
+/** @brief Return completed owner deletions using the WithCaps API. */
+size_t host_caps_task_owner_delete_count(void);
+/** @brief Return task deletions performed with the wrong allocation API. */
+size_t host_caps_task_wrong_delete_count(void);
+/** @brief Return WithCaps tasks that attempted to delete themselves. */
+size_t host_caps_task_self_delete_count(void);
 
 #endif /* __CROSS_LAYER_HOST_FREERTOS_H__ */

@@ -10,6 +10,9 @@ QueueHandle_t xQueueCreate(uint32_t length, uint32_t item_size);
 /** @brief Send one item to a host queue. */
 BaseType_t xQueueSend(QueueHandle_t queue, const void *item,
                       TickType_t timeout);
+/** @brief Send one item to the front of a host queue. */
+BaseType_t xQueueSendToFront(QueueHandle_t queue, const void *item,
+                             TickType_t timeout);
 /** @brief Receive one item from a host queue. */
 BaseType_t xQueueReceive(QueueHandle_t queue, void *item,
                          TickType_t timeout);

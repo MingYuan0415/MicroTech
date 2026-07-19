@@ -263,6 +263,20 @@ wifi_service_operation_id_t host_wifi_service_current_operation(void)
     return operation;
 }
 
+esp_err_t host_wifi_service_cache_status(
+    const wifi_service_status_snapshot_t *snapshot)
+{
+    if (!_host_wifi_status_valid(snapshot))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    (void)pthread_mutex_lock(&s_wifi.lock);
+    s_wifi.status = *snapshot;
+    s_wifi.available = snapshot->available;
+    (void)pthread_mutex_unlock(&s_wifi.lock);
+    return ESP_OK;
+}
+
 bool wifi_service_is_available(void)
 {
     (void)pthread_mutex_lock(&s_wifi.lock);

@@ -19,6 +19,7 @@ typedef enum
     HOST_LV_OBJECT_BUTTON,
     HOST_LV_OBJECT_LABEL,
     HOST_LV_OBJECT_SLIDER,
+    HOST_LV_OBJECT_BAR,
     HOST_LV_OBJECT_CANVAS,
     HOST_LV_OBJECT_SCREEN,
     HOST_LV_OBJECT_LAYER,
@@ -58,6 +59,7 @@ struct lv_obj_t
     lv_draw_buf_t *draw_buf;
     uint32_t invalidation_count;
     lv_obj_flag_t flags;
+    lv_state_t state;
     uint64_t z_order;
     lv_event_dsc_t bindings[HOST_LV_EVENT_CAPACITY];
     size_t binding_count;
@@ -289,7 +291,10 @@ static lv_obj_t *_host_lv_find_pointer_target_in(lv_obj_t *parent,
         }
         if ((child->flags & LV_OBJ_FLAG_CLICKABLE) != 0U)
         {
-            return child;
+            if ((child->state & LV_STATE_DISABLED) == 0U)
+            {
+                return child;
+            }
         }
         upper_z_order = child->z_order;
     }
@@ -332,6 +337,29 @@ static bool _host_lv_input_is_blocked(void)
         }
     }
     return false;
+}
+
+static lv_obj_t *_host_lv_find_visible_slider(bool enabled_only)
+{
+    lv_obj_t *slider = NULL;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        lv_obj_t *candidate = &s_objects[index];
+        if (!candidate->live ||
+                candidate->kind != HOST_LV_OBJECT_SLIDER ||
+                !_host_lv_is_visible(candidate) ||
+                (enabled_only &&
+                 (candidate->state & LV_STATE_DISABLED) != 0U))
+        {
+            continue;
+        }
+        if (slider != NULL)
+        {
+            return NULL;
+        }
+        slider = candidate;
+    }
+    return slider;
 }
 
 static bool _host_lv_emit_with_input(lv_obj_t *object, lv_event_code_t code,
@@ -769,6 +797,11 @@ lv_obj_t *lv_slider_create(lv_obj_t *parent)
     return _host_lv_allocate_object(HOST_LV_OBJECT_SLIDER, parent);
 }
 
+lv_obj_t *lv_bar_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_BAR, parent);
+}
+
 lv_obj_t *lv_canvas_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_CANVAS, parent);
@@ -907,6 +940,28 @@ bool lv_obj_has_flag(const lv_obj_t *object, lv_obj_flag_t flags)
 {
     return object != NULL && object->live &&
            (object->flags & flags) == flags;
+}
+
+void lv_obj_add_state(lv_obj_t *object, lv_state_t state)
+{
+    if (object != NULL && object->live)
+    {
+        object->state |= state;
+    }
+}
+
+void lv_obj_remove_state(lv_obj_t *object, lv_state_t state)
+{
+    if (object != NULL && object->live)
+    {
+        object->state &= ~state;
+    }
+}
+
+bool lv_obj_has_state(const lv_obj_t *object, lv_state_t state)
+{
+    return object != NULL && object->live &&
+           (object->state & state) == state;
 }
 
 bool lv_obj_is_valid(const lv_obj_t *object)
@@ -1264,6 +1319,24 @@ void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...)
     va_end(args);
 }
 
+void lv_bar_set_range(lv_obj_t *bar, int32_t minimum, int32_t maximum)
+{
+    if (bar != NULL && bar->live)
+    {
+        bar->slider_minimum = minimum;
+        bar->slider_maximum = maximum;
+    }
+}
+
+void lv_bar_set_value(lv_obj_t *bar, int32_t value, int animation)
+{
+    (void)animation;
+    if (bar != NULL && bar->live)
+    {
+        bar->slider_value = value;
+    }
+}
+
 void lv_slider_set_range(lv_obj_t *slider, int32_t minimum, int32_t maximum)
 {
     if (slider != NULL && slider->live)
@@ -1398,6 +1471,18 @@ static void _host_lv_run_ready_timers(void)
             timer->callback(timer);
         }
     }
+}
+
+void host_lv_timer_step(void)
+{
+    for (size_t index = 0; index < HOST_LV_TIMER_CAPACITY; ++index)
+    {
+        if (s_timers[index].live && !s_timers[index].paused)
+        {
+            s_timers[index].ready = true;
+        }
+    }
+    _host_lv_run_ready_timers();
 }
 
 void lv_anim_refr_now(void)
@@ -1567,6 +1652,87 @@ void host_lv_touch_reset(void)
     lv_indev_reset(&s_pointer_indev, NULL);
 }
 
+bool host_lv_visible_slider_drag(int32_t value)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *slider = _host_lv_find_visible_slider(true);
+    if (slider == NULL)
+    {
+        return false;
+    }
+
+    if ((slider->state & LV_STATE_PRESSED) == 0U)
+    {
+        slider->state |= LV_STATE_PRESSED;
+        (void)_host_lv_emit(slider, LV_EVENT_PRESSED);
+    }
+    if (value < slider->slider_minimum)
+    {
+        value = slider->slider_minimum;
+    }
+    else if (value > slider->slider_maximum)
+    {
+        value = slider->slider_maximum;
+    }
+    slider->slider_value = value;
+    return _host_lv_emit(slider, LV_EVENT_VALUE_CHANGED);
+}
+
+bool host_lv_visible_slider_release(void)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *slider = _host_lv_find_visible_slider(true);
+    if (slider == NULL ||
+            (slider->state & LV_STATE_PRESSED) == 0U)
+    {
+        return false;
+    }
+
+    slider->state &= ~LV_STATE_PRESSED;
+    return _host_lv_emit(slider, LV_EVENT_RELEASED);
+}
+
+bool host_lv_visible_slider_cancel(void)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *slider = _host_lv_find_visible_slider(true);
+    if (slider == NULL ||
+            (slider->state & LV_STATE_PRESSED) == 0U)
+    {
+        return false;
+    }
+
+    slider->state &= ~LV_STATE_PRESSED;
+    return _host_lv_emit(slider, LV_EVENT_PRESS_LOST);
+}
+
+bool host_lv_visible_slider_snapshot(int32_t *value, bool *pressed,
+                                     bool *disabled)
+{
+    if (value == NULL || pressed == NULL || disabled == NULL)
+    {
+        return false;
+    }
+    const lv_obj_t *slider = _host_lv_find_visible_slider(false);
+    if (slider == NULL)
+    {
+        return false;
+    }
+    *value = slider->slider_value;
+    *pressed = (slider->state & LV_STATE_PRESSED) != 0U;
+    *disabled = (slider->state & LV_STATE_DISABLED) != 0U;
+    return true;
+}
+
 bool host_lv_click_action(const char *title)
 {
     if (_host_lv_input_is_blocked())
@@ -1578,6 +1744,7 @@ bool host_lv_click_action(const char *title)
         lv_obj_t *object = &s_objects[index];
         if (object->live && _host_lv_is_visible(object) &&
                 object->kind == HOST_LV_OBJECT_BUTTON &&
+                (object->state & LV_STATE_DISABLED) == 0U &&
                 _host_lv_has_descendant_text(object, title) &&
                 _host_lv_emit(object, LV_EVENT_CLICKED))
         {
@@ -1623,6 +1790,25 @@ bool host_lv_has_text(const char *text)
         }
     }
     return false;
+}
+
+size_t host_lv_visible_text_count(const char *text)
+{
+    if (text == NULL)
+    {
+        return 0U;
+    }
+    size_t count = 0U;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        if (s_objects[index].live && _host_lv_is_visible(&s_objects[index]) &&
+                s_objects[index].kind == HOST_LV_OBJECT_LABEL &&
+                strcmp(s_objects[index].text, text) == 0)
+        {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool host_lv_transition_target_has_text(const char *text)

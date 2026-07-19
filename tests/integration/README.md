@@ -1,18 +1,33 @@
 # Cross-Layer Host Integration Tests
 
 This suite links the production mailbox, builtin registry, lifecycle, event
-bus, theme, shared UI, Setup Wi-Fi adapter, and all four applications into one
-host executable. Files under `host/` replace only FreeRTOS, LVGL, clock, power,
-screen, and Wi-Fi service boundaries.
+bus, theme, shared UI, demo adapters, Setup Wi-Fi adapter, and all four
+applications into host executables. Files under `host/` replace only FreeRTOS,
+LVGL, application metadata, and middleware service boundaries.
 
 ## Coverage
 
-The test exercises the real Home -> Menu -> Settings/Power -> Setup -> Home
-navigation flow and verifies page-local event subscriptions are released. It
-then proves that 1,000 power snapshots occupy one latest-only UI slot, while
-1,000 Wi-Fi status and 1,000 scan snapshots occupy two slots and preserve
-mailbox headroom. The Setup path also queues a callback immediately before
-exit, verifies teardown cancels it, reopens with a new session, rejects an old
+The five tests cover:
+
+- `presentation`: transition effects, completion barriers, and fast-forward.
+- `cross_layer`: Home -> Demo Center -> Motion/Audio/Storage/Clock -> Settings
+  -> Setup -> Home navigation, HOME switching, page pause/resume, optional
+  service failures, and release of timers, subscriptions, workers, sessions,
+  SNTP ownership, and page-owned RTC alarms, including trigger-time automatic
+  disarm.
+- `test_audio_demo_adapter`: low-amplitude PCM meter response, serialized
+  commands, chunked tone cancellation, amplifier ownership, exact owner-side
+  PSRAM worker deletion, and recovery after an audio write failure.
+- `test_storage_demo_adapter`: exclusive temporary-file creation, preservation
+  of colliding files, 4 KiB verification, partial-write cleanup, PSRAM
+  worker-stack release, and retryable unlink failure.
+- `test_clock_demo_adapter`: ten-second alarm configuration, protection of
+  external alarms, owned SNTP/alarm release, PSRAM worker-stack release, and
+  retryable resource cleanup.
+
+The cross-layer test also proves that latest-only Power and Wi-Fi snapshots
+preserve mailbox headroom. Setup queues a callback immediately before exit,
+verifies teardown cancels it, reopens with a new session, rejects an old
 session snapshot, and renders the current session snapshot.
 
 ## Run
@@ -37,4 +52,5 @@ ctest --test-dir /tmp/mt-cross-tsan --output-on-failure
 ```
 
 These host checks do not replace ESP32-S3 validation for LVGL rendering,
-driver timing, radio behavior, or resource measurements.
+driver timing, SD card insertion/removal, IMU and audio behavior, radio and RTC
+behavior, screen-off/standby wake paths, or resource measurements.

@@ -40,6 +40,14 @@ wifi_service_session_id_t host_wifi_service_current_session(void);
 wifi_service_operation_id_t host_wifi_service_current_operation(void);
 
 /**
+ * @brief Replace the cached status without publishing or changing generation.
+ * @param snapshot is copied exactly, including a zero generation.
+ * @return ESP_OK when valid, otherwise ESP_ERR_INVALID_ARG.
+ */
+esp_err_t host_wifi_service_cache_status(
+    const wifi_service_status_snapshot_t *snapshot);
+
+/**
  * @brief Cache and publish a canonical status snapshot.
  * @param snapshot is the validated status to publish.
  * @return ESP_OK when admitted, otherwise an ESP-IDF error.

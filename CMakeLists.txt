@@ -29,5 +29,7 @@ if(NOT CONFIG_LV_USE_CLIB_STRING OR
 endif()
 
 if(CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL LESS 98304)
-    message(FATAL_ERROR "The 60-line LCD DMA staging path requires a 96 KiB internal reserve")
+    message(FATAL_ERROR
+        "Wi-Fi, I2S, and the bounded LCD DMA staging path require a 96 KiB "
+        "internal reserve")
 endif()

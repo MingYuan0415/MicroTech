@@ -76,6 +76,7 @@ typedef uint8_t lv_opa_t;
 typedef uint32_t lv_obj_flag_t;
 typedef uint32_t lv_part_t;
 typedef uint32_t lv_style_selector_t;
+typedef uint32_t lv_state_t;
 /** @brief Fake LVGL event callback. */
 typedef void (*lv_event_cb_t)(lv_event_t *event);
 /** @brief Fake LVGL timer callback. */
@@ -150,6 +151,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_ALIGN_TOP_LEFT             0
 #define LV_ALIGN_CENTER               1
 #define LV_ANIM_OFF                   0
+#define LV_ANIM_ON                    1
 #define LV_DIR_VER                    1
 #define LV_EVENT_ALL                  0
 #define LV_EVENT_CLICKED              1
@@ -202,21 +204,34 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SIZE_CONTENT               (-1)
 #define LV_RADIUS_CIRCLE              32767
 #define LV_STATE_PRESSED              1
+#define LV_STATE_DISABLED             (1U << 7)
 #define LV_TEXT_ALIGN_CENTER          0
+#define LV_TEXT_ALIGN_RIGHT           1
 
 #define HOST_LV_PCT_BASE              INT32_C(0x40000000)
 #define LV_PCT(value)                 (HOST_LV_PCT_BASE + (value))
 
 #define LV_SYMBOL_EYE_OPEN  "eye"
+#define LV_SYMBOL_AUDIO     "audio"
+#define LV_SYMBOL_BELL      "bell"
 #define LV_SYMBOL_BACKSPACE "backspace"
 #define LV_SYMBOL_CLOSE     "close"
+#define LV_SYMBOL_GPS       "gps"
 #define LV_SYMBOL_HOME      "home"
 #define LV_SYMBOL_LEFT      "left"
 #define LV_SYMBOL_LIST      "list"
+#define LV_SYMBOL_MUTE      "mute"
+#define LV_SYMBOL_OK        "ok"
+#define LV_SYMBOL_PLAY      "play"
 #define LV_SYMBOL_POWER     "power"
 #define LV_SYMBOL_REFRESH   "refresh"
 #define LV_SYMBOL_RIGHT     "right"
+#define LV_SYMBOL_SAVE      "save"
+#define LV_SYMBOL_SD_CARD   "sd-card"
 #define LV_SYMBOL_SETTINGS  "settings"
+#define LV_SYMBOL_STOP      "stop"
+#define LV_SYMBOL_VOLUME_MAX "volume-max"
+#define LV_SYMBOL_WARNING   "warning"
 #define LV_SYMBOL_WIFI      "wifi"
 
 /** @brief Return the fake active screen. */
@@ -250,6 +265,8 @@ lv_obj_t *lv_button_create(lv_obj_t *parent);
 lv_obj_t *lv_label_create(lv_obj_t *parent);
 /** @brief Create a fake slider. */
 lv_obj_t *lv_slider_create(lv_obj_t *parent);
+/** @brief Create a fake progress bar. */
+lv_obj_t *lv_bar_create(lv_obj_t *parent);
 /** @brief Create a fake Canvas. */
 lv_obj_t *lv_canvas_create(lv_obj_t *parent);
 /** @brief Bind a static fake draw buffer to a Canvas. */
@@ -272,6 +289,12 @@ void lv_obj_add_flag(lv_obj_t *object, lv_obj_flag_t flags);
 void lv_obj_remove_flag(lv_obj_t *object, lv_obj_flag_t flags);
 /** @brief Return whether all requested fake object flags are set. */
 bool lv_obj_has_flag(const lv_obj_t *object, lv_obj_flag_t flags);
+/** @brief Add state flags to a fake object. */
+void lv_obj_add_state(lv_obj_t *object, lv_state_t state);
+/** @brief Remove state flags from a fake object. */
+void lv_obj_remove_state(lv_obj_t *object, lv_state_t state);
+/** @brief Return whether all requested fake object states are set. */
+bool lv_obj_has_state(const lv_obj_t *object, lv_state_t state);
 /** @brief Return whether a fake object remains valid. */
 bool lv_obj_is_valid(const lv_obj_t *object);
 /** @brief Return a fake object's parent. */
@@ -354,6 +377,10 @@ void lv_indev_wait_release(lv_indev_t *indev);
 void lv_label_set_text(lv_obj_t *label, const char *text);
 /** @brief Set formatted fake label text. */
 void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...);
+/** @brief Set fake progress-bar range. */
+void lv_bar_set_range(lv_obj_t *bar, int32_t minimum, int32_t maximum);
+/** @brief Set fake progress-bar value. */
+void lv_bar_set_value(lv_obj_t *bar, int32_t value, int animation);
 /** @brief Set fake slider range. */
 void lv_slider_set_range(lv_obj_t *slider, int32_t minimum, int32_t maximum);
 /** @brief Set fake slider value. */

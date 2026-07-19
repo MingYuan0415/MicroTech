@@ -1,6 +1,8 @@
 #include "host_freertos.h"
 
 #include "apps_integration_runtime.h"
+#include "freertos/event_groups.h"
+#include "freertos/idf_additions.h"
 
 #include <errno.h>
 #include <stdatomic.h>
@@ -29,6 +31,13 @@ struct host_semaphore
     pthread_cond_t changed;
 };
 
+struct host_event_group
+{
+    EventBits_t bits;
+    pthread_mutex_t lock;
+    pthread_cond_t changed;
+};
+
 struct host_timer
 {
     void (*callback)(void *);
@@ -47,6 +56,12 @@ static _Thread_local TaskHandle_t s_current_static_task;
 static _Thread_local unsigned char s_thread_token;
 static pthread_mutex_t s_task_state_lock = PTHREAD_MUTEX_INITIALIZER;
 static TaskHandle_t s_created_task;
+static atomic_size_t s_dynamic_task_count;
+static atomic_size_t s_caps_task_count;
+static atomic_size_t s_caps_task_owner_delete_count;
+static atomic_size_t s_caps_task_wrong_delete_count;
+static atomic_size_t s_caps_task_self_delete_count;
+static atomic_uint s_last_task_stack_caps;
 
 static int _host_init_monotonic_condition(pthread_cond_t *condition)
 {
@@ -158,6 +173,37 @@ BaseType_t xQueueSend(QueueHandle_t queue, const void *item,
     memcpy(queue->items + queue->head * queue->item_size,
            item, queue->item_size);
     queue->head = (queue->head + 1U) % queue->capacity;
+    ++queue->count;
+    (void)pthread_cond_signal(&queue->not_empty);
+    (void)pthread_mutex_unlock(&queue->lock);
+    return pdTRUE;
+}
+
+BaseType_t xQueueSendToFront(QueueHandle_t queue, const void *item,
+                             TickType_t timeout)
+{
+    if (queue == NULL || item == NULL)
+    {
+        return pdFALSE;
+    }
+    (void)pthread_mutex_lock(&queue->lock);
+    struct timespec deadline = {0};
+    if (timeout != 0 && timeout != portMAX_DELAY)
+    {
+        deadline = _host_deadline(timeout);
+    }
+    while (queue->count == queue->capacity)
+    {
+        if (timeout == 0 || _host_wait(&queue->not_full, &queue->lock,
+                                       timeout, &deadline) == ETIMEDOUT)
+        {
+            (void)pthread_mutex_unlock(&queue->lock);
+            return pdFALSE;
+        }
+    }
+    queue->tail = (queue->tail + queue->capacity - 1U) % queue->capacity;
+    memcpy(queue->items + queue->tail * queue->item_size,
+           item, queue->item_size);
     ++queue->count;
     (void)pthread_cond_signal(&queue->not_empty);
     (void)pthread_mutex_unlock(&queue->lock);
@@ -290,6 +336,120 @@ void vSemaphoreDelete(SemaphoreHandle_t semaphore)
     free(semaphore);
 }
 
+EventGroupHandle_t xEventGroupCreate(void)
+{
+    struct host_event_group *group = calloc(1, sizeof(*group));
+    if (group == NULL)
+    {
+        return NULL;
+    }
+    if (pthread_mutex_init(&group->lock, NULL) != 0)
+    {
+        free(group);
+        return NULL;
+    }
+    if (_host_init_monotonic_condition(&group->changed) != 0)
+    {
+        (void)pthread_mutex_destroy(&group->lock);
+        free(group);
+        return NULL;
+    }
+    return group;
+}
+
+void vEventGroupDelete(EventGroupHandle_t group)
+{
+    if (group == NULL)
+    {
+        return;
+    }
+    (void)pthread_cond_destroy(&group->changed);
+    (void)pthread_mutex_destroy(&group->lock);
+    free(group);
+}
+
+EventBits_t xEventGroupSetBits(EventGroupHandle_t group, EventBits_t bits)
+{
+    if (group == NULL)
+    {
+        return 0U;
+    }
+    (void)pthread_mutex_lock(&group->lock);
+    group->bits |= bits;
+    const EventBits_t result = group->bits;
+    (void)pthread_cond_broadcast(&group->changed);
+    (void)pthread_mutex_unlock(&group->lock);
+    return result;
+}
+
+EventBits_t xEventGroupClearBits(EventGroupHandle_t group, EventBits_t bits)
+{
+    if (group == NULL)
+    {
+        return 0U;
+    }
+    (void)pthread_mutex_lock(&group->lock);
+    const EventBits_t result = group->bits;
+    group->bits &= ~bits;
+    (void)pthread_mutex_unlock(&group->lock);
+    return result;
+}
+
+EventBits_t xEventGroupGetBits(EventGroupHandle_t group)
+{
+    if (group == NULL)
+    {
+        return 0U;
+    }
+    (void)pthread_mutex_lock(&group->lock);
+    const EventBits_t result = group->bits;
+    (void)pthread_mutex_unlock(&group->lock);
+    return result;
+}
+
+static bool _host_event_bits_ready(EventBits_t current,
+                                   EventBits_t requested,
+                                   BaseType_t wait_for_all)
+{
+    return wait_for_all == pdTRUE ?
+           (current & requested) == requested :
+           (current & requested) != 0U;
+}
+
+EventBits_t xEventGroupWaitBits(EventGroupHandle_t group,
+                                EventBits_t bits,
+                                BaseType_t clear_on_exit,
+                                BaseType_t wait_for_all,
+                                TickType_t timeout)
+{
+    if (group == NULL || bits == 0U)
+    {
+        return 0U;
+    }
+    (void)pthread_mutex_lock(&group->lock);
+    struct timespec deadline = {0};
+    if (timeout != 0 && timeout != portMAX_DELAY)
+    {
+        deadline = _host_deadline(timeout);
+    }
+    while (!_host_event_bits_ready(group->bits, bits, wait_for_all))
+    {
+        if (timeout == 0 || _host_wait(&group->changed, &group->lock,
+                                       timeout, &deadline) == ETIMEDOUT)
+        {
+            break;
+        }
+    }
+    const EventBits_t result = group->bits;
+    if (_host_event_bits_ready(result, bits, wait_for_all) &&
+            clear_on_exit == pdTRUE)
+    {
+        group->bits &= ~bits;
+    }
+    (void)pthread_mutex_unlock(&group->lock);
+    return result;
+}
+
 TaskHandle_t xTaskGetCurrentTaskHandle(void)
 {
     if (s_current_static_task != NULL)
@@ -304,8 +464,45 @@ static void *_host_task_trampoline(void *context)
     TaskHandle_t task = context;
     s_current_static_task = task;
     task->entry(task->context);
+    if (task->dynamically_allocated)
+    {
+        vTaskDelete(NULL);
+    }
     s_current_static_task = NULL;
     return NULL;
+}
+
+static void _host_task_sync_destroy(TaskHandle_t task)
+{
+    (void)pthread_cond_destroy(&task->notification_ready);
+    (void)pthread_mutex_destroy(&task->lock);
+}
+
+static bool _host_task_start(TaskHandle_t task, void (*entry)(void *),
+                             void *context, bool dynamically_allocated)
+{
+    if (pthread_mutex_init(&task->lock, NULL) != 0)
+    {
+        return false;
+    }
+    if (_host_init_monotonic_condition(&task->notification_ready) != 0)
+    {
+        (void)pthread_mutex_destroy(&task->lock);
+        return false;
+    }
+    task->notification = 0U;
+    task->entry = entry;
+    task->context = context;
+    task->shutdown = false;
+    task->dynamically_allocated = dynamically_allocated;
+    task->created = true;
+    if (pthread_create(&task->thread, NULL, _host_task_trampoline, task) != 0)
+    {
+        task->created = false;
+        _host_task_sync_destroy(task);
+        return false;
+    }
+    return true;
 }
 
 TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
@@ -321,32 +518,77 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
     {
         return NULL;
     }
-    if (pthread_mutex_init(&task_storage->lock, NULL) != 0)
+    if (!_host_task_start(task_storage, entry, context, false))
     {
-        return NULL;
-    }
-    if (_host_init_monotonic_condition(&task_storage->notification_ready) != 0)
-    {
-        (void)pthread_mutex_destroy(&task_storage->lock);
-        return NULL;
-    }
-    task_storage->notification = 0;
-    task_storage->entry = entry;
-    task_storage->context = context;
-    task_storage->shutdown = false;
-    task_storage->created = true;
-    if (pthread_create(&task_storage->thread, NULL, _host_task_trampoline,
-                       task_storage) != 0)
-    {
-        task_storage->created = false;
-        (void)pthread_cond_destroy(&task_storage->notification_ready);
-        (void)pthread_mutex_destroy(&task_storage->lock);
         return NULL;
     }
     (void)pthread_mutex_lock(&s_task_state_lock);
     s_created_task = task_storage;
     (void)pthread_mutex_unlock(&s_task_state_lock);
     return task_storage;
+}
+
+static BaseType_t _host_task_create_dynamic(
+    void (*entry)(void *), const char *name,
+    uint32_t stack_depth, void *context,
+    UBaseType_t priority, TaskHandle_t *out_task,
+    bool with_caps, UBaseType_t memory_caps)
+{
+    (void)name;
+    (void)stack_depth;
+    (void)priority;
+    if (entry == NULL || out_task == NULL)
+    {
+        return pdFAIL;
+    }
+    *out_task = NULL;
+    TaskHandle_t task = calloc(1, sizeof(*task));
+    if (task == NULL)
+    {
+        return pdFAIL;
+    }
+    task->created_with_caps = with_caps;
+    task->stack_memory_caps = memory_caps;
+    atomic_fetch_add_explicit(&s_dynamic_task_count, 1U,
+                              memory_order_relaxed);
+    if (with_caps)
+    {
+        atomic_fetch_add_explicit(&s_caps_task_count, 1U,
+                                  memory_order_relaxed);
+        atomic_store_explicit(&s_last_task_stack_caps, memory_caps,
+                              memory_order_relaxed);
+    }
+    if (!_host_task_start(task, entry, context, true))
+    {
+        atomic_fetch_sub_explicit(&s_dynamic_task_count, 1U,
+                                  memory_order_relaxed);
+        if (with_caps)
+        {
+            atomic_fetch_sub_explicit(&s_caps_task_count, 1U,
+                                      memory_order_relaxed);
+        }
+        free(task);
+        return pdFAIL;
+    }
+    *out_task = task;
+    return pdPASS;
+}
+
+BaseType_t xTaskCreate(void (*entry)(void *), const char *name,
+                       uint32_t stack_depth, void *context,
+                       UBaseType_t priority, TaskHandle_t *out_task)
+{
+    return _host_task_create_dynamic(entry, name, stack_depth, context,
+                                     priority, out_task, false, 0U);
+}
+
+BaseType_t xTaskCreateWithCaps(void (*entry)(void *), const char *name,
+                               uint32_t stack_depth, void *context,
+                               UBaseType_t priority, TaskHandle_t *out_task,
+                               UBaseType_t memory_caps)
+{
+    return _host_task_create_dynamic(entry, name, stack_depth, context,
+                                     priority, out_task, true, memory_caps);
 }
 
 BaseType_t xTaskNotify(TaskHandle_t task, uint32_t value,
@@ -404,6 +646,251 @@ BaseType_t xTaskNotifyWait(uint32_t clear_on_entry, uint32_t clear_on_exit,
     task->notification &= ~clear_on_exit;
     (void)pthread_mutex_unlock(&task->lock);
     return pdTRUE;
+}
+
+BaseType_t xTaskNotifyGive(TaskHandle_t task)
+{
+    if (task == NULL)
+    {
+        return pdFAIL;
+    }
+    (void)pthread_mutex_lock(&task->lock);
+    if (task->shutdown)
+    {
+        (void)pthread_mutex_unlock(&task->lock);
+        return pdFAIL;
+    }
+    if (task->notification != UINT32_MAX)
+    {
+        ++task->notification;
+    }
+    (void)pthread_cond_signal(&task->notification_ready);
+    (void)pthread_mutex_unlock(&task->lock);
+    return pdPASS;
+}
+
+uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit, TickType_t timeout)
+{
+    TaskHandle_t task = s_current_static_task;
+    if (task == NULL)
+    {
+        return 0U;
+    }
+    (void)pthread_mutex_lock(&task->lock);
+    struct timespec deadline = {0};
+    if (timeout != 0 && timeout != portMAX_DELAY)
+    {
+        deadline = _host_deadline(timeout);
+    }
+    while (task->notification == 0U && !task->shutdown)
+    {
+        if (timeout == 0 || _host_wait(&task->notification_ready, &task->lock,
+                                       timeout, &deadline) == ETIMEDOUT)
+        {
+            (void)pthread_mutex_unlock(&task->lock);
+            return 0U;
+        }
+    }
+    if (task->shutdown)
+    {
+        (void)pthread_mutex_unlock(&task->lock);
+        pthread_exit(NULL);
+    }
+    const uint32_t result = task->notification;
+    if (clear_on_exit == pdTRUE)
+    {
+        task->notification = 0U;
+    }
+    else
+    {
+        --task->notification;
+    }
+    (void)pthread_mutex_unlock(&task->lock);
+    return result;
+}
+
+TickType_t xTaskGetTickCount(void)
+{
+    struct timespec current;
+    (void)clock_gettime(CLOCK_MONOTONIC, &current);
+    const uint64_t ticks = (uint64_t)current.tv_sec * configTICK_RATE_HZ +
+                           ((uint64_t)current.tv_nsec * configTICK_RATE_HZ) /
+                           UINT64_C(1000000000);
+    return (TickType_t)ticks;
+}
+
+static void _host_task_delay_without_handle(TickType_t ticks)
+{
+    if (ticks == 0U)
+    {
+        return;
+    }
+    const uint64_t nanoseconds =
+        ((uint64_t)ticks * UINT64_C(1000000000)) / configTICK_RATE_HZ;
+    const struct timespec delay =
+    {
+        .tv_sec = (time_t)(nanoseconds / UINT64_C(1000000000)),
+        .tv_nsec = (long)(nanoseconds % UINT64_C(1000000000)),
+    };
+    (void)nanosleep(&delay, NULL);
+}
+
+void vTaskDelay(TickType_t ticks)
+{
+    TaskHandle_t task = s_current_static_task;
+    if (task == NULL)
+    {
+        _host_task_delay_without_handle(ticks);
+        return;
+    }
+    (void)pthread_mutex_lock(&task->lock);
+    if (ticks == portMAX_DELAY)
+    {
+        while (!task->shutdown)
+        {
+            (void)pthread_cond_wait(&task->notification_ready, &task->lock);
+        }
+    }
+    else if (ticks != 0U)
+    {
+        const struct timespec deadline = _host_deadline(ticks);
+        while (!task->shutdown &&
+                pthread_cond_timedwait(&task->notification_ready,
+                                       &task->lock, &deadline) != ETIMEDOUT)
+        {
+        }
+    }
+    const bool shutdown = task->shutdown;
+    (void)pthread_mutex_unlock(&task->lock);
+    if (shutdown)
+    {
+        pthread_exit(NULL);
+    }
+}
+
+static void _host_task_record_delete(TaskHandle_t task, bool self_delete,
+                                     bool with_caps_api)
+{
+    if (task == NULL || !task->dynamically_allocated)
+    {
+        return;
+    }
+    if (task->created_with_caps)
+    {
+        if (self_delete)
+        {
+            atomic_fetch_add_explicit(&s_caps_task_self_delete_count, 1U,
+                                      memory_order_relaxed);
+        }
+        if (!with_caps_api)
+        {
+            atomic_fetch_add_explicit(&s_caps_task_wrong_delete_count, 1U,
+                                      memory_order_relaxed);
+        }
+        else if (!self_delete)
+        {
+            atomic_fetch_add_explicit(&s_caps_task_owner_delete_count, 1U,
+                                      memory_order_relaxed);
+        }
+    }
+    else if (with_caps_api)
+    {
+        atomic_fetch_add_explicit(&s_caps_task_wrong_delete_count, 1U,
+                                  memory_order_relaxed);
+    }
+}
+
+static void _host_task_delete(TaskHandle_t task, bool with_caps_api)
+{
+    TaskHandle_t current = s_current_static_task;
+    const bool self_delete = task == NULL || task == current;
+    TaskHandle_t target = self_delete ? current : task;
+    _host_task_record_delete(target, self_delete, with_caps_api);
+    if (self_delete)
+    {
+        if (current == NULL)
+        {
+            return;
+        }
+        s_current_static_task = NULL;
+        if (current->dynamically_allocated)
+        {
+            atomic_fetch_sub_explicit(&s_dynamic_task_count, 1U,
+                                      memory_order_relaxed);
+            if (current->created_with_caps)
+            {
+                atomic_fetch_sub_explicit(&s_caps_task_count, 1U,
+                                          memory_order_relaxed);
+            }
+            (void)pthread_detach(pthread_self());
+            _host_task_sync_destroy(current);
+            free(current);
+        }
+        pthread_exit(NULL);
+    }
+    if (!target->dynamically_allocated)
+    {
+        return;
+    }
+    (void)pthread_mutex_lock(&target->lock);
+    target->shutdown = true;
+    (void)pthread_cond_broadcast(&target->notification_ready);
+    (void)pthread_mutex_unlock(&target->lock);
+    (void)pthread_join(target->thread, NULL);
+    atomic_fetch_sub_explicit(&s_dynamic_task_count, 1U,
+                              memory_order_relaxed);
+    if (target->created_with_caps)
+    {
+        atomic_fetch_sub_explicit(&s_caps_task_count, 1U,
+                                  memory_order_relaxed);
+    }
+    _host_task_sync_destroy(target);
+    free(target);
+}
+
+void vTaskDelete(TaskHandle_t task)
+{
+    _host_task_delete(task, false);
+}
+
+void vTaskDeleteWithCaps(TaskHandle_t task)
+{
+    _host_task_delete(task, true);
+}
+
+size_t host_dynamic_task_count(void)
+{
+    return atomic_load_explicit(&s_dynamic_task_count,
+                                memory_order_relaxed);
+}
+
+size_t host_caps_task_count(void)
+{
+    return atomic_load_explicit(&s_caps_task_count, memory_order_relaxed);
+}
+
+UBaseType_t host_last_task_stack_caps(void)
+{
+    return atomic_load_explicit(&s_last_task_stack_caps,
+                                memory_order_relaxed);
+}
+
+size_t host_caps_task_owner_delete_count(void)
+{
+    return atomic_load_explicit(&s_caps_task_owner_delete_count,
+                                memory_order_relaxed);
+}
+
+size_t host_caps_task_wrong_delete_count(void)
+{
+    return atomic_load_explicit(&s_caps_task_wrong_delete_count,
+                                memory_order_relaxed);
+}
+
+size_t host_caps_task_self_delete_count(void)
+{
+    return atomic_load_explicit(&s_caps_task_self_delete_count,
+                                memory_order_relaxed);
 }
 
 void host_task_shutdown(void)

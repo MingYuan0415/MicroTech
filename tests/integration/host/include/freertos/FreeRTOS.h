@@ -22,6 +22,9 @@ typedef struct host_static_task
     void *context;
     bool created;
     bool shutdown;
+    bool dynamically_allocated;
+    bool created_with_caps;
+    UBaseType_t stack_memory_caps;
 } StaticTask_t;
 
 typedef StaticTask_t *TaskHandle_t;
@@ -29,12 +32,21 @@ typedef StaticTask_t *TaskHandle_t;
 typedef struct host_queue *QueueHandle_t;
 /** @brief Opaque host semaphore handle. */
 typedef struct host_semaphore *SemaphoreHandle_t;
+/** @brief Opaque host event-group handle. */
+typedef struct host_event_group *EventGroupHandle_t;
+/** @brief Host representation of FreeRTOS event bits. */
+typedef uint32_t EventBits_t;
 typedef pthread_mutex_t portMUX_TYPE;
 
 #define pdTRUE 1
 #define pdFALSE 0
 #define pdPASS 1
 #define pdFAIL 0
+#define BIT0 (UINT32_C(1) << 0)
+#define BIT1 (UINT32_C(1) << 1)
+#define BIT2 (UINT32_C(1) << 2)
+#define BIT3 (UINT32_C(1) << 3)
+#define tskIDLE_PRIORITY 0U
 
 #ifndef configTICK_RATE_HZ
     #define configTICK_RATE_HZ 1000U
