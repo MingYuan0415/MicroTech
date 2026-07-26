@@ -9,5 +9,9 @@
  * @param ticks_to_delay is the requested delay in fake ticks.
  */
 void vTaskDelay(TickType_t ticks_to_delay);
+BaseType_t xTaskNotifyGive(TaskHandle_t task);
+uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit,
+                          TickType_t timeout_ticks);
+void vTaskSuspend(TaskHandle_t task);
 
 #endif /* __FREERTOS_TASK_H__ */

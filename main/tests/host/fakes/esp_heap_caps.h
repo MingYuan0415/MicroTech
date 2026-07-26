@@ -17,6 +17,9 @@
  */
 void *heap_caps_malloc_prefer(size_t size, size_t preference_count, ...);
 
+/** @brief Allocate host memory with one required capability mask. */
+void *heap_caps_malloc(size_t size, unsigned caps);
+
 /**
  * @brief Release memory returned by heap_caps_malloc_prefer().
  *

@@ -28,8 +28,13 @@ if(NOT CONFIG_LV_USE_CLIB_STRING OR
     message(FATAL_ERROR "The production LVGL profile requires libc string/sprintf and style cache")
 endif()
 
-if(CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL LESS 98304)
+if(NOT CONFIG_LV_COLOR_DEPTH_16)
     message(FATAL_ERROR
-        "Wi-Fi, I2S, and the bounded LCD DMA staging path require a 96 KiB "
+        "The display pipeline and DMA transfer limits require LVGL RGB565")
+endif()
+
+if(CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL LESS 131072)
+    message(FATAL_ERROR
+        "Wi-Fi, I2S, and the bounded LCD DMA staging path require a 128 KiB "
         "internal reserve")
 endif()

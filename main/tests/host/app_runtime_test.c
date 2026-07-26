@@ -3,6 +3,7 @@
 #include "app_manager.h"
 #include "app_manager_config.h"
 #include "app_runtime_pm.h"
+#include "display_benchmark.h"
 #include "audio_service.h"
 #include "ble_service.h"
 #include "bsp_hal.h"
@@ -57,6 +58,8 @@ typedef enum
     TEST_EVENT_DISPLAY_COMMIT,
     TEST_EVENT_SCREEN_COMMIT,
     TEST_EVENT_STARTUP_COMMIT,
+    TEST_EVENT_DISPLAY_BENCHMARK_START,
+    TEST_EVENT_DISPLAY_BENCHMARK_STOP,
     TEST_EVENT_SYSTEM_PM_CANCEL,
     TEST_EVENT_BLE_DEINIT,
     TEST_EVENT_WIFI_DEINIT,
@@ -691,6 +694,16 @@ esp_err_t app_manager_startup_commit(void)
     return _test_result(TEST_EVENT_STARTUP_COMMIT);
 }
 
+esp_err_t display_benchmark_start(void)
+{
+    return _test_result(TEST_EVENT_DISPLAY_BENCHMARK_START);
+}
+
+esp_err_t display_benchmark_stop(void)
+{
+    return _test_result(TEST_EVENT_DISPLAY_BENCHMARK_STOP);
+}
+
 esp_err_t power_service_init(void)
 {
     return _test_result(TEST_EVENT_POWER_INIT);
@@ -849,6 +862,8 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_WIFI_INIT,
         TEST_EVENT_BLE_INIT,
         TEST_EVENT_STARTUP_COMMIT,
+        TEST_EVENT_DISPLAY_BENCHMARK_START,
+        TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_WIFI_DEINIT,
@@ -915,6 +930,7 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_DISPLAY_COMMIT,
         TEST_EVENT_SCREEN_COMMIT,
         TEST_EVENT_STARTUP_COMMIT,
+        TEST_EVENT_DISPLAY_BENCHMARK_START,
     };
 
     for (size_t index = 0;
@@ -934,6 +950,7 @@ static void _test_cleanup_retry_before_restart(void)
 {
     static const test_event_t first_cleanup[] =
     {
+        TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_WIFI_DEINIT,
@@ -962,6 +979,7 @@ static void _test_every_cleanup_failure_is_retryable(void)
 {
     static const test_event_t cleanup_events[] =
     {
+        TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_WIFI_DEINIT,
@@ -994,7 +1012,8 @@ static void _test_every_cleanup_failure_is_retryable(void)
         s_test.failure_event = TEST_EVENT_NONE;
         assert(app_runtime_stop() == ESP_OK);
         assert(!app_runtime_is_running());
-        if (cleanup_events[index] != TEST_EVENT_SYSTEM_PM_CANCEL)
+        if (cleanup_events[index] != TEST_EVENT_SYSTEM_PM_CANCEL &&
+                cleanup_events[index] != TEST_EVENT_DISPLAY_BENCHMARK_STOP)
         {
             assert(!_test_event_seen(TEST_EVENT_SYSTEM_PM_CANCEL));
         }

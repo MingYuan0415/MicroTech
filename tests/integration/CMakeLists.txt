@@ -76,6 +76,7 @@ target_compile_definitions(test_cross_layer PRIVATE
 )
 target_compile_definitions(test_presentation PRIVATE
     HOST_TEST=1
+    CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS=1
 )
 target_include_directories(test_cross_layer PRIVATE
     host/include

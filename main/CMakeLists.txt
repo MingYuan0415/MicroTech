@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "app_main.c" "app_runtime.c" "app_runtime_pm.c" "network_runtime.c"
+         "display_benchmark.c"
          "fs_storage/fs_storage.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
@@ -24,6 +25,10 @@ idf_component_register(
         ble_service
         app_core
         app_theme
+        esp_timer
+        freertos
+        heap
+        lwip
 )
 
 # 资源分区打包规则

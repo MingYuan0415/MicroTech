@@ -4,6 +4,7 @@
 
 #include "app_runtime.h"
 #include "app_runtime_pm.h"
+#include "display_benchmark.h"
 
 #include "app_manager.h"
 #include "app_manager_config.h"
@@ -52,6 +53,9 @@ typedef struct app_runtime_ownership
     bool sd_attempted;
     bool wifi_owned;
     bool ble_attempted;
+#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+    bool display_benchmark_attempted;
+#endif
     app_manager_ui_dispatch_fn ui_dispatch;
 } app_runtime_ownership_t;
 
@@ -239,17 +243,36 @@ static bool _app_runtime_sd_is_mounted(void *context, void *handle)
 
 static bool _app_runtime_has_owned_resources(void)
 {
-    return s_ownership.nv_attempted || s_ownership.fs_attempted ||
-           s_ownership.bsp_attempted || s_ownership.time_attempted ||
-           s_ownership.system_pm_attempted ||
-           s_ownership.app_manager_attempted ||
-           s_ownership.ui_dispatch_registered ||
-           s_ownership.wake_requester_registered ||
-           s_ownership.power_attempted || s_ownership.imu_attempted ||
-           s_ownership.audio_attempted || s_ownership.sd_attempted ||
-           s_ownership.wifi_owned ||
-           s_ownership.ble_attempted;
+    bool owned = s_ownership.nv_attempted || s_ownership.fs_attempted ||
+                 s_ownership.bsp_attempted || s_ownership.time_attempted ||
+                 s_ownership.system_pm_attempted ||
+                 s_ownership.app_manager_attempted ||
+                 s_ownership.ui_dispatch_registered ||
+                 s_ownership.wake_requester_registered ||
+                 s_ownership.power_attempted || s_ownership.imu_attempted ||
+                 s_ownership.audio_attempted || s_ownership.sd_attempted ||
+                 s_ownership.wifi_owned || s_ownership.ble_attempted;
+#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+    owned = owned || s_ownership.display_benchmark_attempted;
+#endif
+    return owned;
 }
+
+#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+static esp_err_t _app_runtime_stop_display_benchmark(void)
+{
+    if (!s_ownership.display_benchmark_attempted)
+    {
+        return ESP_OK;
+    }
+    const esp_err_t result = display_benchmark_stop();
+    if (result == ESP_OK)
+    {
+        s_ownership.display_benchmark_attempted = false;
+    }
+    return result;
+}
+#endif
 
 static bool _app_runtime_required_apps_present(void)
 {
@@ -483,7 +506,15 @@ static esp_err_t _app_runtime_unwind(void)
     atomic_store(&s_runtime_state, APP_RUNTIME_STOPPING);
     app_runtime_pm_close_admission();
 
-    esp_err_t result = _app_runtime_stop_active_services();
+    esp_err_t result = ESP_OK;
+#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+    result = _app_runtime_stop_display_benchmark();
+    if (result != ESP_OK)
+    {
+        goto blocked;
+    }
+#endif
+    result = _app_runtime_stop_active_services();
     if (result != ESP_OK)
     {
         goto blocked;
@@ -951,6 +982,15 @@ esp_err_t app_runtime_start(void)
     {
         goto failed;
     }
+
+#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+    s_ownership.display_benchmark_attempted = true;
+    result = display_benchmark_start();
+    if (result != ESP_OK)
+    {
+        goto failed;
+    }
+#endif
 
     atomic_store(&s_runtime_state, APP_RUNTIME_READY);
     app_runtime_pm_open_admission();
