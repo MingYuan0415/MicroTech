@@ -82,8 +82,12 @@ audio+TCP 组合负载会产生更低的内部内存峰值。`direct/10 + full` 
 host 配置测试不表示硬件可用。
 
 生产配置继续使用 40 MHz、60 行 LVGL buffer、10 行 bounce chunk、queue depth 2、
-`RGB565`并关闭 direct/TE。80 MHz 仍未经上板验证。当前传输参数调优未达到
-25 FPS 发布底线或 30 FPS 目标；全屏预渲染/快照式转场架构评估暂缓。
+`RGB565`并关闭 direct/TE。40 MHz 是项目经验默认，SH8601A preliminary Table 14 并未
+保证它的 Quad SPI 时序。80 MHz 在当前样机上可运行，但已归类为不稳定的超规格实验档：
+十组最差 P95 从 E40 的约 145 ms 降至 E80 的约 140 ms，改善约 3.45%，未达到 5% 判定
+线；一轮 E80 还出现 `min_dma=8704`、`dma_fail=1` 和运动中的 T1 单条接缝。它不能成为
+生产默认，任何需要它的复现实验都必须显式选择 80 MHz。当前传输参数调优未达到 25 FPS
+发布底线或 30 FPS 目标；全屏预渲染/快照式转场架构评估暂缓。
 
 ESP32-S3 单次 DMA 的 32 KiB 边界下，368 像素宽 RGB565 最多容纳 44 个完整行：
 `368 * 44 * 2 = 32,384 B`，而 45 行为 `33,120 B`。因此 direct 大块 A/B 使用 44 行。
@@ -93,6 +97,130 @@ ESP-IDF 会将请求拆成不超过硬件边界的 DMA 段，不应将其误认�
 候选配置先运行 10 分钟显示图案和全负载检查，再用 `STRESS` 运行完整 1800 秒。IMU/I2C
 超时应单独记录，不归因于显示性能；WDT、panic、OOM、音频错误、显示冻结或任何 Wi-Fi
 断连均使稳定性失败。
+
+## 40/80 MHz 单板 A/B
+
+SH8601A preliminary Table 14 给出的 Quad SPI 最小写周期为 50 ns，对应约 20 MHz
+名义上限；因此 40 MHz 已是两倍名义上限的项目经验默认，80 MHz 是四倍名义上限的
+超规格实验。ESP32-S3 SPI2 以 APB /1 可以实际输出 80 MHz，但该事实不构成面板稳定性
+证明。时钟 A/B 工具仅用于复现和诊断当前样机，不能将 80 MHz 提升为默认；tracked
+`sdkconfig.defaults` 始终保持 40 MHz。
+
+四个 characterization profile 都固定 bounce/10、queue depth 2、Direct/TE 关闭、
+双 draw worker、128 KiB internal reserve、full load 和每效果 30 秒：
+
+| Profile | 时钟 | Draw buffer | 色彩 |
+| --- | ---: | ---: | --- |
+| E40 | 40 MHz | 120 行 | `RGB565_SWAPPED` |
+| E80 | 80 MHz | 120 行 | `RGB565_SWAPPED` |
+| P40 | 40 MHz | 60 行 | `RGB565` |
+| P80 | 80 MHz | 60 行 | `RGB565` |
+
+生成隔离配置并构建：
+
+```sh
+python3 tests/display/clock_ab_profiles.py prepare --reset
+```
+
+该命令只在 `/tmp/mt-display-clock-ab/<profile>/` 下生成独立 sdkconfig/build 路径，
+并为每个 profile 保存 `source_manifest.json`。manifest 对根仓库及全部子模块的 commit、
+tracked diff 和未忽略的新文件内容取指纹，随后打印四条 `idf.py build size` 命令。准备后
+不得再修改源码；如需修改，必须使用 `prepare --reset` 重新生成全部候选。依次执行打印
+出的命令，完成后验证固件存在、源码指纹及完整配置差异：
+
+```sh
+python3 tests/display/clock_ab_profiles.py validate --pair all
+```
+
+E40/E80 和 P40/P80 都必须来自同一源码指纹，并且只报告三个时钟相关 symbol：两个
+choice 与派生的 `CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ`。启动 TCP 服务并单独保存服务端日志：
+
+```sh
+mkdir -p /home/mingyuan/display-logs
+python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001 \
+  2>&1 | tee "/home/mingyuan/display-logs/tcp-clock-ab-$(date +%Y%m%d-%H%M%S).log"
+```
+
+characterization 按 `E40 -> E80 -> E80 -> E40 -> P40 -> P80` 执行。每轮先设置小写
+`PROFILE` 和 `RUN`，E profile 的 `RUN` 使用 1/2，P profile 使用 1。先烧录，不与
+monitor 合并：
+
+```sh
+PROFILE=e40
+RUN=1
+idf.py -B "/tmp/mt-display-clock-ab/${PROFILE}/build" \
+  -p /dev/ttyACM0 flash
+```
+
+烧录完成后完整断开设备的 USB、电池和充电供电，再重新上电。等待串口节点恢复后只启动
+monitor；`--no-reset` 避免附加 monitor 时再次软复位：
+
+```sh
+idf.py -B "/tmp/mt-display-clock-ab/${PROFILE}/build" \
+  -p /dev/ttyACM0 monitor --no-reset --timestamps --disable-auto-color \
+  2>&1 | tee "/home/mingyuan/display-logs/${PROFILE}-${RUN}-$(date +%Y%m%d-%H%M%S).log"
+```
+
+如果冷启动早期日志在串口枚举期间丢失，分析器会因启动指纹缺失拒绝该轮，必须重新执行，
+不得改用一次普通软复位日志顶替冷启动样本。
+
+日志开头的 board、adapter 和 benchmark 指纹必须一致。每个效果的 full-load 阶段至少
+录制 10 秒，优先使用 120/240 FPS；视频同时覆盖静止页面、转场和转场后的稳定画面。
+按所有候选视频中最差现象记录视觉等级：
+
+| 等级 | 现象 | 判定 |
+| --- | --- | --- |
+| T0 | 无撕裂 | 仅记录视觉结果，不能使 80 MHz 成为生产配置 |
+| T1 | 仅运动时单条瞬时接缝，静止后立即消失且正常观看不明显 | 当前样机可继续复现实验，但仍是不稳定超规格选项 |
+| T2 | 明显或多条接缝、固定顶部线、静态残留、随机像素、错色、黑帧或冻结 | 当前 80 MHz 实验无效，立即回退 40 MHz |
+
+数值分析命令可同时输入重复运行：
+
+```sh
+python3 tests/display/analyze_clock_ab.py \
+  --log E40=/path/e40-1.log --log E40=/path/e40-2.log \
+  --log E80=/path/e80-1.log --log E80=/path/e80-2.log \
+  --log P40=/path/p40-1.log --log P80=/path/p80-1.log
+```
+
+分析器严格检查启动指纹、每阶段 150/总计 300 个样本、十组 perf/cost、最终状态和
+TCP/运行时错误；按重复运行平均后
+计算 `W_clock`，并用累计 `panel_us / active_frames` 计算 panel 帧成本。数值结果用于
+比较：最差 P95 至少改善 5%、panel 帧成本至少下降 35%，且任一效果平均 FPS 不得回退
+超过 5%。当前记录的最差 P95 改善约 3.45%，不满足该比较条件。视觉等级是独立的人工
+证据；分析器输出的 `transport=PASS` 不能替代 T0/T1 判定，也不能使 80 MHz 成为生产
+配置。既有 full audio+TCP 的 `min_dma=8192` 会单独显示为 `system=FAIL`，但不使时钟
+传输 A/B 失效，前提是 40/80 MHz 两侧都只因该 DMA 门槛失败；如果仅 80 MHz 侧出现
+DMA 稳定性失败，当前实验直接拒绝。
+
+专用 TCP 服务日志应按物理执行顺序恰好出现六条 `closed` 记录。逐轮核对设备
+`tcp_tx_bytes` 等于服务端 `rx_bytes`；正常停止可能发生在一次 send 完成而 echo 尚未读取
+时，因此服务端 `tx_bytes - 设备 tcp_rx_bytes` 允许为 `0..5760 B`。超出一个 payload、
+出现额外连接或缺失关闭记录时，该轮稳定性失败，即使设备侧吞吐门槛通过。
+
+可生成相互隔离的 1800 秒 stress 与 28,800 秒 soak 固件，以复现当前样机的 80 MHz
+行为或排查问题：
+
+```sh
+python3 tests/display/clock_ab_profiles.py prepare --reset \
+  --profiles E80-STRESS E80-SOAK
+# 依次执行上一个命令打印的两条 idf.py build size 命令
+python3 tests/display/clock_ab_profiles.py validate \
+  --profiles E80-STRESS E80-SOAK
+```
+
+两份物化配置必须只差 `CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_DURATION_SEC`。可运行
+10 分钟 UI/触摸/按键预检、1800 秒 `STRESS`、冷启动/休眠恢复和 8 小时 full-load soak，
+以记录当前样机行为。任何 T2、WDT、panic、OOM、重启、GUI/输入冻结、提交错误、TCP
+重连、Wi-Fi 断线或 audio/TCP 错误都使该实验失败并立即回退 40 MHz。即使该轮没有错误，
+在取得面板的新规格或供应商书面确认前，80 MHz 仍不得成为生产默认；只因两个时钟共同
+存在的 DMA 门槛失败时，结论必须写成 `transport=PASS, system=FAIL`。
+
+当前 TE 模式会同时切换全屏单 buffer 和 PSRAM Direct DMA，不能用于本次撕裂归因。
+如需研究 80 MHz 下的 T1 接缝，只制作 bounce 路径的 GPIO13 TE 边沿探针，并把
+`TESCAN` 从 465 改为 0。只有连续 10 分钟获得稳定约 60 Hz 且无丢边沿后，才另行设计
+TE 与 Direct DMA 解耦测试；不使用无反馈的软件定时模拟 TE。该探针不改变 80 MHz 的
+超规格实验属性，也不启用 TE 或 Direct DMA 作为生产路径。
 
 ## 生命周期 trace
 

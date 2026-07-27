@@ -117,8 +117,10 @@ LVGL 锁错误与 FPS 读取错误。最终日志使用独立的 `display benchm
 不代表发生了 SPI DMA 提交失败；实际显示提交失败由 `submit_fail` 统计。
 
 默认显示传输配置为 40 MHz QSPI、60 行双 PSRAM draw buffer、10 行 SPI DMA chunk、
-queue depth 2、非 TE bounce DMA 和 `RGB565`。旧的 60 MHz 请求在 ESP32-S3 默认
-80 MHz GPSPI 时钟源上实际只能分频为 40 MHz，现已直接配置并记录真实的 40 MHz。
+queue depth 2、非 TE bounce DMA 和 `RGB565`。40 MHz 是项目经验默认，不是面板数据
+手册保证的频率：SH8601A preliminary Table 14 的 Quad SPI 最小写周期为 50 ns，名义
+上对应 20 MHz。ESP32-S3 的 80 MHz APB SPI 时钟不能精确分频出 60 MHz，因此工程直接
+配置并记录实际的 40 MHz。
 基准开始时的 `display config` 行会同时记录 draw/DMA 行数、颜色格式、direct/TE、
 draw worker、TCP payload 和任务优先级，后续 A/B 日志可独立识别配置。
 buffer 表征已从 60/120/240/448 行中选出 120 行作为实验候选，但未改变生产
@@ -128,7 +130,11 @@ tcp-only 分别以 128.423 ms/16,384 B 和 145 ms/21,504 B 通过稳定性检查
 结果表明 TCP 是主要性能压力，audio+TCP 组合峰值会压低内部 DMA 连续块。
 非 TE direct/10 在 full 负载下出现顶部蓝线和显示冻结，因此已拒绝，direct/44
 不再执行。生产默认仍为 60 行、`RGB565`、bounce/10、direct 和 TE 关闭，
-诊断、基准与生命周期 trace 均关闭。80 MHz 仍是未经上板验证的实验档。
+诊断、基准与生命周期 trace 均关闭。80 MHz 在当前样机上可运行，但属于超规格且不
+稳定的实验档：E80 的十组最差 P95 约为 140 ms，相比 E40 的 145 ms 仅改善约 3.45%，
+未达到 5% 判定线；panel 帧成本约从 15.33 ms 降至 9.17 ms，但一轮 E80 出现
+`min_dma=8704`、`dma_fail=1`，且观察到运动中的 T1 单条接缝。因此它不能成为默认或
+生产配置，只能由开发者针对当前样机显式选择；40 MHz 是明确的回退路径。
 当前参数调优未达到 25/30 FPS 门槛，全屏预渲染或快照式转场评估暂缓。
 
 `CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG` 控制 App Manager 的 START、MOUNT、RESUME、

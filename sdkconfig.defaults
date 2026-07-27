@@ -27,6 +27,8 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16m_ota_res_data.csv"
 #
 # MicroTech Project Config
 #
+# 40 MHz is the project empirical default. 80 MHz is an explicit,
+# out-of-spec SH8601A experiment and is not production-qualified.
 CONFIG_BSP_DISPLAY_SPI_CLOCK_40M=y
 CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES=10
 CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT=n
