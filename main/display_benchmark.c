@@ -89,11 +89,23 @@
 #ifndef CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG
     #define CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG 0
 #endif
+#ifndef CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
+    #define CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION 0
+#endif
 
 #if CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
     #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565_SWAPPED"
 #else
     #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565"
+#endif
+
+#if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION && \
+    !CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
+    #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED 1U
+    #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME "enabled"
+#else
+    #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED 0U
+    #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME "n/a"
 #endif
 
 #if defined(CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT) && \
@@ -198,6 +210,11 @@ typedef struct display_benchmark_stability_summary
     uint32_t frame_submit_count;
     uint32_t submit_failure_count;
     uint32_t transition_cancel_count;
+    uint32_t snapshot_prepare_count;
+    uint64_t snapshot_prepare_us;
+    uint32_t maximum_snapshot_prepare_us;
+    uint32_t maximum_snapshot_prepare_p95_us;
+    uint32_t snapshot_fallback_count;
     bool diagnostics_passed;
 } display_benchmark_stability_summary_t;
 
@@ -1004,6 +1021,21 @@ static uint32_t _display_benchmark_average_fps_x100(
     return average > UINT32_MAX ? UINT32_MAX : (uint32_t)average;
 }
 
+static bool _display_benchmark_snapshot_prepare_passed(
+    const app_manager_display_effect_benchmark_report_t *effect)
+{
+#if DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED
+    return effect->snapshot_prepare_count == effect->transition_start_count &&
+           effect->snapshot_prepare_count > 0U &&
+           effect->snapshot_prepare_p95_us <=
+           APP_MANAGER_DISPLAY_SNAPSHOT_PREPARE_TARGET_US &&
+           effect->snapshot_fallback_count == 0U;
+#else
+    (void)effect;
+    return true;
+#endif
+}
+
 static display_benchmark_performance_t _display_benchmark_grade_effect(
     const app_manager_display_effect_benchmark_report_t *effect)
 {
@@ -1013,7 +1045,8 @@ static display_benchmark_performance_t _display_benchmark_grade_effect(
             effect->transition_cancel_count != 0U ||
             effect->active_frame_count == 0U ||
             effect->active_duration_us == 0U ||
-            effect->interval_count == 0U)
+            effect->interval_count == 0U ||
+            !_display_benchmark_snapshot_prepare_passed(effect))
     {
         return DISPLAY_BENCHMARK_PERFORMANCE_FAIL;
     }
@@ -1043,6 +1076,34 @@ static display_benchmark_performance_t _display_benchmark_grade_effect(
            DISPLAY_BENCHMARK_PERFORMANCE_FLOOR;
 }
 
+static bool _display_benchmark_snapshot_prepare_all_passed(
+    const app_manager_display_benchmark_report_t *report)
+{
+#if DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED
+    if (report->snapshot_fallback_count != 0U)
+    {
+        return false;
+    }
+    for (size_t index = 0U;
+            index < APP_MANAGER_DISPLAY_BENCHMARK_EFFECT_COUNT; ++index)
+    {
+        const app_manager_display_effect_benchmark_report_t *effect =
+            &report->effects[index];
+        if (effect->transition_start_count == 0U)
+        {
+            continue;
+        }
+        if (!_display_benchmark_snapshot_prepare_passed(effect))
+        {
+            return false;
+        }
+    }
+#else
+    (void)report;
+#endif
+    return true;
+}
+
 static display_benchmark_performance_t
 _display_benchmark_grade_production_effects(
     const app_manager_display_benchmark_report_t *report)
@@ -1069,6 +1130,15 @@ _display_benchmark_grade_production_effects(
     return performance;
 }
 
+static display_benchmark_performance_t _display_benchmark_grade_profile(
+    const app_manager_display_benchmark_report_t *report)
+{
+    const display_benchmark_performance_t performance =
+        _display_benchmark_grade_production_effects(report);
+    return _display_benchmark_snapshot_prepare_all_passed(report) ?
+           performance : DISPLAY_BENCHMARK_PERFORMANCE_FAIL;
+}
+
 static void _display_benchmark_accumulate_stability(
     display_benchmark_stability_summary_t *summary,
     const app_manager_display_benchmark_report_t *report)
@@ -1093,6 +1163,21 @@ static void _display_benchmark_accumulate_stability(
     summary->frame_submit_count += report->frame_submit_count;
     summary->submit_failure_count += report->submit_failure_count;
     summary->transition_cancel_count += report->transition_cancel_count;
+    summary->snapshot_prepare_count += report->snapshot_prepare_count;
+    summary->snapshot_prepare_us += report->snapshot_prepare_us;
+    if (report->maximum_snapshot_prepare_us >
+            summary->maximum_snapshot_prepare_us)
+    {
+        summary->maximum_snapshot_prepare_us =
+            report->maximum_snapshot_prepare_us;
+    }
+    if (report->snapshot_prepare_p95_us >
+            summary->maximum_snapshot_prepare_p95_us)
+    {
+        summary->maximum_snapshot_prepare_p95_us =
+            report->snapshot_prepare_p95_us;
+    }
+    summary->snapshot_fallback_count += report->snapshot_fallback_count;
     summary->diagnostics_passed = summary->diagnostics_passed &&
                                   report->passed;
 }
@@ -1117,13 +1202,19 @@ static void _display_benchmark_log_profile(
                                                      (uint64_t)effect->interval_within_target_count *
                                                      10000ULL /
                                                      effect->interval_count);
-        LOG_I("display perf load=%s effect=%s result=%s start=%u complete=%u cancel=%u active_frames=%u active_ms=%llu avg_fps_x100=%u intervals=%u target_pct_x100=%u p50_us=%u p95_us=%u p99_us=%u max_us=%u long_run=%u",
+        LOG_I("display perf load=%s effect=%s result=%s start=%u complete=%u cancel=%u snapshot=%s snapshot_prepare_count=%u snapshot_prepare_us=%llu snapshot_prepare_max_us=%u snapshot_prepare_p95_us=%u snapshot_fallbacks=%u active_frames=%u active_ms=%llu avg_fps_x100=%u intervals=%u target_pct_x100=%u p50_us=%u p95_us=%u p99_us=%u max_us=%u long_run=%u",
               load_name, _display_benchmark_effect_name(effect->effect),
               _display_benchmark_performance_name(
                   _display_benchmark_grade_effect(effect)),
               (unsigned)effect->transition_start_count,
               (unsigned)effect->transition_complete_count,
               (unsigned)effect->transition_cancel_count,
+              DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME,
+              (unsigned)effect->snapshot_prepare_count,
+              (unsigned long long)effect->snapshot_prepare_us,
+              (unsigned)effect->maximum_snapshot_prepare_us,
+              (unsigned)effect->snapshot_prepare_p95_us,
+              (unsigned)effect->snapshot_fallback_count,
               (unsigned)effect->active_frame_count,
               (unsigned long long)(effect->active_duration_us / 1000U),
               (unsigned)_display_benchmark_average_fps_x100(effect),
@@ -1151,8 +1242,14 @@ static void _display_benchmark_log_profile(
               (unsigned long long)effect->submit_wait_us,
               (unsigned)effect->maximum_submit_wait_us);
     }
-    LOG_I("display profile load=%s diagnostics=%s samples=%u sample_err=%u lock_err=%u fps_read_err=%u fps_lock_max_us=%u min_fps=%u fps_below_30=%u min_dma=%u dma_fail=%u frame_submits=%u panel_submits=%u submit_fail=%u",
+    LOG_I("display profile load=%s diagnostics=%s snapshot=%s snapshot_prepare_count=%u snapshot_prepare_us=%llu snapshot_prepare_max_us=%u snapshot_prepare_p95_us=%u snapshot_fallbacks=%u samples=%u sample_err=%u lock_err=%u fps_read_err=%u fps_lock_max_us=%u min_fps=%u fps_below_30=%u min_dma=%u dma_fail=%u frame_submits=%u panel_submits=%u submit_fail=%u",
           load_name, report->passed ? "PASS" : "FAIL",
+          DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME,
+          (unsigned)report->snapshot_prepare_count,
+          (unsigned long long)report->snapshot_prepare_us,
+          (unsigned)report->maximum_snapshot_prepare_us,
+          (unsigned)report->snapshot_prepare_p95_us,
+          (unsigned)report->snapshot_fallback_count,
           (unsigned)report->sample_count,
           (unsigned)report->sample_error_count,
           (unsigned)report->lvgl_lock_error_count,
@@ -1191,10 +1288,16 @@ static void _display_benchmark_log_final(
                                   tcp_report->reconnect_count == 0U &&
                                   tcp_report->throughput_passed &&
                                   summary->diagnostics_passed;
-    LOG_I("display benchmark stability=%s performance=%s state=%s samples=%u sample_err=%u lock_err=%u fps_read_err=%u fps_lock_max_us=%u min_dma=%u dma_fail=%u frame_submits=%u submit_fail=%u transition_cancel=%u",
+    LOG_I("display benchmark stability=%s performance=%s state=%s snapshot=%s snapshot_prepare_count=%u snapshot_prepare_us=%llu snapshot_prepare_max_us=%u snapshot_prepare_max_p95_us=%u snapshot_fallbacks=%u samples=%u sample_err=%u lock_err=%u fps_read_err=%u fps_lock_max_us=%u min_dma=%u dma_fail=%u frame_submits=%u submit_fail=%u transition_cancel=%u",
           stability_passed ? "PASS" : "FAIL",
           _display_benchmark_performance_name(performance),
           aborted ? "ABORT" : (completed ? "COMPLETE" : "INCOMPLETE"),
+          DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME,
+          (unsigned)summary->snapshot_prepare_count,
+          (unsigned long long)summary->snapshot_prepare_us,
+          (unsigned)summary->maximum_snapshot_prepare_us,
+          (unsigned)summary->maximum_snapshot_prepare_p95_us,
+          (unsigned)summary->snapshot_fallback_count,
           (unsigned)summary->sample_count,
           (unsigned)summary->sample_error_count,
           (unsigned)summary->lvgl_lock_error_count,
@@ -1225,10 +1328,11 @@ static void _display_benchmark_log_final(
 
 static void _display_benchmark_log_config(void)
 {
-    LOG_I("display config qspi_hz=%u draw_rows=%u color=%s dma_rows=%u dma_max_full_rows=%u queue=%u direct=%u te=%u draw_units=%u draw_prio=%u tcp_payload=%u tcp_prio=%u load_profile=%s lifecycle_log=%u",
+    LOG_I("display config qspi_hz=%u draw_rows=%u color=%s snapshot=%s dma_rows=%u dma_max_full_rows=%u queue=%u direct=%u te=%u draw_units=%u draw_prio=%u tcp_payload=%u tcp_prio=%u load_profile=%s lifecycle_log=%u",
           (unsigned)CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ,
           (unsigned)CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT,
           DISPLAY_BENCHMARK_COLOR_FORMAT,
+          DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME,
           (unsigned)CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES,
           (unsigned)DISPLAY_BENCHMARK_DMA_MAX_FULL_LINES,
           (unsigned)DISPLAY_BENCHMARK_SPI_QUEUE_DEPTH,
@@ -1478,7 +1582,7 @@ static void _display_benchmark_supervisor_task(void *arg)
     _display_benchmark_accumulate_stability(&summary, report);
     performance = _display_benchmark_worst_performance(
                       performance,
-                      _display_benchmark_grade_production_effects(report));
+                      _display_benchmark_grade_profile(report));
     if (!display_only_completed)
     {
         goto exit;
@@ -1502,7 +1606,7 @@ static void _display_benchmark_supervisor_task(void *arg)
     _display_benchmark_accumulate_stability(&summary, report);
     performance = _display_benchmark_worst_performance(
                       performance,
-                      _display_benchmark_grade_production_effects(report));
+                      _display_benchmark_grade_profile(report));
     completed = display_only_completed && load_completed;
 #else
     esp_err_t result = _display_benchmark_start_load(load, &audio_started,
@@ -1521,7 +1625,7 @@ static void _display_benchmark_supervisor_task(void *arg)
     report_available = true;
     _display_benchmark_log_profile(load, report);
     _display_benchmark_accumulate_stability(&summary, report);
-    performance = _display_benchmark_grade_production_effects(report);
+    performance = _display_benchmark_grade_profile(report);
 #endif
 
 exit:

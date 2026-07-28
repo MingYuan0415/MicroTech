@@ -86,8 +86,27 @@ host 配置测试不表示硬件可用。
 保证它的 Quad SPI 时序。80 MHz 在当前样机上可运行，但已归类为不稳定的超规格实验档：
 十组最差 P95 从 E40 的约 145 ms 降至 E80 的约 140 ms，改善约 3.45%，未达到 5% 判定
 线；一轮 E80 还出现 `min_dma=8704`、`dma_fail=1` 和运动中的 T1 单条接缝。它不能成为
-生产默认，任何需要它的复现实验都必须显式选择 80 MHz。当前传输参数调优未达到 25 FPS
-发布底线或 30 FPS 目标；全屏预渲染/快照式转场架构评估暂缓。
+生产默认，任何需要它的复现实验都必须显式选择 80 MHz。上述数据属于原生 Screen 动画和
+`RGB565_SWAPPED` 对照，不构成快照转场的性能结论。
+
+## 全分辨率快照转场
+
+默认 `RGB565` 生产配置启用 `CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`。对有效的
+非 `NONE` 转场，App Manager 把 source 和 target 分别采集到两张全分辨率 RGB565 PSRAM
+图片，并仅动画这两个 Image；不做缩放、压缩或 transform。368 x 448 下每张快照为
+329,728 B，两个常驻缓冲共 659,456 B（644 KiB），不占用 internal/DMA heap。该资源成本
+独立于 LVGL 60 行 draw buffer、10 行 bounce DMA chunk 和 queue depth 2，后者保持不变。
+
+该模式依赖 `SPIRAM` 且不能与 `RGB565_SWAPPED` 同时启用。SWAPPED A/B 固件、功能关闭配置，
+以及快照缓冲、采集、overlay 或动画启动失败的转场，均自动回退原生 LVGL Screen 动画；
+这些运行必须标记为 snapshot N/A 或 fallback，不能用于宣称快照架构通过。`NONE`、零时长、
+同一 Screen 和边缘返回 `PRESSING` 阶段不创建快照。非空 Page Screen 没有全屏不透明根，
+或对象树设置了 `LV_OBJ_FLAG_OVERFLOW_VISIBLE` 时，同样逐次回退原生动画。
+
+快照候选的真机 benchmark 除既有稳定性与 25/30 FPS 门槛外，还要求每种有效效果没有
+snapshot fallback，且快照准备 P95 不超过 100 ms。准备耗时从输入屏障开始到 Image 动画确认
+启动，失败尝试也计入 fallback；完整上板验证须覆盖全部效果、触摸/按键、休眠/恢复、10 分钟
+full-load 预检和 1800 秒压力测试。
 
 ESP32-S3 单次 DMA 的 32 KiB 边界下，368 像素宽 RGB565 最多容纳 44 个完整行：
 `368 * 44 * 2 = 32,384 B`，而 45 行为 `33,120 B`。因此 direct 大块 A/B 使用 44 行。

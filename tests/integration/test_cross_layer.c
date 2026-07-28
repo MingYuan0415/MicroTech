@@ -35,6 +35,9 @@ extern const app_manager_page_desc_t _app_manager_pages_end[];
 
 static atomic_uint s_noop_count;
 static atomic_uint s_queued_scan_probe_count;
+static atomic_uint s_fifo_completion_count;
+static atomic_uint s_fifo_completion_order[2];
+static atomic_int s_fifo_completion_results[2];
 
 typedef struct lifecycle_observation
 {
@@ -52,6 +55,13 @@ typedef struct lv_resource_counts
     size_t screens;
     size_t timers;
 } lv_resource_counts_t;
+
+typedef struct snapshot_transition_counts
+{
+    size_t captures;
+    size_t animation_starts;
+    size_t live_animations;
+} snapshot_transition_counts_t;
 
 typedef struct first_frame_probe_config
 {
@@ -195,6 +205,21 @@ static void _sleep_one_ms(void)
         .tv_nsec = 1000000L,
     };
     (void)nanosleep(&delay, NULL);
+}
+
+static void _fifo_navigation_completed(esp_err_t result, void *context)
+{
+    const unsigned index = atomic_load_explicit(&s_fifo_completion_count,
+                           memory_order_relaxed);
+
+    assert(index < sizeof(s_fifo_completion_order) /
+           sizeof(s_fifo_completion_order[0]));
+    atomic_store_explicit(&s_fifo_completion_order[index],
+                          (unsigned)(uintptr_t)context, memory_order_relaxed);
+    atomic_store_explicit(&s_fifo_completion_results[index], result,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_fifo_completion_count, index + 1U,
+                          memory_order_release);
 }
 
 static esp_err_t _ui_barrier(void *arg)
@@ -657,6 +682,15 @@ static esp_err_t _query_system_gesture_on_ui(void *arg)
     return ESP_OK;
 }
 
+static esp_err_t _query_snapshot_transition_counts_on_ui(void *arg)
+{
+    snapshot_transition_counts_t *counts = arg;
+    counts->captures = host_lv_snapshot_capture_count();
+    counts->animation_starts = host_lv_generic_animation_start_count();
+    counts->live_animations = host_lv_generic_animation_count();
+    return ESP_OK;
+}
+
 static esp_err_t _query_gesture_curve_on_ui(void *arg)
 {
     gesture_curve_snapshot_t *snapshot = arg;
@@ -730,6 +764,14 @@ static size_t _ui_visible_text_count(const char *text)
     assert(app_manager_ui_call(_query_text_count_on_ui, &query,
                                UI_TIMEOUT_MS) == ESP_OK);
     return query.count;
+}
+
+static snapshot_transition_counts_t _snapshot_transition_counts(void)
+{
+    snapshot_transition_counts_t counts = {0};
+    assert(app_manager_ui_call(_query_snapshot_transition_counts_on_ui,
+                               &counts, UI_TIMEOUT_MS) == ESP_OK);
+    return counts;
 }
 
 static void _drag_visible_slider(int32_t value)
@@ -1915,12 +1957,23 @@ static void _test_other_real_app_screen_lifecycles(void)
 static void _test_screen_pause_finishes_transition(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    const snapshot_transition_counts_t before =
+        _snapshot_transition_counts();
 
     _click_action("演示中心");
     assert(_wait_for_transitioning());
+    const snapshot_transition_counts_t started =
+        _snapshot_transition_counts();
+    assert(started.captures == before.captures + 2U);
+    assert(started.animation_starts == before.animation_starts + 1U);
     assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(!app_manager_is_transitioning());
+    const snapshot_transition_counts_t paused_transition =
+        _snapshot_transition_counts();
+    assert(paused_transition.captures == started.captures);
+    assert(paused_transition.animation_starts == started.animation_starts);
+    assert(paused_transition.live_animations == 0U);
 
     const lv_resource_counts_t paused = _lv_resource_counts();
     assert(paused.objects == 0U);
@@ -1939,6 +1992,74 @@ static void _test_screen_pause_finishes_transition(void)
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
+}
+
+static void _test_fifo_navigation_finishes_snapshot_transition(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    const lv_resource_counts_t baseline = _lv_resource_counts();
+    const snapshot_transition_counts_t snapshot_baseline =
+        _snapshot_transition_counts();
+    const app_manager_nav_request_t first =
+    {
+        .operation = APP_MANAGER_NAV_OP_RUN,
+        .app_id = APP_MANAGER_ID_MENU,
+    };
+    const app_manager_nav_request_t second =
+    {
+        .operation = APP_MANAGER_NAV_OP_RUN,
+        .app_id = APP_MANAGER_ID_SETTINGS,
+    };
+
+    atomic_store(&s_fifo_completion_count, 0U);
+    for (size_t index = 0U;
+            index < sizeof(s_fifo_completion_order) /
+            sizeof(s_fifo_completion_order[0]); ++index)
+    {
+        atomic_store(&s_fifo_completion_order[index], 0U);
+        atomic_store(&s_fifo_completion_results[index], ESP_OK);
+    }
+    assert(app_manager_navigate_async(
+               &first, _fifo_navigation_completed,
+               (void *)(uintptr_t)1U) == ESP_OK);
+    assert(app_manager_navigate_async(
+               &second, _fifo_navigation_completed,
+               (void *)(uintptr_t)2U) == ESP_OK);
+
+    for (unsigned attempt = 0U;
+            attempt < WAIT_ATTEMPTS &&
+            atomic_load_explicit(&s_fifo_completion_count,
+                                 memory_order_acquire) < 2U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    assert(atomic_load_explicit(&s_fifo_completion_count,
+                                memory_order_acquire) == 2U);
+    assert(atomic_load(&s_fifo_completion_order[0]) == 1U);
+    assert(atomic_load(&s_fifo_completion_order[1]) == 2U);
+    assert(atomic_load(&s_fifo_completion_results[0]) == ESP_OK);
+    assert(atomic_load(&s_fifo_completion_results[1]) == ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(!app_manager_is_transitioning());
+    const snapshot_transition_counts_t snapshot_finished =
+        _snapshot_transition_counts();
+    assert(snapshot_finished.captures >= snapshot_baseline.captures + 4U);
+    assert(snapshot_finished.animation_starts >=
+           snapshot_baseline.animation_starts + 2U);
+    assert(snapshot_finished.live_animations == 0U);
+    assert(host_lv_snapshot_live_allocation_count() == 2U);
+
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    const lv_resource_counts_t restored = _lv_resource_counts();
+    assert(restored.objects == baseline.objects);
+    assert(restored.screens == baseline.screens);
+    assert(restored.timers == baseline.timers);
+    assert(host_lv_snapshot_live_allocation_count() == 2U);
 }
 
 static void _test_home_screen_lifecycle(void)
@@ -2442,6 +2563,7 @@ int main(void)
     _assert_real_page_start_contract();
     _test_other_real_app_screen_lifecycles();
     _test_screen_pause_finishes_transition();
+    _test_fifo_navigation_finishes_snapshot_transition();
     _test_home_screen_lifecycle();
     _test_setup_screen_lifecycle();
     _test_system_edge_back_gesture();

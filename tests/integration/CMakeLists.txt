@@ -51,6 +51,12 @@ add_executable(test_presentation
     "${APP_CORE}/src/app_manager_presentation.c"
 )
 
+add_executable(test_presentation_swapped
+    test_presentation.c
+    host/apps_integration_lvgl.c
+    "${APP_CORE}/src/app_manager_presentation.c"
+)
+
 add_executable(test_audio_demo_adapter
     test_audio_demo_adapter.c
     host/host_freertos.c
@@ -71,12 +77,32 @@ add_executable(test_clock_demo_adapter
 
 target_compile_features(test_cross_layer PRIVATE c_std_11)
 target_compile_features(test_presentation PRIVATE c_std_11)
+target_compile_features(test_presentation_swapped PRIVATE c_std_11)
 target_compile_definitions(test_cross_layer PRIVATE
     HOST_TEST=1
+    CONFIG_SPIRAM=1
+    CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED=0
+    CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION=1
+    heap_caps_aligned_calloc=host_lv_heap_caps_aligned_calloc
+    heap_caps_free=host_lv_heap_caps_free
 )
 target_compile_definitions(test_presentation PRIVATE
     HOST_TEST=1
     CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS=1
+    CONFIG_SPIRAM=1
+    CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED=0
+    CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION=1
+    heap_caps_aligned_calloc=host_lv_heap_caps_aligned_calloc
+    heap_caps_free=host_lv_heap_caps_free
+)
+target_compile_definitions(test_presentation_swapped PRIVATE
+    HOST_TEST=1
+    CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS=1
+    CONFIG_SPIRAM=1
+    CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED=1
+    CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION=0
+    heap_caps_aligned_calloc=host_lv_heap_caps_aligned_calloc
+    heap_caps_free=host_lv_heap_caps_free
 )
 target_include_directories(test_cross_layer PRIVATE
     host/include
@@ -100,9 +126,17 @@ target_include_directories(test_presentation PRIVATE
     "${APP_CORE}/src"
     "${APP_THEME}/include"
 )
+target_include_directories(test_presentation_swapped PRIVATE
+    host/include
+    "${APP_CORE}/include"
+    "${APP_CORE}/src"
+    "${APP_THEME}/include"
+)
 target_compile_options(test_cross_layer PRIVATE
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
 target_compile_options(test_presentation PRIVATE
+    -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
+target_compile_options(test_presentation_swapped PRIVATE
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
 target_link_libraries(test_cross_layer PRIVATE Threads::Threads)
 target_link_options(test_cross_layer PRIVATE
@@ -156,6 +190,12 @@ if(CROSS_LAYER_SANITIZER STREQUAL "address")
     target_link_options(test_presentation PRIVATE
         -fsanitize=address,undefined -fno-omit-frame-pointer
         -fno-sanitize-recover=all)
+    target_compile_options(test_presentation_swapped PRIVATE
+        -fsanitize=address,undefined -fno-omit-frame-pointer
+        -fno-sanitize-recover=all)
+    target_link_options(test_presentation_swapped PRIVATE
+        -fsanitize=address,undefined -fno-omit-frame-pointer
+        -fno-sanitize-recover=all)
     foreach(target IN LISTS DEMO_ADAPTER_TARGETS)
         target_compile_options(${target} PRIVATE
             -fsanitize=address,undefined -fno-omit-frame-pointer
@@ -173,6 +213,10 @@ elseif(CROSS_LAYER_SANITIZER STREQUAL "thread")
         -fsanitize=thread -fno-omit-frame-pointer)
     target_link_options(test_presentation PRIVATE
         -fsanitize=thread -fno-omit-frame-pointer)
+    target_compile_options(test_presentation_swapped PRIVATE
+        -fsanitize=thread -fno-omit-frame-pointer)
+    target_link_options(test_presentation_swapped PRIVATE
+        -fsanitize=thread -fno-omit-frame-pointer)
     foreach(target IN LISTS DEMO_ADAPTER_TARGETS)
         target_compile_options(${target} PRIVATE
             -fsanitize=thread -fno-omit-frame-pointer)
@@ -188,6 +232,9 @@ if(CROSS_LAYER_SANITIZER STREQUAL "thread" AND CROSS_LAYER_SETARCH AND
         CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     add_test(NAME presentation COMMAND
         ${CROSS_LAYER_SETARCH} x86_64 -R $<TARGET_FILE:test_presentation>)
+    add_test(NAME presentation_swapped COMMAND
+        ${CROSS_LAYER_SETARCH} x86_64 -R
+        $<TARGET_FILE:test_presentation_swapped>)
     add_test(NAME cross_layer COMMAND
         ${CROSS_LAYER_SETARCH} x86_64 -R $<TARGET_FILE:test_cross_layer>)
     foreach(target IN LISTS DEMO_ADAPTER_TARGETS)
@@ -196,11 +243,13 @@ if(CROSS_LAYER_SANITIZER STREQUAL "thread" AND CROSS_LAYER_SETARCH AND
     endforeach()
 else()
     add_test(NAME presentation COMMAND test_presentation)
+    add_test(NAME presentation_swapped COMMAND test_presentation_swapped)
     add_test(NAME cross_layer COMMAND test_cross_layer)
     foreach(target IN LISTS DEMO_ADAPTER_TARGETS)
         add_test(NAME ${target} COMMAND ${target})
     endforeach()
 endif()
 set_tests_properties(presentation PROPERTIES TIMEOUT 10)
+set_tests_properties(presentation_swapped PROPERTIES TIMEOUT 10)
 set_tests_properties(cross_layer PROPERTIES TIMEOUT 40)
 set_tests_properties(${DEMO_ADAPTER_TARGETS} PROPERTIES TIMEOUT 10)

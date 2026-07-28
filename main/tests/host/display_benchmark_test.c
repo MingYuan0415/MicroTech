@@ -36,6 +36,16 @@
     #define TEST_LOAD_PROFILE   "tcp-only"
 #endif
 
+#if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
+    #define TEST_SNAPSHOT_NAME "enabled"
+    #define TEST_SNAPSHOT_PREPARE_COUNT_TEXT "snapshot_prepare_count=2"
+    #define TEST_SNAPSHOT_PREPARE_US_TEXT "snapshot_prepare_us=80000"
+#else
+    #define TEST_SNAPSHOT_NAME "n/a"
+    #define TEST_SNAPSHOT_PREPARE_COUNT_TEXT "snapshot_prepare_count=0"
+    #define TEST_SNAPSHOT_PREPARE_US_TEXT "snapshot_prepare_us=0"
+#endif
+
 typedef struct echo_server
 {
     pthread_t thread;
@@ -79,6 +89,11 @@ typedef enum test_report_quality
     TEST_REPORT_FLOOR,
     TEST_REPORT_FAIL,
     TEST_REPORT_STABILITY_FAIL,
+    TEST_REPORT_SNAPSHOT_PREPARE_SLOW,
+    TEST_REPORT_SNAPSHOT_FALLBACK,
+    TEST_REPORT_SNAPSHOT_PREPARE_SLOW_AUXILIARY,
+    TEST_REPORT_SNAPSHOT_FALLBACK_AUXILIARY,
+    TEST_REPORT_SNAPSHOT_FALLBACK_WITHOUT_START,
 } test_report_quality_t;
 
 EVENT_BUS_DEFINE_ID(WIFI_SERVICE_MSG);
@@ -209,6 +224,9 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
     }
     if (strstr(message, "display perf load=") != NULL)
     {
+        assert(strstr(message, "snapshot=" TEST_SNAPSHOT_NAME) != NULL);
+        assert(strstr(message, TEST_SNAPSHOT_PREPARE_COUNT_TEXT) != NULL);
+        assert(strstr(message, TEST_SNAPSHOT_PREPARE_US_TEXT) != NULL);
         atomic_fetch_add(&s_log_effect_count, 1U);
         char expected_load[32];
         (void)snprintf(expected_load, sizeof(expected_load),
@@ -267,6 +285,7 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
         assert(strstr(message, "qspi_hz=40000000") != NULL);
         assert(strstr(message, "draw_rows=60") != NULL);
         assert(strstr(message, "color=RGB565") != NULL);
+        assert(strstr(message, "snapshot=" TEST_SNAPSHOT_NAME) != NULL);
         assert(strstr(message, "dma_rows=10") != NULL);
         assert(strstr(message, "dma_max_full_rows=44") != NULL);
         assert(strstr(message, "queue=2") != NULL);
@@ -498,6 +517,12 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
         }
         effect_report->transition_start_count = 2U;
         effect_report->transition_complete_count = 2U;
+#if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
+        effect_report->snapshot_prepare_count = 2U;
+        effect_report->snapshot_prepare_us = 80000U;
+        effect_report->maximum_snapshot_prepare_us = 40000U;
+        effect_report->snapshot_prepare_p95_us = 40000U;
+#endif
         effect_report->active_duration_us = 1000000U;
         effect_report->interval_count = 100U;
         effect_report->render_count = 30U;
@@ -525,6 +550,49 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
             effect_report->interval_p99_us = 66667U;
             effect_report->maximum_interval_us = 100000U;
         }
+        else if (quality == TEST_REPORT_SNAPSHOT_PREPARE_SLOW ||
+                 (quality == TEST_REPORT_SNAPSHOT_PREPARE_SLOW_AUXILIARY &&
+                  effect == APP_MANAGER_TRANSITION_COVER_LEFT))
+        {
+            effect_report->snapshot_prepare_p95_us =
+                APP_MANAGER_DISPLAY_SNAPSHOT_PREPARE_TARGET_US + 1U;
+            effect_report->active_frame_count = 30U;
+            effect_report->interval_within_target_count = 95U;
+            effect_report->maximum_consecutive_long_intervals = 1U;
+            effect_report->interval_p50_us = 32000U;
+            effect_report->interval_p95_us = 33333U;
+            effect_report->interval_p99_us = 41667U;
+            effect_report->maximum_interval_us = 50000U;
+        }
+        else if (quality == TEST_REPORT_SNAPSHOT_FALLBACK_WITHOUT_START &&
+                 effect == APP_MANAGER_TRANSITION_REVEAL_RIGHT)
+        {
+            effect_report->transition_start_count = 0U;
+            effect_report->transition_complete_count = 0U;
+            effect_report->snapshot_prepare_count = 1U;
+            effect_report->snapshot_prepare_us = 40000U;
+            effect_report->snapshot_fallback_count = 1U;
+            effect_report->active_frame_count = 30U;
+            effect_report->interval_within_target_count = 95U;
+            effect_report->maximum_consecutive_long_intervals = 1U;
+            effect_report->interval_p50_us = 32000U;
+            effect_report->interval_p95_us = 33333U;
+            effect_report->interval_p99_us = 41667U;
+            effect_report->maximum_interval_us = 50000U;
+        }
+        else if (quality == TEST_REPORT_SNAPSHOT_FALLBACK ||
+                 (quality == TEST_REPORT_SNAPSHOT_FALLBACK_AUXILIARY &&
+                  effect == APP_MANAGER_TRANSITION_REVEAL_RIGHT))
+        {
+            effect_report->snapshot_fallback_count = 1U;
+            effect_report->active_frame_count = 30U;
+            effect_report->interval_within_target_count = 95U;
+            effect_report->maximum_consecutive_long_intervals = 1U;
+            effect_report->interval_p50_us = 32000U;
+            effect_report->interval_p95_us = 33333U;
+            effect_report->interval_p99_us = 41667U;
+            effect_report->maximum_interval_us = 50000U;
+        }
         else if (quality == TEST_REPORT_FAIL)
         {
             effect_report->active_frame_count = 24U;
@@ -549,6 +617,21 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
             effect_report->transition_start_count;
         report->transition_complete_count +=
             effect_report->transition_complete_count;
+        report->snapshot_prepare_count += effect_report->snapshot_prepare_count;
+        report->snapshot_prepare_us += effect_report->snapshot_prepare_us;
+        if (effect_report->maximum_snapshot_prepare_us >
+                report->maximum_snapshot_prepare_us)
+        {
+            report->maximum_snapshot_prepare_us =
+                effect_report->maximum_snapshot_prepare_us;
+        }
+        if (effect_report->snapshot_prepare_p95_us >
+                report->snapshot_prepare_p95_us)
+        {
+            report->snapshot_prepare_p95_us =
+                effect_report->snapshot_prepare_p95_us;
+        }
+        report->snapshot_fallback_count += effect_report->snapshot_fallback_count;
         report->active_frame_count += effect_report->active_frame_count;
         report->active_duration_us += effect_report->active_duration_us;
         report->interval_count += effect_report->interval_count;
@@ -1262,6 +1345,18 @@ int main(void)
     _test_report_classification(TEST_REPORT_FLOOR, 1U, 2U);
     _test_report_classification(TEST_REPORT_FAIL, 1U, 3U);
     _test_report_classification(TEST_REPORT_STABILITY_FAIL, 2U, 1U);
+#if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
+    _test_report_classification(TEST_REPORT_SNAPSHOT_PREPARE_SLOW, 1U, 3U);
+    _test_report_classification(TEST_REPORT_SNAPSHOT_FALLBACK, 1U, 3U);
+#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+    _test_report_classification(TEST_REPORT_SNAPSHOT_PREPARE_SLOW_AUXILIARY,
+                                1U, 3U);
+    _test_report_classification(TEST_REPORT_SNAPSHOT_FALLBACK_AUXILIARY,
+                                1U, 3U);
+    _test_report_classification(TEST_REPORT_SNAPSHOT_FALLBACK_WITHOUT_START,
+                                1U, 3U);
+#endif
+#endif
     _test_task_create_failure_releases_subscription();
     _test_presentation_wait_failure_cleans_up();
 #if TEST_REQUIRES_TCP

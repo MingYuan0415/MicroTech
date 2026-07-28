@@ -135,7 +135,22 @@ tcp-only 分别以 128.423 ms/16,384 B 和 145 ms/21,504 B 通过稳定性检查
 未达到 5% 判定线；panel 帧成本约从 15.33 ms 降至 9.17 ms，但一轮 E80 出现
 `min_dma=8704`、`dma_fail=1`，且观察到运动中的 T1 单条接缝。因此它不能成为默认或
 生产配置，只能由开发者针对当前样机显式选择；40 MHz 是明确的回退路径。
-当前参数调优未达到 25/30 FPS 门槛，全屏预渲染或快照式转场评估暂缓。
+当前原生 LVGL Screen 动画的参数调优未达到 25/30 FPS 门槛。为降低动画期间的
+软件绘制负担，默认 `RGB565` 配置已启用
+`CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`：每次有效的非 `NONE` 转场先把
+source 和 target 采集为两张全分辨率、未缩放的 RGB565 图片，再只动画 Image。368 x 448
+面板的每张快照为 329,728 B，两张常驻 PSRAM 共 659,456 B（644 KiB）；它们不使用
+internal/DMA heap。该后端不改变 40 MHz、60 行 draw buffer、bounce/10 或 queue depth 2
+的传输基线。
+
+快照后端只适用于 `SPIRAM` 上的普通 `RGB565` 输出；`RGB565_SWAPPED` 对照配置和关闭该
+选项的固件继续使用原生 LVGL Screen 动画。快照缓冲、采集、overlay 或动画启动失败时也会
+自动回退原生路径，不阻塞导航。非空 Page Screen 还必须包含覆盖全屏的不透明根，且对象树
+不得使用 `LV_OBJ_FLAG_OVERFLOW_VISIBLE`；透明根或屏外绘制页面会逐次回退原生路径。
+`NONE`、零时长和同一 Screen 的同步切换不采集快照；边缘
+返回的 `PRESSING` 阶段只绘制 Sys Layer indicator，释放并准入导航前也不会创建快照。
+快照架构仍须按现有 25/30 FPS 和稳定性门槛完成真机验收，历史 120 行
+`RGB565_SWAPPED` 基线不构成该后端的性能结论。
 
 `CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG` 控制 App Manager 的 START、MOUNT、RESUME、
 PAUSE、UNMOUNT、STOP 和 NEW_INTENT INFO trace，例如

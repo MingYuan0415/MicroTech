@@ -3,11 +3,17 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define HOST_LV_OBJECT_CAPACITY 256U
 #define HOST_LV_EVENT_CAPACITY  4U
 #define HOST_LV_TIMER_CAPACITY  16U
+#define HOST_LV_GENERIC_ANIM_CAPACITY 16U
+#define HOST_LV_GENERIC_ANIM_COMPLETION_CAPACITY 64U
+#define HOST_LV_SNAPSHOT_CAPTURE_CAPACITY 64U
+#define HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY 4U
+#define HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY 16U
 #define HOST_LV_TEXT_BYTES      160U
 #define HOST_LV_HOR_RES         368
 #define HOST_LV_VER_RES         448
@@ -21,6 +27,7 @@ typedef enum
     HOST_LV_OBJECT_SLIDER,
     HOST_LV_OBJECT_BAR,
     HOST_LV_OBJECT_CANVAS,
+    HOST_LV_OBJECT_IMAGE,
     HOST_LV_OBJECT_SCREEN,
     HOST_LV_OBJECT_LAYER,
 } host_lv_object_kind_t;
@@ -57,6 +64,7 @@ struct lv_obj_t
     lv_color_t image_recolor;
     lv_opa_t image_opacity;
     lv_draw_buf_t *draw_buf;
+    const void *image_source;
     uint32_t invalidation_count;
     lv_obj_flag_t flags;
     lv_state_t state;
@@ -107,6 +115,45 @@ typedef struct host_lv_transition
     bool old_animation_live;
 } host_lv_transition_t;
 
+typedef struct host_lv_generic_animation
+{
+    bool live;
+    lv_anim_t animation;
+} host_lv_generic_animation_t;
+
+typedef struct host_lv_snapshot_capture
+{
+    const lv_obj_t *object;
+    bool input_blocked;
+    bool object_active;
+} host_lv_snapshot_capture_t;
+
+typedef struct host_lv_snapshot_failures
+{
+    unsigned allocations;
+    unsigned allocation_after;
+    bool allocation_after_enabled;
+    unsigned draw_buffer_initializations;
+    unsigned captures;
+    unsigned capture_after;
+    bool capture_after_enabled;
+    unsigned object_creations;
+    unsigned object_creation_after;
+    bool object_creation_after_enabled;
+    unsigned animation_starts;
+    unsigned native_animation_starts;
+    unsigned screen_creations;
+    unsigned screen_loads;
+    unsigned screen_load_after;
+    bool screen_load_after_enabled;
+} host_lv_snapshot_failures_t;
+
+typedef struct host_lv_snapshot_allocation
+{
+    void *pointer;
+    size_t size;
+} host_lv_snapshot_allocation_t;
+
 const lv_font_t host_lv_default_font = {.marker = 1};
 
 static lv_obj_t s_initial_screen;
@@ -119,15 +166,88 @@ static lv_indev_t *s_event_indev;
 static lv_obj_t s_objects[HOST_LV_OBJECT_CAPACITY];
 static lv_timer_t s_timers[HOST_LV_TIMER_CAPACITY];
 static host_lv_transition_t s_transition;
+static host_lv_generic_animation_t
+s_generic_animations[HOST_LV_GENERIC_ANIM_CAPACITY];
+static int32_t s_generic_animation_completion_values[
+    HOST_LV_GENERIC_ANIM_COMPLETION_CAPACITY];
+static size_t s_generic_animation_start_count;
+static size_t s_generic_animation_completion_count;
+static host_lv_snapshot_capture_t
+s_snapshot_captures[HOST_LV_SNAPSHOT_CAPTURE_CAPACITY];
+static size_t s_snapshot_capture_count;
+static host_lv_snapshot_failures_t s_snapshot_failures;
+static host_lv_snapshot_allocation_t
+s_snapshot_allocations[HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY];
+static host_lv_snapshot_allocation_call_t
+s_snapshot_allocation_calls[HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY];
+static size_t s_snapshot_allocation_call_count;
 static uint64_t s_z_order;
+
+static void _host_lv_release_snapshot_allocations(void)
+{
+    for (size_t index = 0U;
+            index < HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY; ++index)
+    {
+        free(s_snapshot_allocations[index].pointer);
+        s_snapshot_allocations[index].pointer = NULL;
+        s_snapshot_allocations[index].size = 0U;
+    }
+}
+
+static bool _host_lv_track_snapshot_allocation(void *pointer, size_t size)
+{
+    for (size_t index = 0U;
+            index < HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY; ++index)
+    {
+        if (s_snapshot_allocations[index].pointer == NULL)
+        {
+            s_snapshot_allocations[index].pointer = pointer;
+            s_snapshot_allocations[index].size = size;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void _host_lv_untrack_snapshot_allocation(void *pointer)
+{
+    for (size_t index = 0U;
+            index < HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY; ++index)
+    {
+        if (s_snapshot_allocations[index].pointer == pointer)
+        {
+            s_snapshot_allocations[index].pointer = NULL;
+            s_snapshot_allocations[index].size = 0U;
+            return;
+        }
+    }
+}
 
 static void _host_lv_set_x_animation(void *variable, int32_t value);
 static void _host_lv_set_y_animation(void *variable, int32_t value);
 static void _host_lv_set_opacity_animation(void *variable, int32_t value);
+static bool _host_lv_input_is_blocked(void);
+static bool _host_lv_child_at(const lv_obj_t *parent, size_t child_index,
+                              const lv_obj_t **child);
 
 static lv_obj_t *_host_lv_allocate_object(host_lv_object_kind_t kind,
         lv_obj_t *parent)
 {
+    if (s_snapshot_failures.object_creations > 0U)
+    {
+        --s_snapshot_failures.object_creations;
+        return NULL;
+    }
+    if (s_snapshot_failures.object_creation_after_enabled)
+    {
+        if (s_snapshot_failures.object_creation_after == 0U)
+        {
+            s_snapshot_failures.object_creation_after_enabled = false;
+            return NULL;
+        }
+        --s_snapshot_failures.object_creation_after;
+    }
+
     for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
     {
         if (!s_objects[index].live)
@@ -518,8 +638,8 @@ static void _host_lv_load_immediate(lv_obj_t *screen, bool auto_delete)
     {
         (void)_host_lv_emit(old_screen, LV_EVENT_SCREEN_UNLOAD_START);
     }
-    (void)_host_lv_emit(screen, LV_EVENT_SCREEN_LOAD_START);
     s_active_screen = screen;
+    (void)_host_lv_emit(screen, LV_EVENT_SCREEN_LOAD_START);
     (void)_host_lv_emit(screen, LV_EVENT_SCREEN_LOADED);
     if (old_screen != NULL && old_screen->live)
     {
@@ -646,6 +766,7 @@ static void _host_lv_prepare_transition_animations(uint32_t time,
 
 void host_lv_reset(void)
 {
+    _host_lv_release_snapshot_allocations();
     memset(&s_initial_screen, 0, sizeof(s_initial_screen));
     s_initial_screen.live = true;
     s_initial_screen.kind = HOST_LV_OBJECT_SCREEN;
@@ -674,6 +795,17 @@ void host_lv_reset(void)
     memset(s_objects, 0, sizeof(s_objects));
     memset(s_timers, 0, sizeof(s_timers));
     memset(&s_transition, 0, sizeof(s_transition));
+    memset(s_generic_animations, 0, sizeof(s_generic_animations));
+    memset(s_generic_animation_completion_values, 0,
+           sizeof(s_generic_animation_completion_values));
+    s_generic_animation_start_count = 0U;
+    s_generic_animation_completion_count = 0U;
+    memset(s_snapshot_captures, 0, sizeof(s_snapshot_captures));
+    s_snapshot_capture_count = 0U;
+    memset(&s_snapshot_failures, 0, sizeof(s_snapshot_failures));
+    memset(s_snapshot_allocation_calls, 0,
+           sizeof(s_snapshot_allocation_calls));
+    s_snapshot_allocation_call_count = 0U;
     s_z_order = 0U;
 }
 
@@ -719,6 +851,20 @@ int32_t lv_display_get_vertical_resolution(const lv_display_t *display)
 
 void lv_screen_load(lv_obj_t *screen)
 {
+    if (s_snapshot_failures.screen_loads > 0U)
+    {
+        --s_snapshot_failures.screen_loads;
+        return;
+    }
+    if (s_snapshot_failures.screen_load_after_enabled)
+    {
+        if (s_snapshot_failures.screen_load_after == 0U)
+        {
+            s_snapshot_failures.screen_load_after_enabled = false;
+            return;
+        }
+        --s_snapshot_failures.screen_load_after;
+    }
     if (s_transition.pending)
     {
         _host_lv_complete_transition();
@@ -745,6 +891,11 @@ void lv_screen_load_anim(lv_obj_t *screen, lv_screen_load_anim_t animation,
     if (time == 0U && delay == 0U)
     {
         _host_lv_load_immediate(screen, auto_delete);
+        return;
+    }
+    if (s_snapshot_failures.native_animation_starts > 0U)
+    {
+        --s_snapshot_failures.native_animation_starts;
         return;
     }
 
@@ -776,6 +927,11 @@ lv_obj_t *lv_layer_sys(void)
 
 lv_obj_t *lv_obj_create(lv_obj_t *parent)
 {
+    if (parent == NULL && s_snapshot_failures.screen_creations > 0U)
+    {
+        --s_snapshot_failures.screen_creations;
+        return NULL;
+    }
     const host_lv_object_kind_t kind = parent == NULL ?
                                        HOST_LV_OBJECT_SCREEN :
                                        HOST_LV_OBJECT_GENERIC;
@@ -807,6 +963,11 @@ lv_obj_t *lv_canvas_create(lv_obj_t *parent)
     return _host_lv_allocate_object(HOST_LV_OBJECT_CANVAS, parent);
 }
 
+lv_obj_t *lv_image_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_IMAGE, parent);
+}
+
 void lv_canvas_set_draw_buf(lv_obj_t *canvas, lv_draw_buf_t *draw_buf)
 {
     if (canvas == NULL || !canvas->live ||
@@ -820,6 +981,69 @@ void lv_canvas_set_draw_buf(lv_obj_t *canvas, lv_draw_buf_t *draw_buf)
     canvas->height = (int32_t)draw_buf->header.h;
 }
 
+void lv_image_set_src(lv_obj_t *image, const void *source)
+{
+    if (image == NULL || !image->live ||
+            image->kind != HOST_LV_OBJECT_IMAGE)
+    {
+        return;
+    }
+
+    image->image_source = source;
+    const lv_draw_buf_t *draw_buf = source;
+    if (draw_buf != NULL && draw_buf->data != NULL &&
+            draw_buf->header.w > 0U && draw_buf->header.h > 0U)
+    {
+        image->width = (int32_t)draw_buf->header.w;
+        image->height = (int32_t)draw_buf->header.h;
+    }
+}
+
+lv_result_t lv_draw_buf_init(lv_draw_buf_t *draw_buf, uint32_t width,
+                             uint32_t height, lv_color_format_t color_format,
+                             uint32_t stride, void *data, uint32_t data_size)
+{
+    if (s_snapshot_failures.draw_buffer_initializations > 0U)
+    {
+        --s_snapshot_failures.draw_buffer_initializations;
+        return LV_RESULT_INVALID;
+    }
+    if (draw_buf == NULL || data == NULL || width == 0U || height == 0U)
+    {
+        return LV_RESULT_INVALID;
+    }
+
+    if (stride == LV_STRIDE_AUTO)
+    {
+        stride = LV_DRAW_BUF_STRIDE(width, color_format);
+    }
+    if (stride == 0U || (uint64_t)stride * height > data_size)
+    {
+        return LV_RESULT_INVALID;
+    }
+
+    *draw_buf = (lv_draw_buf_t)
+    {
+        .header =
+        {
+            .cf = color_format,
+            .w = width,
+            .h = height,
+            .stride = stride,
+        },
+        .data_size = data_size,
+        .data = data,
+        .unaligned_data = data,
+    };
+    return LV_RESULT_OK;
+}
+
+uint32_t lv_draw_buf_width_to_stride(uint32_t width,
+                                     lv_color_format_t color_format)
+{
+    return LV_DRAW_BUF_STRIDE(width, color_format);
+}
+
 void lv_draw_buf_flush_cache(lv_draw_buf_t *draw_buf, const void *area)
 {
     (void)area;
@@ -827,6 +1051,63 @@ void lv_draw_buf_flush_cache(lv_draw_buf_t *draw_buf, const void *area)
     {
         draw_buf->flush_count++;
     }
+}
+
+lv_result_t lv_snapshot_take_to_draw_buf(lv_obj_t *object,
+        lv_color_format_t color_format,
+        lv_draw_buf_t *draw_buf)
+{
+    if (s_snapshot_capture_count < HOST_LV_SNAPSHOT_CAPTURE_CAPACITY)
+    {
+        s_snapshot_captures[s_snapshot_capture_count] =
+            (host_lv_snapshot_capture_t)
+        {
+            .object = object,
+            .input_blocked = _host_lv_input_is_blocked(),
+            .object_active = object == s_active_screen,
+        };
+    }
+    ++s_snapshot_capture_count;
+
+    if (s_snapshot_failures.captures > 0U)
+    {
+        --s_snapshot_failures.captures;
+        return LV_RESULT_INVALID;
+    }
+    if (s_snapshot_failures.capture_after_enabled)
+    {
+        if (s_snapshot_failures.capture_after == 0U)
+        {
+            s_snapshot_failures.capture_after_enabled = false;
+            return LV_RESULT_INVALID;
+        }
+        --s_snapshot_failures.capture_after;
+    }
+    if (!lv_obj_is_valid(object) || draw_buf == NULL || draw_buf->data == NULL ||
+            color_format != LV_COLOR_FORMAT_RGB565)
+    {
+        return LV_RESULT_INVALID;
+    }
+
+    const uint32_t width = (uint32_t)lv_obj_get_width(object);
+    const uint32_t height = (uint32_t)lv_obj_get_height(object);
+    const uint32_t stride = LV_DRAW_BUF_STRIDE(width, color_format);
+    if (width == 0U || height == 0U ||
+            (uint64_t)stride * height > draw_buf->data_size)
+    {
+        return LV_RESULT_INVALID;
+    }
+
+    draw_buf->header = (lv_image_header_t)
+    {
+        .cf = color_format,
+        .w = width,
+        .h = height,
+        .stride = stride,
+    };
+    memset(draw_buf->data, (int)(s_snapshot_capture_count & UINT8_MAX),
+           (size_t)stride * height);
+    return LV_RESULT_OK;
 }
 
 void lv_obj_delete(lv_obj_t *object)
@@ -989,6 +1270,36 @@ lv_obj_t *lv_obj_get_parent(const lv_obj_t *object)
 lv_display_t *lv_obj_get_display(const lv_obj_t *object)
 {
     return lv_obj_is_valid(object) ? &s_display : NULL;
+}
+
+uint32_t lv_obj_get_child_count(const lv_obj_t *object)
+{
+    const size_t count = host_lv_object_child_count(object);
+    return count > UINT32_MAX ? UINT32_MAX : (uint32_t)count;
+}
+
+lv_obj_t *lv_obj_get_child(const lv_obj_t *object, int32_t index)
+{
+    const size_t count = host_lv_object_child_count(object);
+    int64_t resolved_index = index;
+
+    if (index < 0)
+    {
+        resolved_index = (int64_t)count + index;
+    }
+    if (resolved_index < 0 || (uint64_t)resolved_index >= count)
+    {
+        return NULL;
+    }
+
+    const lv_obj_t *child = NULL;
+    return _host_lv_child_at(object, (size_t)resolved_index, &child) ?
+           (lv_obj_t *)child : NULL;
+}
+
+void lv_obj_update_layout(const lv_obj_t *object)
+{
+    (void)object;
 }
 
 void lv_obj_move_to_index(lv_obj_t *object, int32_t index)
@@ -1433,6 +1744,16 @@ lv_anim_t *lv_anim_get(void *variable, lv_anim_exec_xcb_t execute_callback)
     {
         return &s_transition.old_animation;
     }
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        host_lv_generic_animation_t *generic = &s_generic_animations[index];
+        if (generic->live && generic->animation.var == variable &&
+                (execute_callback == NULL ||
+                 generic->animation.exec_cb == execute_callback))
+        {
+            return &generic->animation;
+        }
+    }
     return NULL;
 }
 
@@ -1456,7 +1777,113 @@ bool lv_anim_delete(void *variable, lv_anim_exec_xcb_t execute_callback)
         s_transition.old_animation_live = false;
         deleted = true;
     }
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        host_lv_generic_animation_t *generic = &s_generic_animations[index];
+        if (generic->live && generic->animation.var == variable &&
+                (execute_callback == NULL ||
+                 generic->animation.exec_cb == execute_callback))
+        {
+            generic->live = false;
+            deleted = true;
+        }
+    }
     return deleted;
+}
+
+void lv_anim_init(lv_anim_t *animation)
+{
+    if (animation != NULL)
+    {
+        memset(animation, 0, sizeof(*animation));
+    }
+}
+
+void lv_anim_set_var(lv_anim_t *animation, void *variable)
+{
+    if (animation != NULL)
+    {
+        animation->var = variable;
+    }
+}
+
+void lv_anim_set_exec_cb(lv_anim_t *animation,
+                         lv_anim_exec_xcb_t execute_callback)
+{
+    if (animation != NULL)
+    {
+        animation->exec_cb = execute_callback;
+    }
+}
+
+void lv_anim_set_values(lv_anim_t *animation, int32_t start_value,
+                        int32_t end_value)
+{
+    if (animation != NULL)
+    {
+        animation->start_value = start_value;
+        animation->current_value = start_value;
+        animation->end_value = end_value;
+    }
+}
+
+void lv_anim_set_duration(lv_anim_t *animation, uint32_t duration)
+{
+    if (animation != NULL)
+    {
+        animation->duration = (int32_t)duration;
+    }
+}
+
+void lv_anim_set_completed_cb(lv_anim_t *animation,
+                              lv_anim_completed_cb_t completed_callback)
+{
+    if (animation != NULL)
+    {
+        animation->completed_cb = completed_callback;
+    }
+}
+
+void lv_anim_set_early_apply(lv_anim_t *animation, bool enabled)
+{
+    if (animation != NULL)
+    {
+        animation->early_apply = enabled;
+    }
+}
+
+lv_anim_t *lv_anim_start(const lv_anim_t *animation)
+{
+    if (animation == NULL || animation->var == NULL ||
+            animation->exec_cb == NULL || animation->duration < 0)
+    {
+        return NULL;
+    }
+    if (s_snapshot_failures.animation_starts > 0U)
+    {
+        --s_snapshot_failures.animation_starts;
+        return NULL;
+    }
+
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        host_lv_generic_animation_t *generic = &s_generic_animations[index];
+        if (!generic->live)
+        {
+            generic->live = true;
+            generic->animation = *animation;
+            generic->animation.act_time = 0;
+            generic->animation.current_value = animation->start_value;
+            ++s_generic_animation_start_count;
+            if (generic->animation.early_apply)
+            {
+                generic->animation.exec_cb(generic->animation.var,
+                                           generic->animation.start_value);
+            }
+            return &generic->animation;
+        }
+    }
+    return NULL;
 }
 
 static void _host_lv_run_ready_timers(void)
@@ -1485,51 +1912,98 @@ void host_lv_timer_step(void)
     _host_lv_run_ready_timers();
 }
 
+static void _host_lv_refresh_generic_animations(void)
+{
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        host_lv_generic_animation_t *generic = &s_generic_animations[index];
+        if (!generic->live)
+        {
+            continue;
+        }
+
+        lv_anim_t *animation = &generic->animation;
+        const int32_t duration = animation->duration;
+        const int32_t elapsed = animation->act_time > duration ?
+                                duration : animation->act_time;
+        const int32_t value = duration == 0 ? animation->end_value :
+                              animation->start_value +
+                              (int32_t)(((int64_t)(animation->end_value -
+                                         animation->start_value) *
+                                         elapsed) / duration);
+        animation->current_value = value;
+        animation->exec_cb(animation->var, value);
+        if (animation->act_time >= duration)
+        {
+            if (s_generic_animation_completion_count <
+                    HOST_LV_GENERIC_ANIM_COMPLETION_CAPACITY)
+            {
+                s_generic_animation_completion_values[
+                    s_generic_animation_completion_count] = value;
+            }
+            ++s_generic_animation_completion_count;
+            lv_anim_completed_cb_t completed_callback = animation->completed_cb;
+            generic->live = false;
+            if (completed_callback != NULL)
+            {
+                completed_callback(animation);
+            }
+        }
+    }
+}
+
 void lv_anim_refr_now(void)
 {
-    if (!s_transition.pending)
+    if (s_transition.pending)
     {
-        return;
+        lv_anim_t *new_animation = &s_transition.new_animation;
+        if (!s_transition.started && new_animation->act_time >= 0)
+        {
+            s_transition.started = true;
+            s_active_screen = s_transition.new_screen;
+            (void)_host_lv_emit(s_transition.new_screen,
+                                LV_EVENT_SCREEN_LOAD_START);
+        }
+        if (new_animation->act_time >= 0)
+        {
+            const int32_t duration = new_animation->duration;
+            const int32_t time = new_animation->act_time > duration ?
+                                 duration : new_animation->act_time;
+            const int32_t value = duration == 0 ? new_animation->end_value :
+                                  new_animation->start_value +
+                                  (int32_t)(((int64_t)(new_animation->end_value -
+                                             new_animation->start_value) *
+                                             time) / duration);
+            new_animation->current_value = value;
+            new_animation->exec_cb(new_animation->var, value);
+        }
+        if (new_animation->act_time >= new_animation->duration)
+        {
+            _host_lv_complete_transition();
+        }
     }
-    lv_anim_t *new_animation = &s_transition.new_animation;
-    if (!s_transition.started && new_animation->act_time >= 0)
-    {
-        s_transition.started = true;
-        s_active_screen = s_transition.new_screen;
-        (void)_host_lv_emit(s_transition.new_screen,
-                            LV_EVENT_SCREEN_LOAD_START);
-    }
-    if (new_animation->act_time >= 0)
-    {
-        const int32_t duration = new_animation->duration;
-        const int32_t time = new_animation->act_time > duration ?
-                             duration : new_animation->act_time;
-        const int32_t value = duration == 0 ? new_animation->end_value :
-                              new_animation->start_value +
-                              ((new_animation->end_value -
-                                new_animation->start_value) * time) / duration;
-        new_animation->current_value = value;
-        new_animation->exec_cb(new_animation->var, value);
-    }
-    if (new_animation->act_time >= new_animation->duration)
-    {
-        _host_lv_complete_transition();
-    }
+    _host_lv_refresh_generic_animations();
     _host_lv_run_ready_timers();
 }
 
 void app_manager_host_ui_step(void)
 {
-    if (!s_transition.pending || !s_transition.new_animation_live)
+    if (s_transition.pending && s_transition.new_animation_live)
     {
-        return;
+        lv_anim_t *animation = &s_transition.new_animation;
+        animation->act_time += HOST_LV_ANIM_STEP_MS;
+        if (s_transition.old_animation_live)
+        {
+            s_transition.old_animation.act_time += HOST_LV_ANIM_STEP_MS;
+        }
     }
-
-    lv_anim_t *animation = &s_transition.new_animation;
-    animation->act_time += HOST_LV_ANIM_STEP_MS;
-    if (s_transition.old_animation_live)
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
     {
-        s_transition.old_animation.act_time += HOST_LV_ANIM_STEP_MS;
+        if (s_generic_animations[index].live)
+        {
+            s_generic_animations[index].animation.act_time +=
+                HOST_LV_ANIM_STEP_MS;
+        }
     }
     lv_anim_refr_now();
 }
@@ -1547,6 +2021,324 @@ static void _host_lv_set_y_animation(void *variable, int32_t value)
 static void _host_lv_set_opacity_animation(void *variable, int32_t value)
 {
     lv_obj_set_style_opa(variable, (lv_opa_t)value, 0);
+}
+
+void host_lv_snapshot_fail_next_allocations(unsigned count)
+{
+    s_snapshot_failures.allocations = count;
+}
+
+void host_lv_snapshot_fail_allocation_after(unsigned successful_allocations)
+{
+    s_snapshot_failures.allocation_after = successful_allocations;
+    s_snapshot_failures.allocation_after_enabled = true;
+}
+
+void host_lv_snapshot_fail_next_draw_buffer_initializations(unsigned count)
+{
+    s_snapshot_failures.draw_buffer_initializations = count;
+}
+
+void host_lv_snapshot_fail_next_captures(unsigned count)
+{
+    s_snapshot_failures.captures = count;
+}
+
+void host_lv_snapshot_fail_capture_after(unsigned successful_captures)
+{
+    s_snapshot_failures.capture_after = successful_captures;
+    s_snapshot_failures.capture_after_enabled = true;
+}
+
+void host_lv_snapshot_fail_next_object_creations(unsigned count)
+{
+    s_snapshot_failures.object_creations = count;
+}
+
+void host_lv_snapshot_fail_object_creation_after(unsigned successful_creations)
+{
+    s_snapshot_failures.object_creation_after = successful_creations;
+    s_snapshot_failures.object_creation_after_enabled = true;
+}
+
+void host_lv_snapshot_fail_next_animation_starts(unsigned count)
+{
+    s_snapshot_failures.animation_starts = count;
+}
+
+void host_lv_fail_next_screen_animation_starts(unsigned count)
+{
+    s_snapshot_failures.native_animation_starts = count;
+}
+
+void host_lv_fail_next_screen_creations(unsigned count)
+{
+    s_snapshot_failures.screen_creations = count;
+}
+
+void host_lv_snapshot_fail_next_screen_loads(unsigned count)
+{
+    s_snapshot_failures.screen_loads = count;
+}
+
+void host_lv_fail_screen_load_after(unsigned successful_loads)
+{
+    s_snapshot_failures.screen_load_after = successful_loads;
+    s_snapshot_failures.screen_load_after_enabled = true;
+}
+
+size_t host_lv_snapshot_capture_count(void)
+{
+    return s_snapshot_capture_count;
+}
+
+bool host_lv_snapshot_capture_at(size_t index, const lv_obj_t **object,
+                                 bool *input_blocked, bool *object_active)
+{
+    if (object == NULL || input_blocked == NULL || object_active == NULL ||
+            index >= s_snapshot_capture_count ||
+            index >= HOST_LV_SNAPSHOT_CAPTURE_CAPACITY)
+    {
+        return false;
+    }
+    *object = s_snapshot_captures[index].object;
+    *input_blocked = s_snapshot_captures[index].input_blocked;
+    *object_active = s_snapshot_captures[index].object_active;
+    return true;
+}
+
+size_t host_lv_object_child_count(const lv_obj_t *parent)
+{
+    if (!lv_obj_is_valid(parent))
+    {
+        return 0U;
+    }
+
+    size_t count = 0U;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        count += s_objects[index].live && s_objects[index].parent == parent ?
+                 1U : 0U;
+    }
+    return count;
+}
+
+static bool _host_lv_child_at(const lv_obj_t *parent, size_t child_index,
+                              const lv_obj_t **child)
+{
+    const lv_obj_t *result = NULL;
+    uint64_t lower_z_order = 0U;
+    for (size_t ordinal = 0U; ; ++ordinal)
+    {
+        const lv_obj_t *next = NULL;
+        for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+        {
+            const lv_obj_t *candidate = &s_objects[index];
+            if (candidate->live && candidate->parent == parent &&
+                    candidate->z_order > lower_z_order &&
+                    (next == NULL || candidate->z_order < next->z_order))
+            {
+                next = candidate;
+            }
+        }
+        if (next == NULL)
+        {
+            return false;
+        }
+        if (ordinal == child_index)
+        {
+            result = next;
+            break;
+        }
+        lower_z_order = next->z_order;
+    }
+
+    *child = result;
+    return true;
+}
+
+bool host_lv_object_child_snapshot(const lv_obj_t *parent, size_t index,
+                                   host_lv_object_snapshot_t *snapshot)
+{
+    const lv_obj_t *child = NULL;
+    if (snapshot == NULL || !_host_lv_child_at(parent, index, &child))
+    {
+        return false;
+    }
+
+    *snapshot = (host_lv_object_snapshot_t)
+    {
+        .object = child,
+        .parent = child->parent,
+        .live = child->live,
+        .image = child->kind == HOST_LV_OBJECT_IMAGE,
+        .has_draw_buf_source = child->kind == HOST_LV_OBJECT_IMAGE &&
+                               child->image_source != NULL,
+                               .flags = child->flags,
+                               .x = child->x,
+                               .y = child->y,
+                               .width = child->width,
+                               .height = child->height,
+                               .opacity = child->opacity,
+                               .background_opacity = child->background_opacity,
+    };
+    return true;
+}
+
+size_t host_lv_generic_animation_count(void)
+{
+    size_t count = 0U;
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        count += s_generic_animations[index].live ? 1U : 0U;
+    }
+    return count;
+}
+
+void host_lv_advance_generic_animations(uint32_t elapsed_ms)
+{
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        if (s_generic_animations[index].live)
+        {
+            const int64_t advanced =
+                (int64_t)s_generic_animations[index].animation.act_time +
+                elapsed_ms;
+            s_generic_animations[index].animation.act_time =
+                advanced > INT32_MAX ? INT32_MAX : (int32_t)advanced;
+        }
+    }
+    lv_anim_refr_now();
+}
+
+void host_lv_complete_generic_animations(void)
+{
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        if (s_generic_animations[index].live)
+        {
+            s_generic_animations[index].animation.act_time =
+                s_generic_animations[index].animation.duration;
+        }
+    }
+    lv_anim_refr_now();
+}
+
+void *host_lv_heap_caps_aligned_calloc(size_t alignment, size_t count,
+                                       size_t size, uint32_t caps)
+{
+    const size_t call_index = s_snapshot_allocation_call_count++;
+    if (call_index < HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY)
+    {
+        s_snapshot_allocation_calls[call_index] = (host_lv_snapshot_allocation_call_t)
+        {
+            .alignment = alignment,
+            .count = count,
+            .size = size,
+            .caps = caps,
+            .succeeded = false,
+        };
+    }
+    if (s_snapshot_failures.allocations > 0U)
+    {
+        --s_snapshot_failures.allocations;
+        return NULL;
+    }
+    if (s_snapshot_failures.allocation_after_enabled)
+    {
+        if (s_snapshot_failures.allocation_after == 0U)
+        {
+            s_snapshot_failures.allocation_after_enabled = false;
+            return NULL;
+        }
+        --s_snapshot_failures.allocation_after;
+    }
+    if (count == 0U || size == 0U || size > SIZE_MAX / count)
+    {
+        return NULL;
+    }
+    void *pointer = calloc(count, size);
+    if (pointer == NULL)
+    {
+        return NULL;
+    }
+    if (!_host_lv_track_snapshot_allocation(pointer, count * size))
+    {
+        free(pointer);
+        return NULL;
+    }
+    if (call_index < HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY)
+    {
+        s_snapshot_allocation_calls[call_index].succeeded = true;
+    }
+    return pointer;
+}
+
+void host_lv_heap_caps_free(void *pointer)
+{
+    _host_lv_untrack_snapshot_allocation(pointer);
+    free(pointer);
+}
+
+size_t host_lv_snapshot_live_allocation_count(void)
+{
+    size_t count = 0U;
+    for (size_t index = 0U;
+            index < HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY; ++index)
+    {
+        count += s_snapshot_allocations[index].pointer != NULL ? 1U : 0U;
+    }
+    return count;
+}
+
+size_t host_lv_snapshot_live_allocation_bytes(void)
+{
+    size_t bytes = 0U;
+    for (size_t index = 0U;
+            index < HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY; ++index)
+    {
+        bytes += s_snapshot_allocations[index].size;
+    }
+    return bytes;
+}
+
+size_t host_lv_generic_animation_start_count(void)
+{
+    return s_generic_animation_start_count;
+}
+
+size_t host_lv_generic_animation_completion_count(void)
+{
+    return s_generic_animation_completion_count;
+}
+
+bool host_lv_generic_animation_completion_value_at(size_t index,
+        int32_t *value)
+{
+    if (value == NULL || index >= s_generic_animation_completion_count ||
+            index >= HOST_LV_GENERIC_ANIM_COMPLETION_CAPACITY)
+    {
+        return false;
+    }
+    *value = s_generic_animation_completion_values[index];
+    return true;
+}
+
+size_t host_lv_snapshot_allocation_call_count(void)
+{
+    return s_snapshot_allocation_call_count;
+}
+
+bool host_lv_snapshot_allocation_call_at(
+    size_t index, host_lv_snapshot_allocation_call_t *call)
+{
+    if (call == NULL || index >= s_snapshot_allocation_call_count ||
+            index >= HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY)
+    {
+        return false;
+    }
+    *call = s_snapshot_allocation_calls[index];
+    return true;
 }
 
 bool host_lv_touch_press(int32_t x, int32_t y)
@@ -1813,9 +2605,22 @@ size_t host_lv_visible_text_count(const char *text)
 
 bool host_lv_transition_target_has_text(const char *text)
 {
-    return text != NULL && s_transition.pending &&
-           s_transition.new_screen != NULL &&
-           _host_lv_has_descendant_text(s_transition.new_screen, text);
+    if (text == NULL)
+    {
+        return false;
+    }
+    if (s_transition.pending && s_transition.new_screen != NULL)
+    {
+        return _host_lv_has_descendant_text(s_transition.new_screen, text);
+    }
+    for (size_t index = 0; index < HOST_LV_GENERIC_ANIM_CAPACITY; ++index)
+    {
+        if (s_generic_animations[index].live && s_active_screen != NULL)
+        {
+            return _host_lv_has_descendant_text(s_active_screen, text);
+        }
+    }
+    return false;
 }
 
 size_t host_lv_live_object_count(void)

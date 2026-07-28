@@ -3,6 +3,7 @@
 #define __CROSS_LAYER_LVGL_H__
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -24,12 +25,21 @@ typedef struct lv_indev_t lv_indev_t;
 /** @brief Fake LVGL animation with the public timing fields used by LVGL. */
 typedef struct _lv_anim_t lv_anim_t;
 
-/** @brief Fake LVGL color formats used by static Canvas draw buffers. */
+/** @brief Fake LVGL color formats used by Canvas and snapshot draw buffers. */
 typedef enum
 {
     LV_COLOR_FORMAT_UNKNOWN = 0,
     LV_COLOR_FORMAT_A8,
+    LV_COLOR_FORMAT_RGB565,
+    LV_COLOR_FORMAT_RGB565_SWAPPED,
 } lv_color_format_t;
+
+/** @brief Minimal LVGL result values used by draw-buffer and snapshot APIs. */
+typedef enum
+{
+    LV_RESULT_OK = 0,
+    LV_RESULT_INVALID,
+} lv_result_t;
 
 /** @brief Minimal fake LVGL image header carried by a draw buffer. */
 typedef struct lv_image_header_t
@@ -83,6 +93,8 @@ typedef void (*lv_event_cb_t)(lv_event_t *event);
 typedef void (*lv_timer_cb_t)(lv_timer_t *timer);
 /** @brief Fake LVGL animation value callback. */
 typedef void (*lv_anim_exec_xcb_t)(void *variable, int32_t value);
+/** @brief Fake LVGL animation completion callback. */
+typedef void (*lv_anim_completed_cb_t)(lv_anim_t *animation);
 
 /** @brief Minimal public LVGL animation descriptor used for fast-forwarding. */
 struct _lv_anim_t
@@ -94,6 +106,8 @@ struct _lv_anim_t
     int32_t end_value;
     int32_t duration;
     int32_t act_time;
+    lv_anim_completed_cb_t completed_cb;
+    bool early_apply;
 };
 
 /** @brief LVGL 9.5 screen-load effects. */
@@ -122,7 +136,15 @@ extern const lv_font_t host_lv_default_font;
 #define LV_FONT_DEFAULT (&host_lv_default_font)
 
 #define LV_USE_CANVAS                    1
-#define LV_DRAW_BUF_STRIDE(width, format) ((uint32_t)(width))
+#define LV_USE_IMAGE                     1
+#define LV_USE_SNAPSHOT                  1
+#define LV_DRAW_BUF_ALIGN                4U
+#define LV_STRIDE_AUTO                   0U
+#define _HOST_LV_DRAW_BUF_BYTES_PER_PIXEL(format) \
+    ((format) == LV_COLOR_FORMAT_RGB565 || \
+     (format) == LV_COLOR_FORMAT_RGB565_SWAPPED ? 2U : 1U)
+#define LV_DRAW_BUF_STRIDE(width, format) \
+    ((uint32_t)(width) * _HOST_LV_DRAW_BUF_BYTES_PER_PIXEL((format)))
 #define LV_DRAW_BUF_SIZE(width, height, format) \
     (LV_DRAW_BUF_STRIDE((width), (format)) * (uint32_t)(height))
 #define LV_DRAW_BUF_DEFINE_STATIC(name, width, height, format) \
@@ -195,6 +217,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_OBJ_FLAG_GESTURE_BUBBLE    (1U << 15)
 #define LV_OBJ_FLAG_IGNORE_LAYOUT     (1U << 17)
 #define LV_OBJ_FLAG_FLOATING          (1U << 18)
+#define LV_OBJ_FLAG_OVERFLOW_VISIBLE  (1U << 20)
 #define LV_OPA_TRANSP                 0
 #define LV_OPA_COVER                  255
 #define LV_PART_MAIN                  0
@@ -269,10 +292,25 @@ lv_obj_t *lv_slider_create(lv_obj_t *parent);
 lv_obj_t *lv_bar_create(lv_obj_t *parent);
 /** @brief Create a fake Canvas. */
 lv_obj_t *lv_canvas_create(lv_obj_t *parent);
+/** @brief Create a fake Image. */
+lv_obj_t *lv_image_create(lv_obj_t *parent);
 /** @brief Bind a static fake draw buffer to a Canvas. */
 void lv_canvas_set_draw_buf(lv_obj_t *canvas, lv_draw_buf_t *draw_buf);
+/** @brief Bind a fake Image to a draw buffer or other source. */
+void lv_image_set_src(lv_obj_t *image, const void *source);
+/** @brief Initialize a caller-owned fake draw buffer. */
+lv_result_t lv_draw_buf_init(lv_draw_buf_t *draw_buf, uint32_t width,
+                             uint32_t height, lv_color_format_t color_format,
+                             uint32_t stride, void *data, uint32_t data_size);
+/** @brief Calculate the fake byte stride for a draw buffer width. */
+uint32_t lv_draw_buf_width_to_stride(uint32_t width,
+                                     lv_color_format_t color_format);
 /** @brief Flush a fake draw buffer after direct pixel writes. */
 void lv_draw_buf_flush_cache(lv_draw_buf_t *draw_buf, const void *area);
+/** @brief Capture a fake object into an existing RGB draw buffer. */
+lv_result_t lv_snapshot_take_to_draw_buf(lv_obj_t *object,
+        lv_color_format_t color_format,
+        lv_draw_buf_t *draw_buf);
 /** @brief Delete a fake object. */
 void lv_obj_delete(lv_obj_t *object);
 /** @brief Delete all children from a fake object. */
@@ -301,6 +339,12 @@ bool lv_obj_is_valid(const lv_obj_t *object);
 lv_obj_t *lv_obj_get_parent(const lv_obj_t *object);
 /** @brief Return a fake object's display. */
 lv_display_t *lv_obj_get_display(const lv_obj_t *object);
+/** @brief Return a child in fake display stacking order. */
+lv_obj_t *lv_obj_get_child(const lv_obj_t *object, int32_t index);
+/** @brief Return a fake object's direct child count. */
+uint32_t lv_obj_get_child_count(const lv_obj_t *object);
+/** @brief Resolve pending fake layouts. */
+void lv_obj_update_layout(const lv_obj_t *object);
 /** @brief Move an object within its fake parent stacking order. */
 void lv_obj_move_to_index(lv_obj_t *object, int32_t index);
 /** @brief Set a fake object's position. */
@@ -406,8 +450,105 @@ void *lv_timer_get_user_data(lv_timer_t *timer);
 lv_anim_t *lv_anim_get(void *variable, lv_anim_exec_xcb_t execute_callback);
 /** @brief Delete matching fake animations. */
 bool lv_anim_delete(void *variable, lv_anim_exec_xcb_t execute_callback);
+/** @brief Initialize a generic fake animation descriptor. */
+void lv_anim_init(lv_anim_t *animation);
+/** @brief Set a generic fake animation target variable. */
+void lv_anim_set_var(lv_anim_t *animation, void *variable);
+/** @brief Set a generic fake animation value callback. */
+void lv_anim_set_exec_cb(lv_anim_t *animation,
+                         lv_anim_exec_xcb_t execute_callback);
+/** @brief Set generic fake animation endpoints. */
+void lv_anim_set_values(lv_anim_t *animation, int32_t start_value,
+                        int32_t end_value);
+/** @brief Set generic fake animation duration. */
+void lv_anim_set_duration(lv_anim_t *animation, uint32_t duration);
+/** @brief Set generic fake animation completion callback. */
+void lv_anim_set_completed_cb(lv_anim_t *animation,
+                              lv_anim_completed_cb_t completed_callback);
+/** @brief Select whether a generic animation applies its initial value. */
+void lv_anim_set_early_apply(lv_anim_t *animation, bool enabled);
+/** @brief Start a generic fake animation or return NULL on injected failure. */
+lv_anim_t *lv_anim_start(const lv_anim_t *animation);
 /** @brief Refresh and complete fake animations whose active time elapsed. */
 void lv_anim_refr_now(void);
+
+/** @brief Host-only object state used to inspect snapshot overlays. */
+typedef struct host_lv_object_snapshot
+{
+    const lv_obj_t *object;
+    const lv_obj_t *parent;
+    bool live;
+    bool image;
+    bool has_draw_buf_source;
+    lv_obj_flag_t flags;
+    int32_t x;
+    int32_t y;
+    int32_t width;
+    int32_t height;
+    lv_opa_t opacity;
+    lv_opa_t background_opacity;
+} host_lv_object_snapshot_t;
+
+/** @brief Host-only heap-capability allocation request captured by the fake. */
+typedef struct host_lv_snapshot_allocation_call
+{
+    size_t alignment;
+    size_t count;
+    size_t size;
+    uint32_t caps;
+    bool succeeded;
+} host_lv_snapshot_allocation_call_t;
+
+/** @brief Configure host-only failures for snapshot-transition tests. */
+void host_lv_snapshot_fail_next_allocations(unsigned count);
+void host_lv_snapshot_fail_allocation_after(unsigned successful_allocations);
+void host_lv_snapshot_fail_next_draw_buffer_initializations(unsigned count);
+void host_lv_snapshot_fail_next_captures(unsigned count);
+void host_lv_snapshot_fail_capture_after(unsigned successful_captures);
+void host_lv_snapshot_fail_next_object_creations(unsigned count);
+void host_lv_snapshot_fail_object_creation_after(unsigned successful_creations);
+void host_lv_snapshot_fail_next_animation_starts(unsigned count);
+/** @brief Fail upcoming native screen-animation starts before activation. */
+void host_lv_fail_next_screen_animation_starts(unsigned count);
+/** @brief Fail upcoming screen object creations without affecting children. */
+void host_lv_fail_next_screen_creations(unsigned count);
+void host_lv_snapshot_fail_next_screen_loads(unsigned count);
+/** @brief Fail one screen load after the requested successful loads. */
+void host_lv_fail_screen_load_after(unsigned successful_loads);
+/** @brief Return host-only snapshot capture information. */
+size_t host_lv_snapshot_capture_count(void);
+bool host_lv_snapshot_capture_at(size_t index, const lv_obj_t **object,
+                                 bool *input_blocked, bool *object_active);
+/** @brief Return snapshot overlay children in display stacking order. */
+size_t host_lv_object_child_count(const lv_obj_t *parent);
+bool host_lv_object_child_snapshot(const lv_obj_t *parent, size_t index,
+                                   host_lv_object_snapshot_t *snapshot);
+/** @brief Return the number of live host-only generic animations. */
+size_t host_lv_generic_animation_count(void);
+/** @brief Return the number of generic animations successfully started. */
+size_t host_lv_generic_animation_start_count(void);
+/** @brief Return the number of generic animations that reached completion. */
+size_t host_lv_generic_animation_completion_count(void);
+/** @brief Return the value applied immediately before a generic completion. */
+bool host_lv_generic_animation_completion_value_at(size_t index,
+        int32_t *value);
+/** @brief Advance all host-only generic animations by a fixed time span. */
+void host_lv_advance_generic_animations(uint32_t elapsed_ms);
+/** @brief Complete all host-only generic animations synchronously. */
+void host_lv_complete_generic_animations(void);
+/** @brief Host heap-capability compatibility for snapshot buffer ownership. */
+void *host_lv_heap_caps_aligned_calloc(size_t alignment, size_t count,
+                                       size_t size, uint32_t caps);
+void host_lv_heap_caps_free(void *pointer);
+/** @brief Return the number of live snapshot PSRAM allocations. */
+size_t host_lv_snapshot_live_allocation_count(void);
+/** @brief Return bytes held by live snapshot PSRAM allocations. */
+size_t host_lv_snapshot_live_allocation_bytes(void);
+/** @brief Return the number of snapshot allocation requests captured. */
+size_t host_lv_snapshot_allocation_call_count(void);
+/** @brief Return one captured snapshot allocation request. */
+bool host_lv_snapshot_allocation_call_at(
+    size_t index, host_lv_snapshot_allocation_call_t *call);
 
 /** @brief Convert a host RGB value to the fake LVGL color type. */
 static inline lv_color_t lv_color_hex(uint32_t color)
