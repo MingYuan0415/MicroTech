@@ -1,54 +1,66 @@
 ---
 name: esp-idf
-description: Practical ESP-IDF, FreeRTOS, LVGL, board, and hardware guidance for the MicroTech firmware project. Use when writing, reviewing, debugging, building, reconfiguring, flashing, or monitoring ESP-IDF applications and components, especially CMake component requirements, generated files, ESP_* error macros, platform state, and device drivers.
-license: MIT
-metadata:
-  source: https://github.com/Sped0n/systems
-  adapted-for: MicroTech (Waveshare ESP32-S3 Touch AMOLED 1.8)
+description: MicroTech ESP-IDF engineering workflow for component dependencies, CMake and Kconfig, generated state, logging and error cleanup, build and reconfigure, host validation, device diagnostics and monitoring, and explicitly authorized flash operations. Use when changing or reviewing ESP-IDF project structure, manifests, configuration, build behavior, runtime diagnostics, or device workflow; use esp32 or lvgl-integration for board-hardware and display-pipeline facts.
 ---
 
-# ESP-IDF
+# ESP-IDF Workflow
 
-Use for ESP-IDF platform and application work in the MicroTech repository. Repository-level rules in `AGENTS.md` and `doc/code-style.md` take precedence over this skill.
+Apply this workflow to ESP-IDF engineering in the MicroTech repository. Follow
+`AGENTS.md` and `doc/code-style.md` first; inspect the current checkout before
+using remembered commands, versions, or component behavior.
 
-## Scope
+## Repository Boundaries
 
-- Own ESP-IDF, FreeRTOS, LVGL, board/platform, peripherals, power, sensors, buses, provisioning, build, flash, and monitor work.
-- Keep app hardware behavior outside dependency and vendor code. Do not edit `managed_components/`, ESP-IDF, or BSP third-party libraries (e.g. `XPowersLib`) unless explicitly asked.
-- Prefer existing component and platform boundaries over new wrappers or layers.
-- `layers/` directories are independent git submodules: changes there are committed in their own repositories, and the parent repository records pointer updates.
+- Treat `layers/bsp`, `layers/middleware`, `layers/app_manager`, and
+  `layers/apps` as independent Git submodules. Commit a changed submodule
+  before updating the root gitlink.
+- Keep `managed_components/`, ESP-IDF, build output, and BSP third-party code
+  read-only. Prefer dependency upgrades or project-owned wrappers.
+- Prefer existing component ownership and public APIs over new cross-layer
+  wrappers or dependencies.
 
-## Architecture and State
+## Components and Configuration
 
-- Keep platform/hardware policy near its owner; UI renders snapshots and sends intents, not protocol or hardware decisions.
-- Centralize mutation of app/platform state in one owner. Derive UI busy, error, and enabled states from its enum rather than parallel booleans.
-- Keep timers, task/queue work, callbacks, retries, and cleanup for one lifecycle in one orchestration path. Serialize work unless concurrency is required.
-- Transition before observable work begins; transition on asynchronous completion, not request submission. Preserve usable prior state after a failed refresh when safe.
-- Do not let LVGL screens own driver state, and do not scatter GPIO or power policy through UI callbacks.
+- Keep `REQUIRES` and `PRIV_REQUIRES` independent of `CONFIG_xxx`; ESP-IDF
+  expands the component dependency graph before loading project configuration.
+- Run `idf.py reconfigure` after moving sources or changing CMake source
+  discovery. Never repair generated Ninja or CMake state by hand.
+- Change component requirements in the owning `idf_component.yml`. Let the
+  Component Manager regenerate `dependencies.lock`, then inspect and report
+  the resulting lockfile change; never hand-edit the lockfile.
+- Do not hand-edit `sdkconfig` or `sdkconfig.old`. Persist configuration in
+  `sdkconfig.defaults` using `idf.py save-defconfig`, and do not weaken the
+  profile checks in the root `CMakeLists.txt`.
 
-## Errors
+## Errors and Logging
 
-- Follow the repository error-handling convention in `doc/code-style.md` section 6: use the `MT_ERROR_HANDLE` macro from `mt_log.h` with a single `exit` label for functions with cleanup obligations, cleaning up in reverse acquisition order.
-- No-cleanup parameter validation and ordinary failures return directly; never introduce `goto` merely for a single return point.
-- Validate inputs first, keep the happy path flat, and log at the boundary that adds context. Avoid noisy polling-path logs.
-- Log via `mt_log.h` (`LOG_E`/`LOG_W`/`LOG_I`/`LOG_D`/`LOG_V` with `DBG_TAG` defined at the top of each `.c`); never redefine `DBG_TAG` in headers.
+- Validate parameters before work. Return ordinary failures directly when no
+  cleanup, unlock, rollback, or centralized logging obligation exists.
+- Route ordered failure paths with cleanup obligations to one `exit` label,
+  clean up in reverse acquisition order, and preserve the first business
+  error. Use `MT_ERROR_HANDLE` only where its contract in `doc/code-style.md`
+  applies.
+- Log through `mt_log.h`. Define `DBG_TAG` and `DBG_LVL` in each `.c`, add
+  context at the owning boundary, and avoid duplicate or high-frequency logs.
 
 ## Build and Device Workflow
 
-- Run `idf.py build` from the project root that owns the top-level `CMakeLists.txt`; run the smallest relevant check first.
-- Run `idf.py reconfigure` after source moves or CMake source-discovery changes. Do not repair generated Ninja or CMake state manually.
-- `REQUIRES` and `PRIV_REQUIRES` must not depend on `CONFIG_xxx`; the component graph is expanded before configuration is loaded.
-- Do not manually modify `sdkconfig`, `sdkconfig.old`, `dependencies.lock`, `managed_components/`, or build output unless explicitly requested. Config changes go into `sdkconfig.defaults` (via `idf.py save-defconfig`); report unexpected lockfile changes.
-- After changing cache, DMA reservations, or resources, run `idf.py size` and verify display, touch, standby, and wake-up on hardware.
-- Formatting: run the astyle dry-run and the relevant host test suites before committing (commands in `AGENTS.md` and `doc/code-style.md`).
-- Flashing changes hardware state; do it only when requested or clearly required.
-- For device failures, capture recent logs and inspect reset reason, panic, heap, task watchdog, startup placement, and app state transitions.
+- Run the smallest relevant host test first, then `idf.py build` for
+  compile-affecting changes. Run `idf.py size` after changing cache, DMA
+  reserves, buffers, or packaged resources.
+- For startup failure, panic, or hang, capture recent device logs before
+  changing code. Inspect reset reason, panic backtrace, heap, task watchdog,
+  startup placement, and application state transitions in that order.
+- Treat host tests as logic validation only. State the remaining on-board
+  validation for driver timing, RF, DMA, power, and resource behavior.
+- Run flash or erase operations only after the user explicitly authorizes the
+  hardware state change. Monitoring and read-only diagnostics do not imply
+  authorization to flash.
 
-## Review
+## Completion Checks
 
-- One module owns each platform state and lifecycle.
-- Driver, board, and power policy do not leak into UI or unrelated feature code.
-- Component requirements are configuration-independent.
-- Generated and managed files remain untouched unless in scope.
-- Run `git diff --check`; run `idf.py build` for compile-affecting changes and state any hardware-validation gap.
-- Host tests do not replace on-board verification: driver timing, RF, DMA, power, and resource usage must be checked on hardware.
+- Run the relevant host suites and sanitizer variant in proportion to risk.
+- Run the AStyle dry-run required by `doc/code-style.md` for changed C/C++
+  sources, including inside each affected submodule.
+- Run `git diff --check`, inspect generated or lockfile changes, and report any
+  build, hardware, or long-duration acceptance gap.

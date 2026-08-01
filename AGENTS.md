@@ -49,7 +49,13 @@ cmake -S main/tests/host -B /tmp/mt-main -G Ninja && cmake --build /tmp/mt-main 
 
 ## Agent Skills
 
-仓库根 `.agents/skills/` 提供三个 skill（`esp-idf`、`esp32`、`lvgl-integration`），按需加载。优先级：本文件与 `doc/code-style.md` > skill 内容；skill 均为 MIT 第三方改编，冲突时以仓库文档为准。
+仓库根 `.agents/skills/` 提供三个职责收窄的 skill：`esp-idf` 负责组件、配置、构建、
+诊断与设备工作流；`esp32` 只负责当前 ESP32-S3/Waveshare 板的 BSP 与硬件约束；
+`lvgl-integration` 只负责现有 `esp_lvgl_adapter` 显示管线、缓冲、flush、生命周期与性能。
+重叠任务先用 `esp-idf` 确认工程规则，再按事实所有权加载 `esp32` 或
+`lvgl-integration`。优先级：本文件与 `doc/code-style.md` > 当前代码、锁文件及仓库专题
+文档 > skill 中的摘要；不得用 skill 中的常量覆盖当前实现。skill 均为 MIT 第三方改编，
+许可与来源见各目录 `LICENSE`。
 
 ## 修改边界
 

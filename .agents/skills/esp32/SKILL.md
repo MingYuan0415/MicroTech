@@ -1,69 +1,75 @@
 ---
 name: esp32
-description: ESP32-S3 hardware and ESP-IDF platform knowledge for the MicroTech project (Waveshare ESP32-S3 Touch AMOLED 1.8, Octal PSRAM). Use when working with chip-specific traps, strapping pins, PSRAM/MMU memory management, GPIO/SPI/I2C, LVGL displays, or Waveshare boards.
-license: MIT
-metadata:
-  source: https://github.com/ezrover/ESP32-AI-Agent-Skill
-  adapted-for: MicroTech (Waveshare ESP32-S3 Touch AMOLED 1.8)
+description: MicroTech ESP32-S3 and Waveshare ESP32-S3 Touch AMOLED 1.8 board-hardware guidance. Use for BSP drivers, GPIO assignments and strapping, I2C/SPI/I2S buses, Octal PSRAM and DMA capabilities, RTC/PMU/IMU/audio/SD hardware, sleep and wake sources, electrical constraints, or on-board validation; do not use as a generic ESP32-family reference.
 ---
 
-# ESP32 Master Embedded Engineering Agent
+# MicroTech ESP32-S3 Hardware
 
-Expert-level embedded guidance for the Espressif ESP32 ecosystem with ESP-IDF, focusing on the ESP32-S3 hardware of this project (Waveshare ESP32-S3 Touch AMOLED 1.8, 16 MB flash, Octal PSRAM, LVGL 9.5, ESP-IDF 6.0.x). Repository-level rules in `AGENTS.md` and `doc/code-style.md` take precedence over this skill.
+Apply this skill only to the ESP32-S3 board supported by MicroTech. Do not
+transfer pin rules from the original ESP32, WROOM, WROVER, or another
+Waveshare board.
 
-## 1. Reference Loading
+## Sources of Truth
 
-Load the platform pin database always; load other files only when their trigger condition is met. All paths are relative to this skill's directory.
+- Read `AGENTS.md` and `layers/bsp/README.md` first.
+- Read the concrete implementation under
+  `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/` before describing pins,
+  buses, reset sequencing, or lifecycle behavior.
+- Read `sdkconfig.defaults` and the root `CMakeLists.txt` before describing
+  flash, PSRAM, cache, DMA reserve, or CPU settings.
+- Check the board schematic for electrical or pin-repurpose work. Check the
+  current ESP-IDF ESP32-S3 capability headers for SoC limits; do not infer
+  them from another ESP32 variant.
+- Keep ESP-IDF, `managed_components/`, and `layers/bsp/XPowersLib/` read-only.
 
-| File | Trigger |
-|---|---|
-| `references/platforms/esp32-pins.md` | Always (Core GPIO reference) |
-| `references/platforms/esp32-specifics.md` | Any of: strapping pins, deep sleep, flash/PSRAM, ADC2, boot issues, memory allocation |
-| `references/esp32-s3/specs.md` | ESP32-S3 variant specifics |
-| `references/protocol-quick-ref.md` | Any protocol mentioned: I2C, SPI, UART, PWM, 1-Wire, CAN, ADC, DAC |
-| `references/electrical-constraints.md` | Current limits, voltage levels, pull-ups/pull-downs, power supply mentioned |
-| `references/lvgl/README.md` | LVGL, display GUI, or UI framework mentioned — then load the version-specific folder (`v9.5` is the version in this project) |
-| `references/waveshare/README.md` | Waveshare board or display mentioned — then load the specific board/display file |
+## Fixed Board Identity
 
-## 2. Hardware Architecture
+- Target the Waveshare ESP32-S3 Touch AMOLED 1.8 with 16 MB flash and Octal
+  PSRAM.
+- Treat the 368 x 448 SH8601A QSPI panel, FT5x06-compatible touch path,
+  TCA9554 expander, PCF85063 RTC, AXP2101 PMU, QMI8658C IMU, ES8311/NS4150B
+  audio path, and removable SDSPI storage as the supported board topology.
+- Use the BSP capability and lifecycle APIs. Do not let applications bypass
+  the BSP to own GPIO, bus, power, or peripheral-driver state.
 
-- **ESP32-S3:** The board SoC — dual-core Xtensa LX7, 240 MHz, Vector instructions for AI/ML, Octal PSRAM.
-- Board: Waveshare ESP32-S3 Touch AMOLED 1.8 (368 x 448 SH8601A AMOLED panel, touch, RTC, power management via XPowersLib).
+## ESP32-S3 Pin Guardrails
 
-## 3. Safety & "Anti-Bricking" Guardrails (CRITICAL)
+- Treat GPIO0, GPIO3, GPIO45, and GPIO46 as ESP32-S3 strapping pins. Verify
+  their reset-time levels and the board schematic before changing connected
+  circuitry, while recognizing that the board legitimately uses them after
+  boot.
+- Do not apply the original-ESP32 GPIO12 flash-voltage rule. On this board,
+  GPIO12 is the LCD chip-select signal.
+- Do not mark GPIO6 through GPIO11 as original-ESP32 flash pins. The board
+  legitimately uses GPIO4 through GPIO7 for QSPI data and GPIO11 for the LCD
+  clock.
+- Do not treat GPIO34 through GPIO39 as input-only on ESP32-S3. Confirm usable
+  input and output masks in the current ESP-IDF ESP32-S3 `soc_caps.h`.
+  Capability does not imply board availability: keep GPIO26 through GPIO32
+  reserved for SPI flash/PSRAM and GPIO33 through GPIO37 reserved by the Octal
+  memory interface unless the exact module and schematic prove otherwise.
+- Preserve the current LCD QSPI mapping from `board_display.c`: clock GPIO11,
+  chip select GPIO12, data GPIO4/5/6/7, and TE GPIO13. Preserve shared I2C
+  SDA GPIO15, SCL GPIO14, and touch interrupt GPIO21 unless a schematic-backed
+  board revision explicitly changes them.
 
-Actively protect hardware from destructive configurations:
+## Hardware Workflow
 
-- **GPIO12 Flash Voltage Trap:** MTDI strapping pin. If driven HIGH during boot, it sets flash voltage to 1.8V, potentially bricking 3.3V modules. **Enforce a strict "Do Not Use" or "Pull-Down Only" policy.**
-- **ADC2/Wi-Fi Conflict:** ADC2 cannot be used simultaneously with Wi-Fi on ESP32-S3.
-- **Input-Only Pins:** GPIOs 34-39 are strictly inputs and lack internal pull resistors.
-- **IOMUX Collision:** Clear initial IOMUX functions using `gpio_func_sel(pin, PIN_FUNC_GPIO)` when remapping.
-- Verify any GPIO repurposing against `references/platforms/esp32-pins.md` before changing BSP pin assignments.
+1. Identify the owning BSP subsystem and its current pin, bus, and lifecycle
+   definitions.
+2. Check shared buses, strapping behavior, expander routing, power rails,
+   wake-source capability, and PSRAM/DMA allocation requirements.
+3. Compare any electrical or pin change with the board schematic and current
+   ESP32-S3 datasheet or ESP-IDF capability definitions.
+4. Keep ISRs short and IRAM-safe where required. Keep blocking I2C, expander,
+   and peripheral work in task context.
+5. Run the owning BSP host tests and cross-layer tests for behavior changes.
+6. Validate driver timing, DMA, power, sleep/wake, radio coexistence, and
+   physical peripheral behavior on hardware; report the exact tested scope.
 
-## 4. Memory & Firmware Standards
+## Display Boundary
 
-- **Memory Hierarchy:** DRAM (Data), IRAM (Instructions - must hold ISRs/Flash-write code), RTC Memory (Deep Sleep), PSRAM (External).
-- **Heap Allocation:** Use capabilities-based allocation (`MALLOC_CAP_DMA`, `MALLOC_CAP_SPIRAM`). This project reserves 128 KiB internal memory for Wi-Fi, I2S, and the bounded LCD DMA staging path (enforced by the root `CMakeLists.txt`).
-- **Reliability:** Always include Watchdog Timers (IWDT/TWDT). Implement short ISRs.
-
-## 5. Tooling & CLI
-
-### ESP-IDF (`idf.py`)
-
-- Use modern hyphenated syntax: `set-target`, `menuconfig`, `build`, `flash`, `monitor`, `erase-flash`.
-- `idf.py set-target esp32s3` clears build state and sets the MCU; the project defaults are locked by `sdkconfig.defaults` and the root `CMakeLists.txt` profile checks — do not weaken them.
-- Run `idf.py size` after resource/cache/DMA changes (see `AGENTS.md`).
-
-## 6. Core Workflow
-
-1. **Parse:** Identify the relevant subsystem (display, touch, I2C, RTC, power, Wi-Fi, audio).
-2. **Detect:** Identify potential conflicts (ADC2, strapping pins, flash pins, DMA/PSRAM capabilities).
-3. **Load:** Read triggered references from `references/`.
-4. **Validate:** Confirm GPIO assignments and memory capabilities against the references and the board schematic before proposing changes.
-5. **Output:** Provide code consistent with the repository conventions (naming, Doxygen, `mt_log.h` logging, `MT_ERROR_HANDLE` cleanup per `doc/code-style.md`).
-
-## 7. Project-Specific Notes
-
-- Display pipeline: 40 MHz QSPI, 60-row PSRAM draw buffer, 10-row SPI DMA chunk, RGB565, snapshot-based transitions — the empirical baseline documented in `tests/display/README.md`; do not change without justification.
-- LVGL version: 9.5 (see `references/lvgl/v9.5/`).
-- Power/standby work: reference `references/platforms/esp32-specifics.md` (deep sleep) and the system_pm service code.
+Use `lvgl-integration` for LVGL adapter ownership, draw buffers, flush
+handshakes, transitions, and display performance. Use this skill for the BSP
+panel bus, GPIO, touch, power sequencing, and hardware constraints beneath
+that pipeline.

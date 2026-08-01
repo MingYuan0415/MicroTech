@@ -1,71 +1,86 @@
 ---
 name: lvgl-integration
-description: Use when integrating, porting, configuring, or debugging LVGL, display drivers, input devices, ticks, draw buffers, or embedded GUI performance on the MicroTech AMOLED display pipeline.
-license: MIT
-metadata:
-  source: https://github.com/easyzoom/aix-skills
-  adapted-for: MicroTech (LVGL 9.5, RGB565, 40 MHz QSPI)
+description: MicroTech LVGL 9.5 display-pipeline integration and debugging for esp_lvgl_adapter 0.6.2, the 368 x 448 SH8601A QSPI AMOLED panel, FT5x06-compatible touch, PSRAM draw buffers, DMA staging, display lifecycle, transitions, and on-board performance. Use for blank or corrupt display, tearing, touch mapping, flush completion, tick scheduling, color format, buffer ownership, display memory, or benchmark work.
 ---
 
-# LVGL Integration
+# MicroTech LVGL Display Pipeline
 
-Use this skill to integrate LVGL by proving four porting contracts: display flush, input device read, tick/timebase, and memory/draw buffer configuration. UI bugs often come from driver timing or buffer ownership, not widget logic.
+Apply this skill to the existing MicroTech display architecture. Read current
+code and locked dependencies instead of introducing a generic LVGL port or
+copying API catalogs into the repository.
 
-## When To Use
+## Sources of Truth
 
-Use this skill when:
+- Read `main/idf_component.yml` and `dependencies.lock` for the active adapter
+  and LVGL versions.
+- Read `layers/app_manager/app_core/src/app_manager_lvgl_adapter.c` for display
+  registration, custom draw submission, diagnostics, input, and lifecycle
+  ownership.
+- Read
+  `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/board_display.c` for the
+  SH8601A panel bus, touch path, power sequencing, and exported display port.
+- Read `sdkconfig.defaults`, the root `CMakeLists.txt`, and
+  `tests/display/README.md` for enforced configuration and empirical
+  acceptance limits.
+- Verify LVGL API names against the installed `managed_components/lvgl__lvgl`
+  headers and adapter behavior against
+  `managed_components/espressif__esp_lvgl_adapter`; keep both directories
+  read-only.
 
-- The user wants to add or debug LVGL on the MicroTech AMOLED pipeline.
-- The issue involves blank screen, wrong colors, tearing, touch offset, slow refresh, memory faults, tick handling, or display flush callbacks.
-- The project has display, touch, encoder, keypad, RTOS, or DMA/cache constraints.
+## Ownership Contracts
 
-## First Questions
+- Let `esp_lvgl_adapter` own LVGL initialization, tick/task scheduling,
+  display registration, and the normal flush-ready handshake.
+- Let App Manager own adapter configuration, the panel proxy and custom
+  draw-bitmap callback, display diagnostics, transitions, input consumption,
+  and suspend/resume coordination.
+- Let the BSP own panel IO, touch IO, QSPI, GPIO, panel power, reset sequencing,
+  and physical display state.
+- Do not add `esp_lvgl_port`, a second LVGL task or tick source, a parallel
+  display registration path, or direct screen ownership of panel hardware
+  unless the user explicitly approves replacing the architecture.
+- In the custom draw callback, submit through `esp_lcd_panel_draw_bitmap` and
+  return its `esp_err_t`. Do not also call flush-ready: the adapter handles
+  asynchronous completion and its failure fallback.
+- Use LVGL 9 names such as `lv_display_flush_ready` when inspecting the
+  handshake. Do not write new code against deprecated v8 aliases.
 
-Ask for:
+## Diagnostic Order
 
-- LVGL version (this project: 9.5) and target platform (ESP32-S3).
-- Display controller (SH8601A), resolution (368 x 448), color format (RGB565), interface (40 MHz QSPI), and framebuffer/draw buffer strategy (60-row PSRAM draw buffer, 10-row SPI DMA chunk, bounce DMA).
-- Input devices: touch, buttons, or none.
-- Tick source and `lv_timer_handler` scheduling.
-- RAM budget, heap policy, RTOS use, DMA/cache involvement.
-- Current symptom and minimal screen test result.
+1. Capture the current `display config` and failure logs. Confirm the locked
+   LVGL and adapter versions before reasoning about APIs.
+2. Confirm that App Manager, the adapter, and the BSP retain their ownership
+   boundaries and that display suspend/resume drains in-flight work.
+3. Prove a solid-color flush through the existing adapter path before
+   investigating widgets. Check submission results, completion notification,
+   and the adapter-owned `lv_display_flush_ready` handshake exactly once.
+4. Check resolution, stride, RGB565 versus RGB565-swapped, draw-buffer rows,
+   DMA chunking, queue depth, PSRAM capabilities, cache behavior, and the
+   internal DMA reserve together.
+5. Check the adapter-managed tick/task schedule and UI worker progress before
+   changing application timers.
+6. Validate FT5x06-compatible touch interrupt flow and coordinate transforms
+   independently of display rendering.
+7. Measure with the on-board display benchmark; do not infer driver timing,
+   tearing, DMA stability, or power behavior from host tests.
 
-## Integration Checklist
+## Project Baseline
 
-1. Bring up display flush.
-   Fill the screen with solid colors before creating complex widgets.
+- Preserve the production baseline in `sdkconfig.defaults`: 40 MHz QSPI,
+  60-row LVGL partial buffers, 10-row SPI DMA chunks, RGB565, TE disabled, and
+  non-TE PSRAM direct DMA disabled.
+- Treat 80 MHz, TE synchronization, and direct PSRAM DMA as explicit
+  characterization paths, not production fixes. Require the evidence and
+  acceptance gates in `tests/display/README.md` before changing defaults.
+- After changing cache, buffer, DMA reserve, assets, or fonts, run
+  `idf.py size`, the relevant App Manager and integration host tests, a full
+  firmware build, and scoped on-board validation.
 
-1. Configure draw buffers.
-   Buffer size, color format, stride, and cache/DMA policy must match the display path.
+## Completion Evidence
 
-1. Provide a reliable tick.
-   LVGL needs a monotonic tick and regular handler execution.
-
-1. Add input after display.
-   Touch should be calibrated and tested independently.
-
-1. Bound memory.
-   Configure heap, widget count, image assets, fonts, and buffers for the target RAM.
-
-1. Verify refresh performance.
-   Measure frame time, flush completion, and whether `lv_disp_flush_ready` is called correctly.
-
-## Common Failures
-
-- Blank screen because flush callback never calls ready.
-- Wrong colors from RGB/BGR or 16-bit endian mismatch (`RGB565` vs `RGB565_SWAPPED`).
-- Touch coordinates need rotation/calibration transform.
-- UI freezes because `lv_timer_handler` is not called regularly.
-- DMA reads stale cache lines or writes to non-DMA-capable memory (use the internal 128 KiB reserve / `MALLOC_CAP_DMA`).
-- Fonts/images exceed flash or RAM budgets.
-
-## Verification
-
-Before claiming LVGL works:
-
-- State LVGL version, resolution, color format, buffer size, and tick period.
-- Confirm solid color flush, a label/button screen, and input event if applicable.
-- Confirm `lv_timer_handler` schedule and flush-ready behavior.
-- Confirm memory usage and DMA/cache policy when relevant.
-
-For the MicroTech performance and stability acceptance criteria, use the on-board benchmark described in `tests/display/README.md` (`display benchmark`/`display load` logs, TARGET/FLOOR thresholds). Display behavior changes must be validated on hardware; host tests do not cover driver timing.
+- Report locked versions, resolution, color format, buffer and DMA geometry,
+  queue/direct/TE settings, and the observed flush ownership path.
+- Report benchmark TARGET/FLOOR results and any snapshot fallback, panic,
+  watchdog, OOM, freeze, tearing, or artifact.
+- Distinguish host coverage, one reset boot, manual effect checks, cold power
+  cycles, and long-duration stress; never claim beyond the executed scope.

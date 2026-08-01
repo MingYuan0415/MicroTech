@@ -21,7 +21,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-Adapted for the MicroTech project: the reference tree is trimmed to
-ESP32-S3/LVGL 9.5/Waveshare touch-AMOLED content, PlatformIO and script
-sections were removed, and the workflow was aligned to repository
-conventions (AGENTS.md, doc/code-style.md).
+Adapted for the MicroTech project: the generic multi-chip, multi-board, and
+framework reference tree was removed. The remaining skill is limited to the
+supported Waveshare ESP32-S3 Touch AMOLED 1.8 hardware and directs agents to
+current repository code, configuration, board documentation, and the
+schematic for facts.
