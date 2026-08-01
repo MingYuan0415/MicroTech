@@ -59,107 +59,37 @@ ctest --test-dir /tmp/mt-main --output-on-failure
 
 ## 显示压力基准
 
-App Manager 的显示诊断和自动压力基准默认关闭。开发固件可在 menuconfig 中同时启用
-`SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
-`APP_MANAGER_DISPLAY_BENCHMARK`。默认 `STRESS` 模式会在 Wi-Fi 获得 IPv4 地址后运行
-1800 秒，持续执行生产 fade/push 转场、16-bit 双声道录放和 2048 kbit/s 双向 TCP
-echo。`CHARACTERIZATION` 模式依次运行 fade、push-left、push-right、cover-left 和
-reveal-right：每种效果先在 display-only 下运行 30 秒，再按 Kconfig 选择的 profile 运行
-30 秒。第二阶段默认为 `full`（audio+TCP），也可单独选择 `audio-only` 或 `tcp-only`；
-`STRESS` 始终固定为 full-load，不受该选项影响。两个负载窗口分别重置诊断统计。
+App Manager 的显示诊断和自动压力基准默认关闭，仅在开发固件中启用：menuconfig
+同时打开 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
+`APP_MANAGER_DISPLAY_BENCHMARK`（生产配置必须保持关闭）。`STRESS` 模式在 Wi-Fi
+获得 IPv4 地址后运行 1800 秒，以生产 fade/push 转场叠加 16-bit 双声道录放和
+2048 kbit/s 双向 TCP echo 全负载；`CHARACTERIZATION` 模式依次对 fade、push-left、
+push-right、cover-left、reveal-right 先运行 30 秒 display-only，再按 Kconfig 选择的
+profile（`full`、`audio-only` 或 `tcp-only`）各运行 30 秒，两个负载窗口分别统计。
 
-默认服务地址为 `192.168.0.205:5001`。在该 WSL 主机运行：
+主机端启动 TCP echo 服务（设备默认连接 `192.168.0.205:5001`）：
 
 ```sh
 python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001
 ```
 
 `wslinfo --networking-mode` 返回 `mirrored` 时，需在管理员 PowerShell 为 WSL 的
-Hyper-V 防火墙放行 TCP 5001：
+Hyper-V 防火墙放行 TCP 5001，规则示例见
+[`tests/display/README.md`](tests/display/README.md)。
 
-```powershell
-New-NetFirewallHyperVRule `
-  -Name "MicroTech-TCP-Echo-5001" `
-  -DisplayName "MicroTech TCP Echo 5001" `
-  -Direction Inbound `
-  -VMCreatorId "{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}" `
-  -Protocol TCP -LocalPorts 5001 -Action Allow -Enabled True
-```
-
-ESP32 所在网络必须能直接访问该 WSL 地址。服务端将 peer reset、broken pipe 和普通关闭
-作为正常连接结束，记录每个连接的持续时间、双向字节和关闭原因，不打印 Python
-traceback。设备端使用当前 lwIP 发送窗口内的最大整 MSS payload（默认 5,760 B），并记录
-TCP connect/send/recv/verify 阶段、`errno`、已传输字节、重连次数、中断时间和 pacing
-迟到。最终 `display load` 日志中的 `tcp_active_us` 是 TCP worker 从启动到收到停止请求的
-实际活动时长，`tcp_target_bytes` 按配置速率和该时长计算。TCP 异常后每秒重连并继续
-显示基准到预定结束，但任何错误、重连或任一方向吞吐低于配置速率的 95% 都会使稳定性
-失败。未启用 TCP 的 audio-only profile 输出 `tcp_required=0`、`tcp_rate_ok=1`；此处的
-rate ok 表示 TCP 条件不适用，不表示执行过网络吞吐测试。
-
-诊断仅统计 presentation 确认真正启动到完成的动画区间，排除 mount/unmount、下一次
-导航准备和 idle。每种效果输出 active 平均 FPS、最终 flush 提交间隔的
-P50/P95/P99/max、render/flush/flush-wait/panel submit 耗时、flush/panel 次数与像素数。
-adapter 的一秒 FPS 只作为交叉检查，不直接决定性能结论。`sample_err` 进一步分为
-LVGL 锁错误与 FPS 读取错误。最终日志使用独立的 `display benchmark` 和
-`display load` 行分别给出
-`stability=PASS|FAIL` 和 `performance=TARGET|FLOOR|FAIL`：
-
-- `TARGET`：生产效果平均不低于 30 FPS，至少 95% 间隔不超过 33.333 ms，P99 不超过
-  41.667 ms，且不连续两帧超过 41.667 ms；
-- `FLOOR`：生产效果平均不低于 25 FPS，P95/P99/max 分别不超过
-  50/66.667/100 ms；
-- 稳定性要求完整结束、`sample_err=0`、无显示提交/音频/TCP/Wi-Fi 错误、无重连，
-  且 DMA/internal 最大连续块不低于 14,720 B。
-
-`display config` 还会记录 `load_profile` 和 `lifecycle_log`，第二阶段日志使用
-`load=full|audio-only|tcp-only`，最终 `display load` 使用 `profile` 和 `tcp_required`
-标识实际负载。`dma_fail` 是采样期间 DMA/internal 最大连续块低于 14,720 B 的次数，
-不代表发生了 SPI DMA 提交失败；实际显示提交失败由 `submit_fail` 统计。
-
-默认显示传输配置为 40 MHz QSPI、60 行双 PSRAM draw buffer、10 行 SPI DMA chunk、
-queue depth 2、非 TE bounce DMA 和 `RGB565`。40 MHz 是项目经验默认，不是面板数据
-手册保证的频率：SH8601A preliminary Table 14 的 Quad SPI 最小写周期为 50 ns，名义
-上对应 20 MHz。ESP32-S3 的 80 MHz APB SPI 时钟不能精确分频出 60 MHz，因此工程直接
-配置并记录实际的 40 MHz。
-基准开始时的 `display config` 行会同时记录 draw/DMA 行数、颜色格式、direct/TE、
-draw worker、TCP payload 和任务优先级，后续 A/B 日志可独立识别配置。
-buffer 表征已从 60/120/240/448 行中选出 120 行作为实验候选，但未改变生产
-默认。在 120 行、`RGB565_SWAPPED`、bounce/10 下，full 负载的十组最差
-P95 为 145 ms，DMA/internal 最大连续块降至 8,192 B；audio-only 和
-tcp-only 分别以 128.423 ms/16,384 B 和 145 ms/21,504 B 通过稳定性检查。
-结果表明 TCP 是主要性能压力，audio+TCP 组合峰值会压低内部 DMA 连续块。
-非 TE direct/10 在 full 负载下出现顶部蓝线和显示冻结，因此已拒绝，direct/44
-不再执行。生产默认仍为 60 行、`RGB565`、bounce/10、direct 和 TE 关闭，
-诊断、基准与生命周期 trace 均关闭。80 MHz 在当前样机上可运行，但属于超规格且不
-稳定的实验档：E80 的十组最差 P95 约为 140 ms，相比 E40 的 145 ms 仅改善约 3.45%，
-未达到 5% 判定线；panel 帧成本约从 15.33 ms 降至 9.17 ms，但一轮 E80 出现
-`min_dma=8704`、`dma_fail=1`，且观察到运动中的 T1 单条接缝。因此它不能成为默认或
-生产配置，只能由开发者针对当前样机显式选择；40 MHz 是明确的回退路径。
-当前原生 LVGL Screen 动画的参数调优未达到 25/30 FPS 门槛。为降低动画期间的
-软件绘制负担，默认 `RGB565` 配置已启用
-`CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`：每次有效的非 `NONE` 转场先把
-source 和 target 采集为两张全分辨率、未缩放的 RGB565 图片，再只动画 Image。368 x 448
-面板的每张快照为 329,728 B，两张常驻 PSRAM 共 659,456 B（644 KiB）；它们不使用
-internal/DMA heap。该后端不改变 40 MHz、60 行 draw buffer、bounce/10 或 queue depth 2
-的传输基线。
-
-快照后端只适用于 `SPIRAM` 上的普通 `RGB565` 输出；`RGB565_SWAPPED` 对照配置和关闭该
-选项的固件继续使用原生 LVGL Screen 动画。快照缓冲、采集、overlay 或动画启动失败时也会
-自动回退原生路径，不阻塞导航。非空 Page Screen 还必须包含覆盖全屏的不透明根，且对象树
-不得使用 `LV_OBJ_FLAG_OVERFLOW_VISIBLE`；透明根或屏外绘制页面会逐次回退原生路径。
-`NONE`、零时长和同一 Screen 的同步切换不采集快照；边缘
-返回的 `PRESSING` 阶段只绘制 Sys Layer indicator，释放并准入导航前也不会创建快照。
-快照架构仍须按现有 25/30 FPS 和稳定性门槛完成真机验收，历史 120 行
-`RGB565_SWAPPED` 基线不构成该后端的性能结论。
-
-`CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG` 控制 App Manager 的 START、MOUNT、RESUME、
-PAUSE、UNMOUNT、STOP 和 NEW_INTENT INFO trace，例如
-`app_lifecycle: [settings][root] ON MOUNT`。默认关闭时不编译这些事件名称和日志调用；
-错误与警告日志不受影响。
+默认显示传输配置为 40 MHz QSPI、60 行双 PSRAM draw buffer、10 行 SPI DMA chunk 和
+`RGB565`；默认启用的全分辨率快照转场
+（`CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`）用于降低动画期间的软件
+绘制负担，失败时自动回退原生 Screen 动画。验收门槛、配置基线及 buffer/时钟表征
+历史详见 [`tests/display/README.md`](tests/display/README.md)。
 
 ## 开发约束
 
 贡献前阅读 [AGENTS.md](AGENTS.md) 和 [代码风格](doc/code-style.md)。代码以性能和低资源占用为优先，保持模块低耦合；硬件及并发边界保留必要防护。不得通过修改 ESP-IDF、`managed_components/` 或 BSP 第三方库来规避工程自身问题。
+
+## 声明
+
+本项目仅作为个人兴趣爱好而开发，不提供任何形式的保证、维护承诺或技术支持。
 
 ## 许可证
 

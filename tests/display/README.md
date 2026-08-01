@@ -20,6 +20,20 @@ python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001
 与网络断线。`tcp_active_us` 记录 TCP worker 从启动到收到停止请求的实际活动时长，
 `tcp_target_bytes` 按配置速率和该时长计算。
 
+若在 WSL 上运行服务且 `wslinfo --networking-mode` 返回 `mirrored`，需在管理员
+PowerShell 为 WSL 的 Hyper-V 防火墙放行 TCP 5001：
+
+```powershell
+New-NetFirewallHyperVRule `
+  -Name "MicroTech-TCP-Echo-5001" `
+  -DisplayName "MicroTech TCP Echo 5001" `
+  -Direction Inbound `
+  -VMCreatorId "{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}" `
+  -Protocol TCP -LocalPorts 5001 -Action Allow -Enabled True
+```
+
+ESP32 所在网络必须能直接访问该 WSL 地址。
+
 ## 基准模式
 
 先启用 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
