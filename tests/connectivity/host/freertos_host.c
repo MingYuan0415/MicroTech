@@ -456,7 +456,6 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
 {
     (void)name;
     (void)stack_depth;
-    (void)priority;
     (void)stack;
     if (entry == NULL || task_storage == NULL || task_storage->created ||
             _host_consume(&s_fail_task_creates))
@@ -465,6 +464,7 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
     }
     task_storage->entry = entry;
     task_storage->context = context;
+    task_storage->priority = priority;
     task_storage->created = true;
     (void)pthread_mutex_lock(&s_control_lock);
     ++s_live_tasks;
@@ -530,6 +530,14 @@ void vTaskDelay(TickType_t ticks)
         .tv_nsec = (long)nanoseconds,
     };
     (void)nanosleep(&delay, NULL);
+}
+
+void vTaskPrioritySet(TaskHandle_t task, UBaseType_t priority)
+{
+    if (task != NULL && task->created)
+    {
+        task->priority = priority;
+    }
 }
 
 void vTaskDelete(TaskHandle_t task)

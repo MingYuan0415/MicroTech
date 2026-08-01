@@ -4,7 +4,7 @@
 
 #include "display_benchmark.h"
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
 
 #include "app_manager.h"
 #include "app_manager_display_diagnostics.h"
@@ -32,7 +32,6 @@
 #define DISPLAY_BENCHMARK_SUPERVISOR_PRIORITY    1U
 #define DISPLAY_BENCHMARK_AUDIO_PRIORITY         1U
 #define DISPLAY_BENCHMARK_TCP_PRIORITY           2U
-#define DISPLAY_BENCHMARK_SPI_QUEUE_DEPTH        2U
 #define DISPLAY_BENCHMARK_DMA_MAX_FULL_LINES    44U
 #define DISPLAY_BENCHMARK_TASK_CAPS              \
     (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
@@ -61,37 +60,11 @@
 #define DISPLAY_BENCHMARK_FLOOR_P95_US           50000U
 #define DISPLAY_BENCHMARK_FLOOR_P99_US           66667U
 #define DISPLAY_BENCHMARK_FLOOR_MAX_US          100000U
-#ifndef DISPLAY_BENCHMARK_DURATION_US
-#define DISPLAY_BENCHMARK_DURATION_US \
-        ((int64_t)CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_DURATION_SEC * 1000000LL)
-#endif
 #ifndef DISPLAY_BENCHMARK_PHASE_US
     #define DISPLAY_BENCHMARK_PHASE_US            10000000LL
 #endif
-#ifndef DISPLAY_BENCHMARK_CHARACTERIZATION_PHASE_US
-#define DISPLAY_BENCHMARK_CHARACTERIZATION_PHASE_US \
-        ((int64_t)CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_EFFECT_DURATION_SEC * \
-         1000000LL)
-#endif
-
 #define DISPLAY_BENCHMARK_CHARACTERIZATION_EFFECT_COUNT 5U
 #define DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_COUNT   2U
-
-#ifndef CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL
-    #define CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL 0
-#endif
-#ifndef CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY
-    #define CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY 0
-#endif
-#ifndef CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY
-    #define CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY 0
-#endif
-#ifndef CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG
-    #define CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG 0
-#endif
-#ifndef CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
-    #define CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION 0
-#endif
 
 #if CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
     #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565_SWAPPED"
@@ -108,14 +81,13 @@
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME "n/a"
 #endif
 
-#if defined(CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT) && \
-    CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT
+#if CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT
     #define DISPLAY_BENCHMARK_DIRECT_DMA_ENABLED 1U
 #else
     #define DISPLAY_BENCHMARK_DIRECT_DMA_ENABLED 0U
 #endif
 
-#if defined(CONFIG_BSP_DISPLAY_TE_SYNC) && CONFIG_BSP_DISPLAY_TE_SYNC
+#if CONFIG_BSP_DISPLAY_TE_SYNC
     #define DISPLAY_BENCHMARK_TE_ENABLED 1U
 #else
     #define DISPLAY_BENCHMARK_TE_ENABLED 0U
@@ -172,31 +144,7 @@ typedef enum display_benchmark_performance
     DISPLAY_BENCHMARK_PERFORMANCE_TARGET,
 } display_benchmark_performance_t;
 
-typedef enum display_benchmark_load
-{
-    DISPLAY_BENCHMARK_LOAD_DISPLAY_ONLY = 0,
-    DISPLAY_BENCHMARK_LOAD_FULL,
-    DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY,
-    DISPLAY_BENCHMARK_LOAD_TCP_ONLY,
-} display_benchmark_load_t;
-
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
-_Static_assert(
-    CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL +
-    CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY +
-    CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY == 1,
-    "characterization requires exactly one second-stage load profile");
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY
-#define DISPLAY_BENCHMARK_SELECTED_LOAD \
-            DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY
-#elif CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY
-#define DISPLAY_BENCHMARK_SELECTED_LOAD DISPLAY_BENCHMARK_LOAD_TCP_ONLY
-#else
-#define DISPLAY_BENCHMARK_SELECTED_LOAD DISPLAY_BENCHMARK_LOAD_FULL
-#endif
-#else
-#define DISPLAY_BENCHMARK_SELECTED_LOAD DISPLAY_BENCHMARK_LOAD_FULL
-#endif
+#define DISPLAY_BENCHMARK_LOAD_DISPLAY_ONLY ((display_benchmark_load_t)0)
 
 typedef struct display_benchmark_stability_summary
 {
@@ -218,7 +166,6 @@ typedef struct display_benchmark_stability_summary
     bool diagnostics_passed;
 } display_benchmark_stability_summary_t;
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
 static const app_manager_transition_effect_t s_characterization_effects[
     DISPLAY_BENCHMARK_CHARACTERIZATION_EFFECT_COUNT] =
 {
@@ -228,7 +175,6 @@ static const app_manager_transition_effect_t s_characterization_effects[
     APP_MANAGER_TRANSITION_COVER_LEFT,
     APP_MANAGER_TRANSITION_REVEAL_RIGHT,
 };
-#endif
 
 static TaskHandle_t s_supervisor_task;
 static SemaphoreHandle_t s_supervisor_stopped;
@@ -248,9 +194,50 @@ static atomic_int_fast64_t s_tcp_disconnected_since_us;
 static atomic_uint s_tcp_reconnect_count;
 static atomic_uint s_tcp_pacing_late_count;
 static event_bus_sub_handle_t s_wifi_subscription;
+static display_benchmark_config_t s_config;
+static char s_ipv4_host[INET_ADDRSTRLEN];
 static atomic_bool s_wifi_monitoring_active;
 static atomic_bool s_wifi_was_ready;
 static atomic_uint s_wifi_disconnect_count;
+
+static bool _display_benchmark_config_valid(
+    const display_benchmark_config_t *config)
+{
+    struct in_addr address;
+    return config != NULL &&
+           (config->mode == DISPLAY_BENCHMARK_MODE_STRESS ||
+            config->mode == DISPLAY_BENCHMARK_MODE_CHARACTERIZATION) &&
+           config->stress_duration_sec >= 10U &&
+           config->stress_duration_sec <= 28800U &&
+           config->effect_duration_sec >= 5U &&
+           config->effect_duration_sec <= 300U &&
+           (config->load == DISPLAY_BENCHMARK_LOAD_FULL ||
+            config->load == DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY ||
+            config->load == DISPLAY_BENCHMARK_LOAD_TCP_ONLY) &&
+           config->ipv4_host != NULL && config->ipv4_host[0] != '\0' &&
+           strlen(config->ipv4_host) < sizeof(s_ipv4_host) &&
+           inet_pton(AF_INET, config->ipv4_host, &address) == 1 &&
+           config->port != 0U && config->rate_kbit_s >= 64U &&
+           config->rate_kbit_s <= 20000U;
+}
+
+static int64_t _display_benchmark_stress_duration_us(void)
+{
+#ifdef DISPLAY_BENCHMARK_DURATION_US
+    return DISPLAY_BENCHMARK_DURATION_US;
+#else
+    return (int64_t)s_config.stress_duration_sec * 1000000LL;
+#endif
+}
+
+static int64_t _display_benchmark_effect_duration_us(void)
+{
+#ifdef DISPLAY_BENCHMARK_CHARACTERIZATION_PHASE_US
+    return DISPLAY_BENCHMARK_CHARACTERIZATION_PHASE_US;
+#else
+    return (int64_t)s_config.effect_duration_sec * 1000000LL;
+#endif
+}
 
 static void _display_benchmark_record_stability_error(atomic_int *source,
         esp_err_t error);
@@ -445,9 +432,9 @@ _display_benchmark_socket_connect(int socket_fd)
     struct sockaddr_in address =
     {
         .sin_family = AF_INET,
-        .sin_port = htons(CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_PORT),
+        .sin_port = htons(s_config.port),
     };
-    if (inet_pton(AF_INET, CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_HOST,
+    if (inet_pton(AF_INET, s_config.ipv4_host,
                   &address.sin_addr) != 1)
     {
         transfer.result = ESP_ERR_INVALID_ARG;
@@ -594,7 +581,7 @@ static void _display_benchmark_tcp_task(void *arg)
 
     const int64_t period_us =
         (int64_t)DISPLAY_BENCHMARK_TCP_PAYLOAD_BYTES * 8LL * 1000LL /
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S;
+        s_config.rate_kbit_s;
     int64_t next_transfer_us = 0;
     while (!_display_benchmark_should_stop())
     {
@@ -640,8 +627,8 @@ static void _display_benchmark_tcp_task(void *arg)
             const uint64_t interruption_us =
                 _display_benchmark_tcp_mark_connected(esp_timer_get_time());
             LOG_I("TCP connected to %s:%u reconnects=%u interruption_ms=%llu",
-                  CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_HOST,
-                  (unsigned)CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_PORT,
+                  s_config.ipv4_host,
+                  (unsigned)s_config.port,
                   (unsigned)atomic_load_explicit(&s_tcp_reconnect_count,
                                                  memory_order_relaxed),
                   (unsigned long long)(interruption_us / 1000U));
@@ -770,7 +757,6 @@ static esp_err_t _display_benchmark_submit_navigation(
     return result;
 }
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
 static esp_err_t _display_benchmark_navigate_effect(
     display_benchmark_page_t *page, app_manager_transition_effect_t effect)
 {
@@ -794,7 +780,7 @@ static esp_err_t _display_benchmark_navigate_effect(
     }
     return result;
 }
-#else
+
 static esp_err_t _display_benchmark_navigate_stress(
     display_benchmark_page_t *page, int64_t elapsed_us)
 {
@@ -850,7 +836,6 @@ static esp_err_t _display_benchmark_navigate_stress(
 
     return _display_benchmark_submit_navigation(&request);
 }
-#endif
 
 static bool _display_benchmark_wifi_ready(void)
 {
@@ -943,7 +928,7 @@ static display_benchmark_tcp_report_t _display_benchmark_tcp_finish_report(
         .receive_bytes = atomic_load_explicit(&s_tcp_receive_bytes,
                                               memory_order_relaxed),
         .target_bytes =
-        (uint64_t)CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S *
+        (uint64_t)s_config.rate_kbit_s *
         active_duration_us / 8000U,
         .active_duration_us = active_duration_us,
         .interruption_us = atomic_load_explicit(&s_tcp_interruption_us,
@@ -1335,14 +1320,14 @@ static void _display_benchmark_log_config(void)
           DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME,
           (unsigned)CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES,
           (unsigned)DISPLAY_BENCHMARK_DMA_MAX_FULL_LINES,
-          (unsigned)DISPLAY_BENCHMARK_SPI_QUEUE_DEPTH,
+          (unsigned)CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH,
           (unsigned)DISPLAY_BENCHMARK_DIRECT_DMA_ENABLED,
           (unsigned)DISPLAY_BENCHMARK_TE_ENABLED,
           (unsigned)CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT,
           (unsigned)CONFIG_LV_DRAW_THREAD_PRIO,
           (unsigned)DISPLAY_BENCHMARK_TCP_PAYLOAD_BYTES,
           (unsigned)DISPLAY_BENCHMARK_TCP_PRIORITY,
-          _display_benchmark_load_name(DISPLAY_BENCHMARK_SELECTED_LOAD),
+          _display_benchmark_load_name(s_config.load),
           (unsigned)CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG);
 }
 
@@ -1360,7 +1345,7 @@ static void _display_benchmark_record_stability_error(atomic_int *source,
 static void _display_benchmark_check_wifi(void)
 {
     if (_display_benchmark_load_requires_tcp(
-                DISPLAY_BENCHMARK_SELECTED_LOAD))
+                s_config.load))
     {
         _display_benchmark_observe_wifi(_display_benchmark_wifi_ready());
     }
@@ -1432,8 +1417,7 @@ static esp_err_t _display_benchmark_begin_profile(void)
                DISPLAY_BENCHMARK_MINIMUM_DMA_LARGEST);
 }
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
-static esp_err_t _display_benchmark_run_profile(
+static esp_err_t _display_benchmark_run_characterization_profile(
     display_benchmark_page_t *page,
     app_manager_display_benchmark_report_t *report, bool *completed)
 {
@@ -1448,7 +1432,7 @@ static esp_err_t _display_benchmark_run_profile(
             index < DISPLAY_BENCHMARK_CHARACTERIZATION_EFFECT_COUNT; ++index)
     {
         const int64_t deadline_us = esp_timer_get_time() +
-                                    DISPLAY_BENCHMARK_CHARACTERIZATION_PHASE_US;
+                                    _display_benchmark_effect_duration_us();
         while (!atomic_load_explicit(&s_stop_requested,
                                      memory_order_acquire) &&
                 atomic_load_explicit(&s_workload_error,
@@ -1480,8 +1464,8 @@ static esp_err_t _display_benchmark_run_profile(
                  DISPLAY_BENCHMARK_CHARACTERIZATION_EFFECT_COUNT;
     return result != ESP_OK ? result : end_result;
 }
-#else
-static esp_err_t _display_benchmark_run_profile(
+
+static esp_err_t _display_benchmark_run_stress_profile(
     display_benchmark_page_t *page,
     app_manager_display_benchmark_report_t *report, bool *completed)
 {
@@ -1497,7 +1481,7 @@ static esp_err_t _display_benchmark_run_profile(
                                  memory_order_relaxed) == ESP_OK)
     {
         const int64_t elapsed_us = esp_timer_get_time() - started_us;
-        if (elapsed_us >= DISPLAY_BENCHMARK_DURATION_US)
+        if (elapsed_us >= _display_benchmark_stress_duration_us())
         {
             break;
         }
@@ -1514,15 +1498,24 @@ static esp_err_t _display_benchmark_run_profile(
     *completed = !atomic_load_explicit(&s_stop_requested,
                                        memory_order_relaxed) &&
                  esp_timer_get_time() - started_us >=
-                 DISPLAY_BENCHMARK_DURATION_US;
+                 _display_benchmark_stress_duration_us();
     return result != ESP_OK ? result : end_result;
 }
-#endif
+
+static esp_err_t _display_benchmark_run_profile(
+    display_benchmark_page_t *page,
+    app_manager_display_benchmark_report_t *report, bool *completed)
+{
+    return s_config.mode == DISPLAY_BENCHMARK_MODE_CHARACTERIZATION ?
+           _display_benchmark_run_characterization_profile(
+               page, report, completed) :
+           _display_benchmark_run_stress_profile(page, report, completed);
+}
 
 static void _display_benchmark_supervisor_task(void *arg)
 {
     (void)arg;
-    const display_benchmark_load_t load = DISPLAY_BENCHMARK_SELECTED_LOAD;
+    const display_benchmark_load_t load = s_config.load;
     const bool tcp_required = _display_benchmark_load_requires_tcp(load);
     bool audio_started = false;
     bool benchmark_started = false;
@@ -1566,67 +1559,72 @@ static void _display_benchmark_supervisor_task(void *arg)
     }
 
     display_benchmark_page_t page = DISPLAY_BENCHMARK_PAGE_HOME;
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
-    bool display_only_completed = false;
-    memset(report, 0, sizeof(*report));
-    esp_err_t result = _display_benchmark_run_profile(
-                           &page, report, &display_only_completed);
-    if (result != ESP_OK)
+    esp_err_t result = ESP_OK;
+    if (s_config.mode == DISPLAY_BENCHMARK_MODE_CHARACTERIZATION)
     {
-        _display_benchmark_record_error(&s_control_error, result);
-        goto exit;
-    }
-    report_available = true;
-    _display_benchmark_log_profile(DISPLAY_BENCHMARK_LOAD_DISPLAY_ONLY,
-                                   report);
-    _display_benchmark_accumulate_stability(&summary, report);
-    performance = _display_benchmark_worst_performance(
-                      performance,
-                      _display_benchmark_grade_profile(report));
-    if (!display_only_completed)
-    {
-        goto exit;
-    }
+        bool display_only_completed = false;
+        memset(report, 0, sizeof(*report));
+        result = _display_benchmark_run_profile(
+                     &page, report, &display_only_completed);
+        if (result != ESP_OK)
+        {
+            _display_benchmark_record_error(&s_control_error, result);
+            goto exit;
+        }
+        report_available = true;
+        _display_benchmark_log_profile(DISPLAY_BENCHMARK_LOAD_DISPLAY_ONLY,
+                                       report);
+        _display_benchmark_accumulate_stability(&summary, report);
+        performance = _display_benchmark_worst_performance(
+                          performance,
+                          _display_benchmark_grade_profile(report));
+        if (!display_only_completed)
+        {
+            goto exit;
+        }
 
-    result = _display_benchmark_start_load(load, &audio_started,
-                                           &tcp_started_us);
-    if (result != ESP_OK)
-    {
-        goto exit;
+        result = _display_benchmark_start_load(load, &audio_started,
+                                               &tcp_started_us);
+        if (result != ESP_OK)
+        {
+            goto exit;
+        }
+        bool load_completed = false;
+        memset(report, 0, sizeof(*report));
+        result = _display_benchmark_run_profile(&page, report,
+                                                &load_completed);
+        if (result != ESP_OK)
+        {
+            _display_benchmark_record_error(&s_control_error, result);
+            goto exit;
+        }
+        _display_benchmark_log_profile(load, report);
+        _display_benchmark_accumulate_stability(&summary, report);
+        performance = _display_benchmark_worst_performance(
+                          performance,
+                          _display_benchmark_grade_profile(report));
+        completed = display_only_completed && load_completed;
     }
-    bool load_completed = false;
-    memset(report, 0, sizeof(*report));
-    result = _display_benchmark_run_profile(&page, report, &load_completed);
-    if (result != ESP_OK)
+    else
     {
-        _display_benchmark_record_error(&s_control_error, result);
-        goto exit;
+        result = _display_benchmark_start_load(load, &audio_started,
+                                               &tcp_started_us);
+        if (result != ESP_OK)
+        {
+            goto exit;
+        }
+        memset(report, 0, sizeof(*report));
+        result = _display_benchmark_run_profile(&page, report, &completed);
+        if (result != ESP_OK)
+        {
+            _display_benchmark_record_error(&s_control_error, result);
+            goto exit;
+        }
+        report_available = true;
+        _display_benchmark_log_profile(load, report);
+        _display_benchmark_accumulate_stability(&summary, report);
+        performance = _display_benchmark_grade_profile(report);
     }
-    _display_benchmark_log_profile(load, report);
-    _display_benchmark_accumulate_stability(&summary, report);
-    performance = _display_benchmark_worst_performance(
-                      performance,
-                      _display_benchmark_grade_profile(report));
-    completed = display_only_completed && load_completed;
-#else
-    esp_err_t result = _display_benchmark_start_load(load, &audio_started,
-                       &tcp_started_us);
-    if (result != ESP_OK)
-    {
-        goto exit;
-    }
-    memset(report, 0, sizeof(*report));
-    result = _display_benchmark_run_profile(&page, report, &completed);
-    if (result != ESP_OK)
-    {
-        _display_benchmark_record_error(&s_control_error, result);
-        goto exit;
-    }
-    report_available = true;
-    _display_benchmark_log_profile(load, report);
-    _display_benchmark_accumulate_stability(&summary, report);
-    performance = _display_benchmark_grade_profile(report);
-#endif
 
 exit:
     atomic_store_explicit(&s_wifi_monitoring_active, false,
@@ -1673,13 +1671,21 @@ static esp_err_t _display_benchmark_unsubscribe_wifi(void)
     return result;
 }
 
-esp_err_t display_benchmark_start(void)
+esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
 {
+    if (!_display_benchmark_config_valid(config))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
     if (s_supervisor_task != NULL || s_supervisor_stopped != NULL ||
             s_wifi_subscription != EVENT_BUS_SUB_HANDLE_INVALID)
     {
         return ESP_ERR_INVALID_STATE;
     }
+    memcpy(s_ipv4_host, config->ipv4_host,
+           strlen(config->ipv4_host) + 1U);
+    s_config = *config;
+    s_config.ipv4_host = s_ipv4_host;
     s_supervisor_stopped = xSemaphoreCreateBinary();
     if (s_supervisor_stopped == NULL)
     {
@@ -1708,7 +1714,7 @@ esp_err_t display_benchmark_start(void)
                           memory_order_relaxed);
     esp_err_t result = ESP_OK;
     if (_display_benchmark_load_requires_tcp(
-                DISPLAY_BENCHMARK_SELECTED_LOAD))
+                s_config.load))
     {
         result = event_bus_subscribe(
                      WIFI_SERVICE_MSG,
@@ -1759,8 +1765,9 @@ esp_err_t display_benchmark_stop(void)
 
 #else
 
-esp_err_t display_benchmark_start(void)
+esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
 {
+    (void)config;
     return ESP_OK;
 }
 

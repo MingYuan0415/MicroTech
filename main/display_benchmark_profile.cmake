@@ -1,0 +1,13 @@
+if(CONFIG_MAIN_DISPLAY_BENCHMARK)
+    if(NOT DEFINED DISPLAY_BENCHMARK_PROFILE_DIR OR
+            DISPLAY_BENCHMARK_PROFILE_DIR STREQUAL "")
+        message(FATAL_ERROR
+            "MAIN_DISPLAY_BENCHMARK requires DISPLAY_BENCHMARK_PROFILE_DIR")
+    endif()
+    set(DISPLAY_BENCHMARK_PROFILE_HEADER
+        "${DISPLAY_BENCHMARK_PROFILE_DIR}/display_benchmark_profile.h")
+    if(NOT EXISTS "${DISPLAY_BENCHMARK_PROFILE_HEADER}")
+        message(FATAL_ERROR
+            "Missing generated benchmark profile: ${DISPLAY_BENCHMARK_PROFILE_HEADER}")
+    endif()
+endif()

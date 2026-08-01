@@ -4,7 +4,11 @@
 
 #include "app_runtime.h"
 #include "app_runtime_pm.h"
+#include "app_product_config.h"
 #include "display_benchmark.h"
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
+    #include "display_benchmark_profile.h"
+#endif
 
 #include "app_manager.h"
 #include "app_manager_config.h"
@@ -53,7 +57,7 @@ typedef struct app_runtime_ownership
     bool sd_attempted;
     bool wifi_owned;
     bool ble_attempted;
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
     bool display_benchmark_attempted;
 #endif
     app_manager_ui_dispatch_fn ui_dispatch;
@@ -61,6 +65,7 @@ typedef struct app_runtime_ownership
 
 typedef struct app_runtime_start_context
 {
+    const app_product_config_t *product;
     bsp_capabilities_t capabilities;
     const bsp_screen_ops_t *screen;
     const bsp_display_port_t *display;
@@ -206,6 +211,7 @@ static esp_err_t _app_runtime_imu_poll_interrupt(bool *active)
 
 static esp_err_t _app_runtime_sd_mount(
     void *context, const sd_storage_service_config_t *config,
+    sd_storage_service_mount_mode_t mode,
     void **out_handle)
 {
     const bsp_sd_ops_t *ops = context;
@@ -217,7 +223,8 @@ static esp_err_t _app_runtime_sd_mount(
     const bsp_sd_config_t board_config =
     {
         .mount_point = config->mount_path,
-        .format_if_mount_failed = config->format_if_mount_failed,
+        .format_if_mount_failed =
+        mode == SD_STORAGE_SERVICE_MOUNT_RECOVER_FORMAT,
         .max_files = config->max_files,
         .allocation_unit_size = config->allocation_unit_size,
     };
@@ -252,13 +259,13 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.power_attempted || s_ownership.imu_attempted ||
                  s_ownership.audio_attempted || s_ownership.sd_attempted ||
                  s_ownership.wifi_owned || s_ownership.ble_attempted;
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
     owned = owned || s_ownership.display_benchmark_attempted;
 #endif
     return owned;
 }
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
 static esp_err_t _app_runtime_stop_display_benchmark(void)
 {
     if (!s_ownership.display_benchmark_attempted)
@@ -507,7 +514,7 @@ static esp_err_t _app_runtime_unwind(void)
     app_runtime_pm_close_admission();
 
     esp_err_t result = ESP_OK;
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
     result = _app_runtime_stop_display_benchmark();
     if (result != ESP_OK)
     {
@@ -627,7 +634,7 @@ static esp_err_t _app_runtime_start_platform(
     {
         LOG_W("RTC unavailable; time quality starts INVALID");
     }
-    result = time_service_init();
+    result = time_service_init(&context->product->time);
     if (result != ESP_OK)
     {
         return result;
@@ -648,6 +655,8 @@ static esp_err_t _app_runtime_start_platform(
     {
         return result;
     }
+    system_pm_config.task_priority =
+        context->product->system_pm_task_priority;
     s_ownership.system_pm_attempted = true;
     result = system_pm_init(&system_pm_config);
     if (result == ESP_OK)
@@ -698,6 +707,8 @@ static esp_err_t _app_runtime_start_app_services(
             .effect = APP_MANAGER_TRANSITION_PUSH_RIGHT,
             .duration_ms = APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS,
         },
+        .control_task_priority =
+        context->product->app_control_task_priority,
     };
 
     esp_err_t result = ESP_OK;
@@ -734,7 +745,7 @@ static esp_err_t _app_runtime_start_app_services(
     {
         return result;
     }
-    result = power_service_init();
+    result = power_service_init(&context->product->power);
     if (result != ESP_OK)
     {
         return result;
@@ -761,7 +772,7 @@ static esp_err_t _app_runtime_start_app_services(
             return result;
         }
         s_ownership.imu_attempted = true;
-        result = imu_service_init();
+        result = imu_service_init(&context->product->imu);
         if (result != ESP_OK)
         {
             const esp_err_t cleanup_result = imu_service_deinit();
@@ -785,7 +796,7 @@ static esp_err_t _app_runtime_start_app_services(
     if ((context->capabilities & BSP_CAPABILITY_AUDIO) != 0)
     {
         s_ownership.audio_attempted = true;
-        result = audio_service_init();
+        result = audio_service_init(&context->product->audio);
         if (result != ESP_OK)
         {
             const esp_err_t cleanup_result = audio_service_deinit();
@@ -822,7 +833,7 @@ static esp_err_t _app_runtime_start_app_services(
             return result;
         }
         s_ownership.sd_attempted = true;
-        result = sd_storage_service_init();
+        result = sd_storage_service_init(&context->product->sd);
         if (result != ESP_OK)
         {
             const esp_err_t cleanup_result = sd_storage_service_deinit();
@@ -838,7 +849,8 @@ static esp_err_t _app_runtime_start_app_services(
     return ESP_OK;
 }
 
-static esp_err_t _app_runtime_start_connectivity(void)
+static esp_err_t _app_runtime_start_connectivity(
+    const app_product_config_t *product)
 {
     esp_err_t result = network_runtime_init();
     if (result != ESP_OK || !network_runtime_is_ready())
@@ -849,7 +861,7 @@ static esp_err_t _app_runtime_start_connectivity(void)
     }
     else
     {
-        result = wifi_service_init();
+        result = wifi_service_init(&product->wifi);
         if (result != ESP_OK)
         {
             if (wifi_service_is_cleanup_pending())
@@ -946,7 +958,10 @@ esp_err_t app_runtime_start(void)
     s_runtime_sd = NULL;
     app_runtime_pm_reset();
 
-    app_runtime_start_context_t context = {0};
+    app_runtime_start_context_t context =
+    {
+        .product = app_product_config_get(),
+    };
     result = _app_runtime_start_foundations();
     if (result != ESP_OK)
     {
@@ -971,7 +986,7 @@ esp_err_t app_runtime_start(void)
         goto failed;
     }
 
-    result = _app_runtime_start_connectivity();
+    result = _app_runtime_start_connectivity(context.product);
     if (result != ESP_OK)
     {
         goto failed;
@@ -983,9 +998,9 @@ esp_err_t app_runtime_start(void)
         goto failed;
     }
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
     s_ownership.display_benchmark_attempted = true;
-    result = display_benchmark_start();
+    result = display_benchmark_start(&g_display_benchmark_profile);
     if (result != ESP_OK)
     {
         goto failed;

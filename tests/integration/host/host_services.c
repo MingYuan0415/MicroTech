@@ -359,15 +359,20 @@ imu_service_state_t imu_service_get_state(void)
     return IMU_SERVICE_STATE_RUNNING;
 }
 
-audio_service_config_t audio_service_get_default_config(void)
+esp_err_t audio_service_get_config(audio_service_config_t *config)
 {
-    return (audio_service_config_t)
+    if (config == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *config = (audio_service_config_t)
     {
         .sample_rate_hz = 16000U,
         .bits_per_sample = 16U,
         .channels = 2U,
         .mclk_multiple = 384U,
     };
+    return ESP_OK;
 }
 
 bool audio_service_is_available(void)

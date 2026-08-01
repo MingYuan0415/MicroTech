@@ -133,10 +133,13 @@ target_include_directories(test_presentation_swapped PRIVATE
     "${APP_THEME}/include"
 )
 target_compile_options(test_cross_layer PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
 target_compile_options(test_presentation PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
 target_compile_options(test_presentation_swapped PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
 target_link_libraries(test_cross_layer PRIVATE Threads::Threads)
 target_link_options(test_cross_layer PRIVATE
@@ -151,6 +154,7 @@ foreach(target IN LISTS DEMO_ADAPTER_TARGETS)
     target_compile_features(${target} PRIVATE c_std_11)
     target_compile_definitions(${target} PRIVATE _GNU_SOURCE=1)
     target_compile_options(${target} PRIVATE
+        -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
         -Wall -Wextra -Werror -Wpedantic -UNDEBUG)
     target_include_directories(${target} PRIVATE
         host/include

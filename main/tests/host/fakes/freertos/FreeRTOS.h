@@ -15,6 +15,7 @@ typedef void (*TaskFunction_t)(void *);
 #define pdTRUE        1
 #define pdFAIL        0
 #define pdPASS        1
+#define configMAX_PRIORITIES 25U
 #define portMAX_DELAY UINT32_MAX
 #define pdMS_TO_TICKS(milliseconds) ((TickType_t)(milliseconds))
 

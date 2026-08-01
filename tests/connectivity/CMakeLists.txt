@@ -32,10 +32,6 @@ add_executable(test_connectivity_pipeline
 target_compile_features(test_connectivity_pipeline PRIVATE c_std_11)
 target_compile_definitions(test_connectivity_pipeline PRIVATE
     HOST_TEST=1
-    CONFIG_WIFI_SERVICE_QUEUE_DEPTH=16
-    CONFIG_WIFI_SERVICE_TASK_STACK=4096
-    CONFIG_WIFI_SERVICE_TASK_PRIORITY=4
-    CONFIG_WIFI_SERVICE_WORKER_POLL_MS=2
     WIFI_SERVICE_RETRY_DELAY_1_MS=100
     WIFI_SERVICE_RETRY_DELAY_2_MS=200
     WIFI_SERVICE_RETRY_DELAY_3_MS=400
@@ -50,6 +46,7 @@ target_include_directories(test_connectivity_pipeline PRIVATE
     "${APPS}/setup_app/src"
 )
 target_compile_options(test_connectivity_pipeline PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
     -Wall
     -Wextra
     -Werror

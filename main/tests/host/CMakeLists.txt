@@ -3,6 +3,7 @@ project(main_runtime_host_tests LANGUAGES C)
 
 enable_testing()
 find_package(Threads REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(MAIN_HOST_SANITIZER "none" CACHE STRING
     "Host-test sanitizer: none, address, or thread")
@@ -10,9 +11,17 @@ set_property(CACHE MAIN_HOST_SANITIZER PROPERTY STRINGS
     none address thread)
 find_program(MAIN_HOST_SETARCH setarch)
 
+add_test(NAME configuration_governance COMMAND
+    ${Python3_EXECUTABLE}
+    "${CMAKE_CURRENT_LIST_DIR}/../../../tests/configuration/test_configuration_governance.py")
+
 function(configure_main_host_target target)
     target_compile_features(${target} PRIVATE c_std_11)
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/../../../tests/host"
+    )
     target_compile_options(${target} PRIVATE
+        -include "${CMAKE_CURRENT_LIST_DIR}/../../../tests/host/sdkconfig.h"
         -Wall
         -Wextra
         -Werror
@@ -62,6 +71,7 @@ endfunction()
 
 add_executable(app_runtime_test
     app_runtime_test.c
+    ../../app_product_config.c
     ../../app_runtime.c
 )
 
@@ -86,7 +96,7 @@ target_include_directories(app_runtime_test PRIVATE
 
 configure_main_host_target(app_runtime_test)
 target_compile_definitions(app_runtime_test PRIVATE
-    CONFIG_APP_MANAGER_DISPLAY_BENCHMARK=1
+    CONFIG_MAIN_DISPLAY_BENCHMARK=1
 )
 add_main_host_test(app_runtime_test app_runtime_test)
 
@@ -131,23 +141,21 @@ function(add_display_benchmark_test target port stress characterization
         ../../../layers/middleware/components/wifi_service/include
     )
     target_compile_definitions(${target} PRIVATE
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK=1
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS=${stress}
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION=${characterization}
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL=${load_full}
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY=${load_audio_only}
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY=${load_tcp_only}
+        CONFIG_MAIN_DISPLAY_BENCHMARK=1
+        TEST_DISPLAY_BENCHMARK_MODE_STRESS=${stress}
+        TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION=${characterization}
+        TEST_DISPLAY_BENCHMARK_LOAD_FULL=${load_full}
+        TEST_DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY=${load_audio_only}
+        TEST_DISPLAY_BENCHMARK_LOAD_TCP_ONLY=${load_tcp_only}
         CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG=0
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_DURATION_SEC=1800
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_EFFECT_DURATION_SEC=30
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_HOST="127.0.0.1"
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_PORT=${port}
-        CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S=2048
+        TEST_DISPLAY_BENCHMARK_TCP_PORT=${port}
+        TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S=2048
         CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT=60
         CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED=0
         CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION=${snapshot_animation}
         CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ=40000000
         CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES=10
+        CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH=2
         CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT=0
         CONFIG_BSP_DISPLAY_TE_SYNC=0
         CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2

@@ -48,9 +48,8 @@ typedef pthread_mutex_t portMUX_TYPE;
 #define BIT3 (UINT32_C(1) << 3)
 #define tskIDLE_PRIORITY 0U
 
-#ifndef configTICK_RATE_HZ
-    #define configTICK_RATE_HZ 1000U
-#endif /* __CROSS_LAYER_FREERTOS_H__ */
+#define configTICK_RATE_HZ  1000U
+#define configMAX_PRIORITIES 25U
 
 #define portMAX_DELAY UINT32_MAX
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))

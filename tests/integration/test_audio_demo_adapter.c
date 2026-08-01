@@ -352,10 +352,15 @@ static size_t _test_find_event(const test_audio_fake_data_t *snapshot,
     return SIZE_MAX;
 }
 
-audio_service_config_t audio_service_get_default_config(void)
+esp_err_t audio_service_get_config(audio_service_config_t *config)
 {
     _test_audio_fake_enter(false, TEST_AUDIO_EVENT_START);
-    const audio_service_config_t config =
+    if (config == NULL)
+    {
+        _test_audio_fake_leave();
+        return ESP_ERR_INVALID_ARG;
+    }
+    *config = (audio_service_config_t)
     {
         .sample_rate_hz = 16000U,
         .bits_per_sample = 16U,
@@ -363,7 +368,7 @@ audio_service_config_t audio_service_get_default_config(void)
         .mclk_multiple = 384U,
     };
     _test_audio_fake_leave();
-    return config;
+    return ESP_OK;
 }
 
 bool audio_service_is_available(void)

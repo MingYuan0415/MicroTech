@@ -37,7 +37,7 @@ cmake -S main/tests/host -B /tmp/mt-main -G Ninja && cmake --build /tmp/mt-main 
 
 ## 显示基准（tests/display）
 
-仅在硬件上执行：Kconfig 同时启用 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS`、`APP_MANAGER_DISPLAY_BENCHMARK`（生产配置必须关闭）。主机端运行 `python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001`，设备默认连 `192.168.0.205:5001`；WSL mirrored 网络模式需 PowerShell 的 Hyper-V 防火墙放行 TCP 5001。`test_analyze_clock_ab.py`、`test_clock_ab_profiles.py` 为可独立运行的 Python 测试。验收门槛与配置基线详见 `tests/display/README.md`；默认 40 MHz、60 行 draw buffer、bounce/10、非 TE 为项目经验基线，改前须论证。
+仅在硬件上执行：Kconfig 同时启用 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS`、`MAIN_DISPLAY_BENCHMARK`（生产配置必须关闭），并通过 `DISPLAY_BENCHMARK_PROFILE_DIR` 提供由严格 JSON 生成的类型化 profile。主机端运行 `python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001`，设备默认连 `192.168.0.205:5001`；WSL mirrored 网络模式需 PowerShell 的 Hyper-V 防火墙放行 TCP 5001。`test_analyze_clock_ab.py`、`test_clock_ab_profiles.py` 为可独立运行的 Python 测试。验收门槛与配置基线详见 `tests/display/README.md`；默认 40 MHz、60 行 draw buffer、bounce/10、queue 2、非 TE 为项目经验基线，改前须论证。
 
 ## 编码风格
 

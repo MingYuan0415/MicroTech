@@ -42,6 +42,7 @@ typedef struct host_static_task
     pthread_t thread;
     void (*entry)(void *);
     void *context;
+    UBaseType_t priority;
     bool created;
 } StaticTask_t;
 
@@ -54,9 +55,8 @@ typedef StaticTask_t *TaskHandle_t;
 #define pdPASS  1
 #define pdFAIL  0
 
-#ifndef configTICK_RATE_HZ
-    #define configTICK_RATE_HZ 1000U
-#endif
+#define configTICK_RATE_HZ  1000U
+#define configMAX_PRIORITIES 25U
 
 #define portMAX_DELAY UINT32_MAX
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))

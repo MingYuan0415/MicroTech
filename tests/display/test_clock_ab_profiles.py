@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Tests for reproducible display clock A/B firmware profiles."""
 
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,6 +36,12 @@ class ClockAbProfilesTest(unittest.TestCase):
             paths.manifest,
             profile,
             profiles.source_manifest(self.project_root),
+        )
+        paths.header.write_text(
+            profiles.render_profile_header(
+                profiles.benchmark_profile(self.project_root, profile)
+            ),
+            encoding="utf-8",
         )
 
     def test_tracked_assets_compose_expected_profiles(self):
@@ -75,12 +83,86 @@ class ClockAbProfilesTest(unittest.TestCase):
                 profiles.profile_paths(output_dir, profile).manifest.is_file()
                 for profile in selected
             ))
+            self.assertTrue(all(
+                profiles.profile_paths(output_dir, profile).header.is_file()
+                for profile in selected
+            ))
             self.assertTrue(all(str(path) in " ".join(commands)
                                 for path in sdkconfigs))
             self.assertTrue(all(str(path) in " ".join(commands)
                                 for path in builds))
             self.assertTrue(all("sdkconfig.defaults;" in command
                                 for command in commands))
+            self.assertTrue(all("DISPLAY_BENCHMARK_PROFILE_DIR=" in command
+                                for command in commands))
+
+    def test_profile_json_rejects_unknown_fields_and_invalid_enums(self):
+        base = {
+            "mode": "stress",
+            "stress_duration_sec": 1800,
+            "effect_duration_sec": 30,
+            "load": "full",
+            "ipv4_host": "192.168.0.205",
+            "port": 5001,
+            "rate_kbit_s": 2048,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "profile.json"
+            value = dict(base)
+            value["unknown"] = True
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(profiles.ProfileError, "unknown"):
+                profiles.load_benchmark_profile(path)
+
+            value = dict(base)
+            value["mode"] = "soak"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(profiles.ProfileError, "mode"):
+                profiles.load_benchmark_profile(path)
+
+            value = dict(base)
+            value["load"] = "display_only"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(profiles.ProfileError, "load"):
+                profiles.load_benchmark_profile(path)
+
+    def test_main_cmake_requires_generated_profile_when_gate_is_enabled(self):
+        script = self.project_root / "main" / "display_benchmark_profile.cmake"
+        disabled = subprocess.run(
+            ("cmake", "-DCONFIG_MAIN_DISPLAY_BENCHMARK=OFF", "-P", str(script)),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(disabled.returncode, 0, disabled.stderr)
+
+        missing = subprocess.run(
+            ("cmake", "-DCONFIG_MAIN_DISPLAY_BENCHMARK=ON", "-P", str(script)),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("DISPLAY_BENCHMARK_PROFILE_DIR", missing.stderr)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            profile_dir = Path(temporary)
+            (profile_dir / "display_benchmark_profile.h").write_text(
+                "/* generated test profile */\n", encoding="utf-8"
+            )
+            materialized = subprocess.run(
+                (
+                    "cmake",
+                    "-DCONFIG_MAIN_DISPLAY_BENCHMARK=ON",
+                    f"-DDISPLAY_BENCHMARK_PROFILE_DIR={profile_dir}",
+                    "-P",
+                    str(script),
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(materialized.returncode, 0, materialized.stderr)
 
     def test_validation_rejects_a_different_source_manifest(self):
         with tempfile.TemporaryDirectory() as temporary:

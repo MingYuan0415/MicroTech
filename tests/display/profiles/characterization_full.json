@@ -1,0 +1,9 @@
+{
+  "mode": "characterization",
+  "stress_duration_sec": 1800,
+  "effect_duration_sec": 30,
+  "load": "full",
+  "ipv4_host": "192.168.0.205",
+  "port": 5001,
+  "rate_kbit_s": 2048
+}

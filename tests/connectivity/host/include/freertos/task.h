@@ -15,6 +15,8 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void);
 TickType_t xTaskGetTickCount(void);
 /** @brief Delay the current host task. */
 void vTaskDelay(TickType_t ticks);
+/** @brief Update a host task's modeled priority. */
+void vTaskPrioritySet(TaskHandle_t task, UBaseType_t priority);
 /** @brief Delete a host task. */
 void vTaskDelete(TaskHandle_t task);
 

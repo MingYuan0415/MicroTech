@@ -511,8 +511,12 @@ esp_err_t time_service_register_rtc_ops(const time_service_rtc_ops_t *ops)
     return _test_result(TEST_EVENT_TIME_REGISTER_RTC);
 }
 
-esp_err_t time_service_init(void)
+esp_err_t time_service_init(const time_service_config_t *config)
 {
+    assert(config != NULL);
+    assert(strcmp(config->timezone, "CST-8") == 0);
+    assert(strcmp(config->sntp_server, "pool.ntp.org") == 0);
+    assert(config->task_priority == 4U);
     return _test_result(TEST_EVENT_TIME_INIT);
 }
 
@@ -593,6 +597,7 @@ void app_runtime_pm_detach_bsp(void)
 esp_err_t system_pm_init(const system_pm_config_t *config)
 {
     assert(config != NULL);
+    assert(config->task_priority == 5U);
     return _test_result(TEST_EVENT_SYSTEM_PM_INIT);
 }
 
@@ -622,6 +627,7 @@ esp_err_t app_manager_init(const struct app_manager_config *config)
            APP_MANAGER_TRANSITION_PUSH_RIGHT);
     assert(app_config->app_forward_transition.duration_ms ==
            APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS);
+    assert(app_config->control_task_priority == 5U);
     return _test_result(TEST_EVENT_APP_MANAGER_INIT);
 }
 
@@ -691,8 +697,9 @@ esp_err_t app_manager_startup_commit(void)
     return _test_result(TEST_EVENT_STARTUP_COMMIT);
 }
 
-esp_err_t display_benchmark_start(void)
+esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
 {
+    assert(config != NULL);
     return _test_result(TEST_EVENT_DISPLAY_BENCHMARK_START);
 }
 
@@ -701,8 +708,12 @@ esp_err_t display_benchmark_stop(void)
     return _test_result(TEST_EVENT_DISPLAY_BENCHMARK_STOP);
 }
 
-esp_err_t power_service_init(void)
+esp_err_t power_service_init(const power_service_config_t *config)
 {
+    assert(config != NULL);
+    assert(config->poll_interval_ms == 5000U);
+    assert(config->irq_poll_interval_ms == 100U);
+    assert(config->task_priority == 4U);
     return _test_result(TEST_EVENT_POWER_INIT);
 }
 
@@ -727,12 +738,15 @@ esp_err_t imu_service_register_imu_ops(const imu_service_imu_ops_t *ops)
     return result;
 }
 
-esp_err_t imu_service_init(void)
+esp_err_t imu_service_init(const imu_service_config_t *config)
 {
+    assert(config != NULL);
+    assert(config->sample_rate_hz == 100U);
+    assert(config->task_priority == 6U);
     esp_err_t result = _test_result(TEST_EVENT_IMU_INIT);
     if (result == ESP_OK && s_test.imu_ops.configure != NULL)
     {
-        result = s_test.imu_ops.configure(100U);
+        result = s_test.imu_ops.configure(config->sample_rate_hz);
     }
     return result;
 }
@@ -747,8 +761,16 @@ esp_err_t imu_service_deinit(void)
     return result;
 }
 
-esp_err_t audio_service_init(void)
+esp_err_t audio_service_init(const audio_service_init_config_t *config)
 {
+    assert(config != NULL);
+    assert(config->stream.sample_rate_hz == 16000U);
+    assert(config->stream.bits_per_sample == 16U);
+    assert(config->stream.channels == 2U);
+    assert(config->stream.mclk_multiple == 384U);
+    assert(config->volume_percent == 60U);
+    assert(!config->muted);
+    assert(config->pa_enabled);
     return _test_result(TEST_EVENT_AUDIO_INIT);
 }
 
@@ -773,8 +795,12 @@ esp_err_t sd_storage_service_register_mount_ops(
     return result;
 }
 
-esp_err_t sd_storage_service_init(void)
+esp_err_t sd_storage_service_init(const sd_storage_service_config_t *config)
 {
+    assert(config != NULL);
+    assert(strcmp(config->mount_path, "/sdcard") == 0);
+    assert(config->max_files == 5);
+    assert(config->allocation_unit_size == 16U * 1024U);
     return _test_result(TEST_EVENT_SD_INIT);
 }
 
@@ -801,8 +827,10 @@ network_runtime_status_t network_runtime_get_status(void)
     };
 }
 
-esp_err_t wifi_service_init(void)
+esp_err_t wifi_service_init(const wifi_service_config_t *config)
 {
+    assert(config != NULL);
+    assert(config->task_priority == 4U);
     return _test_result(TEST_EVENT_WIFI_INIT);
 }
 
@@ -1072,7 +1100,6 @@ static void _test_sd_mount_error_exposes_cleanup_handle(void)
     const sd_storage_service_config_t config =
     {
         .mount_path = "/sdcard",
-        .format_if_mount_failed = false,
         .max_files = 5,
         .allocation_unit_size = 16U * 1024U,
     };
@@ -1080,7 +1107,9 @@ static void _test_sd_mount_error_exposes_cleanup_handle(void)
     s_test.sd_mounted = false;
     void *handle = NULL;
     assert(s_test.sd_mount_ops.mount(s_test.sd_mount_ops.context,
-                                     &config, &handle) == ESP_FAIL);
+                                     &config,
+                                     SD_STORAGE_SERVICE_MOUNT_NORMAL,
+                                     &handle) == ESP_FAIL);
     assert(handle == &s_sd_ops);
     assert(!s_test.sd_mount_ops.is_mounted(s_test.sd_mount_ops.context,
                                            handle));

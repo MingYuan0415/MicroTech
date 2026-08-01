@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import re
 import shlex
@@ -24,7 +25,18 @@ CLOCK_CONFIG_KEYS = frozenset(
         "CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ",
     }
 )
-BENCHMARK_DURATION_KEY = "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_DURATION_SEC"
+BENCHMARK_DURATION_KEY = "stress_duration_sec"
+BENCHMARK_PROFILE_FIELDS = frozenset(
+    {
+        "mode",
+        "stress_duration_sec",
+        "effect_duration_sec",
+        "load",
+        "ipv4_host",
+        "port",
+        "rate_kbit_s",
+    }
+)
 SOURCE_MANIFEST_VERSION = 1
 
 
@@ -42,8 +54,7 @@ class Profile:
     clock_hz: int
     draw_rows: int
     rgb565_swapped: bool
-    run_defaults: str | None = None
-    stress_duration_sec: int | None = None
+    benchmark_profile: str
 
 
 @dataclass(frozen=True)
@@ -54,24 +65,25 @@ class ProfilePaths:
     sdkconfig: Path
     build: Path
     manifest: Path
+    header: Path
 
 
 PROFILES = {
     "E40": Profile("E40", "experimental.defaults", "clock_40.defaults",
-                   40_000_000, 120, True),
+                   40_000_000, 120, True, "characterization_full.json"),
     "E80": Profile("E80", "experimental.defaults", "clock_80.defaults",
-                   80_000_000, 120, True),
+                   80_000_000, 120, True, "characterization_full.json"),
     "P40": Profile("P40", "production.defaults", "clock_40.defaults",
-                   40_000_000, 60, False),
+                   40_000_000, 60, False, "characterization_full.json"),
     "P80": Profile("P80", "production.defaults", "clock_80.defaults",
-                   80_000_000, 60, False),
+                   80_000_000, 60, False, "characterization_full.json"),
     "E80-STRESS": Profile(
         "E80-STRESS", "experimental.defaults", "clock_80.defaults",
-        80_000_000, 120, True, "stress_1800.defaults", 1800,
+        80_000_000, 120, True, "stress_1800.json",
     ),
     "E80-SOAK": Profile(
         "E80-SOAK", "experimental.defaults", "clock_80.defaults",
-        80_000_000, 120, True, "soak_28800.defaults", 28800,
+        80_000_000, 120, True, "soak_28800.json",
     ),
 }
 CHARACTERIZATION_PROFILE_ORDER = ("E40", "E80", "P40", "P80")
@@ -85,24 +97,14 @@ PROFILE_PAIRS = {
 
 COMMON_EXPECTED = {
     "CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES": "10",
+    "CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH": "2",
     "CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT": "n",
     "CONFIG_BSP_DISPLAY_TE_SYNC": "n",
     "CONFIG_SYSTEM_PM_DEVELOPMENT_MODE": "y",
     "CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL": "131072",
     "CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG": "n",
     "CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS": "y",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK": "y",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS": "n",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION": "y",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_EFFECT_DURATION_SEC": "30",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL": "y",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY":
-        "n",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY":
-        "n",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_HOST": '"192.168.0.205"',
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_PORT": "5001",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S": "2048",
+    "CONFIG_MAIN_DISPLAY_BENCHMARK": "y",
     "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": "2",
 }
 
@@ -115,6 +117,87 @@ def project_root() -> Path:
 def config_assets_dir(root: Path) -> Path:
     """Return the tracked directory containing A/B defaults fragments."""
     return root / "tests" / "display" / "profile_defaults"
+
+
+def benchmark_profiles_dir(root: Path) -> Path:
+    """Return the tracked directory containing strict campaign profiles."""
+    return root / "tests" / "display" / "profiles"
+
+
+def load_benchmark_profile(path: Path) -> dict[str, object]:
+    """Load and validate one strict benchmark JSON profile."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ProfileError(f"cannot read benchmark profile {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise ProfileError(f"benchmark profile must be a JSON object: {path}")
+    fields = set(value)
+    if fields != BENCHMARK_PROFILE_FIELDS:
+        missing = sorted(BENCHMARK_PROFILE_FIELDS - fields)
+        unknown = sorted(fields - BENCHMARK_PROFILE_FIELDS)
+        raise ProfileError(
+            f"benchmark profile schema mismatch: missing={missing} "
+            f"unknown={unknown}"
+        )
+    if value["mode"] not in ("stress", "characterization"):
+        raise ProfileError("benchmark mode must be stress or characterization")
+    if value["load"] not in ("full", "audio_only", "tcp_only"):
+        raise ProfileError("benchmark load must be full, audio_only, or tcp_only")
+    integer_ranges = {
+        "stress_duration_sec": (10, 28800),
+        "effect_duration_sec": (5, 300),
+        "port": (1, 65535),
+        "rate_kbit_s": (64, 20000),
+    }
+    for field, (minimum, maximum) in integer_ranges.items():
+        field_value = value[field]
+        if type(field_value) is not int or not minimum <= field_value <= maximum:
+            raise ProfileError(
+                f"benchmark {field} must be an integer in {minimum}..{maximum}"
+            )
+    if not isinstance(value["ipv4_host"], str) or not value["ipv4_host"]:
+        raise ProfileError("benchmark ipv4_host must be a non-empty string")
+    try:
+        ipaddress.IPv4Address(value["ipv4_host"])
+    except ipaddress.AddressValueError as error:
+        raise ProfileError("benchmark ipv4_host must be a valid IPv4 address") from error
+    return value
+
+
+def benchmark_profile(root: Path, profile: Profile) -> dict[str, object]:
+    """Return the validated campaign selected by one firmware profile."""
+    return load_benchmark_profile(
+        benchmark_profiles_dir(root) / profile.benchmark_profile
+    )
+
+
+def render_profile_header(value: dict[str, object]) -> str:
+    """Render one generated, typed benchmark profile header."""
+    mode = {
+        "stress": "DISPLAY_BENCHMARK_MODE_STRESS",
+        "characterization": "DISPLAY_BENCHMARK_MODE_CHARACTERIZATION",
+    }[str(value["mode"])]
+    load = {
+        "full": "DISPLAY_BENCHMARK_LOAD_FULL",
+        "audio_only": "DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY",
+        "tcp_only": "DISPLAY_BENCHMARK_LOAD_TCP_ONLY",
+    }[str(value["load"])]
+    return (
+        "#ifndef __GENERATED_DISPLAY_BENCHMARK_PROFILE_H__\n"
+        "#define __GENERATED_DISPLAY_BENCHMARK_PROFILE_H__\n\n"
+        "static const display_benchmark_config_t g_display_benchmark_profile =\n"
+        "{\n"
+        f"    .mode = {mode},\n"
+        f"    .stress_duration_sec = {value['stress_duration_sec']}U,\n"
+        f"    .effect_duration_sec = {value['effect_duration_sec']}U,\n"
+        f"    .load = {load},\n"
+        f"    .ipv4_host = \"{value['ipv4_host']}\",\n"
+        f"    .port = {value['port']}U,\n"
+        f"    .rate_kbit_s = {value['rate_kbit_s']}U,\n"
+        "};\n\n"
+        "#endif /* __GENERATED_DISPLAY_BENCHMARK_PROFILE_H__ */\n"
+    )
 
 
 def parse_config(path: Path) -> dict[str, str]:
@@ -160,8 +243,6 @@ def profile_defaults(root: Path, profile: Profile) -> tuple[Path, ...]:
         assets / profile.variant_defaults,
         assets / profile.clock_defaults,
     )
-    if profile.run_defaults is not None:
-        defaults += (assets / profile.run_defaults,)
     return defaults
 
 
@@ -173,6 +254,7 @@ def profile_paths(output_dir: Path, profile: Profile) -> ProfilePaths:
         root / "sdkconfig",
         root / "build",
         root / "source_manifest.json",
+        root / "display_benchmark_profile.h",
     )
 
 
@@ -306,46 +388,13 @@ def expected_values(profile: Profile) -> dict[str, str]:
             "CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ": str(profile.clock_hz),
         }
     )
-    if profile.stress_duration_sec is not None:
-        values.update(
-            {
-                "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS": "y",
-                "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION":
-                    "n",
-                BENCHMARK_DURATION_KEY: str(profile.stress_duration_sec),
-            }
-        )
-        for key in (
-                "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_EFFECT_DURATION_SEC",
-                "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL",
-                "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY",
-                "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY"):
-            values.pop(key)
     return values
 
 
 def benchmark_duration_range(root: Path) -> tuple[int, int]:
-    """Read the configured stress-duration limits from App Manager Kconfig."""
-    path = root / "layers" / "app_manager" / "app_core" / "Kconfig"
-    if not path.is_file():
-        raise ProfileError(f"App Manager Kconfig does not exist: {path}")
-
-    in_duration_config = False
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if line == "config APP_MANAGER_DISPLAY_BENCHMARK_DURATION_SEC":
-            in_duration_config = True
-            continue
-        if not in_duration_config:
-            continue
-        if line.startswith("config ") or line.startswith("choice "):
-            break
-        if line.startswith("range "):
-            fields = line.split()
-            if len(fields) == 3:
-                return int(fields[1]), int(fields[2])
-            break
-    raise ProfileError("benchmark duration range is missing or malformed")
+    """Return the runtime validation range shared with display_benchmark.c."""
+    del root
+    return 10, 28800
 
 
 def _assert_expected(name: str, values: dict[str, str],
@@ -385,16 +434,6 @@ def validate_assets(root: Path) -> None:
             "CONFIG_BSP_DISPLAY_SPI_CLOCK_40M": "n",
             "CONFIG_BSP_DISPLAY_SPI_CLOCK_80M": "y",
         },
-        "stress_1800.defaults": {
-            "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS": "y",
-            "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION": "n",
-            BENCHMARK_DURATION_KEY: "1800",
-        },
-        "soak_28800.defaults": {
-            "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS": "y",
-            "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION": "n",
-            BENCHMARK_DURATION_KEY: "28800",
-        },
     }
     for filename, expected_fragment in expected_fragments.items():
         fragment = parse_config(assets / filename)
@@ -403,14 +442,15 @@ def validate_assets(root: Path) -> None:
                 f"{filename} has unexpected settings: {fragment}"
             )
 
-    minimum_duration, maximum_duration = benchmark_duration_range(root)
+    loaded_profiles = {
+        name: benchmark_profile(root, PROFILES[name]) for name in PROFILE_ORDER
+    }
+    for name in CHARACTERIZATION_PROFILE_ORDER:
+        if loaded_profiles[name]["mode"] != "characterization":
+            raise ProfileError(f"{name} must use characterization mode")
     for name in LONG_RUN_PROFILE_ORDER:
-        duration = PROFILES[name].stress_duration_sec
-        if duration is None or not minimum_duration <= duration <= maximum_duration:
-            raise ProfileError(
-                f"{name} duration {duration} is outside Kconfig range "
-                f"{minimum_duration}..{maximum_duration}"
-            )
+        if loaded_profiles[name]["mode"] != "stress":
+            raise ProfileError(f"{name} must use stress mode")
 
     for name in PROFILE_ORDER:
         profile = PROFILES[name]
@@ -432,17 +472,18 @@ def validate_assets(root: Path) -> None:
                 f"choice: {sorted(differences)}"
             )
 
-    stress = merge_configs(profile_defaults(root, PROFILES["E80-STRESS"]))
-    soak = merge_configs(profile_defaults(root, PROFILES["E80-SOAK"]))
+    stress = loaded_profiles["E80-STRESS"]
+    soak = loaded_profiles["E80-SOAK"]
     differences = differing_keys(stress, soak)
     if differences != {BENCHMARK_DURATION_KEY}:
         raise ProfileError(
-            "E80-STRESS/E80-SOAK defaults must differ only by duration: "
+            "E80-STRESS/E80-SOAK profiles must differ only by duration: "
             f"{sorted(differences)}"
         )
 
 
-def differing_keys(first: dict[str, str], second: dict[str, str]) -> set[str]:
+def differing_keys(first: dict[str, object],
+                   second: dict[str, object]) -> set[str]:
     """Return symbols with unequal values, including symbols absent on one side."""
     return {
         key for key in first.keys() | second.keys()
@@ -460,6 +501,7 @@ def build_command(root: Path, output_dir: Path, profile: Profile) -> list[str]:
         str(paths.build),
         f"-DSDKCONFIG={paths.sdkconfig}",
         f"-DSDKCONFIG_DEFAULTS={defaults}",
+        f"-DDISPLAY_BENCHMARK_PROFILE_DIR={paths.root}",
         "-DIDF_TARGET=esp32s3",
         "build",
         "size",
@@ -497,7 +539,8 @@ def prepare(root: Path, output_dir: Path, reset: bool,
             for path in (
                     paths.sdkconfig,
                     paths.sdkconfig.with_suffix(".old"),
-                    paths.manifest):
+                    paths.manifest,
+                    paths.header):
                 if path.exists() or path.is_symlink():
                     path.unlink()
         paths.root.mkdir(parents=True, exist_ok=True)
@@ -517,6 +560,15 @@ def prepare(root: Path, output_dir: Path, reset: bool,
                     "prepare with --reset"
                 )
             _write_profile_manifest(paths.manifest, profile, state)
+        expected_header = render_profile_header(benchmark_profile(root, profile))
+        if paths.header.exists():
+            if paths.header.read_text(encoding="utf-8") != expected_header:
+                raise ProfileError(
+                    f"{profile.name} generated profile changed; rerun prepare "
+                    "with --reset"
+                )
+        else:
+            paths.header.write_text(expected_header, encoding="utf-8")
         if paths.sdkconfig.exists():
             validate_materialized_profile(paths.sdkconfig, profile)
         commands.append(shlex.join(build_command(root, output_dir, profile)))
@@ -537,6 +589,17 @@ def validate_profile_artifacts(
     """Validate one profile config, firmware image, and source manifest."""
     paths = profile_paths(output_dir, profile)
     values = validate_materialized_profile(paths.sdkconfig, profile)
+    expected_header = render_profile_header(benchmark_profile(root, profile))
+    try:
+        actual_header = paths.header.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ProfileError(
+            f"{profile.name} generated profile header is missing"
+        ) from error
+    if actual_header != expected_header:
+        raise ProfileError(
+            f"{profile.name} generated profile header does not match JSON"
+        )
     if not (paths.build / "microtech.bin").is_file():
         raise ProfileError(f"{profile.name} firmware image is missing")
     expected = dict(state if state is not None else source_manifest(root))
@@ -563,6 +626,11 @@ def validate_pair(output_dir: Path, first_name: str,
     second = validate_profile_artifacts(
         root, output_dir, second_profile, state
     )
+    if benchmark_profile(root, first_profile) != benchmark_profile(
+            root, second_profile):
+        raise ProfileError(
+            f"{first_name}/{second_name} use different benchmark profiles"
+        )
     differences = differing_keys(first, second)
     if differences != CLOCK_CONFIG_KEYS:
         unexpected = differences - CLOCK_CONFIG_KEYS
@@ -582,12 +650,20 @@ def validate_long_run_pair(
     state = source_manifest(root)
     stress_profile = PROFILES["E80-STRESS"]
     soak_profile = PROFILES["E80-SOAK"]
-    stress = validate_profile_artifacts(
+    stress_values = validate_profile_artifacts(
         root, output_dir, stress_profile, state
     )
-    soak = validate_profile_artifacts(
+    soak_values = validate_profile_artifacts(
         root, output_dir, soak_profile, state
     )
+    sdkconfig_differences = differing_keys(stress_values, soak_values)
+    if sdkconfig_differences:
+        raise ProfileError(
+            "E80-STRESS/E80-SOAK sdkconfigs must be identical: "
+            f"differences={sorted(sdkconfig_differences)}"
+        )
+    stress = benchmark_profile(root, stress_profile)
+    soak = benchmark_profile(root, soak_profile)
     differences = differing_keys(stress, soak)
     if differences != {BENCHMARK_DURATION_KEY}:
         raise ProfileError(

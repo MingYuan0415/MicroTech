@@ -21,6 +21,11 @@
 #define STATUS_STATE_COUNT ((size_t)WIFI_SERVICE_STATE_SUSPENDED + 1U)
 #define SCAN_STATE_COUNT   ((size_t)WIFI_SERVICE_SCAN_FAILED + 1U)
 
+static const wifi_service_config_t s_wifi_config =
+{
+    .task_priority = 4U,
+};
+
 #define CHECK(expression)                                                    \
     do                                                                       \
     {                                                                        \
@@ -437,7 +442,11 @@ static bool _run_pipeline(void)
     CHECK(dispatcher != NULL);
     CHECK(event_bus_register_ui_dispatch(dispatcher) == ESP_OK);
     CHECK(_run_on_ui(_ui_capture_worker, NULL));
-    CHECK(wifi_service_init() == ESP_OK);
+    CHECK(wifi_service_init(&s_wifi_config) == ESP_OK);
+    CHECK(wifi_service_init(&s_wifi_config) == ESP_OK);
+    wifi_service_config_t different_config = s_wifi_config;
+    ++different_config.task_priority;
+    CHECK(wifi_service_init(&different_config) == ESP_ERR_INVALID_STATE);
     CHECK(_wait_status(WIFI_SERVICE_STATE_IDLE, NULL));
 
     open_args_t open_a =
@@ -613,7 +622,7 @@ static bool _run_pipeline(void)
 
     const unsigned worker_creates = host_freertos_total_task_creates();
     CHECK(worker_creates == 1U);
-    CHECK(wifi_service_init() == ESP_OK);
+    CHECK(wifi_service_init(&different_config) == ESP_OK);
     CHECK(host_freertos_total_task_creates() == worker_creates);
     CHECK(_wait_status(WIFI_SERVICE_STATE_IDLE, NULL));
     open_args_t open_c =

@@ -5,12 +5,6 @@
 CONFIG_IDF_TARGET="esp32s3"
 
 #
-# Compiler options
-#
-CONFIG_COMPILER_OPTIMIZATION_PERF=y
-# end of Compiler options
-
-#
 # Serial flasher config
 #
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
@@ -25,16 +19,10 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16m_ota_res_data.csv"
 # end of Partition Table
 
 #
-# MicroTech Project Config
+# Compiler options
 #
-# 40 MHz is the project empirical default. 80 MHz is an explicit,
-# out-of-spec SH8601A experiment and is not production-qualified.
-CONFIG_BSP_DISPLAY_SPI_CLOCK_40M=y
-CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES=10
-CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT=n
-CONFIG_BSP_DISPLAY_TE_SYNC=n
-CONFIG_SYSTEM_PM_DEVELOPMENT_MODE=n
-# end of MicroTech Project Config
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# end of Compiler options
 
 #
 # Component config
@@ -101,18 +89,8 @@ CONFIG_ESP_LVGL_ADAPTER_ENABLE_FREETYPE=y
 # end of ESP LV Adapter
 
 #
-# App Manager
-#
-CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG=n
-CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT=60
-CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED=n
-CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION=y
-# end of App Manager
-
-#
 # LVGL configuration
 #
-CONFIG_LV_COLOR_DEPTH_16=y
 
 #
 # Memory Settings

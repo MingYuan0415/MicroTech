@@ -21,12 +21,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS || \
-    CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL
+#if TEST_DISPLAY_BENCHMARK_MODE_STRESS || \
+    TEST_DISPLAY_BENCHMARK_LOAD_FULL
     #define TEST_REQUIRES_AUDIO 1
     #define TEST_REQUIRES_TCP   1
     #define TEST_LOAD_PROFILE   "full"
-#elif CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY
+#elif TEST_DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY
     #define TEST_REQUIRES_AUDIO 1
     #define TEST_REQUIRES_TCP   0
     #define TEST_LOAD_PROFILE   "audio-only"
@@ -57,7 +57,7 @@ typedef struct echo_server
     atomic_uint connection_count;
 } echo_server_t;
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+#if TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
 #define TEST_BENCHMARK_TOTAL_US \
         (DISPLAY_BENCHMARK_CHARACTERIZATION_PHASE_US * 10LL)
 #define TEST_TCP_ACTIVE_US \
@@ -70,6 +70,29 @@ typedef struct echo_server
 #define TEST_EXPECTED_FRAME_SUBMITS 10U
 #define TEST_EXPECTED_LOCK_ERRORS   1U
 #endif
+
+static const display_benchmark_config_t s_benchmark_config =
+{
+#if TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+    .mode = DISPLAY_BENCHMARK_MODE_CHARACTERIZATION,
+#else
+    .mode = DISPLAY_BENCHMARK_MODE_STRESS,
+#endif
+    .stress_duration_sec = 1800U,
+    .effect_duration_sec = 30U,
+#if TEST_DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY
+    .load = DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY,
+#elif TEST_DISPLAY_BENCHMARK_LOAD_TCP_ONLY
+    .load = DISPLAY_BENCHMARK_LOAD_TCP_ONLY,
+#else
+    .load = DISPLAY_BENCHMARK_LOAD_FULL,
+#endif
+    .ipv4_host = "127.0.0.1",
+    .port = TEST_DISPLAY_BENCHMARK_TCP_PORT,
+    .rate_kbit_s = TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S,
+};
+
+#define display_benchmark_start() display_benchmark_start(&s_benchmark_config)
 
 #define TEST_TCP_PAYLOAD_BYTES \
     ((CONFIG_LWIP_TCP_SND_BUF_DEFAULT / CONFIG_LWIP_TCP_MSS) * \
@@ -675,7 +698,7 @@ esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
            APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS);
     atomic_fetch_or(&s_profile_effect_mask,
                     1U << (unsigned)request->transition.effect);
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+#if TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
     assert(request->operation == APP_MANAGER_NAV_OP_RUN);
     assert(strcmp(request->app_id, APP_MANAGER_ID_HOME) == 0 ||
            strcmp(request->app_id, APP_MANAGER_ID_SETTINGS) == 0);
@@ -816,7 +839,7 @@ static void _echo_server_start(echo_server_t *server, bool corrupt,
     const struct sockaddr_in address =
     {
         .sin_family = AF_INET,
-        .sin_port = htons(CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_PORT),
+        .sin_port = htons(TEST_DISPLAY_BENCHMARK_TCP_PORT),
         .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
     };
     assert(bind(listener, (const struct sockaddr *)&address,
@@ -905,6 +928,46 @@ static void _reset(void)
     s_minimum_dma_largest = 0U;
 }
 
+static void _test_invalid_config(void)
+{
+    display_benchmark_config_t config = s_benchmark_config;
+    assert((display_benchmark_start)(NULL) == ESP_ERR_INVALID_ARG);
+
+    config.mode = (display_benchmark_mode_t)99;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.stress_duration_sec = 9U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config.stress_duration_sec = 28801U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.effect_duration_sec = 4U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config.effect_duration_sec = 301U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.load = (display_benchmark_load_t)99;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.ipv4_host = NULL;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config.ipv4_host = "";
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config.ipv4_host = "300.1.1.1";
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config.ipv4_host = "127.000.000.001x";
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.port = 0U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.rate_kbit_s = 63U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config.rate_kbit_s = 20001U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    assert(display_benchmark_stop() == ESP_OK);
+}
+
 static void _wait_for_counter(atomic_uint *counter, unsigned value)
 {
     for (unsigned index = 0U; index < 2000U &&
@@ -921,7 +984,7 @@ static uint64_t _assert_tcp_target_matches_active_window(void)
     const uint64_t active_us = atomic_load(&s_log_tcp_active_us);
     assert(active_us >= (uint64_t)TEST_TCP_ACTIVE_US);
     const uint64_t target_bytes =
-        (uint64_t)CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S *
+        (uint64_t)TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S *
         active_us / 8000U;
     assert(atomic_load(&s_log_tcp_target_bytes) == target_bytes);
     return target_bytes;
@@ -960,7 +1023,7 @@ static void _test_runs_configured_load(void)
     assert(atomic_load(&s_saw_fade));
     assert(atomic_load(&s_saw_push_left));
     assert(atomic_load(&s_saw_push_right));
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+#if TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
     assert(atomic_load(&s_saw_cover_left));
     assert(atomic_load(&s_saw_reveal_right));
     assert(atomic_load(&s_diagnostics_begin_count) == 2U);
@@ -1138,7 +1201,7 @@ static void _test_tcp_reset_reconnects_without_shortening_benchmark(void)
 }
 #endif
 
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS
+#if TEST_DISPLAY_BENCHMARK_MODE_STRESS
 static void _test_tcp_pacing_catches_up_without_reconnect(void)
 {
     _reset();
@@ -1328,6 +1391,7 @@ static void _test_stop_while_waiting_for_ip(void)
 
 int main(void)
 {
+    _test_invalid_config();
     _test_runs_configured_load();
 #if TEST_REQUIRES_AUDIO
     _test_audio_failure_cleans_up();
@@ -1336,7 +1400,7 @@ int main(void)
     _test_tcp_failure_cleans_up();
     _test_tcp_reset_reconnects_without_shortening_benchmark();
 #endif
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_STRESS
+#if TEST_DISPLAY_BENCHMARK_MODE_STRESS
     _test_tcp_pacing_catches_up_without_reconnect();
 #endif
 #if TEST_REQUIRES_TCP
@@ -1348,7 +1412,7 @@ int main(void)
 #if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
     _test_report_classification(TEST_REPORT_SNAPSHOT_PREPARE_SLOW, 1U, 3U);
     _test_report_classification(TEST_REPORT_SNAPSHOT_FALLBACK, 1U, 3U);
-#if CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+#if TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
     _test_report_classification(TEST_REPORT_SNAPSHOT_PREPARE_SLOW_AUXILIARY,
                                 1U, 3U);
     _test_report_classification(TEST_REPORT_SNAPSHOT_FALLBACK_AUXILIARY,

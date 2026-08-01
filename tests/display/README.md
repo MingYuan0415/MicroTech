@@ -2,7 +2,7 @@
 
 本目录保存 ESP32-S3 显示基准所需的主机端工具。基准只用于开发固件；生产配置应关闭
 `CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
-`CONFIG_APP_MANAGER_DISPLAY_BENCHMARK`。
+`CONFIG_MAIN_DISPLAY_BENCHMARK`。
 
 ## TCP echo 服务
 
@@ -14,7 +14,8 @@ python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001
 
 服务会为每个连接输出 peer、持续时间、接收/发送字节和关闭原因。reset、broken pipe
 或普通关闭均作为正常连接结束统计，不产生 Python traceback。设备默认连接
-`192.168.0.205:5001`；地址、端口和每方向速率由 App Manager Kconfig 配置。设备使用
+`192.168.0.205:5001`；地址、端口和每方向速率来自构建目录中的严格 JSON profile。
+设备使用
 不超过 lwIP 发送窗口的最大整 MSS payload，当前为 5,760 B；普通调度落后会沿绝对
 时间线追赶，最终报告的 `tcp_pacing_late` 和 `tcp_pacing_max_lag_us` 用于区分调度迟到
 与网络断线。`tcp_active_us` 记录 TCP worker 从启动到收到停止请求的实际活动时长，
@@ -36,20 +37,17 @@ ESP32 所在网络必须能直接访问该 WSL 地址。
 
 ## 基准模式
 
-先启用 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
-`APP_MANAGER_DISPLAY_BENCHMARK`，再选择一种模式：
+sdkconfig fragment 启用 `SYSTEM_PM_DEVELOPMENT_MODE`、
+`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和 `MAIN_DISPLAY_BENCHMARK`。模式和负载由
+`tests/display/profiles/*.json` 选择；工具会在每个隔离构建目录生成固定名称的
+`display_benchmark_profile.h`，gate 开启但缺少生成目录时 CMake 直接失败。
 
 - `STRESS`：默认 1800 秒，生产 fade/push 转场与 audio+TCP 全负载同时运行。
 - `CHARACTERIZATION`：fade、push-left、push-right、cover-left、reveal-right 各运行
-  30 秒 display-only，再按 Kconfig 选择的第二阶段 profile 各运行 30 秒；两个负载窗口
-  分别统计。profile 默认为 `FULL`，也可选择 `AUDIO_ONLY` 或 `TCP_ONLY`。audio-only
+  profile 指定时长的 display-only，再按 JSON load 运行第二阶段；两个负载窗口分别
+  统计。load 可为 `full`、`audio_only` 或 `tcp_only`。audio-only
   不等待 Wi-Fi 或创建 TCP worker；tcp-only 不启动 audio service/worker。`STRESS`
-  始终固定使用 audio+TCP full-load，不受 characterization profile 影响。
-
-第二阶段 choice 对应
-`APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_FULL`、
-`APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_AUDIO_ONLY` 和
-`APP_MANAGER_DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_TCP_ONLY`。
+  profile 当前使用 audio+TCP full-load。
 
 最终报告将稳定性与性能分开：
 
@@ -242,7 +240,8 @@ python3 tests/display/clock_ab_profiles.py validate \
   --profiles E80-STRESS E80-SOAK
 ```
 
-两份物化配置必须只差 `CONFIG_APP_MANAGER_DISPLAY_BENCHMARK_DURATION_SEC`。可运行
+两份物化 sdkconfig 必须完全相同，生成的类型化 profile 只能在
+`stress_duration_sec` 上不同。可运行
 10 分钟 UI/触摸/按键预检、1800 秒 `STRESS`、冷启动/休眠恢复和 8 小时 full-load soak，
 以记录当前样机行为。任何 T2、WDT、panic、OOM、重启、GUI/输入冻结、提交错误、TCP
 重连、Wi-Fi 断线或 audio/TCP 错误都使该实验失败并立即回退 40 MHz。即使该轮没有错误，

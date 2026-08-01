@@ -61,11 +61,10 @@ ctest --test-dir /tmp/mt-main --output-on-failure
 
 App Manager 的显示诊断和自动压力基准默认关闭，仅在开发固件中启用：menuconfig
 同时打开 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
-`APP_MANAGER_DISPLAY_BENCHMARK`（生产配置必须保持关闭）。`STRESS` 模式在 Wi-Fi
-获得 IPv4 地址后运行 1800 秒，以生产 fade/push 转场叠加 16-bit 双声道录放和
-2048 kbit/s 双向 TCP echo 全负载；`CHARACTERIZATION` 模式依次对 fade、push-left、
-push-right、cover-left、reveal-right 先运行 30 秒 display-only，再按 Kconfig 选择的
-profile（`full`、`audio-only` 或 `tcp-only`）各运行 30 秒，两个负载窗口分别统计。
+`MAIN_DISPLAY_BENCHMARK`（生产配置必须保持关闭）。campaign 的模式、时长、负载和
+TCP 参数来自 `tests/display/profiles/*.json` 生成的类型化头文件；构建工具为每个隔离
+build 目录传入 `DISPLAY_BENCHMARK_PROFILE_DIR`。`STRESS` 运行生产 fade/push 转场与
+audio/TCP 负载；`CHARACTERIZATION` 依次测试五种转场的 display-only 和指定负载窗口。
 
 主机端启动 TCP echo 服务（设备默认连接 `192.168.0.205:5001`）：
 
@@ -82,6 +81,9 @@ Hyper-V 防火墙放行 TCP 5001，规则示例见
 （`CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`）用于降低动画期间的软件
 绘制负担，失败时自动回退原生 Screen 动画。验收门槛、配置基线及 buffer/时钟表征
 历史详见 [`tests/display/README.md`](tests/display/README.md)。
+
+Kconfig、运行时产品策略、板级事实、协议常量和测试 profile 的归属规则见
+[`doc/configuration-governance.md`](doc/configuration-governance.md)。
 
 ## 开发约束
 
