@@ -262,3 +262,22 @@ STOP 和 NEW_INTENT 的 `app_lifecycle` INFO trace。生产默认关闭，关闭
 调用也不参与编译；错误、警告、handler、observer 与状态迁移不受影响。需要核对生命周期
 顺序时可在开发固件中临时启用，例如输出
 `app_lifecycle: [settings][root] ON MOUNT`。
+
+## LVGL 显示调试顺序
+
+显示问题（花屏、撕裂、触摸偏移、卡顿、冻屏）按序排查，多数根因是驱动时序或缓冲
+所有权而非 widget 逻辑：
+
+1. 纯色 flush：先以整屏纯色验证 flush 回调与 `lv_disp_flush_ready`，再谈 widget。
+2. draw buffer：行数、颜色格式（`RGB565` 与 `RGB565_SWAPPED` 的字节序）、stride 必须
+   与显示路径一致；DMA 路径用 internal/DMA heap（128 KiB 预留），PSRAM 缓冲按
+   `MALLOC_CAP_SPIRAM` 分配。
+3. tick 与时基：单调 tick 与 `lv_timer_handler` 周期执行；UI 冻结先查此环。
+4. 输入：触摸独立校准后再叠加。
+5. 内存预算：widget/字体/图片/缓冲总量核对。
+6. 性能：帧时间、flush 完成与 `lv_disp_flush_ready` 时机；用本文档的基准门槛判定。
+
+常见失败：flush 未调 ready 导致黑屏；16-bit 端序/颜色顺序不符；触摸坐标需旋转
+变换；DMA 读到陈旧 cache 行或写非 DMA 内存；字体/图片超 flash/RAM 预算。基准环境
+的 `display config` 行会记录 draw/DMA 行数、颜色格式、direct/TE 等，A/B 日志据此
+独立识别配置。

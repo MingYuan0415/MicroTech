@@ -17,6 +17,12 @@ idf.py size   # 改缓存/DMA 预留/资源后检查
 
 `sdkconfig` 已 gitignore：改动须落在 `sdkconfig.defaults`（用 `idf.py save-defconfig`），不得手改 sdkconfig。根 `CMakeLists.txt` 用 `FATAL_ERROR` 强制 LVGL profile（libc allocator/string、RGB565、32K I-cache/64K D-cache、128 KiB 内部 SPIRAM 预留），不得为规避问题弱化这些门槛。
 
+CMake 纪律：`REQUIRES`/`PRIV_REQUIRES` 不得依赖 `CONFIG_xxx`（组件依赖图在配置加载前展开）；移动源文件或改变 CMake 源发现后运行 `idf.py reconfigure`，不得手工修补生成的 Ninja/CMake 状态。烧录会改变硬件状态，仅在明确要求时执行。
+
+## 调试工作流
+
+设备故障（启动失败、panic、卡死）时先取最近日志，按序检查：reset reason、panic 回溯、heap 余量、task WDT、启动放置（startup placement）、app 状态迁移。硬件相关改动须上板验证并记录验证范围。
+
 ## 宿主测试
 
 每套独立 CMake 工程，C11、`-Wall -Wextra -Werror -Wpedantic` 编译：
@@ -39,7 +45,11 @@ cmake -S main/tests/host -B /tmp/mt-main -G Ninja && cmake --build /tmp/mt-main 
 
 ## 提交与 PR
 
-提交统一 **Header-Body-Footer**：Header 为 `<type>(<scope>): <subject>`，空一行写动机与影响，再空一行写 `Refs:` 或 `BREAKING CHANGE:`。PR 列出变更、测试与资源影响；界面附截图；配置说明迁移与回退。`layers/` 的改动提交到各自子模块仓库并推送，父仓库同步子模块指针。
+提交统一 **Header-Body-Footer**：Header 为 `<type>(<scope>): <subject>`，空一行写动机与影响，再空一行写 `Refs:` 或 `BREAKING CHANGE:`。PR 列出变更、测试与资源影响；界面附截图；配置说明迁移与回退。`layers/` 的改动提交到各自子模块仓库并推送，父仓库同步子模块指针。提交前运行 `git diff --check` 并过一遍宿主测试与 astyle 自检（见 doc/code-style.md）。
+
+## Agent Skills
+
+仓库根 `.agents/skills/` 提供三个 skill（`esp-idf`、`esp32`、`lvgl-integration`），按需加载。优先级：本文件与 `doc/code-style.md` > skill 内容；skill 均为 MIT 第三方改编，冲突时以仓库文档为准。
 
 ## 修改边界
 
