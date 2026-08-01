@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Vibe Coder
+Copyright (c) 2013 FastLED
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -21,9 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-Adapted from the `ESP32-AI-Agent-Skill` project at
-https://github.com/ezrover/ESP32-AI-Agent-Skill (MIT) for MicroTech. The
-generic multi-chip, multi-board, and framework reference tree was removed; the
-remaining workflow is limited to the supported Waveshare ESP32-S3 Touch
-AMOLED 1.8 and resolves facts from current code, configuration, official board
-documentation, and the schematic.
+Adapted for the MicroTech project from the layered ESP32 testing practices in
+FastLED (https://github.com/FastLED/FastLED). Commands, profiles, thresholds,
+and acceptance claims are resolved from the current repository rather than
+copied into the skill.

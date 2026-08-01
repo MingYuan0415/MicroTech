@@ -1,6 +1,6 @@
 ---
 name: esp32
-description: MicroTech ESP32-S3 and Waveshare ESP32-S3 Touch AMOLED 1.8 board-hardware guidance. Use for BSP drivers, GPIO assignments and strapping, I2C/SPI/I2S buses, Octal PSRAM and DMA capabilities, RTC/PMU/IMU/audio/SD hardware, sleep and wake sources, electrical constraints, or on-board validation; do not use as a generic ESP32-family reference.
+description: MicroTech ESP32-S3 and Waveshare ESP32-S3 Touch AMOLED 1.8 board-hardware guidance. Use for BSP drivers, GPIO assignments and strapping, I2C/SPI/I2S buses, Octal PSRAM and DMA capabilities, RTC/PMU/IMU/audio/SD hardware, sleep and wake sources, electrical constraints, or physical board behavior; use debug-esp32s3 for live-device evidence and validate-firmware for acceptance scope. Do not use as a generic ESP32-family reference.
 ---
 
 # MicroTech ESP32-S3 Hardware
@@ -17,9 +17,16 @@ Waveshare board.
   buses, reset sequencing, or lifecycle behavior.
 - Read `sdkconfig.defaults` and the root `CMakeLists.txt` before describing
   flash, PSRAM, cache, DMA reserve, or CPU settings.
-- Check the board schematic for electrical or pin-repurpose work. Check the
-  current ESP-IDF ESP32-S3 capability headers for SoC limits; do not infer
-  them from another ESP32 variant.
+- Use the official Waveshare [Resources and Documents](https://docs.waveshare.net/ESP32-S3-Touch-AMOLED-1.8/Resources-And-Documents)
+  page as the discovery index for the board schematic, Espressif ESP32-S3
+  datasheet and TRM, and the linked SH8601A, FT3168, QMI8658C, PCF85063A,
+  AXP2101, and ES8311 documents. Select only the document relevant to the
+  subsystem under review and verify its model and revision.
+- Check the board schematic for electrical or pin-repurpose work, and the
+  current ESP-IDF ESP32-S3 capability headers for SoC limits. Treat local PDF
+  copies as caches and compare them with the current official link when a
+  decision depends on document revision; do not depend on machine-specific
+  paths or infer facts from another ESP32 or peripheral variant.
 - Keep ESP-IDF, `managed_components/`, and `layers/bsp/XPowersLib/` read-only.
 
 ## Fixed Board Identity
@@ -66,6 +73,10 @@ Waveshare board.
 5. Run the owning BSP host tests and cross-layer tests for behavior changes.
 6. Validate driver timing, DMA, power, sleep/wake, radio coexistence, and
    physical peripheral behavior on hardware; report the exact tested scope.
+
+Use `validate-firmware` to choose and report that test matrix. Use
+`debug-esp32s3` for serial, ELF, core-dump, OpenOCD, JTAG, GDB, task, watchdog,
+heap, USB, port, and permission evidence from a failing device.
 
 ## Display Boundary
 

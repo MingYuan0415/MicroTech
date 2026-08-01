@@ -1,6 +1,6 @@
 ---
 name: esp-idf
-description: MicroTech ESP-IDF engineering workflow for component dependencies, CMake and Kconfig, generated state, logging and error cleanup, build and reconfigure, host validation, device diagnostics and monitoring, and explicitly authorized flash operations. Use when changing or reviewing ESP-IDF project structure, manifests, configuration, build behavior, runtime diagnostics, or device workflow; use esp32 or lvgl-integration for board-hardware and display-pipeline facts.
+description: MicroTech ESP-IDF engineering workflow for component dependencies, CMake and Kconfig, generated state, logging and error cleanup, build and reconfigure, basic monitoring, and explicitly authorized flash operations. Use when changing or reviewing ESP-IDF project structure, manifests, configuration, build behavior, or device workflow; use esp32 or lvgl-integration for domain facts, debug-esp32s3 for live-device diagnosis, and validate-firmware for validation scope and acceptance evidence.
 ---
 
 # ESP-IDF Workflow
@@ -8,6 +8,15 @@ description: MicroTech ESP-IDF engineering workflow for component dependencies, 
 Apply this workflow to ESP-IDF engineering in the MicroTech repository. Follow
 `AGENTS.md` and `doc/code-style.md` first; inspect the current checkout before
 using remembered commands, versions, or component behavior.
+
+## Skill Routing
+
+- Use `esp32` for board pins, buses, electrical constraints, and peripheral
+  facts. Use `lvgl-integration` for the display pipeline and benchmark facts.
+- Use `debug-esp32s3` when a live-device failure needs serial, ELF, JTAG, GDB,
+  core-dump, watchdog, heap, task, USB, or permission evidence.
+- Use `validate-firmware` to select tests, sanitizers, build and size checks,
+  hardware procedures, and the acceptance claim supported by their results.
 
 ## Repository Boundaries
 
@@ -45,22 +54,15 @@ using remembered commands, versions, or component behavior.
 
 ## Build and Device Workflow
 
-- Run the smallest relevant host test first, then `idf.py build` for
-  compile-affecting changes. Run `idf.py size` after changing cache, DMA
-  reserves, buffers, or packaged resources.
-- For startup failure, panic, or hang, capture recent device logs before
-  changing code. Inspect reset reason, panic backtrace, heap, task watchdog,
-  startup placement, and application state transitions in that order.
-- Treat host tests as logic validation only. State the remaining on-board
-  validation for driver timing, RF, DMA, power, and resource behavior.
+- Let `validate-firmware` choose the smallest relevant host, sanitizer, build,
+  size, and hardware matrix for the requested claim.
+- For startup failure, panic, or hang, preserve recent logs before changing
+  code, then use `debug-esp32s3` for the evidence ladder.
 - Run flash or erase operations only after the user explicitly authorizes the
   hardware state change. Monitoring and read-only diagnostics do not imply
   authorization to flash.
 
 ## Completion Checks
 
-- Run the relevant host suites and sanitizer variant in proportion to risk.
-- Run the AStyle dry-run required by `doc/code-style.md` for changed C/C++
-  sources, including inside each affected submodule.
-- Run `git diff --check`, inspect generated or lockfile changes, and report any
-  build, hardware, or long-duration acceptance gap.
+- Use `validate-firmware` to execute and report proportionate checks. Inspect
+  generated or lockfile changes and every affected submodule separately.

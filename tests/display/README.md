@@ -134,8 +134,9 @@ ESP-IDF 会将请求拆成不超过硬件边界的 DMA 段，不应将其误认�
 SH8601A preliminary Table 14 给出的 Quad SPI 最小写周期为 50 ns，对应约 20 MHz
 名义上限；因此 40 MHz 已是两倍名义上限的项目经验默认，80 MHz 是四倍名义上限的
 超规格实验。ESP32-S3 SPI2 以 APB /1 可以实际输出 80 MHz，但该事实不构成面板稳定性
-证明。时钟 A/B 工具仅用于复现和诊断当前样机，不能将 80 MHz 提升为默认；tracked
-`sdkconfig.defaults` 始终保持 40 MHz。
+证明。时钟 A/B 工具仅用于复现和诊断当前样机，不能将 80 MHz 提升为默认；生产默认由
+`layers/bsp/Kconfig.projbuild` 的 `BSP_DISPLAY_SPI_CLOCK` choice 保持为 40 MHz，A/B
+构建则通过 `tests/display/profile_defaults/clock_40.defaults` 或 `clock_80.defaults` 显式选择。
 
 四个 characterization profile 都固定 bounce/10、queue depth 2、Direct/TE 关闭、
 双 draw worker、128 KiB internal reserve、full load 和每效果 30 秒：

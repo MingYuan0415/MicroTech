@@ -21,6 +21,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-Adapted for the MicroTech project: the workflow is limited to the existing
-LVGL 9.5 and esp_lvgl_adapter display architecture, its ownership boundaries,
-and the on-board display benchmark described in tests/display/README.md.
+Adapted from the `aix-skills` project at
+https://github.com/easyzoom/aix-skills (MIT) for MicroTech. The workflow is
+limited to the existing LVGL 9.5 and esp_lvgl_adapter display architecture,
+its ownership boundaries, and the on-board display benchmark described in
+tests/display/README.md.
