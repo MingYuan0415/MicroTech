@@ -106,19 +106,16 @@ static const app_manager_app_desc_t s_required_apps[] =
 {
     {
         .name = "home", .id = APP_MANAGER_ID_HOME, .root_page_id = "root",
-        .type = APP_MANAGER_APP_BUILTIN,
     },
     {
         .name = "menu", .id = APP_MANAGER_ID_MENU, .root_page_id = "root",
-        .type = APP_MANAGER_APP_BUILTIN,
     },
     {
         .name = "settings", .id = APP_MANAGER_ID_SETTINGS,
-        .root_page_id = "root", .type = APP_MANAGER_APP_BUILTIN,
+        .root_page_id = "root",
     },
     {
         .name = "setup", .id = APP_MANAGER_ID_SETUP, .root_page_id = "root",
-        .type = APP_MANAGER_APP_BUILTIN,
     },
 };
 

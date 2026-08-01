@@ -6,6 +6,7 @@
 #include "app_manager_lifecycle.h"
 #include "app_manager_mailbox.h"
 #include "app_manager_navigation.h"
+#include "app_manager_page_arena.h"
 #include "app_manager_presentation.h"
 #include "app_theme.h"
 #include "event_bus.h"
@@ -30,8 +31,6 @@ EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
 
 extern const app_manager_app_desc_t _app_manager_apps_start[];
 extern const app_manager_app_desc_t _app_manager_apps_end[];
-extern const app_manager_page_desc_t _app_manager_pages_start[];
-extern const app_manager_page_desc_t _app_manager_pages_end[];
 
 static atomic_uint s_noop_count;
 static atomic_uint s_queued_scan_probe_count;
@@ -1203,14 +1202,12 @@ static void _initialize_stack(void)
 
     const ptrdiff_t app_descriptor_count =
         _app_manager_apps_end - _app_manager_apps_start;
-    const ptrdiff_t page_descriptor_count =
-        _app_manager_pages_end - _app_manager_pages_start;
     assert(app_descriptor_count == (ptrdiff_t)BUILTIN_APP_COUNT);
-    assert(page_descriptor_count >= (ptrdiff_t)BUILTIN_APP_COUNT);
     assert(app_manager_register_builtin_descriptors(
-               _app_manager_apps_start, (size_t)app_descriptor_count,
-               _app_manager_pages_start,
-               (size_t)page_descriptor_count) == ESP_OK);
+               _app_manager_apps_start,
+               (size_t)app_descriptor_count) == ESP_OK);
+    assert(app_manager_builtin_registry_validate(
+               app_manager_page_arena_stride(0U)) == ESP_OK);
     assert(app_manager_builtin_discover() == (int)BUILTIN_APP_COUNT);
     assert(app_manager_ui_call(_presentation_init_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
@@ -2577,7 +2574,7 @@ int main(void)
     assert(_lv_resource_counts().screens == 0U);
     assert(_system_gesture_snapshot().object_count == 0U);
     assert(_wait_for_dynamic_task_count(0U));
-    assert(app_manager_builtin_registry_reset() == ESP_OK);
+    app_manager_builtin_registry_reset();
 
     host_task_shutdown();
     assert(app_manager_mailbox_deinit() == ESP_OK);
