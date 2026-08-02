@@ -13,8 +13,8 @@ The five tests cover:
 - `cross_layer`: Home -> Demo Center -> Motion/Audio/Storage/Clock -> Settings
   -> Setup -> Home navigation, HOME switching, page pause/resume, optional
   service failures, and release of timers, subscriptions and page workers,
-  global connectivity snapshots, system SNTP continuity, and page-owned RTC alarms, including trigger-time automatic
-  disarm.
+  global connectivity snapshots, one-shot system SNTP ownership, and
+  page-owned RTC alarms, including trigger-time automatic disarm.
 - `test_audio_demo_adapter`: low-amplitude PCM meter response, serialized
   commands, chunked tone cancellation, amplifier ownership, exact owner-side
   PSRAM worker deletion, and recovery after an audio write failure.
@@ -29,7 +29,7 @@ The cross-layer test also proves that latest-only Power and connectivity
 snapshots preserve mailbox headroom. Setup queues a callback immediately
 before exit, verifies teardown cancels it, reopens, rejects an old-generation
 snapshot, and renders the current global snapshot. Closing Clock does not stop
-the system-owned periodic SNTP client.
+the system-owned one-shot SNTP request.
 
 ## Run
 
