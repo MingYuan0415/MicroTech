@@ -43,6 +43,7 @@ typedef struct host_static_task
     void (*entry)(void *);
     void *context;
     UBaseType_t priority;
+    uint32_t stack_depth;
     bool created;
     bool joinable;
     bool suspended;

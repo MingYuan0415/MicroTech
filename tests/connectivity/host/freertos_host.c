@@ -455,7 +455,6 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
                                StaticTask_t *task_storage)
 {
     (void)name;
-    (void)stack_depth;
     (void)stack;
     if (entry == NULL || task_storage == NULL || task_storage->created ||
             _host_consume(&s_fail_task_creates))
@@ -465,6 +464,7 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
     task_storage->entry = entry;
     task_storage->context = context;
     task_storage->priority = priority;
+    task_storage->stack_depth = stack_depth;
     task_storage->created = true;
     task_storage->joinable = false;
     task_storage->suspended = false;
@@ -490,6 +490,12 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void)
 {
     return s_current_task != NULL ? s_current_task :
            (TaskHandle_t)(void *)&s_external_task_token;
+}
+
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task)
+{
+    TaskHandle_t current = task != NULL ? task : s_current_task;
+    return current != NULL ? current->stack_depth / 2U : 0U;
 }
 
 TickType_t xTaskGetTickCount(void)

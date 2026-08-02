@@ -11,6 +11,8 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
                                StaticTask_t *task_storage);
 /** @brief Return the current host task handle. */
 TaskHandle_t xTaskGetCurrentTaskHandle(void);
+/** @brief Return a modeled minimum-free stack value. */
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task);
 /** @brief Return the host tick count. */
 TickType_t xTaskGetTickCount(void);
 /** @brief Delay the current host task. */

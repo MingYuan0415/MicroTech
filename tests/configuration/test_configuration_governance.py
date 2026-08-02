@@ -85,6 +85,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_PATCH_VERSION": "y",
             "CONFIG_LWIP_SNTP_UPDATE_DELAY": "3600000",
             "CONFIG_LV_USE_QRCODE": "y",
+            "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "6144",
             "CONFIG_PROVISIONING_SERVICE_TASK_STACK": "6144",
         }
         self.assertEqual(
@@ -94,6 +95,14 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         provisioning_kconfig = (
             self.root / "layers/middleware/components/provisioning_service/Kconfig"
         ).read_text(encoding="utf-8")
+        self.assertRegex(
+            (
+                self.root /
+                "layers/middleware/components/connectivity_manager/Kconfig"
+            ).read_text(encoding="utf-8"),
+            r"config CONNECTIVITY_MANAGER_TASK_STACK\s+"
+            r"int[^\n]*\s+default 6144\b\s+range 4096 8192\b",
+        )
         self.assertRegex(
             provisioning_kconfig,
             r"config PROVISIONING_SERVICE_TASK_STACK\s+"
