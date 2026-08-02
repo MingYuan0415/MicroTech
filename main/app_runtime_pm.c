@@ -6,10 +6,10 @@
 
 #include "app_manager.h"
 #include "audio_service.h"
+#include "connectivity_manager.h"
 #include "imu_service.h"
 #include "power_service.h"
 #include "time_service.h"
-#include "wifi_service.h"
 
 #if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
     #include "driver/usb_serial_jtag.h"
@@ -27,11 +27,11 @@
 typedef struct app_runtime_sleep_context
 {
     const bsp_input_ops_t *input;
-    bool wifi_participant;
+    bool connectivity_participant;
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
-    bool wifi_resume_required;
+    bool connectivity_resume_required;
     bool imu_resume_required;
     bool audio_resume_required;
     bool time_resume_required;
@@ -261,7 +261,7 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 {
     app_runtime_sleep_context_t *sleep = context;
     esp_err_t result = ESP_OK;
-    if (sleep->wifi_resume_required || sleep->imu_resume_required ||
+    if (sleep->connectivity_resume_required || sleep->imu_resume_required ||
             sleep->audio_resume_required || sleep->time_resume_required ||
             sleep->power_resume_required || sleep->input_resume_required)
     {
@@ -272,10 +272,10 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         }
     }
 
-    if (sleep->wifi_participant)
+    if (sleep->connectivity_participant)
     {
-        sleep->wifi_resume_required = true;
-        result = wifi_service_suspend(timeout_ms);
+        sleep->connectivity_resume_required = true;
+        result = connectivity_manager_suspend(timeout_ms);
         if (result != ESP_OK)
         {
             goto rollback;
@@ -388,13 +388,13 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
             sleep->audio_resume_required = false;
         }
     }
-    if (sleep->wifi_resume_required)
+    if (sleep->connectivity_resume_required)
     {
-        const esp_err_t result = wifi_service_resume(timeout_ms);
+        const esp_err_t result = connectivity_manager_resume(timeout_ms);
         _app_runtime_pm_record_first_error(&first_error, result);
         if (result == ESP_OK)
         {
-            sleep->wifi_resume_required = false;
+            sleep->connectivity_resume_required = false;
         }
     }
     return first_error;
@@ -536,9 +536,9 @@ void app_runtime_pm_clear_power(void)
     s_bsp_power = NULL;
 }
 
-void app_runtime_pm_set_wifi_participant(bool enabled)
+void app_runtime_pm_set_connectivity_participant(bool enabled)
 {
-    s_sleep_context.wifi_participant = enabled;
+    s_sleep_context.connectivity_participant = enabled;
 }
 
 void app_runtime_pm_set_imu_participant(bool enabled)

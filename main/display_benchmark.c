@@ -9,7 +9,7 @@
 #include "app_manager.h"
 #include "app_manager_display_diagnostics.h"
 #include "audio_service.h"
-#include "wifi_service.h"
+#include "connectivity_manager.h"
 
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -839,9 +839,9 @@ static esp_err_t _display_benchmark_navigate_stress(
 
 static bool _display_benchmark_wifi_ready(void)
 {
-    wifi_service_status_snapshot_t status = {0};
-    return wifi_service_get_status(&status) == ESP_OK &&
-           status.state == WIFI_SERVICE_STATE_IP_READY;
+    connectivity_manager_status_snapshot_t status = {0};
+    return connectivity_manager_get_status(&status) == ESP_OK &&
+           status.state == CONNECTIVITY_MANAGER_STATE_IP_READY;
 }
 
 static const char *_display_benchmark_load_name(display_benchmark_load_t load)
@@ -895,17 +895,18 @@ static void _display_benchmark_wifi_event(event_bus_msg_id_t msg_id,
         void *user_data)
 {
     (void)user_data;
-    if (msg_id != WIFI_SERVICE_MSG ||
-            sub_type != WIFI_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT ||
+    if (msg_id != CONNECTIVITY_MANAGER_MSG ||
+            sub_type !=
+            CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT ||
             payload == NULL ||
-            payload_size != sizeof(wifi_service_status_snapshot_t))
+            payload_size != sizeof(connectivity_manager_status_snapshot_t))
     {
         return;
     }
-    wifi_service_status_snapshot_t status;
+    connectivity_manager_status_snapshot_t status;
     memcpy(&status, payload, sizeof(status));
     _display_benchmark_observe_wifi(
-        status.state == WIFI_SERVICE_STATE_IP_READY);
+        status.state == CONNECTIVITY_MANAGER_STATE_IP_READY);
 }
 
 static display_benchmark_tcp_report_t _display_benchmark_tcp_finish_report(
@@ -1717,8 +1718,8 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
                 s_config.load))
     {
         result = event_bus_subscribe(
-                     WIFI_SERVICE_MSG,
-                     WIFI_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+                     CONNECTIVITY_MANAGER_MSG,
+                     CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
                      _display_benchmark_wifi_event, NULL,
                      EVENT_BUS_DISPATCH_PUBLISHER,
                      &s_wifi_subscription);

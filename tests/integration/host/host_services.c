@@ -5,7 +5,7 @@
 #include "esp_app_desc.h"
 #include "esp_random.h"
 #include "esp_vfs_fat.h"
-#include "host_wifi_service.h"
+#include "host_connectivity_manager.h"
 #include "imu_service.h"
 #include "power_service.h"
 #include "sd_storage_service.h"
@@ -77,7 +77,7 @@ void host_runtime_reset(void)
     atomic_store(&s_audio_read_peak, 512);
     atomic_store(&s_audio_fail_next_volume, false);
     host_lv_reset();
-    host_wifi_service_reset();
+    host_connectivity_manager_reset();
 }
 
 void host_optional_services_set_available(bool available)

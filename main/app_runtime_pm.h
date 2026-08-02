@@ -65,11 +65,11 @@ esp_err_t app_runtime_pm_prepare_power(bsp_capabilities_t capabilities);
 void app_runtime_pm_clear_power(void);
 
 /**
- * @brief Set whether Wi-Fi participates in sleep transactions.
+ * @brief Set whether connectivity participates in sleep transactions.
  *
- * @param enabled is true while the runtime owns Wi-Fi service resources.
+ * @param enabled is true while the runtime owns connectivity resources.
  */
-void app_runtime_pm_set_wifi_participant(bool enabled);
+void app_runtime_pm_set_connectivity_participant(bool enabled);
 
 /** @brief Set whether the IMU worker participates in sleep transactions. */
 void app_runtime_pm_set_imu_participant(bool enabled);

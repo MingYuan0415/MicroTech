@@ -60,6 +60,16 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                     failures.append(f"{relative}: deprecated {token}")
         self.assertEqual(failures, [], "\n".join(failures))
 
+    def test_connectivity_defaults(self) -> None:
+        defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
+        assignments = dict(re.findall(
+            r"^(CONFIG_[A-Z0-9_]+)=(.+)$", defaults, re.MULTILINE
+        ))
+        self.assertEqual(assignments.get("CONFIG_ESP_WIFI_NVS_ENABLED"), "y")
+        self.assertEqual(
+            assignments.get("CONFIG_LWIP_SNTP_UPDATE_DELAY"), "3600000"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

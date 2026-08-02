@@ -3,6 +3,7 @@
 #include "app_manager.h"
 #include "app_manager_config.h"
 #include "app_runtime_pm.h"
+#include "connectivity_manager.h"
 #include "display_benchmark.h"
 #include "audio_service.h"
 #include "ble_service.h"
@@ -16,7 +17,6 @@
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
-#include "wifi_service.h"
 
 #include <assert.h>
 #include <stdarg.h>
@@ -51,7 +51,10 @@ typedef enum
     TEST_EVENT_SD_REGISTER,
     TEST_EVENT_SD_INIT,
     TEST_EVENT_NETWORK_INIT,
-    TEST_EVENT_WIFI_INIT,
+    TEST_EVENT_CONNECTIVITY_INIT,
+    TEST_EVENT_CONNECTIVITY_SUBSCRIBE,
+    TEST_EVENT_CONNECTIVITY_GET_STATUS,
+    TEST_EVENT_TIME_NETWORK_READY,
     TEST_EVENT_BLE_INIT,
     TEST_EVENT_BUILTIN_DISCOVER,
     TEST_EVENT_APP_NAVIGATE,
@@ -62,7 +65,8 @@ typedef enum
     TEST_EVENT_DISPLAY_BENCHMARK_STOP,
     TEST_EVENT_SYSTEM_PM_CANCEL,
     TEST_EVENT_BLE_DEINIT,
-    TEST_EVENT_WIFI_DEINIT,
+    TEST_EVENT_CONNECTIVITY_DEINIT,
+    TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE,
     TEST_EVENT_SD_DEINIT,
     TEST_EVENT_AUDIO_DEINIT,
     TEST_EVENT_IMU_DEINIT,
@@ -87,9 +91,9 @@ typedef struct test_runtime
     esp_err_t secondary_failure_result;
     bsp_capabilities_t capabilities;
     bool network_ready;
-    bool wifi_cleanup_pending;
+    bool time_network_ready;
     bool required_apps_present;
-    bool wifi_participant;
+    bool connectivity_participant;
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
@@ -98,7 +102,12 @@ typedef struct test_runtime
     esp_err_t sd_mount_result;
     sd_storage_service_mount_ops_t sd_mount_ops;
     imu_service_imu_ops_t imu_ops;
+    connectivity_manager_state_t connectivity_state;
+    event_bus_cb_t connectivity_callback;
+    void *connectivity_callback_context;
 } test_runtime_t;
+
+EVENT_BUS_DEFINE_ID(CONNECTIVITY_MANAGER_MSG);
 
 static test_runtime_t s_test;
 
@@ -145,6 +154,7 @@ static void _test_reset(void)
                           BSP_CAPABILITY_AUDIO | BSP_CAPABILITY_SD;
     s_test.network_ready = true;
     s_test.required_apps_present = true;
+    s_test.connectivity_state = CONNECTIVITY_MANAGER_STATE_IP_READY;
     s_test.failure_result = ESP_FAIL;
     s_test.secondary_failure_result = ESP_FAIL;
     s_test.sd_mounted = true;
@@ -460,6 +470,40 @@ esp_err_t event_bus_unregister_wake_requester(
     return _test_result(TEST_EVENT_UNREGISTER_WAKE_REQUESTER);
 }
 
+esp_err_t event_bus_subscribe(event_bus_msg_id_t msg_id, uint32_t sub_type,
+                              event_bus_cb_t callback, void *user_data,
+                              event_bus_dispatch_context_t context,
+                              event_bus_sub_handle_t *out_handle)
+{
+    assert(msg_id == CONNECTIVITY_MANAGER_MSG);
+    assert(sub_type ==
+           CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT);
+    assert(callback != NULL);
+    assert(context == EVENT_BUS_DISPATCH_PUBLISHER);
+    assert(out_handle != NULL);
+    const esp_err_t result = _test_result(TEST_EVENT_CONNECTIVITY_SUBSCRIBE);
+    if (result == ESP_OK)
+    {
+        s_test.connectivity_callback = callback;
+        s_test.connectivity_callback_context = user_data;
+        *out_handle = 1U;
+    }
+    return result;
+}
+
+esp_err_t event_bus_unsubscribe(event_bus_sub_handle_t handle)
+{
+    assert(handle == 1U);
+    const esp_err_t result = _test_result(
+                                 TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE);
+    if (result == ESP_OK)
+    {
+        s_test.connectivity_callback = NULL;
+        s_test.connectivity_callback_context = NULL;
+    }
+    return result;
+}
+
 esp_err_t bsp_init(void)
 {
     return _test_result(TEST_EVENT_BSP_INIT);
@@ -525,6 +569,12 @@ esp_err_t time_service_deinit(void)
     return _test_result(TEST_EVENT_TIME_DEINIT);
 }
 
+esp_err_t time_service_set_network_ready(bool ready)
+{
+    s_test.time_network_ready = ready;
+    return _test_result(TEST_EVENT_TIME_NETWORK_READY);
+}
+
 esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
 {
     assert(config != NULL);
@@ -570,9 +620,9 @@ void app_runtime_pm_clear_power(void)
 {
 }
 
-void app_runtime_pm_set_wifi_participant(bool enabled)
+void app_runtime_pm_set_connectivity_participant(bool enabled)
 {
-    s_test.wifi_participant = enabled;
+    s_test.connectivity_participant = enabled;
 }
 
 void app_runtime_pm_set_imu_participant(bool enabled)
@@ -827,22 +877,38 @@ network_runtime_status_t network_runtime_get_status(void)
     };
 }
 
-esp_err_t wifi_service_init(const wifi_service_config_t *config)
+esp_err_t connectivity_manager_init(
+    const connectivity_manager_config_t *config)
 {
     assert(config != NULL);
     assert(config->task_priority == 4U);
-    return _test_result(TEST_EVENT_WIFI_INIT);
+    assert(config->wifi_task_priority == 4U);
+    return _test_result(TEST_EVENT_CONNECTIVITY_INIT);
 }
 
-esp_err_t wifi_service_deinit(uint32_t timeout_ms)
+esp_err_t connectivity_manager_deinit(uint32_t timeout_ms)
 {
-    assert(timeout_ms == WIFI_SERVICE_WAIT_FOREVER);
-    return _test_result(TEST_EVENT_WIFI_DEINIT);
+    assert(timeout_ms == CONNECTIVITY_MANAGER_WAIT_FOREVER);
+    return _test_result(TEST_EVENT_CONNECTIVITY_DEINIT);
 }
 
-bool wifi_service_is_cleanup_pending(void)
+esp_err_t connectivity_manager_get_status(
+    connectivity_manager_status_snapshot_t *snapshot)
 {
-    return s_test.wifi_cleanup_pending;
+    assert(snapshot != NULL);
+    const esp_err_t result = _test_result(
+                                 TEST_EVENT_CONNECTIVITY_GET_STATUS);
+    if (result == ESP_OK)
+    {
+        memset(snapshot, 0, sizeof(*snapshot));
+        snapshot->state = s_test.connectivity_state;
+        snapshot->ipv4_address = s_test.connectivity_state ==
+                                 CONNECTIVITY_MANAGER_STATE_IP_READY ?
+                                 UINT32_C(0x0102a8c0) : 0U;
+        snapshot->available = true;
+        snapshot->radio_available = true;
+    }
+    return result;
 }
 
 esp_err_t ble_service_init(void)
@@ -884,14 +950,22 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_DISPLAY_COMMIT,
         TEST_EVENT_SCREEN_COMMIT,
         TEST_EVENT_NETWORK_INIT,
-        TEST_EVENT_WIFI_INIT,
+        TEST_EVENT_CONNECTIVITY_INIT,
+        TEST_EVENT_CONNECTIVITY_SUBSCRIBE,
+        TEST_EVENT_CONNECTIVITY_GET_STATUS,
+        TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_BLE_INIT,
         TEST_EVENT_STARTUP_COMMIT,
         TEST_EVENT_DISPLAY_BENCHMARK_START,
+        TEST_EVENT_TIME_NETWORK_READY,
+        TEST_EVENT_TIME_NETWORK_READY,
+        TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
-        TEST_EVENT_WIFI_DEINIT,
+        TEST_EVENT_CONNECTIVITY_DEINIT,
+        TEST_EVENT_TIME_NETWORK_READY,
+        TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE,
         TEST_EVENT_SD_DEINIT,
         TEST_EVENT_AUDIO_DEINIT,
         TEST_EVENT_IMU_DEINIT,
@@ -909,20 +983,45 @@ static void _test_successful_lifecycle(void)
     _test_reset();
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
-    assert(s_test.wifi_participant);
+    assert(s_test.connectivity_participant);
     assert(s_test.imu_participant);
     assert(s_test.audio_participant);
     assert(s_test.time_participant);
+    assert(s_test.time_network_ready);
     assert(s_test.imu_sample_rate_hz == 100U);
+    assert(s_test.connectivity_callback != NULL);
+    connectivity_manager_status_snapshot_t status =
+    {
+        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
+    };
+    s_test.connectivity_callback(
+        CONNECTIVITY_MANAGER_MSG,
+        CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+        &status, sizeof(status), s_test.connectivity_callback_context);
+    assert(!s_test.time_network_ready);
+    status.state = CONNECTIVITY_MANAGER_STATE_IP_READY;
+    status.ipv4_address = UINT32_C(0x0102a8c0);
+    s_test.connectivity_callback(
+        CONNECTIVITY_MANAGER_MSG,
+        CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+        &status, sizeof(status), s_test.connectivity_callback_context);
+    assert(s_test.time_network_ready);
+    status.state = CONNECTIVITY_MANAGER_STATE_SCANNING;
+    s_test.connectivity_callback(
+        CONNECTIVITY_MANAGER_MSG,
+        CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+        &status, sizeof(status), s_test.connectivity_callback_context);
+    assert(s_test.time_network_ready);
     size_t event_count = s_test.event_count;
     assert(app_runtime_start() == ESP_OK);
     assert(s_test.event_count == event_count);
     assert(app_runtime_stop() == ESP_OK);
     assert(!app_runtime_is_running());
-    assert(!s_test.wifi_participant);
+    assert(!s_test.connectivity_participant);
     assert(!s_test.imu_participant);
     assert(!s_test.audio_participant);
     assert(!s_test.time_participant);
+    assert(!s_test.time_network_ready);
     _test_expect_events(expected, sizeof(expected) / sizeof(expected[0]));
     event_count = s_test.event_count;
     assert(app_runtime_stop() == ESP_OK);
@@ -950,6 +1049,8 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_POWER_INIT,
         TEST_EVENT_IMU_REGISTER,
         TEST_EVENT_SD_REGISTER,
+        TEST_EVENT_CONNECTIVITY_SUBSCRIBE,
+        TEST_EVENT_CONNECTIVITY_GET_STATUS,
         TEST_EVENT_BLE_INIT,
         TEST_EVENT_APP_NAVIGATE,
         TEST_EVENT_DISPLAY_COMMIT,
@@ -978,13 +1079,13 @@ static void _test_cleanup_retry_before_restart(void)
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
-        TEST_EVENT_WIFI_DEINIT,
+        TEST_EVENT_CONNECTIVITY_DEINIT,
     };
 
     _test_reset();
     assert(app_runtime_start() == ESP_OK);
     _test_clear_events();
-    s_test.failure_event = TEST_EVENT_WIFI_DEINIT;
+    s_test.failure_event = TEST_EVENT_CONNECTIVITY_DEINIT;
     assert(app_runtime_stop() == ESP_FAIL);
     assert(!app_runtime_is_running());
     _test_expect_events(first_cleanup,
@@ -994,7 +1095,7 @@ static void _test_cleanup_retry_before_restart(void)
     s_test.failure_event = TEST_EVENT_NONE;
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
-    assert(s_test.events[0] == TEST_EVENT_WIFI_DEINIT);
+    assert(s_test.events[0] == TEST_EVENT_CONNECTIVITY_DEINIT);
     assert(!_test_event_seen(TEST_EVENT_BLE_DEINIT));
     assert(_test_event_seen(TEST_EVENT_LOG_INIT));
     assert(app_runtime_stop() == ESP_OK);
@@ -1007,7 +1108,9 @@ static void _test_every_cleanup_failure_is_retryable(void)
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_BLE_DEINIT,
-        TEST_EVENT_WIFI_DEINIT,
+        TEST_EVENT_CONNECTIVITY_DEINIT,
+        TEST_EVENT_TIME_NETWORK_READY,
+        TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE,
         TEST_EVENT_SD_DEINIT,
         TEST_EVENT_AUDIO_DEINIT,
         TEST_EVENT_IMU_DEINIT,
@@ -1124,30 +1227,19 @@ static void _test_degradable_connectivity_failures(void)
     s_test.failure_event = TEST_EVENT_NETWORK_INIT;
     s_test.network_ready = false;
     assert(app_runtime_start() == ESP_OK);
-    assert(!_test_event_seen(TEST_EVENT_WIFI_INIT));
+    assert(!_test_event_seen(TEST_EVENT_CONNECTIVITY_INIT));
     assert(_test_event_seen(TEST_EVENT_BLE_INIT));
     _test_clear_events();
     assert(app_runtime_stop() == ESP_OK);
-    assert(!_test_event_seen(TEST_EVENT_WIFI_DEINIT));
+    assert(!_test_event_seen(TEST_EVENT_CONNECTIVITY_DEINIT));
 
     _test_reset();
-    s_test.failure_event = TEST_EVENT_WIFI_INIT;
+    s_test.failure_event = TEST_EVENT_CONNECTIVITY_INIT;
     assert(app_runtime_start() == ESP_OK);
     assert(_test_event_seen(TEST_EVENT_BLE_INIT));
     _test_clear_events();
     assert(app_runtime_stop() == ESP_OK);
-    assert(!_test_event_seen(TEST_EVENT_WIFI_DEINIT));
-}
-
-static void _test_wifi_cleanup_pending_is_fatal(void)
-{
-    _test_reset();
-    s_test.failure_event = TEST_EVENT_WIFI_INIT;
-    s_test.wifi_cleanup_pending = true;
-    assert(app_runtime_start() == ESP_FAIL);
-    assert(!app_runtime_is_running());
-    assert(_test_event_seen(TEST_EVENT_WIFI_DEINIT));
-    assert(!_test_event_seen(TEST_EVENT_BLE_INIT));
+    assert(!_test_event_seen(TEST_EVENT_CONNECTIVITY_DEINIT));
 }
 
 int main(void)
@@ -1160,6 +1252,5 @@ int main(void)
     _test_degradable_hardware_failures();
     _test_imu_init_cleanup_retry_keeps_bridge();
     _test_sd_mount_error_exposes_cleanup_handle();
-    _test_wifi_cleanup_pending_is_fatal();
     return 0;
 }

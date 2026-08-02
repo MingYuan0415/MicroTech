@@ -19,7 +19,7 @@ add_executable(test_cross_layer
     host/apps_integration_lvgl.c
     host/host_freertos.c
     host/host_services.c
-    host/wifi_service_fake.c
+    host/connectivity_manager_fake.c
     "${APP_CORE}/src/app_manager_mailbox.c"
     "${APP_CORE}/src/app_manager_back_gesture.c"
     "${APP_CORE}/src/app_manager_builtin.c"
@@ -118,7 +118,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/audio_service/include"
     "${MIDDLEWARE}/sd_storage_service/include"
     "${MIDDLEWARE}/time_service/include"
-    "${MIDDLEWARE}/wifi_service/include"
+    "${MIDDLEWARE}/connectivity_manager/include"
 )
 target_include_directories(test_presentation PRIVATE
     host/include

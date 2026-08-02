@@ -83,6 +83,7 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/bsp/include
     ../../../layers/middleware/components/ble_service/include
     ../../../layers/middleware/components/audio_service/include
+    ../../../layers/middleware/components/connectivity_manager/include
     ../../../layers/middleware/components/event_bus/include
     ../../../layers/middleware/components/mt_log/include
     ../../../layers/middleware/components/nv_storage/include
@@ -91,7 +92,6 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/middleware/components/sd_storage_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
-    ../../../layers/middleware/components/wifi_service/include
 )
 
 configure_main_host_target(app_runtime_test)
@@ -112,12 +112,12 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/bsp/include
     ../../../layers/middleware/components/event_bus/include
     ../../../layers/middleware/components/audio_service/include
+    ../../../layers/middleware/components/connectivity_manager/include
     ../../../layers/middleware/components/imu_service/include
     ../../../layers/middleware/components/mt_log/include
     ../../../layers/middleware/components/power_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
-    ../../../layers/middleware/components/wifi_service/include
 )
 target_link_libraries(app_runtime_pm_test PRIVATE Threads::Threads)
 configure_main_host_target(app_runtime_pm_test)
@@ -136,9 +136,9 @@ function(add_display_benchmark_test target port stress characterization
         ../../../layers/app_manager/app_core/include
         ../../../layers/app_manager/app_theme/include
         ../../../layers/middleware/components/audio_service/include
+        ../../../layers/middleware/components/connectivity_manager/include
         ../../../layers/middleware/components/event_bus/include
         ../../../layers/middleware/components/mt_log/include
-        ../../../layers/middleware/components/wifi_service/include
     )
     target_compile_definitions(${target} PRIVATE
         CONFIG_MAIN_DISPLAY_BENCHMARK=1

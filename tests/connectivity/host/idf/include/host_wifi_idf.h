@@ -1,0 +1,26 @@
+#ifndef __CONNECTIVITY_HOST_WIFI_IDF_H__
+#define __CONNECTIVITY_HOST_WIFI_IDF_H__
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "esp_wifi.h"
+#include "wifi_service_port.h"
+
+/** @brief Reset call-order observations in the ESP-IDF Wi-Fi fake. */
+void host_wifi_idf_reset(void);
+/** @brief Return whether esp_wifi_init received nvs_enable=true. */
+bool host_wifi_idf_init_nvs_enabled(void);
+/** @brief Return the sequence number of esp_wifi_init. */
+unsigned host_wifi_idf_init_sequence(void);
+/** @brief Return the sequence number of esp_wifi_set_storage. */
+unsigned host_wifi_idf_storage_sequence(void);
+/** @brief Return the storage selected by the port. */
+wifi_storage_t host_wifi_idf_storage(void);
+/** @brief Return the sequence number of esp_wifi_set_mode. */
+unsigned host_wifi_idf_mode_sequence(void);
+/** @brief Emit one STA disconnect and copy the event submitted by the port. */
+bool host_wifi_idf_emit_disconnect(uint16_t reason,
+                                   wifi_service_port_event_t *event);
+
+#endif /* __CONNECTIVITY_HOST_WIFI_IDF_H__ */

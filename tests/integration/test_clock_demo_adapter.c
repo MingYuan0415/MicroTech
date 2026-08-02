@@ -18,7 +18,6 @@ typedef struct fake_time_service
 {
     pthread_mutex_t lock;
     time_service_alarm_config_t last_alarm;
-    esp_err_t next_cancel_result;
     esp_err_t next_disable_result;
     unsigned sync_request_count;
     unsigned sync_cancel_count;
@@ -76,7 +75,6 @@ static void _fake_time_reset(void)
 {
     (void)pthread_mutex_lock(&s_time.lock);
     memset(&s_time.last_alarm, 0, sizeof(s_time.last_alarm));
-    s_time.next_cancel_result = ESP_OK;
     s_time.next_disable_result = ESP_OK;
     s_time.sync_request_count = 0U;
     s_time.sync_cancel_count = 0U;
@@ -188,13 +186,13 @@ static void _test_external_alarm_is_not_overwritten(void)
     (void)pthread_mutex_unlock(&s_time.lock);
 }
 
-static void _start_owned_sync_and_alarm(clock_demo_adapter_t *adapter)
+static void _start_sync_and_owned_alarm(clock_demo_adapter_t *adapter)
 {
     assert(clock_demo_adapter_request_sync(adapter) == ESP_OK);
     clock_demo_adapter_snapshot_t snapshot =
         _wait_for_operation(adapter, true);
     assert(snapshot.sync_state == CLOCK_DEMO_OPERATION_DONE);
-    assert(snapshot.sync_owned);
+    assert(snapshot.sync_result == ESP_OK);
 
     assert(clock_demo_adapter_arm_alarm(adapter) == ESP_OK);
     snapshot = _wait_for_operation(adapter, false);
@@ -202,21 +200,22 @@ static void _start_owned_sync_and_alarm(clock_demo_adapter_t *adapter)
     assert(snapshot.alarm_owned);
 }
 
-static void _test_close_releases_owned_resources(void)
+static void _test_close_preserves_system_sync(void)
 {
     _fake_time_reset();
     clock_demo_adapter_t adapter = {0};
     assert(clock_demo_adapter_open(&adapter) == ESP_OK);
     const size_t owner_delete_count = _assert_psram_worker();
-    _start_owned_sync_and_alarm(&adapter);
+    _start_sync_and_owned_alarm(&adapter);
     assert(clock_demo_adapter_close(&adapter) == ESP_OK);
     _assert_worker_released(owner_delete_count);
     assert(!clock_demo_adapter_is_open(&adapter));
 
     (void)pthread_mutex_lock(&s_time.lock);
-    assert(!s_time.sync_active);
+    assert(s_time.sync_active);
     assert(!s_time.alarm_enabled);
-    assert(s_time.sync_cancel_count == 1U);
+    assert(s_time.sync_request_count == 1U);
+    assert(s_time.sync_cancel_count == 0U);
     assert(s_time.alarm_disable_count == 1U);
     (void)pthread_mutex_unlock(&s_time.lock);
 }
@@ -227,11 +226,10 @@ static void _test_failed_cleanup_retains_ownership_for_retry(void)
     clock_demo_adapter_t adapter = {0};
     assert(clock_demo_adapter_open(&adapter) == ESP_OK);
     const size_t owner_delete_count = _assert_psram_worker();
-    _start_owned_sync_and_alarm(&adapter);
+    _start_sync_and_owned_alarm(&adapter);
 
     (void)pthread_mutex_lock(&s_time.lock);
     s_time.next_disable_result = ESP_FAIL;
-    s_time.next_cancel_result = ESP_ERR_TIMEOUT;
     (void)pthread_mutex_unlock(&s_time.lock);
     assert(clock_demo_adapter_close(&adapter) == ESP_FAIL);
     _assert_worker_retained(owner_delete_count);
@@ -241,16 +239,16 @@ static void _test_failed_cleanup_retains_ownership_for_retry(void)
     assert(clock_demo_adapter_get_snapshot(&adapter, &snapshot) == ESP_OK);
     assert(snapshot.closing);
     assert(snapshot.alarm_owned);
-    assert(snapshot.sync_owned);
     assert(snapshot.cleanup_result == ESP_FAIL);
 
     assert(clock_demo_adapter_close(&adapter) == ESP_OK);
     _assert_worker_released(owner_delete_count);
     assert(!clock_demo_adapter_is_open(&adapter));
     (void)pthread_mutex_lock(&s_time.lock);
-    assert(!s_time.sync_active);
+    assert(s_time.sync_active);
     assert(!s_time.alarm_enabled);
-    assert(s_time.sync_cancel_count == 2U);
+    assert(s_time.sync_request_count == 1U);
+    assert(s_time.sync_cancel_count == 0U);
     assert(s_time.alarm_disable_count == 2U);
     (void)pthread_mutex_unlock(&s_time.lock);
 }
@@ -283,14 +281,8 @@ esp_err_t time_service_cancel_sync(void)
 {
     (void)pthread_mutex_lock(&s_time.lock);
     ++s_time.sync_cancel_count;
-    const esp_err_t result = s_time.next_cancel_result;
-    s_time.next_cancel_result = ESP_OK;
-    if (result == ESP_OK)
-    {
-        s_time.sync_active = false;
-    }
     (void)pthread_mutex_unlock(&s_time.lock);
-    return result;
+    return ESP_OK;
 }
 
 esp_err_t time_service_alarm_get_status(time_service_alarm_status_t *status)
@@ -341,7 +333,7 @@ int main(void)
 {
     _test_alarm_ten_seconds_from_now();
     _test_external_alarm_is_not_overwritten();
-    _test_close_releases_owned_resources();
+    _test_close_preserves_system_sync();
     _test_failed_cleanup_retains_ownership_for_retry();
     assert(pthread_mutex_destroy(&s_time.lock) == 0);
     puts("clock demo adapter tests passed");

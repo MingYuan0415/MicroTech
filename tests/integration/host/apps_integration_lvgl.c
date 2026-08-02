@@ -25,6 +25,7 @@ typedef enum
     HOST_LV_OBJECT_BUTTON,
     HOST_LV_OBJECT_LABEL,
     HOST_LV_OBJECT_SLIDER,
+    HOST_LV_OBJECT_SWITCH,
     HOST_LV_OBJECT_BAR,
     HOST_LV_OBJECT_CANVAS,
     HOST_LV_OBJECT_IMAGE,
@@ -263,6 +264,7 @@ static lv_obj_t *_host_lv_allocate_object(host_lv_object_kind_t kind,
             object->image_opacity = LV_OPA_COVER;
             object->z_order = ++s_z_order;
             if (kind == HOST_LV_OBJECT_BUTTON ||
+                    kind == HOST_LV_OBJECT_SWITCH ||
                     kind == HOST_LV_OBJECT_GENERIC)
             {
                 object->flags = LV_OBJ_FLAG_CLICKABLE;
@@ -951,6 +953,11 @@ lv_obj_t *lv_label_create(lv_obj_t *parent)
 lv_obj_t *lv_slider_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_SLIDER, parent);
+}
+
+lv_obj_t *lv_switch_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_SWITCH, parent);
 }
 
 lv_obj_t *lv_bar_create(lv_obj_t *parent)

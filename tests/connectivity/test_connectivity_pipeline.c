@@ -1,14 +1,14 @@
 #include "app_manager_mailbox.h"
+#include "connectivity_manager.h"
 #include "event_bus.h"
 #include "freertos/task.h"
 #include "host_freertos.h"
+#include "host_nv_storage.h"
 #include "host_wifi_port.h"
 #include "setup_wifi_adapter.h"
-#include "wifi_service.h"
 #include "wifi_service_port.h"
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -18,13 +18,9 @@
 
 #define TEST_TIMEOUT_MS 5000U
 #define UI_TIMEOUT_MS   2000U
-#define STATUS_STATE_COUNT ((size_t)WIFI_SERVICE_STATE_SUSPENDED + 1U)
-#define SCAN_STATE_COUNT   ((size_t)WIFI_SERVICE_SCAN_FAILED + 1U)
-
-static const wifi_service_config_t s_wifi_config =
-{
-    .task_priority = 4U,
-};
+#define STATUS_STATE_COUNT \
+    ((size_t)CONNECTIVITY_MANAGER_STATE_SUSPENDED + 1U)
+#define TERMINAL_RECORD_CAPACITY 64U
 
 #define CHECK(expression)                                                    \
     do                                                                       \
@@ -44,11 +40,10 @@ typedef struct observer
     unsigned status_count;
     unsigned scan_count;
     unsigned status_states[STATUS_STATE_COUNT];
-    unsigned scan_states[SCAN_STATE_COUNT];
     setup_wifi_status_scope_t last_scope;
     setup_wifi_operation_kind_t last_operation_kind;
-    wifi_service_status_snapshot_t status;
-    wifi_service_scan_snapshot_t scan;
+    connectivity_manager_status_snapshot_t status;
+    connectivity_manager_scan_snapshot_t scan;
 } observer_t;
 
 typedef struct open_args
@@ -57,26 +52,142 @@ typedef struct open_args
     observer_t *observer;
 } open_args_t;
 
-typedef struct adapter_query
-{
-    setup_wifi_adapter_t *adapter;
-    wifi_service_session_id_t session_id;
-    wifi_service_operation_id_t operation_id;
-    setup_wifi_operation_kind_t operation_kind;
-} adapter_query_t;
-
 typedef struct connect_args
 {
     setup_wifi_adapter_t *adapter;
     const char *ssid;
     size_t ssid_length;
-    wifi_service_security_t security;
+    connectivity_manager_security_t security;
     uint8_t *password;
     size_t password_length;
 } connect_args_t;
 
+typedef struct terminal_record
+{
+    connectivity_manager_operation_id_t operation_id;
+    esp_err_t result;
+    bool scan;
+} terminal_record_t;
+
+typedef struct terminal_observer
+{
+    pthread_mutex_t lock;
+    size_t count;
+    terminal_record_t records[TERMINAL_RECORD_CAPACITY];
+} terminal_observer_t;
+
+static const connectivity_manager_config_t s_manager_config =
+{
+    .task_priority = 4U,
+    .wifi_task_priority = 4U,
+};
+
 static TaskHandle_t s_ui_worker;
-static atomic_uint s_noop_count;
+static void _sleep_one_ms(void);
+static terminal_observer_t s_terminals =
+{
+    .lock = PTHREAD_MUTEX_INITIALIZER,
+};
+
+static void _terminal_observer_reset(void)
+{
+    (void)pthread_mutex_lock(&s_terminals.lock);
+    s_terminals.count = 0U;
+    memset(s_terminals.records, 0, sizeof(s_terminals.records));
+    (void)pthread_mutex_unlock(&s_terminals.lock);
+}
+
+static void _terminal_observer_record(
+    connectivity_manager_operation_id_t operation_id, esp_err_t result,
+    bool scan)
+{
+    if (operation_id == 0U)
+    {
+        return;
+    }
+    (void)pthread_mutex_lock(&s_terminals.lock);
+    if (s_terminals.count < TERMINAL_RECORD_CAPACITY)
+    {
+        terminal_record_t *record = &s_terminals.records[s_terminals.count++];
+        record->operation_id = operation_id;
+        record->result = result;
+        record->scan = scan;
+    }
+    (void)pthread_mutex_unlock(&s_terminals.lock);
+}
+
+static void _terminal_status_event(
+    event_bus_msg_id_t msg_id, uint32_t sub_type,
+    const void *payload, size_t payload_size, void *user_data)
+{
+    (void)user_data;
+    if (msg_id == CONNECTIVITY_MANAGER_MSG &&
+            sub_type ==
+            CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT &&
+            payload != NULL &&
+            payload_size == sizeof(connectivity_manager_status_snapshot_t))
+    {
+        const connectivity_manager_status_snapshot_t *snapshot = payload;
+        if (snapshot->operation_complete)
+        {
+            _terminal_observer_record(snapshot->operation_id,
+                                      snapshot->last_error, false);
+        }
+    }
+}
+
+static void _terminal_scan_event(
+    event_bus_msg_id_t msg_id, uint32_t sub_type,
+    const void *payload, size_t payload_size, void *user_data)
+{
+    (void)user_data;
+    if (msg_id == CONNECTIVITY_MANAGER_MSG &&
+            sub_type == CONNECTIVITY_MANAGER_MSG_SUB_TYPE_SCAN_SNAPSHOT &&
+            payload != NULL &&
+            payload_size == sizeof(connectivity_manager_scan_snapshot_t))
+    {
+        const connectivity_manager_scan_snapshot_t *snapshot = payload;
+        if (!snapshot->running)
+        {
+            _terminal_observer_record(snapshot->operation_id,
+                                      snapshot->last_error, true);
+        }
+    }
+}
+
+static unsigned _terminal_observer_count(
+    connectivity_manager_operation_id_t operation_id, esp_err_t result,
+    bool scan)
+{
+    unsigned count = 0U;
+    (void)pthread_mutex_lock(&s_terminals.lock);
+    for (size_t index = 0U; index < s_terminals.count; ++index)
+    {
+        const terminal_record_t *record = &s_terminals.records[index];
+        if (record->operation_id == operation_id &&
+                record->result == result && record->scan == scan)
+        {
+            ++count;
+        }
+    }
+    (void)pthread_mutex_unlock(&s_terminals.lock);
+    return count;
+}
+
+static bool _wait_terminal(
+    connectivity_manager_operation_id_t operation_id, esp_err_t result,
+    bool scan)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        if (_terminal_observer_count(operation_id, result, scan) > 0U)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
 
 static void _sleep_one_ms(void)
 {
@@ -100,7 +211,7 @@ static void _observer_deinit(observer_t *observer)
 }
 
 static void _observer_status(
-    const wifi_service_status_snapshot_t *snapshot,
+    const connectivity_manager_status_snapshot_t *snapshot,
     setup_wifi_status_scope_t scope,
     setup_wifi_operation_kind_t operation_kind,
     void *user_data)
@@ -123,8 +234,9 @@ static void _observer_status(
     (void)pthread_mutex_unlock(&observer->lock);
 }
 
-static void _observer_scan(const wifi_service_scan_snapshot_t *snapshot,
-                           void *user_data)
+static void _observer_scan(
+    const connectivity_manager_scan_snapshot_t *snapshot,
+    void *user_data)
 {
     observer_t *observer = user_data;
     (void)pthread_mutex_lock(&observer->lock);
@@ -134,31 +246,27 @@ static void _observer_scan(const wifi_service_scan_snapshot_t *snapshot,
         observer->identity_violation = true;
     }
     ++observer->scan_count;
-    if ((size_t)snapshot->state < SCAN_STATE_COUNT)
-    {
-        ++observer->scan_states[snapshot->state];
-    }
     observer->scan = *snapshot;
     (void)pthread_mutex_unlock(&observer->lock);
 }
 
-static esp_err_t _ui_capture_worker(void *arg)
+static esp_err_t _ui_capture_worker(void *argument)
 {
-    (void)arg;
+    (void)argument;
     s_ui_worker = xTaskGetCurrentTaskHandle();
     return s_ui_worker != NULL && app_manager_mailbox_is_worker() ?
            ESP_OK : ESP_FAIL;
 }
 
-static esp_err_t _ui_barrier(void *arg)
+static esp_err_t _ui_barrier(void *argument)
 {
-    (void)arg;
+    (void)argument;
     return app_manager_mailbox_is_worker() ? ESP_OK : ESP_FAIL;
 }
 
-static esp_err_t _ui_open_adapter(void *arg)
+static esp_err_t _ui_open_adapter(void *argument)
 {
-    open_args_t *args = arg;
+    open_args_t *args = argument;
     const setup_wifi_adapter_callbacks_t callbacks =
     {
         .status = _observer_status,
@@ -167,58 +275,67 @@ static esp_err_t _ui_open_adapter(void *arg)
     return setup_wifi_adapter_open(args->adapter, &callbacks, args->observer);
 }
 
-static esp_err_t _ui_close_adapter(void *arg)
+static esp_err_t _ui_close_adapter(void *argument)
 {
-    return setup_wifi_adapter_close(arg);
+    return setup_wifi_adapter_close(argument);
 }
 
-static esp_err_t _ui_scan(void *arg)
+static esp_err_t _ui_scan(void *argument)
 {
-    return setup_wifi_adapter_scan(arg);
+    return setup_wifi_adapter_scan(argument);
 }
 
-static esp_err_t _ui_connect(void *arg)
+static esp_err_t _ui_cancel(void *argument)
 {
-    connect_args_t *args = arg;
+    return setup_wifi_adapter_cancel(argument);
+}
+
+static esp_err_t _ui_disconnect(void *argument)
+{
+    return setup_wifi_adapter_disconnect(argument);
+}
+
+static esp_err_t _ui_reconnect(void *argument)
+{
+    return setup_wifi_adapter_reconnect_saved(argument);
+}
+
+static esp_err_t _ui_auto_off(void *argument)
+{
+    return setup_wifi_adapter_set_auto_connect(argument, false);
+}
+
+static esp_err_t _ui_auto_on(void *argument)
+{
+    return setup_wifi_adapter_set_auto_connect(argument, true);
+}
+
+static esp_err_t _ui_connect(void *argument)
+{
+    connect_args_t *args = argument;
     return setup_wifi_adapter_connect(
                args->adapter, args->ssid, args->ssid_length,
                args->security, args->password, args->password_length);
 }
 
-static esp_err_t _ui_query_adapter(void *arg)
+static bool _run_on_ui(app_manager_ui_call_fn callback, void *argument)
 {
-    adapter_query_t *query = arg;
-    query->session_id = query->adapter->session_id;
-    query->operation_id = query->adapter->operation_id;
-    query->operation_kind = query->adapter->operation_kind;
-    return ESP_OK;
+    return app_manager_mailbox_call(callback, argument,
+                                    UI_TIMEOUT_MS) == ESP_OK;
 }
 
-static bool _run_on_ui(app_manager_ui_call_fn callback, void *arg)
+static bool _wait_status(connectivity_manager_state_t state,
+                         connectivity_manager_status_snapshot_t *output)
 {
-    return app_manager_mailbox_call(callback, arg, UI_TIMEOUT_MS) == ESP_OK;
-}
-
-static bool _query_adapter(setup_wifi_adapter_t *adapter,
-                           adapter_query_t *query)
-{
-    memset(query, 0, sizeof(*query));
-    query->adapter = adapter;
-    return _run_on_ui(_ui_query_adapter, query);
-}
-
-static bool _wait_status(wifi_service_state_t state,
-                         wifi_service_status_snapshot_t *out)
-{
-    for (unsigned attempt = 0; attempt < TEST_TIMEOUT_MS; ++attempt)
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
     {
-        wifi_service_status_snapshot_t snapshot;
-        if (wifi_service_get_status(&snapshot) == ESP_OK &&
+        connectivity_manager_status_snapshot_t snapshot;
+        if (connectivity_manager_get_status(&snapshot) == ESP_OK &&
                 snapshot.state == state)
         {
-            if (out != NULL)
+            if (output != NULL)
             {
-                *out = snapshot;
+                *output = snapshot;
             }
             return true;
         }
@@ -227,18 +344,20 @@ static bool _wait_status(wifi_service_state_t state,
     return false;
 }
 
-static bool _wait_scan(wifi_service_scan_state_t state,
-                       wifi_service_scan_snapshot_t *out)
+static bool _wait_status_failure(
+    connectivity_manager_state_t state,
+    connectivity_manager_failure_t failure,
+    connectivity_manager_status_snapshot_t *output)
 {
-    for (unsigned attempt = 0; attempt < TEST_TIMEOUT_MS; ++attempt)
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
     {
-        wifi_service_scan_snapshot_t snapshot;
-        if (wifi_service_get_scan_snapshot(&snapshot) == ESP_OK &&
-                snapshot.state == state)
+        connectivity_manager_status_snapshot_t snapshot;
+        if (connectivity_manager_get_status(&snapshot) == ESP_OK &&
+                snapshot.state == state && snapshot.failure == failure)
         {
-            if (out != NULL)
+            if (output != NULL)
             {
-                *out = snapshot;
+                *output = snapshot;
             }
             return true;
         }
@@ -247,86 +366,93 @@ static bool _wait_scan(wifi_service_scan_state_t state,
     return false;
 }
 
-static unsigned _observer_status_state_count(observer_t *observer,
-        wifi_service_state_t state)
+static bool _wait_scan(bool running, esp_err_t result,
+                       connectivity_manager_scan_snapshot_t *output)
 {
-    (void)pthread_mutex_lock(&observer->lock);
-    unsigned count = observer->status_states[state];
-    (void)pthread_mutex_unlock(&observer->lock);
-    return count;
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_scan_snapshot_t snapshot;
+        if (connectivity_manager_get_scan_snapshot(&snapshot) == ESP_OK &&
+                snapshot.running == running &&
+                (running || snapshot.last_error == result))
+        {
+            if (output != NULL)
+            {
+                *output = snapshot;
+            }
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
 }
 
-static unsigned _observer_scan_state_count(observer_t *observer,
-        wifi_service_scan_state_t state)
+static bool _wait_scan_operation(
+    connectivity_manager_operation_id_t operation_id, bool running)
 {
-    (void)pthread_mutex_lock(&observer->lock);
-    unsigned count = observer->scan_states[state];
-    (void)pthread_mutex_unlock(&observer->lock);
-    return count;
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_scan_snapshot_t snapshot;
+        if (connectivity_manager_get_scan_snapshot(&snapshot) == ESP_OK &&
+                snapshot.operation_id == operation_id &&
+                snapshot.running == running)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
 }
 
-static unsigned _observer_total_count(observer_t *observer)
+static bool _wait_auto_connect(bool enabled)
 {
-    (void)pthread_mutex_lock(&observer->lock);
-    unsigned count = observer->status_count + observer->scan_count;
-    (void)pthread_mutex_unlock(&observer->lock);
-    return count;
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_status_snapshot_t snapshot;
+        if (connectivity_manager_get_status(&snapshot) == ESP_OK &&
+                snapshot.auto_connect == enabled)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
 }
 
-static bool _observer_copy_status(observer_t *observer,
-                                  wifi_service_status_snapshot_t *snapshot,
-                                  setup_wifi_status_scope_t *scope,
-                                  setup_wifi_operation_kind_t *kind)
+static bool _wait_operation_result(
+    connectivity_manager_operation_id_t operation_id, esp_err_t result)
 {
-    (void)pthread_mutex_lock(&observer->lock);
-    *snapshot = observer->status;
-    *scope = observer->last_scope;
-    *kind = observer->last_operation_kind;
-    bool valid = observer->status_count > 0;
-    (void)pthread_mutex_unlock(&observer->lock);
-    return valid;
-}
-
-static bool _observer_copy_scan(observer_t *observer,
-                                wifi_service_scan_snapshot_t *snapshot)
-{
-    (void)pthread_mutex_lock(&observer->lock);
-    *snapshot = observer->scan;
-    bool valid = observer->scan_count > 0;
-    (void)pthread_mutex_unlock(&observer->lock);
-    return valid;
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_status_snapshot_t snapshot;
+        if (connectivity_manager_get_status(&snapshot) == ESP_OK &&
+                snapshot.operation_id == operation_id &&
+                snapshot.operation_complete &&
+                snapshot.last_error == result)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
 }
 
 static bool _observer_identity_ok(observer_t *observer)
 {
     (void)pthread_mutex_lock(&observer->lock);
-    bool valid = !observer->identity_violation;
+    const bool valid = !observer->identity_violation;
     (void)pthread_mutex_unlock(&observer->lock);
     return valid;
 }
 
-static bool _wait_observer_status(observer_t *observer,
-                                  wifi_service_state_t state,
-                                  unsigned expected)
+static bool _observer_scan_count(observer_t *observer, unsigned expected)
 {
-    for (unsigned attempt = 0; attempt < TEST_TIMEOUT_MS; ++attempt)
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
     {
-        if (_observer_status_state_count(observer, state) >= expected)
-        {
-            return true;
-        }
-        _sleep_one_ms();
-    }
-    return false;
-}
-
-static bool _wait_observer_scan(observer_t *observer,
-                                wifi_service_scan_state_t state,
-                                unsigned expected)
-{
-    for (unsigned attempt = 0; attempt < TEST_TIMEOUT_MS; ++attempt)
-    {
-        if (_observer_scan_state_count(observer, state) >= expected)
+        (void)pthread_mutex_lock(&observer->lock);
+        const unsigned count = observer->scan_count;
+        (void)pthread_mutex_unlock(&observer->lock);
+        if (count >= expected)
         {
             return true;
         }
@@ -336,55 +462,61 @@ static bool _wait_observer_scan(observer_t *observer,
 }
 
 static esp_err_t _submit_event(wifi_service_port_event_type_t type,
+                               wifi_service_failure_t failure,
                                uint32_t ipv4_address)
 {
     const wifi_service_port_event_t event =
     {
         .type = type,
         .epoch = host_wifi_port_epoch(),
-        .status = 0,
+        .status = failure == WIFI_SERVICE_FAILURE_NONE ? ESP_OK : ESP_FAIL,
+        .failure = failure,
         .ipv4_address = ipv4_address,
-        .disconnect_reason = 0,
         .scan_id = host_wifi_port_scan_id(),
     };
     return wifi_service_port_submit_event(&event);
 }
 
-static void _noop_callback(void *arg)
+static esp_err_t _submit_event_with_epoch(
+    wifi_service_port_event_type_t type, uint64_t epoch)
 {
-    (void)arg;
-    atomic_fetch_add(&s_noop_count, 1U);
+    const wifi_service_port_event_t event =
+    {
+        .type = type,
+        .epoch = epoch,
+        .status = ESP_OK,
+        .scan_id = host_wifi_port_scan_id(),
+    };
+    return wifi_service_port_submit_event(&event);
 }
 
-static bool _fill_mailbox(void)
+static bool _wait_wifi_service_status(wifi_service_state_t state)
 {
-    atomic_store(&s_noop_count, 0U);
-    app_manager_mailbox_host_timer_pause(true);
-    for (unsigned index = 0; index < EVENT_BUS_MAX_PENDING_UI_CALLBACKS;
-            ++index)
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
     {
-        CHECK(app_manager_mailbox_post(_noop_callback, NULL) == ESP_OK);
-    }
-    CHECK(app_manager_mailbox_post(_noop_callback, NULL) == ESP_ERR_NO_MEM);
-    return true;
-}
-
-static bool _drain_full_mailbox(void)
-{
-    app_manager_mailbox_host_timer_step();
-    app_manager_mailbox_host_timer_step();
-    app_manager_mailbox_host_timer_step();
-    for (unsigned attempt = 0; attempt < TEST_TIMEOUT_MS; ++attempt)
-    {
-        if (atomic_load(&s_noop_count) ==
-                EVENT_BUS_MAX_PENDING_UI_CALLBACKS)
+        wifi_service_status_snapshot_t snapshot;
+        if (wifi_service_get_status(&snapshot) == ESP_OK &&
+                snapshot.state == state)
         {
-            app_manager_mailbox_host_timer_pause(false);
-            return _run_on_ui(_ui_barrier, NULL);
+            return true;
         }
         _sleep_one_ms();
     }
-    app_manager_mailbox_host_timer_pause(false);
+    return false;
+}
+
+static bool _wait_wifi_service_error(esp_err_t result)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_status_snapshot_t snapshot;
+        if (wifi_service_get_status(&snapshot) == ESP_OK &&
+                snapshot.last_error == result)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
     return false;
 }
 
@@ -397,264 +529,974 @@ static void _set_scan_record(const char *ssid,
     memcpy(record.ssid, ssid, length);
     record.ssid_length = (uint8_t)length;
     record.rssi = -42;
-    record.channel = 6;
+    record.channel = 6U;
     record.security = security;
-    host_wifi_port_set_scan_records(&record, 1, false);
+    host_wifi_port_set_scan_records(&record, 1U, false);
 }
 
-static bool _run_scan(setup_wifi_adapter_t *adapter, observer_t *observer,
-                      const char *ssid, unsigned expected_results)
+static bool _complete_connection(uint32_t ipv4_address)
 {
-    _set_scan_record(ssid, WIFI_SERVICE_SECURITY_PERSONAL);
-    const unsigned running_before = _observer_scan_state_count(
-                                        observer, WIFI_SERVICE_SCAN_RUNNING);
-    CHECK(_run_on_ui(_ui_scan, adapter));
-    CHECK(_wait_scan(WIFI_SERVICE_SCAN_RUNNING, NULL));
-    CHECK(_wait_observer_scan(observer, WIFI_SERVICE_SCAN_RUNNING,
-                              running_before + 1U));
-    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE, 0) == ESP_OK);
-    CHECK(_wait_scan(WIFI_SERVICE_SCAN_RESULTS, NULL));
-    CHECK(_wait_observer_scan(observer, WIFI_SERVICE_SCAN_RESULTS,
-                              expected_results));
-    CHECK(_wait_status(WIFI_SERVICE_STATE_IDLE, NULL));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_CONNECTED,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_WAITING_IP, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_GOT_IP,
+                        WIFI_SERVICE_FAILURE_NONE, ipv4_address) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, NULL));
+    return true;
+}
+
+static bool _connect_from_ui(setup_wifi_adapter_t *adapter, const char *ssid,
+                             const char *password)
+{
+    uint8_t secret[CONNECTIVITY_MANAGER_PASSWORD_MAX_BYTES];
+    memset(secret, 0, sizeof(secret));
+    const size_t password_length = strlen(password);
+    memcpy(secret, password, password_length);
+    connect_args_t args =
+    {
+        .adapter = adapter,
+        .ssid = ssid,
+        .ssid_length = strlen(ssid),
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+        .password = secret,
+        .password_length = password_length,
+    };
+    CHECK(_run_on_ui(_ui_connect, &args));
+    for (size_t index = 0U; index < sizeof(secret); ++index)
+    {
+        CHECK(secret[index] == 0U);
+    }
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    return true;
+}
+
+static bool _wait_driver_credentials(
+    wifi_service_port_credentials_t *credentials)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        if (host_wifi_port_last_credentials(credentials))
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _request_personal_connect(
+    const char *ssid, const char *password,
+    connectivity_manager_operation_id_t *operation_id)
+{
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = ssid,
+        .ssid_length = strlen(ssid),
+        .password = password,
+        .password_length = strlen(password),
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    return connectivity_manager_request_connect(
+               &credentials, operation_id) == ESP_OK;
+}
+
+static bool _wait_driver_ssid(const char *ssid)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_port_credentials_t credentials;
+        if (host_wifi_port_last_credentials(&credentials) &&
+                credentials.ssid_length == strlen(ssid) &&
+                memcmp(credentials.ssid, ssid,
+                       credentials.ssid_length) == 0)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _test_operation_arbitration(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t first = 0U;
+    connectivity_manager_operation_id_t pending = 0U;
+    connectivity_manager_operation_id_t replacement = 0U;
+    CHECK(_request_personal_connect("First AP", "password1", &first));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_request_personal_connect("Pending AP", "password2", &pending));
+    CHECK(_request_personal_connect("Replacement AP", "password3",
+                                    &replacement));
+    CHECK(_wait_terminal(pending, ESP_ERR_NOT_FINISHED, false));
+    CHECK(_wait_terminal(first, ESP_ERR_NOT_FINISHED, false));
+    CHECK(_wait_driver_ssid("Replacement AP"));
+    CHECK(_complete_connection(UINT32_C(0x0602a8c0)));
+    CHECK(_wait_terminal(replacement, ESP_OK, false));
+    CHECK(_terminal_observer_count(first, ESP_ERR_NOT_FINISHED, false) == 1U);
+    CHECK(_terminal_observer_count(pending, ESP_ERR_NOT_FINISHED, false) == 1U);
+    CHECK(_terminal_observer_count(replacement, ESP_OK, false) == 1U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(wifi_service_test_credentials_are_zero());
+
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    connectivity_manager_operation_id_t active_scan = 0U;
+    connectivity_manager_operation_id_t connect = 0U;
+    connectivity_manager_operation_id_t rejected_scan = 0U;
+    CHECK(connectivity_manager_request_scan(&active_scan) == ESP_OK);
+    CHECK(_wait_scan_operation(active_scan, true));
+    CHECK(_request_personal_connect("Priority AP", "password4", &connect));
+    CHECK(connectivity_manager_request_scan(&rejected_scan) == ESP_OK);
+    CHECK(_wait_terminal(rejected_scan, ESP_ERR_INVALID_STATE, true));
+    CHECK(_wait_terminal(active_scan, ESP_ERR_NOT_FINISHED, true));
+    CHECK(_wait_driver_ssid("Priority AP"));
+    CHECK(_complete_connection(UINT32_C(0x0702a8c0)));
+    CHECK(_wait_terminal(connect, ESP_OK, false));
+    CHECK(_terminal_observer_count(active_scan, ESP_ERR_NOT_FINISHED, true) ==
+          1U);
+    CHECK(_terminal_observer_count(rejected_scan, ESP_ERR_INVALID_STATE,
+                                   true) == 1U);
+    CHECK(_terminal_observer_count(connect, ESP_OK, false) == 1U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
+static bool _test_foreground_and_persistence(uint8_t saved_record[],
+        size_t *saved_size)
+{
+    observer_t observer;
+    setup_wifi_adapter_t adapter = {0};
+    _observer_init(&observer);
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    connectivity_manager_status_snapshot_t initial_status;
+    CHECK(connectivity_manager_get_status(&initial_status) == ESP_OK);
+    CHECK(!initial_status.saved_profile);
+
+    const char invalid_ssid[] = {'A', '\0', 'P'};
+    const char valid_password[] = "password1";
+    connectivity_manager_credentials_t invalid_credentials =
+    {
+        .ssid = invalid_ssid,
+        .ssid_length = sizeof(invalid_ssid),
+        .password = valid_password,
+        .password_length = sizeof(valid_password) - 1U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t invalid_operation_id = 0U;
+    CHECK(connectivity_manager_request_connect(
+              &invalid_credentials, &invalid_operation_id) ==
+          ESP_ERR_INVALID_ARG);
+    CHECK(invalid_operation_id == 0U);
+
+    const char valid_ssid[] = "Valid AP";
+    const char invalid_password[] = {'p', 'a', 's', 's', '\0', 'o', 'r', 'd'};
+    invalid_credentials.ssid = valid_ssid;
+    invalid_credentials.ssid_length = sizeof(valid_ssid) - 1U;
+    invalid_credentials.password = invalid_password;
+    invalid_credentials.password_length = sizeof(invalid_password);
+    CHECK(connectivity_manager_request_connect(
+              &invalid_credentials, &invalid_operation_id) ==
+          ESP_ERR_INVALID_ARG);
+    CHECK(invalid_operation_id == 0U);
+    open_args_t open =
+    {
+        .adapter = &adapter,
+        .observer = &observer,
+    };
+    CHECK(_run_on_ui(_ui_open_adapter, &open));
+
+    _set_scan_record("Current AP", WIFI_SERVICE_SECURITY_PERSONAL);
+    CHECK(_run_on_ui(_ui_scan, &adapter));
+    CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    connectivity_manager_scan_snapshot_t scan;
+    CHECK(_wait_scan(false, ESP_OK, &scan));
+    CHECK(scan.record_count == 1U);
+    CHECK(strcmp(scan.records[0].ssid, "Current AP") == 0);
+    CHECK(_observer_scan_count(&observer, 1U));
     CHECK(_run_on_ui(_ui_barrier, NULL));
+    (void)pthread_mutex_lock(&observer.lock);
+    const bool terminal_scan_delivered = observer.scan_count > 0U &&
+                                         !observer.scan.running &&
+                                         observer.scan.last_error == ESP_OK;
+    (void)pthread_mutex_unlock(&observer.lock);
+    CHECK(terminal_scan_delivered);
+
+    CHECK(_run_on_ui(_ui_scan, &adapter));
+    CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_run_on_ui(_ui_cancel, &adapter));
+    CHECK(_wait_scan(false, ESP_ERR_NOT_FINISHED, NULL));
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    CHECK(_connect_from_ui(&adapter, "Retry AP", "password1"));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_LINK_LOST, 0U) == ESP_OK);
+    connectivity_manager_status_snapshot_t short_retry;
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT, &short_retry));
+    CHECK(short_retry.retry_delay_ms == 0U);
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+    CHECK(_run_on_ui(_ui_cancel, &adapter));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    CHECK(_connect_from_ui(&adapter, "Current AP", "password1"));
+    wifi_service_port_credentials_t driver_credentials;
+    CHECK(_wait_driver_credentials(&driver_credentials));
+    CHECK(driver_credentials.password_length == 9U);
+    CHECK(memcmp(driver_credentials.password, "password1", 9U) == 0);
+    CHECK(_complete_connection(UINT32_C(0x0102a8c0)));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, &status));
+    CHECK(status.saved_profile);
+    CHECK(status.profile_persisted);
+    CHECK(status.auto_connect);
+    CHECK(host_nv_storage_set_count() == 1U);
+    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
+    CHECK(*saved_size > 0U);
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    CHECK(_run_on_ui(_ui_disconnect, &adapter));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(status.manual_hold);
+    CHECK(status.saved_profile);
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    CHECK(_run_on_ui(_ui_reconnect, &adapter));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_complete_connection(UINT32_C(0x0202a8c0)));
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    CHECK(_run_on_ui(_ui_auto_off, &adapter));
+    CHECK(_wait_auto_connect(false));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, NULL));
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    const unsigned suspend_connect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+    CHECK(wifi_service_test_credentials_are_zero());
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    for (unsigned attempt = 0U; attempt < 100U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          suspend_connect_before);
+
+    CHECK(_run_on_ui(_ui_reconnect, &adapter));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_complete_connection(UINT32_C(0x0250a8c0)));
+    CHECK(_wait_auto_connect(false));
+
+    const unsigned disconnect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_DISCONNECT);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_LINK_LOST, 0U) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_DISCONNECT,
+                                    disconnect_before + 1U,
+                                    TEST_TIMEOUT_MS));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(!status.auto_connect);
+
+    CHECK(_run_on_ui(_ui_auto_on, &adapter));
+    CHECK(_wait_auto_connect(true));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_complete_connection(UINT32_C(0x0302a8c0)));
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    host_nv_storage_fail_next_set(ESP_FAIL);
+    CHECK(_connect_from_ui(&adapter, "Candidate AP", "candidate1"));
+    CHECK(_complete_connection(UINT32_C(0x0402a8c0)));
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IP_READY,
+                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               &status));
+    CHECK(strcmp(status.ssid, "Candidate AP") == 0);
+    CHECK(status.saved_profile);
+    CHECK(!status.profile_persisted);
+    uint8_t retained[256];
+    size_t retained_size = 0U;
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == *saved_size);
+    CHECK(memcmp(retained, saved_record, retained_size) == 0);
+
+    const unsigned candidate_disconnect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_DISCONNECT);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_LINK_LOST, 0U) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_DISCONNECT,
+                                    candidate_disconnect_before + 1U,
+                                    TEST_TIMEOUT_MS));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    const unsigned connect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    for (unsigned attempt = 0U; attempt < 300U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connect_before);
+
+    CHECK(_run_on_ui(_ui_reconnect, &adapter));
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    connect_before + 1U, TEST_TIMEOUT_MS));
+    CHECK(host_wifi_port_last_credentials(&driver_credentials));
+    CHECK(driver_credentials.ssid_length == sizeof("Current AP") - 1U);
+    CHECK(memcmp(driver_credentials.ssid, "Current AP",
+                 driver_credentials.ssid_length) == 0);
+    CHECK(_complete_connection(UINT32_C(0x0502a8c0)));
+    CHECK(_run_on_ui(_ui_barrier, NULL));
+
+    host_nv_storage_fail_next_erase(ESP_FAIL);
+    connectivity_manager_operation_id_t failed_forget_operation_id = 0U;
+    CHECK(connectivity_manager_request_forget(
+              &failed_forget_operation_id) == ESP_OK);
+    CHECK(_wait_operation_result(failed_forget_operation_id, ESP_FAIL));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, &status));
+    CHECK(status.saved_profile);
+    CHECK(!status.manual_hold);
+    CHECK(host_nv_storage_erase_count() == 0U);
+
+    connectivity_manager_operation_id_t foreground_scan_operation_id = 0U;
+    CHECK(connectivity_manager_request_scan(
+              &foreground_scan_operation_id) == ESP_OK);
+    CHECK(foreground_scan_operation_id != 0U);
+    CHECK(_wait_scan_operation(foreground_scan_operation_id, true));
+    host_wifi_port_gate(HOST_WIFI_PORT_SCAN_ABORT, true);
+    connectivity_manager_operation_id_t forget_operation_id = 0U;
+    CHECK(connectivity_manager_request_forget(&forget_operation_id) == ESP_OK);
+    CHECK(forget_operation_id != 0U);
+    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_SCAN_ABORT,
+                                   TEST_TIMEOUT_MS));
+    CHECK(host_nv_storage_erase_count() == 0U);
+
+    connectivity_manager_operation_id_t disconnect_operation_id = 0U;
+    CHECK(connectivity_manager_request_disconnect(
+              &disconnect_operation_id) == ESP_OK);
+    CHECK(disconnect_operation_id != 0U);
+    CHECK(_wait_operation_result(disconnect_operation_id,
+                                 ESP_ERR_INVALID_STATE));
+    CHECK(host_nv_storage_erase_count() == 0U);
+    host_wifi_port_release_gate(HOST_WIFI_PORT_SCAN_ABORT);
+
+    CHECK(_wait_operation_result(forget_operation_id, ESP_OK));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(!status.saved_profile);
+    CHECK(status.manual_hold);
+    CHECK(host_nv_storage_erase_count() == 1U);
+    CHECK(!host_nv_storage_copy(NULL, 0U, NULL));
+    CHECK(wifi_service_test_credentials_are_zero());
+
+    CHECK(_run_on_ui(_ui_close_adapter, &adapter));
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(_observer_identity_ok(&observer));
+    _observer_deinit(&observer);
+    return true;
+}
+
+static bool _wait_long_retry(connectivity_manager_failure_t failure,
+                             connectivity_manager_status_snapshot_t *output)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_status_snapshot_t snapshot;
+        if (connectivity_manager_get_status(&snapshot) == ESP_OK &&
+                snapshot.state == CONNECTIVITY_MANAGER_STATE_RETRY_WAIT &&
+                snapshot.failure == failure &&
+                snapshot.retry_delay_ms == 1000U)
+        {
+            if (output != NULL)
+            {
+                *output = snapshot;
+            }
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _test_boot_retry_timeouts(const uint8_t saved_record[],
+                                      size_t saved_size)
+{
+    host_nv_storage_seed(saved_record, saved_size);
+    const unsigned connect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    connect_before + 1U, TEST_TIMEOUT_MS));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+
+    CHECK(_submit_event_with_epoch(
+              WIFI_SERVICE_PORT_EVENT_GOT_IP,
+              host_wifi_port_epoch() + 1U) == ESP_OK);
+    for (unsigned attempt = 0U; attempt < 50U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AUTHENTICATION, 0U) == ESP_OK);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_AUTHENTICATION,
+                               &status));
+    const unsigned auth_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    for (unsigned attempt = 0U; attempt < 300U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == auth_connects);
+
+    connectivity_manager_operation_id_t operation_id = 0U;
+    CHECK(connectivity_manager_request_reconnect_saved(&operation_id) == ESP_OK);
+    CHECK(operation_id != 0U);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_wait_long_retry(
+              CONNECTIVITY_MANAGER_FAILURE_ASSOCIATION_TIMEOUT, &status));
+    CHECK(status.retry_count == 1U);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          auth_connects + 4U);
+
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+    const unsigned suspend_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    host_freertos_advance_ticks(1500U);
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    suspend_connects + 1U, TEST_TIMEOUT_MS));
+    for (unsigned attempt = 0U; attempt < 100U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          suspend_connects + 1U);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AUTHENTICATION, 0U) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_AUTHENTICATION,
+                               NULL));
+
+    const unsigned dhcp_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_request_reconnect_saved(&operation_id) == ESP_OK);
+    for (unsigned attempt = 0U; attempt < 4U; ++attempt)
+    {
+        CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                        dhcp_connects + attempt + 1U,
+                                        TEST_TIMEOUT_MS));
+        CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+        CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_CONNECTED,
+                            WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_WAITING_IP, NULL));
+    }
+    CHECK(_wait_long_retry(CONNECTIVITY_MANAGER_FAILURE_DHCP_TIMEOUT, &status));
+    CHECK(status.retry_count == 1U);
+
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
+static bool _test_active_radio_failure_terminal(const uint8_t saved_record[],
+        size_t saved_size)
+{
+    host_nv_storage_reset();
+    host_nv_storage_seed(saved_record, saved_size);
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AUTHENTICATION, 0U) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_AUTHENTICATION,
+                               NULL));
+
+    connectivity_manager_operation_id_t reconnect = 0U;
+    CHECK(connectivity_manager_request_reconnect_saved(&reconnect) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    host_wifi_port_fail_next(HOST_WIFI_PORT_START, 1U, ESP_FAIL);
+    CHECK(_wait_terminal(reconnect, ESP_FAIL, false));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
+                               CONNECTIVITY_MANAGER_FAILURE_RADIO_UNAVAILABLE,
+                               &status));
+    CHECK(!status.radio_available);
+    CHECK(_terminal_observer_count(reconnect, ESP_FAIL, false) == 1U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    CHECK(wifi_service_test_credentials_are_zero());
+    return true;
+}
+
+static bool _test_scan_resume_guards(const uint8_t saved_record[],
+                                     size_t saved_size)
+{
+    host_nv_storage_reset();
+    host_nv_storage_seed(saved_record, saved_size);
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    connectivity_manager_operation_id_t scan = 0U;
+    connectivity_manager_operation_id_t disconnect = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan_operation(scan, true));
+    CHECK(connectivity_manager_request_disconnect(&disconnect) == ESP_OK);
+    CHECK(_wait_terminal(scan, ESP_ERR_NOT_FINISHED, true));
+    CHECK(_wait_terminal(disconnect, ESP_OK, false));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(status.manual_hold);
+    const unsigned disconnect_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    for (unsigned attempt = 0U; attempt < 200U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          disconnect_connects);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+
+    host_nv_storage_reset();
+    host_nv_storage_seed(saved_record, saved_size);
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    connectivity_manager_operation_id_t forget = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan_operation(scan, true));
+    CHECK(connectivity_manager_request_forget(&forget) == ESP_OK);
+    CHECK(_wait_terminal(scan, ESP_ERR_NOT_FINISHED, true));
+    CHECK(_wait_terminal(forget, ESP_OK, false));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(!status.saved_profile);
+    const unsigned forget_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    for (unsigned attempt = 0U; attempt < 200U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == forget_connects);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+
+    host_nv_storage_reset();
+    host_nv_storage_seed(saved_record, saved_size);
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan_operation(scan, true));
+    connectivity_manager_operation_id_t auto_off = 0U;
+    CHECK(connectivity_manager_set_auto_connect(false, &auto_off) == ESP_OK);
+    CHECK(_wait_terminal(auto_off, ESP_OK, false));
+    CHECK(_wait_auto_connect(false));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_terminal(scan, ESP_OK, true));
+    const unsigned disabled_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    for (unsigned attempt = 0U; attempt < 200U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          disabled_connects);
+
+    connectivity_manager_operation_id_t auto_on = 0U;
+    CHECK(connectivity_manager_set_auto_connect(true, &auto_on) == ESP_OK);
+    CHECK(_wait_terminal(auto_on, ESP_OK, false));
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    disabled_connects + 1U,
+                                    TEST_TIMEOUT_MS));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, &status));
+    CHECK(status.operation_id == 0U);
+    CHECK(!status.operation_complete);
+    CHECK(_complete_connection(UINT32_C(0x0802a8c0)));
+    CHECK(_terminal_observer_count(auto_off, ESP_OK, false) == 1U);
+    CHECK(_terminal_observer_count(auto_on, ESP_OK, false) == 1U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
+static bool _test_scan_suspend_resume(const uint8_t saved_record[],
+                                      size_t saved_size)
+{
+    host_nv_storage_reset();
+    host_nv_storage_seed(saved_record, saved_size);
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+
+    connectivity_manager_operation_id_t scan = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan_operation(scan, true));
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+    CHECK(_wait_terminal(scan, ESP_ERR_NOT_FINISHED, true));
+    const unsigned suspended_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    suspended_connects + 1U,
+                                    TEST_TIMEOUT_MS));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, &status));
+    CHECK(status.operation_id == 0U);
+    CHECK(!status.operation_complete);
+    CHECK(_terminal_observer_count(scan, ESP_ERR_NOT_FINISHED, true) == 1U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
+static bool _test_invalid_profile_record(const uint8_t record[], size_t size)
+{
+    host_nv_storage_reset();
+    host_nv_storage_seed(record, size);
+    const unsigned connect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               &status));
+    CHECK(!status.saved_profile);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connect_before);
+    CHECK(host_nv_storage_erase_count() == 0U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    uint8_t retained[256];
+    size_t retained_size = 0U;
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == size);
+    CHECK(memcmp(retained, record, size) == 0);
+    return true;
+}
+
+static bool _test_invalid_profile(const uint8_t saved_record[],
+                                  size_t saved_size)
+{
+    connectivity_manager_status_snapshot_t status;
+    enum
+    {
+        PROFILE_VERSION_OFFSET = 4U,
+        PROFILE_RESERVED_OFFSET = 10U,
+        PROFILE_SSID_OFFSET = 12U,
+        PROFILE_PASSWORD_OFFSET = 44U,
+        PROFILE_TRAILING_RESERVED_OFFSET = 108U,
+    };
+    uint8_t corrupted[256];
+    CHECK(saved_size == 112U);
+    CHECK(saved_size <= sizeof(corrupted));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_VERSION_OFFSET] ^= UINT8_C(0x7f);
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_SSID_OFFSET] = 0U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_PASSWORD_OFFSET] = 0U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_RESERVED_OFFSET] = 1U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_TRAILING_RESERVED_OFFSET] = 1U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    host_nv_storage_seed(saved_record, saved_size - 1U);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               &status));
+    CHECK(!status.saved_profile);
+    size_t retained_size = 0U;
+    CHECK(host_nv_storage_copy(NULL, 0U, &retained_size));
+    CHECK(retained_size == saved_size - 1U);
+    CHECK(host_nv_storage_erase_count() == 0U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
+static bool _test_manager_deinit_retry(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    host_wifi_port_gate(HOST_WIFI_PORT_DEINIT, true);
+    CHECK(connectivity_manager_deinit(20U) == ESP_ERR_TIMEOUT);
+    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_DEINIT, TEST_TIMEOUT_MS));
+    connectivity_manager_operation_id_t operation_id = 0U;
+    CHECK(connectivity_manager_request_scan(&operation_id) ==
+          ESP_ERR_INVALID_STATE);
+    CHECK(operation_id == 0U);
+    host_wifi_port_release_gate(HOST_WIFI_PORT_DEINIT);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    host_wifi_port_fail_next(HOST_WIFI_PORT_DEINIT, 1U, ESP_FAIL);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_FAIL);
+    CHECK(connectivity_manager_request_scan(&operation_id) ==
+          ESP_ERR_INVALID_STATE);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
+static bool _test_manager_deinit_terminal(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t connect = 0U;
+    CHECK(_request_personal_connect("Deinit AP", "password1", &connect));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(_wait_terminal(connect, ESP_ERR_NOT_FINISHED, false));
+    CHECK(_terminal_observer_count(connect, ESP_ERR_NOT_FINISHED, false) ==
+          1U);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    CHECK(wifi_service_test_credentials_are_zero());
+    return true;
+}
+
+static bool _test_manager_init_resource_failures(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    const unsigned live_semaphores = host_freertos_live_semaphores();
+    const unsigned live_queues = host_freertos_live_queues();
+    const unsigned live_tasks = host_freertos_live_tasks();
+    const unsigned init_calls =
+        host_wifi_port_call_count(HOST_WIFI_PORT_INIT);
+
+    connectivity_manager_config_t invalid = s_manager_config;
+    invalid.task_priority = configMAX_PRIORITIES;
+    CHECK(connectivity_manager_init(&invalid) == ESP_ERR_INVALID_ARG);
+    invalid = s_manager_config;
+    invalid.wifi_task_priority = configMAX_PRIORITIES;
+    CHECK(connectivity_manager_init(&invalid) == ESP_ERR_INVALID_ARG);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_INIT) == init_calls);
+    CHECK(host_freertos_live_semaphores() == live_semaphores);
+    CHECK(host_freertos_live_queues() == live_queues);
+    CHECK(host_freertos_live_tasks() == live_tasks);
+
+    host_freertos_fail_semaphore_create_after(1U);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_ERR_NO_MEM);
+    CHECK(host_freertos_live_semaphores() == live_semaphores);
+    CHECK(host_freertos_live_queues() == live_queues);
+    CHECK(host_freertos_live_tasks() == live_tasks);
+
+    host_freertos_reset_controls();
+    host_freertos_fail_next_queue_creates(1U);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_ERR_NO_MEM);
+    CHECK(host_freertos_live_semaphores() == live_semaphores);
+    CHECK(host_freertos_live_queues() == live_queues);
+    CHECK(host_freertos_live_tasks() == live_tasks);
+
+    host_freertos_reset_controls();
+    host_freertos_fail_next_task_creates(1U);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_ERR_NO_MEM);
+    CHECK(host_freertos_live_semaphores() == live_semaphores);
+    CHECK(host_freertos_live_queues() == live_queues);
+    CHECK(host_freertos_live_tasks() == live_tasks);
+    host_freertos_reset_controls();
+    return true;
+}
+
+static bool _test_queue_overflow(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    host_freertos_defer_queue_delivery(true);
+    CHECK(host_freertos_wait_queue_delivery_deferred(TEST_TIMEOUT_MS));
+    for (unsigned attempt = 0U; attempt < 50U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    for (size_t index = 0U;
+            index < CONFIG_CONNECTIVITY_MANAGER_QUEUE_DEPTH; ++index)
+    {
+        connectivity_manager_operation_id_t operation_id = 0U;
+        CHECK(connectivity_manager_request_scan(&operation_id) == ESP_OK);
+        CHECK(operation_id != 0U);
+    }
+    connectivity_manager_operation_id_t rejected_operation_id = 0U;
+    CHECK(connectivity_manager_request_scan(&rejected_operation_id) ==
+          ESP_ERR_NO_MEM);
+    CHECK(rejected_operation_id == 0U);
+    host_freertos_defer_queue_delivery(false);
+    CHECK(host_freertos_wait_queues_empty(TEST_TIMEOUT_MS));
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    host_freertos_defer_queue_delivery(true);
+    CHECK(host_freertos_wait_queue_delivery_deferred(TEST_TIMEOUT_MS));
+    for (unsigned attempt = 0U; attempt < 50U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    for (size_t index = 0U; index < CONFIG_WIFI_SERVICE_QUEUE_DEPTH; ++index)
+    {
+        CHECK(_submit_event_with_epoch(
+                  WIFI_SERVICE_PORT_EVENT_LOST_IP,
+                  host_wifi_port_epoch()) == ESP_OK);
+    }
+    CHECK(_submit_event_with_epoch(
+              WIFI_SERVICE_PORT_EVENT_LOST_IP,
+              host_wifi_port_epoch()) == ESP_ERR_NO_MEM);
+    host_freertos_defer_queue_delivery(false);
+    CHECK(_wait_wifi_service_error(ESP_ERR_NO_MEM));
+    CHECK(wifi_service_test_credentials_are_zero());
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
+static void *_release_binary_give(void *argument)
+{
+    (void)argument;
+    for (unsigned attempt = 0U; attempt < 10U; ++attempt)
+    {
+        _sleep_one_ms();
+    }
+    host_freertos_release_binary_give();
+    return NULL;
+}
+
+static bool _test_control_completion_generation(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    host_wifi_port_fail_next(HOST_WIFI_PORT_INIT, 1U, ESP_FAIL);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_OFFLINE,
+                               CONNECTIVITY_MANAGER_FAILURE_RADIO_UNAVAILABLE,
+                               NULL));
+
+    host_freertos_block_next_binary_give();
+    CHECK(connectivity_manager_suspend(20U) == ESP_ERR_TIMEOUT);
+    CHECK(host_freertos_wait_binary_give_blocked(TEST_TIMEOUT_MS));
+    pthread_t releaser;
+    CHECK(pthread_create(&releaser, NULL,
+                         _release_binary_give, NULL) == 0);
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(pthread_join(releaser, NULL) == 0);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    host_freertos_reset_controls();
     return true;
 }
 
 static bool _run_pipeline(void)
 {
-    observer_t observer_a;
-    observer_t observer_b;
-    observer_t observer_c;
-    setup_wifi_adapter_t adapter_a = {0};
-    setup_wifi_adapter_t adapter_b = {0};
-    setup_wifi_adapter_t adapter_c = {0};
-    _observer_init(&observer_a);
-    _observer_init(&observer_b);
-    _observer_init(&observer_c);
-
     host_freertos_reset_controls();
     host_wifi_port_reset();
+    host_nv_storage_reset();
     CHECK(app_manager_mailbox_init() == ESP_OK);
     CHECK(event_bus_init() == ESP_OK);
+    event_bus_sub_handle_t status_terminal_subscription =
+        EVENT_BUS_SUB_HANDLE_INVALID;
+    event_bus_sub_handle_t scan_terminal_subscription =
+        EVENT_BUS_SUB_HANDLE_INVALID;
+    CHECK(event_bus_subscribe(
+              CONNECTIVITY_MANAGER_MSG,
+              CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+              _terminal_status_event, NULL, EVENT_BUS_DISPATCH_PUBLISHER,
+              &status_terminal_subscription) == ESP_OK);
+    CHECK(event_bus_subscribe(
+              CONNECTIVITY_MANAGER_MSG,
+              CONNECTIVITY_MANAGER_MSG_SUB_TYPE_SCAN_SNAPSHOT,
+              _terminal_scan_event, NULL, EVENT_BUS_DISPATCH_PUBLISHER,
+              &scan_terminal_subscription) == ESP_OK);
     app_manager_ui_dispatch_fn dispatcher = NULL;
     CHECK(app_manager_get_ui_dispatch_fn(&dispatcher) == ESP_OK);
     CHECK(dispatcher != NULL);
     CHECK(event_bus_register_ui_dispatch(dispatcher) == ESP_OK);
     CHECK(_run_on_ui(_ui_capture_worker, NULL));
-    CHECK(wifi_service_init(&s_wifi_config) == ESP_OK);
-    CHECK(wifi_service_init(&s_wifi_config) == ESP_OK);
-    wifi_service_config_t different_config = s_wifi_config;
-    ++different_config.task_priority;
-    CHECK(wifi_service_init(&different_config) == ESP_ERR_INVALID_STATE);
-    CHECK(_wait_status(WIFI_SERVICE_STATE_IDLE, NULL));
 
-    open_args_t open_a =
-    {
-        .adapter = &adapter_a,
-        .observer = &observer_a,
-    };
-    CHECK(_run_on_ui(_ui_open_adapter, &open_a));
-    CHECK(_wait_observer_status(&observer_a, WIFI_SERVICE_STATE_IDLE, 1U));
-    CHECK(_observer_identity_ok(&observer_a));
-    CHECK(_run_scan(&adapter_a, &observer_a, "Initial AP", 1U));
-    wifi_service_scan_snapshot_t delivered_scan;
-    CHECK(_observer_copy_scan(&observer_a, &delivered_scan));
-    CHECK(strcmp(delivered_scan.records[0].ssid, "Initial AP") == 0);
-    CHECK(_observer_identity_ok(&observer_a));
+    CHECK(_test_manager_init_resource_failures());
+    CHECK(_test_operation_arbitration());
+    uint8_t saved_record[256];
+    size_t saved_size = 0U;
+    CHECK(_test_foreground_and_persistence(saved_record, &saved_size));
+    CHECK(_test_scan_resume_guards(saved_record, saved_size));
+    CHECK(_test_scan_suspend_resume(saved_record, saved_size));
+    CHECK(_test_boot_retry_timeouts(saved_record, saved_size));
+    CHECK(_test_active_radio_failure_terminal(saved_record, saved_size));
+    CHECK(_test_invalid_profile(saved_record, saved_size));
+    CHECK(_test_manager_deinit_terminal());
+    CHECK(_test_manager_deinit_retry());
+    CHECK(_test_queue_overflow());
+    CHECK(_test_control_completion_generation());
 
-    const unsigned stale_running = _observer_scan_state_count(
-                                       &observer_a,
-                                       WIFI_SERVICE_SCAN_RUNNING);
-    CHECK(_run_on_ui(_ui_scan, &adapter_a));
-    CHECK(_wait_observer_scan(&observer_a, WIFI_SERVICE_SCAN_RUNNING,
-                              stale_running + 1U));
-    adapter_query_t old_query;
-    CHECK(_query_adapter(&adapter_a, &old_query));
-    CHECK(old_query.session_id != 0 && old_query.operation_id != 0);
-    host_wifi_port_gate(HOST_WIFI_PORT_SCAN_ABORT, true);
-    CHECK(_run_on_ui(_ui_close_adapter, &adapter_a));
-    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_SCAN_ABORT,
-                                   TEST_TIMEOUT_MS));
-
-    open_args_t open_b =
-    {
-        .adapter = &adapter_b,
-        .observer = &observer_b,
-    };
-    CHECK(_run_on_ui(_ui_open_adapter, &open_b));
-    adapter_query_t new_query;
-    CHECK(_query_adapter(&adapter_b, &new_query));
-    CHECK(new_query.session_id != 0 &&
-          new_query.session_id != old_query.session_id);
-    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE, 0) == ESP_OK);
-    host_wifi_port_release_gate(HOST_WIFI_PORT_SCAN_ABORT);
-    wifi_service_scan_snapshot_t canceled_scan;
-    CHECK(_wait_scan(WIFI_SERVICE_SCAN_CANCELED, &canceled_scan));
-    CHECK(canceled_scan.session_id == old_query.session_id);
-    CHECK(canceled_scan.operation_id == old_query.operation_id);
-    CHECK(_wait_status(WIFI_SERVICE_STATE_IDLE, NULL));
-    CHECK(_run_on_ui(_ui_barrier, NULL));
-    CHECK(_observer_scan_state_count(&observer_b,
-                                     WIFI_SERVICE_SCAN_CANCELED) == 0U);
-    CHECK(_observer_scan_state_count(&observer_b,
-                                     WIFI_SERVICE_SCAN_RESULTS) == 0U);
-    CHECK(_run_scan(&adapter_b, &observer_b, "Current AP", 1U));
-
-    char ssid[WIFI_SERVICE_SSID_MAX_BYTES + 1U];
-    uint8_t password[WIFI_SERVICE_PASSWORD_MAX_BYTES];
-    memset(ssid, 0, sizeof(ssid));
-    memcpy(ssid, "Current AP", sizeof("Current AP") - 1U);
-    memset(password, 0, sizeof(password));
-    memcpy(password, "password1", sizeof("password1") - 1U);
-    connect_args_t connect =
-    {
-        .adapter = &adapter_b,
-        .ssid = ssid,
-        .ssid_length = sizeof("Current AP") - 1U,
-        .security = WIFI_SERVICE_SECURITY_PERSONAL,
-        .password = password,
-        .password_length = sizeof("password1") - 1U,
-    };
-    CHECK(_run_on_ui(_ui_connect, &connect));
-    for (size_t index = 0; index < sizeof(password); ++index)
-    {
-        CHECK(password[index] == 0);
-    }
-    memset(ssid, 'X', sizeof(ssid));
-    CHECK(_query_adapter(&adapter_b, &new_query));
-    CHECK(new_query.operation_kind == SETUP_WIFI_OPERATION_CONNECT);
-    CHECK(_wait_status(WIFI_SERVICE_STATE_CONNECTING, NULL));
-    CHECK(_wait_observer_status(&observer_b, WIFI_SERVICE_STATE_CONNECTING, 1U));
-    wifi_service_port_credentials_t driver_credentials;
-    CHECK(host_wifi_port_last_credentials(&driver_credentials));
-    CHECK(driver_credentials.ssid_length == sizeof("Current AP") - 1U);
-    CHECK(memcmp(driver_credentials.ssid, "Current AP",
-                 driver_credentials.ssid_length) == 0);
-    CHECK(driver_credentials.password_length == sizeof("password1") - 1U);
-    CHECK(memcmp(driver_credentials.password, "password1",
-                 driver_credentials.password_length) == 0);
-
-    const unsigned waiting_before = _observer_status_state_count(
-                                        &observer_b,
-                                        WIFI_SERVICE_STATE_WAITING_IP);
-    const unsigned ready_before = _observer_status_state_count(
-                                      &observer_b,
-                                      WIFI_SERVICE_STATE_IP_READY);
-    CHECK(_fill_mailbox());
-    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_CONNECTED, 0) == ESP_OK);
-    wifi_service_status_snapshot_t cached_waiting;
-    CHECK(_wait_status(WIFI_SERVICE_STATE_WAITING_IP, &cached_waiting));
-    CHECK(cached_waiting.session_id == new_query.session_id);
-    CHECK(cached_waiting.operation_id == new_query.operation_id);
-    const uint32_t ipv4 = UINT32_C(0x0102a8c0);
-    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_GOT_IP, ipv4) == ESP_OK);
-    wifi_service_status_snapshot_t cached_ready;
-    CHECK(_wait_status(WIFI_SERVICE_STATE_IP_READY, &cached_ready));
-    CHECK(cached_ready.generation != cached_waiting.generation);
-    for (unsigned attempt = 0; attempt < 20U; ++attempt)
-    {
-        _sleep_one_ms();
-    }
-    CHECK(_observer_status_state_count(&observer_b,
-                                       WIFI_SERVICE_STATE_WAITING_IP) ==
-          waiting_before);
-    CHECK(_observer_status_state_count(&observer_b,
-                                       WIFI_SERVICE_STATE_IP_READY) ==
-          ready_before);
-    CHECK(_drain_full_mailbox());
-    CHECK(_wait_observer_status(&observer_b, WIFI_SERVICE_STATE_IP_READY,
-                                ready_before + 1U));
-    CHECK(_observer_status_state_count(&observer_b,
-                                       WIFI_SERVICE_STATE_WAITING_IP) ==
-          waiting_before);
-    wifi_service_status_snapshot_t delivered_ready;
-    setup_wifi_status_scope_t delivered_scope;
-    setup_wifi_operation_kind_t delivered_kind;
-    CHECK(_observer_copy_status(&observer_b, &delivered_ready,
-                                &delivered_scope, &delivered_kind));
-    CHECK(delivered_ready.generation == cached_ready.generation);
-    CHECK(delivered_ready.session_id == new_query.session_id);
-    CHECK(delivered_ready.operation_id == new_query.operation_id);
-    CHECK(delivered_ready.ipv4_address == ipv4);
-    CHECK(delivered_scope == SETUP_WIFI_STATUS_OPERATION);
-    CHECK(delivered_kind == SETUP_WIFI_OPERATION_CONNECT);
-    CHECK(_observer_status_state_count(&observer_b,
-                                       WIFI_SERVICE_STATE_IP_READY) ==
-          ready_before + 1U);
-    CHECK(_observer_identity_ok(&observer_b));
-
-    const unsigned terminal_before = _observer_scan_state_count(
-                                         &observer_b,
-                                         WIFI_SERVICE_SCAN_RESULTS);
-    _set_scan_record("Dropped On Stop", WIFI_SERVICE_SECURITY_OPEN);
-    CHECK(_run_on_ui(_ui_scan, &adapter_b));
-    CHECK(_wait_scan(WIFI_SERVICE_SCAN_RUNNING, NULL));
-    CHECK(_run_on_ui(_ui_barrier, NULL));
-    adapter_query_t stop_query;
-    CHECK(_query_adapter(&adapter_b, &stop_query));
-    CHECK(stop_query.session_id != 0 && stop_query.operation_id != 0);
-    CHECK(stop_query.operation_kind == SETUP_WIFI_OPERATION_SCAN);
-    CHECK(_fill_mailbox());
-    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE, 0) == ESP_OK);
-    wifi_service_scan_snapshot_t unadmitted_scan;
-    CHECK(_wait_scan(WIFI_SERVICE_SCAN_RESULTS, &unadmitted_scan));
-    CHECK(unadmitted_scan.session_id == stop_query.session_id);
-    CHECK(unadmitted_scan.operation_id == stop_query.operation_id);
-    for (unsigned attempt = 0; attempt < 20U; ++attempt)
-    {
-        _sleep_one_ms();
-    }
-    CHECK(_observer_scan_state_count(&observer_b,
-                                     WIFI_SERVICE_SCAN_RESULTS) ==
-          terminal_before);
-    const unsigned callbacks_before_deinit = _observer_total_count(&observer_b);
-    CHECK(wifi_service_deinit(WIFI_SERVICE_WAIT_FOREVER) == ESP_OK);
-    CHECK(!wifi_service_is_available());
-    CHECK(_drain_full_mailbox());
-    for (unsigned attempt = 0; attempt < 100U; ++attempt)
-    {
-        _sleep_one_ms();
-    }
-    CHECK(_run_on_ui(_ui_barrier, NULL));
-    CHECK(_observer_total_count(&observer_b) == callbacks_before_deinit);
-    CHECK(_run_on_ui(_ui_close_adapter, &adapter_b));
-
-    const unsigned worker_creates = host_freertos_total_task_creates();
-    CHECK(worker_creates == 1U);
-    CHECK(wifi_service_init(&different_config) == ESP_OK);
-    CHECK(host_freertos_total_task_creates() == worker_creates);
-    CHECK(_wait_status(WIFI_SERVICE_STATE_IDLE, NULL));
-    open_args_t open_c =
-    {
-        .adapter = &adapter_c,
-        .observer = &observer_c,
-    };
-    CHECK(_run_on_ui(_ui_open_adapter, &open_c));
-    adapter_query_t reinit_query;
-    CHECK(_query_adapter(&adapter_c, &reinit_query));
-    CHECK(reinit_query.session_id != 0 &&
-          reinit_query.session_id != stop_query.session_id);
-    CHECK(_wait_observer_status(&observer_c, WIFI_SERVICE_STATE_IDLE, 1U));
-    CHECK(_run_scan(&adapter_c, &observer_c, "After Reinit", 1U));
-    CHECK(_observer_copy_scan(&observer_c, &delivered_scan));
-    CHECK(strcmp(delivered_scan.records[0].ssid, "After Reinit") == 0);
-    CHECK(_observer_identity_ok(&observer_c));
-    CHECK(_run_on_ui(_ui_close_adapter, &adapter_c));
-    CHECK(wifi_service_deinit(WIFI_SERVICE_WAIT_FOREVER) == ESP_OK);
     CHECK(host_wifi_port_is_clean_snapshot());
     CHECK(!host_wifi_port_thread_violation());
     CHECK(!host_wifi_port_scan_ownership_violation());
-
+    CHECK(event_bus_unsubscribe(scan_terminal_subscription) == ESP_OK);
+    CHECK(event_bus_unsubscribe(status_terminal_subscription) == ESP_OK);
     CHECK(event_bus_unregister_ui_dispatch(dispatcher) == ESP_OK);
     CHECK(app_manager_mailbox_deinit() == ESP_OK);
-    CHECK(host_freertos_live_queues() == 1U);
-    /* WiFi retains three controls and the process event bus retains two. */
-    CHECK(host_freertos_live_semaphores() == 5U);
-    CHECK(host_freertos_live_tasks() == 1U);
-    _observer_deinit(&observer_c);
-    _observer_deinit(&observer_b);
-    _observer_deinit(&observer_a);
     return true;
 }
 
@@ -664,6 +1506,6 @@ int main(void)
     {
         return 1;
     }
-    puts("production connectivity pipeline tests passed");
+    puts("production connectivity manager pipeline tests passed");
     return 0;
 }

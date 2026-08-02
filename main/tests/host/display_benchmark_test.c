@@ -3,9 +3,9 @@
 #include "app_manager.h"
 #include "app_manager_display_diagnostics.h"
 #include "audio_service.h"
+#include "connectivity_manager.h"
 #include "display_benchmark_host_port.h"
 #include "esp_heap_caps.h"
-#include "wifi_service.h"
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -119,7 +119,7 @@ typedef enum test_report_quality
     TEST_REPORT_SNAPSHOT_FALLBACK_WITHOUT_START,
 } test_report_quality_t;
 
-EVENT_BUS_DEFINE_ID(WIFI_SERVICE_MSG);
+EVENT_BUS_DEFINE_ID(CONNECTIVITY_MANAGER_MSG);
 
 static pthread_mutex_t s_event_bus_lock = PTHREAD_MUTEX_INITIALIZER;
 static event_bus_cb_t s_wifi_event_callback;
@@ -397,8 +397,9 @@ esp_err_t event_bus_subscribe(event_bus_msg_id_t msg_id, uint32_t sub_type,
                               event_bus_dispatch_context_t context,
                               event_bus_sub_handle_t *out_handle)
 {
-    assert(msg_id == WIFI_SERVICE_MSG);
-    assert(sub_type == WIFI_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT);
+    assert(msg_id == CONNECTIVITY_MANAGER_MSG);
+    assert(sub_type ==
+           CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT);
     assert(callback != NULL);
     assert(context == EVENT_BUS_DISPATCH_PUBLISHER);
     assert(out_handle != NULL);
@@ -433,9 +434,9 @@ esp_err_t event_bus_unsubscribe(event_bus_sub_handle_t handle)
 }
 
 #if TEST_REQUIRES_TCP
-static void _publish_wifi_state(wifi_service_state_t state)
+static void _publish_wifi_state(connectivity_manager_state_t state)
 {
-    const wifi_service_status_snapshot_t snapshot =
+    const connectivity_manager_status_snapshot_t snapshot =
     {
         .state = state,
     };
@@ -444,17 +445,19 @@ static void _publish_wifi_state(wifi_service_state_t state)
     void *user_data = s_wifi_event_user_data;
     (void)pthread_mutex_unlock(&s_event_bus_lock);
     assert(callback != NULL);
-    callback(WIFI_SERVICE_MSG,
-             WIFI_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+    callback(CONNECTIVITY_MANAGER_MSG,
+             CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
              &snapshot, sizeof(snapshot), user_data);
 }
 #endif
 
-esp_err_t wifi_service_get_status(wifi_service_status_snapshot_t *snapshot)
+esp_err_t connectivity_manager_get_status(
+    connectivity_manager_status_snapshot_t *snapshot)
 {
     assert(snapshot != NULL);
     memset(snapshot, 0, sizeof(*snapshot));
-    snapshot->state = (wifi_service_state_t)atomic_load(&s_wifi_state);
+    snapshot->state =
+        (connectivity_manager_state_t)atomic_load(&s_wifi_state);
     return ESP_OK;
 }
 
@@ -876,7 +879,7 @@ static void _reset(void)
     atomic_store(&s_event_unsubscribe_fail_once, false);
     atomic_store(&s_event_subscribe_count, 0U);
     atomic_store(&s_event_unsubscribe_count, 0U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IDLE);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IDLE);
     atomic_store(&s_audio_fail, false);
     atomic_store(&s_audio_start_count, 0U);
     atomic_store(&s_audio_stop_count, 0U);
@@ -1003,7 +1006,7 @@ static void _test_runs_configured_load(void)
     assert(atomic_load(&s_audio_start_count) == 0U);
     assert(atomic_load(&s_diagnostics_begin_count) == 0U);
 
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
 #endif
     _wait_for_counter(&s_log_result, 1U);
     assert(display_benchmark_stop() == ESP_OK);
@@ -1120,7 +1123,7 @@ static void _test_audio_failure_cleans_up(void)
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, false, 0U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     atomic_store(&s_audio_fail, true);
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
@@ -1144,7 +1147,7 @@ static void _test_audio_failure_cleans_up(void)
 static void _test_tcp_failure_cleans_up(void)
 {
     _reset();
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     const int64_t started_us = _monotonic_us();
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
@@ -1174,7 +1177,7 @@ static void _test_tcp_reset_reconnects_without_shortening_benchmark(void)
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, true, 0U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     const int64_t started_us = _monotonic_us();
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
@@ -1207,7 +1210,7 @@ static void _test_tcp_pacing_catches_up_without_reconnect(void)
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, false, 80000U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
     assert(display_benchmark_stop() == ESP_OK);
@@ -1230,7 +1233,7 @@ static void _test_report_classification(test_report_quality_t quality,
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, false, 0U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     atomic_store(&s_report_quality, quality);
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
@@ -1256,12 +1259,12 @@ static void _test_wifi_disconnect_marks_stability_without_shortening(void)
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, false, 0U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     const int64_t started_us = _monotonic_us();
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_navigation_count, 5U);
-    _publish_wifi_state(WIFI_SERVICE_STATE_IDLE);
-    _publish_wifi_state(WIFI_SERVICE_STATE_IP_READY);
+    _publish_wifi_state(CONNECTIVITY_MANAGER_STATE_IDLE);
+    _publish_wifi_state(CONNECTIVITY_MANAGER_STATE_IP_READY);
     _wait_for_counter(&s_log_result, 1U);
     assert(_monotonic_us() - started_us >= TEST_BENCHMARK_TOTAL_US);
     assert(display_benchmark_stop() == ESP_OK);
@@ -1298,7 +1301,7 @@ static void _test_presentation_wait_failure_cleans_up(void)
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, false, 0U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     atomic_store(&s_presentation_wait_result, ESP_ERR_TIMEOUT);
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
@@ -1316,7 +1319,7 @@ static void _test_presentation_wait_failure_cleans_up(void)
 static void _test_tcp_worker_create_failure_fails_rate(void)
 {
     _reset();
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     display_benchmark_host_port_fail_create_on(1U + TEST_REQUIRES_AUDIO);
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&s_log_result, 1U);
@@ -1359,7 +1362,7 @@ static void _test_stop_while_tcp_connected(void)
     _reset();
     echo_server_t server;
     _echo_server_start(&server, false, false, 50000U);
-    atomic_store(&s_wifi_state, WIFI_SERVICE_STATE_IP_READY);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
     assert(display_benchmark_start() == ESP_OK);
     _wait_for_counter(&server.connection_count, 1U);
     assert(display_benchmark_stop() == ESP_OK);

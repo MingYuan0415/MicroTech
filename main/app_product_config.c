@@ -7,6 +7,7 @@
 #define APP_PRODUCT_APP_CONTROL_TASK_PRIORITY 5U
 #define APP_PRODUCT_TIME_TASK_PRIORITY        4U
 #define APP_PRODUCT_POWER_TASK_PRIORITY       4U
+#define APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY 4U
 #define APP_PRODUCT_WIFI_TASK_PRIORITY        4U
 
 #define APP_PRODUCT_PRIORITY_VALID(priority) \
@@ -22,6 +23,9 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_TIME_TASK_PRIORITY),
                "invalid product time task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_POWER_TASK_PRIORITY),
                "invalid product power task priority");
+_Static_assert(APP_PRODUCT_PRIORITY_VALID(
+                   APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY),
+               "invalid product connectivity task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WIFI_TASK_PRIORITY),
                "invalid product Wi-Fi task priority");
 
@@ -57,8 +61,9 @@ static const app_product_config_t s_product_config =
         .sntp_server = "pool.ntp.org",
         .task_priority = APP_PRODUCT_TIME_TASK_PRIORITY,
     },
-    .wifi = {
-        .task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,
+    .connectivity = {
+        .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,
+        .wifi_task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,
     },
     .system_pm_task_priority = APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY,
     .app_control_task_priority = APP_PRODUCT_APP_CONTROL_TASK_PRIORITY,

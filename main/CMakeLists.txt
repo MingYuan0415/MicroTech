@@ -22,7 +22,7 @@ idf_component_register(
         imu_service
         audio_service
         sd_storage_service
-        wifi_service
+        connectivity_manager
         ble_service
         app_core
         app_theme

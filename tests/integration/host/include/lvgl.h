@@ -227,6 +227,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SIZE_CONTENT               (-1)
 #define LV_RADIUS_CIRCLE              32767
 #define LV_STATE_PRESSED              1
+#define LV_STATE_CHECKED              (1U << 5)
 #define LV_STATE_DISABLED             (1U << 7)
 #define LV_TEXT_ALIGN_CENTER          0
 #define LV_TEXT_ALIGN_RIGHT           1
@@ -243,6 +244,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_HOME      "home"
 #define LV_SYMBOL_LEFT      "left"
 #define LV_SYMBOL_LIST      "list"
+#define LV_SYMBOL_LOOP      "loop"
 #define LV_SYMBOL_MUTE      "mute"
 #define LV_SYMBOL_OK        "ok"
 #define LV_SYMBOL_PLAY      "play"
@@ -253,6 +255,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_SD_CARD   "sd-card"
 #define LV_SYMBOL_SETTINGS  "settings"
 #define LV_SYMBOL_STOP      "stop"
+#define LV_SYMBOL_TRASH     "trash"
 #define LV_SYMBOL_VOLUME_MAX "volume-max"
 #define LV_SYMBOL_WARNING   "warning"
 #define LV_SYMBOL_WIFI      "wifi"
@@ -288,6 +291,8 @@ lv_obj_t *lv_button_create(lv_obj_t *parent);
 lv_obj_t *lv_label_create(lv_obj_t *parent);
 /** @brief Create a fake slider. */
 lv_obj_t *lv_slider_create(lv_obj_t *parent);
+/** @brief Create a fake Switch object. */
+lv_obj_t *lv_switch_create(lv_obj_t *parent);
 /** @brief Create a fake progress bar. */
 lv_obj_t *lv_bar_create(lv_obj_t *parent);
 /** @brief Create a fake Canvas. */

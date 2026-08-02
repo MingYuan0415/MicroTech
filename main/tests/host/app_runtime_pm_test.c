@@ -2,12 +2,12 @@
 
 #include "app_manager.h"
 #include "audio_service.h"
+#include "connectivity_manager.h"
 #include "bsp_hal.h"
 #include "imu_service.h"
 #include "power_service.h"
 #include "system_pm.h"
 #include "time_service.h"
-#include "wifi_service.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -252,7 +252,7 @@ static system_pm_config_t _test_build_config(bool wifi_participant,
     assert(config.complete_sleep != NULL);
     assert(config.sleep_hook_context != NULL);
     assert(config.prepare_timeout_ms == TEST_SLEEP_TIMEOUT_MS);
-    app_runtime_pm_set_wifi_participant(wifi_participant);
+    app_runtime_pm_set_connectivity_participant(wifi_participant);
     app_runtime_pm_set_imu_participant(imu_participant);
     app_runtime_pm_set_audio_participant(audio_participant);
     app_runtime_pm_set_time_participant(time_participant);
@@ -376,13 +376,13 @@ esp_err_t system_pm_cancel_standby(void)
     return _test_scripted_call(TEST_CALL_SYSTEM_CANCEL);
 }
 
-esp_err_t wifi_service_suspend(uint32_t timeout_ms)
+esp_err_t connectivity_manager_suspend(uint32_t timeout_ms)
 {
     assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
     return _test_scripted_call(TEST_CALL_WIFI_SUSPEND);
 }
 
-esp_err_t wifi_service_resume(uint32_t timeout_ms)
+esp_err_t connectivity_manager_resume(uint32_t timeout_ms)
 {
     assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
     return _test_scripted_call(TEST_CALL_WIFI_RESUME);

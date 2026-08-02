@@ -11,7 +11,7 @@
 #include "app_theme.h"
 #include "event_bus.h"
 #include "host_freertos.h"
-#include "host_wifi_service.h"
+#include "host_connectivity_manager.h"
 #include "power_service.h"
 #include <assert.h>
 #include <stdatomic.h>
@@ -99,7 +99,7 @@ typedef struct first_frame_probe
 
 typedef struct queued_scan_pause_request
 {
-    wifi_service_scan_snapshot_t snapshot;
+    connectivity_manager_scan_snapshot_t snapshot;
     event_bus_sub_handle_t probe_subscription;
 } queued_scan_pause_request_t;
 
@@ -452,17 +452,17 @@ static void _queued_scan_probe_callback(event_bus_msg_id_t msg_id,
                                         size_t payload_size, void *user_data)
 {
     (void)user_data;
-    assert(msg_id == WIFI_SERVICE_MSG);
-    assert(sub_type == WIFI_SERVICE_MSG_SUB_TYPE_SCAN_SNAPSHOT);
+    assert(msg_id == CONNECTIVITY_MANAGER_MSG);
+    assert(sub_type == CONNECTIVITY_MANAGER_MSG_SUB_TYPE_SCAN_SNAPSHOT);
     assert(payload != NULL);
-    assert(payload_size == sizeof(wifi_service_scan_snapshot_t));
+    assert(payload_size == sizeof(connectivity_manager_scan_snapshot_t));
     atomic_fetch_add(&s_queued_scan_probe_count, 1U);
 }
 
 static esp_err_t _publish_scan_and_pause_on_ui(void *arg)
 {
     queued_scan_pause_request_t *request = arg;
-    esp_err_t result = host_wifi_service_publish_raw_scan(
+    esp_err_t result = host_connectivity_manager_publish_raw_scan(
                            &request->snapshot, sizeof(request->snapshot));
     if (result != ESP_OK)
     {
@@ -1341,7 +1341,7 @@ static void _test_real_app_navigation(void)
         if (strcmp(demo_pages[index].page_id, "clock") == 0)
         {
             assert(_wait_for_time_alarm_state(false));
-            assert(_wait_for_time_sync_state(false));
+            assert(_wait_for_time_sync_state(true));
         }
         else if (strcmp(demo_pages[index].page_id, "audio") == 0)
         {
@@ -1402,14 +1402,11 @@ static void _test_real_app_navigation(void)
     assert(app_manager_is_page_present(APP_MANAGER_ID_MENU, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETUP, "root"));
-    assert(host_wifi_service_current_session() != 0);
-    assert(host_wifi_service_current_operation() != 0);
+    assert(host_connectivity_manager_current_operation() != 0U);
 
-    wifi_service_scan_snapshot_t scan =
+    connectivity_manager_scan_snapshot_t scan =
     {
-        .session_id = host_wifi_service_current_session(),
-        .operation_id = host_wifi_service_current_operation(),
-        .state = WIFI_SERVICE_SCAN_RESULTS,
+        .operation_id = host_connectivity_manager_current_operation(),
         .last_error = ESP_OK,
         .record_count = 1,
     };
@@ -1417,30 +1414,55 @@ static void _test_real_app_navigation(void)
            sizeof("Cross Layer AP"));
     scan.records[0].rssi = -45;
     scan.records[0].channel = 6;
-    scan.records[0].security = WIFI_SERVICE_SECURITY_OPEN;
-    assert(host_wifi_service_publish_scan(&scan) == ESP_OK);
+    scan.records[0].security = CONNECTIVITY_MANAGER_SECURITY_OPEN;
+    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
     assert(_wait_for_text("选择网络"));
     _click_action("Cross Layer AP");
-    wifi_service_status_snapshot_t ready =
+    connectivity_manager_status_snapshot_t canceled =
     {
-        .session_id = host_wifi_service_current_session(),
-        .operation_id = host_wifi_service_current_operation(),
-        .state = WIFI_SERVICE_STATE_IP_READY,
+        .operation_id = host_connectivity_manager_current_operation(),
+        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
+        .last_error = ESP_ERR_NOT_FINISHED,
+        .available = true,
+        .radio_available = true,
+        .auto_connect = true,
+        .operation_complete = true,
+    };
+    memcpy(canceled.ssid, "Cross Layer AP", sizeof("Cross Layer AP"));
+    assert(host_connectivity_manager_publish_status(&canceled) == ESP_OK);
+    assert(_wait_for_text("连接已取消"));
+
+    _click_action("扫描网络");
+    scan.operation_id = host_connectivity_manager_current_operation();
+    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
+    assert(_wait_for_text("选择网络"));
+    _click_action("Cross Layer AP");
+    connectivity_manager_status_snapshot_t ready =
+    {
+        .operation_id = host_connectivity_manager_current_operation(),
+        .state = CONNECTIVITY_MANAGER_STATE_IP_READY,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .last_error = ESP_OK,
         .ipv4_address = UINT32_C(0x0100000a),
         .available = true,
-        .desired_connected = true,
+        .radio_available = true,
+        .saved_profile = true,
+        .profile_persisted = true,
+        .auto_connect = true,
+        .operation_complete = true,
     };
     memcpy(ready.ssid, "Cross Layer AP", sizeof("Cross Layer AP"));
-    assert(host_wifi_service_publish_status(&ready) == ESP_OK);
+    assert(host_connectivity_manager_publish_status(&ready) == ESP_OK);
     assert(_wait_for_text("已连接"));
 
-    const unsigned disconnects = host_wifi_service_call_count(
-                                     HOST_WIFI_SERVICE_CALL_REQUEST_DISCONNECT);
+    const unsigned disconnects = host_connectivity_manager_call_count(
+                                     HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT);
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
-    assert(host_wifi_service_call_count(
-               HOST_WIFI_SERVICE_CALL_REQUEST_DISCONNECT) == disconnects);
+    assert(host_connectivity_manager_call_count(
+               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT) ==
+           disconnects);
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _click_back();
@@ -1524,10 +1546,10 @@ static void _test_latest_power_backpressure(void)
 
 static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
 {
-    const wifi_service_status_snapshot_t *snapshot = arg;
+    const connectivity_manager_status_snapshot_t *snapshot = arg;
     esp_err_t result = event_bus_publish(
-                           WIFI_SERVICE_MSG,
-                           WIFI_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+                           CONNECTIVITY_MANAGER_MSG,
+                           CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
                            snapshot, sizeof(*snapshot),
                            EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
     if (result != ESP_OK)
@@ -1551,43 +1573,45 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_wait_for_text("已连接"));
     _click_action("扫描网络");
 
-    const wifi_service_session_id_t old_session =
-        host_wifi_service_current_session();
-    const wifi_service_operation_id_t old_operation =
-        host_wifi_service_current_operation();
-    assert(old_session != 0 && old_operation != 0);
+    const connectivity_manager_operation_id_t old_operation =
+        host_connectivity_manager_current_operation();
+    assert(old_operation != 0U);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
 
     atomic_store(&s_noop_count, 0U);
     app_manager_mailbox_host_timer_pause(true);
-    wifi_service_status_snapshot_t status =
+    connectivity_manager_status_snapshot_t status =
     {
-        .state = WIFI_SERVICE_STATE_IDLE,
+        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .last_error = ESP_OK,
         .available = true,
+        .radio_available = true,
+        .auto_connect = true,
     };
-    wifi_service_scan_snapshot_t scan =
+    connectivity_manager_scan_snapshot_t scan =
     {
-        .session_id = old_session,
         .operation_id = old_operation,
-        .state = WIFI_SERVICE_SCAN_RESULTS,
         .last_error = ESP_OK,
         .record_count = 1,
+        .running = true,
     };
     scan.records[0].rssi = -50;
     scan.records[0].channel = 6;
-    scan.records[0].security = WIFI_SERVICE_SECURITY_OPEN;
+    scan.records[0].security = CONNECTIVITY_MANAGER_SECURITY_OPEN;
     for (unsigned index = 0; index < 1000U; ++index)
     {
         status.last_error = (int32_t)index;
         (void)snprintf(scan.records[0].ssid,
                        sizeof(scan.records[0].ssid),
                        "WiFi %03u", index);
-        assert(host_wifi_service_publish_status(&status) == ESP_OK);
-        assert(host_wifi_service_publish_scan(&scan) == ESP_OK);
+        assert(host_connectivity_manager_publish_status(&status) == ESP_OK);
+        assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
     }
+    scan.running = false;
+    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
 
-    for (unsigned index = 0; index < 22U; ++index)
+    for (unsigned index = 0; index < 21U; ++index)
     {
         assert(app_manager_ui_post(_noop_callback, NULL) == ESP_OK);
     }
@@ -1597,27 +1621,28 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     app_manager_mailbox_host_timer_step();
     app_manager_mailbox_host_timer_step();
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS &&
-            atomic_load(&s_noop_count) != 22U; ++attempt)
+            atomic_load(&s_noop_count) != 21U; ++attempt)
     {
         _sleep_one_ms();
     }
-    assert(atomic_load(&s_noop_count) == 22U);
+    assert(atomic_load(&s_noop_count) == 21U);
     app_manager_mailbox_host_timer_pause(false);
     assert(_ui_has_text("WiFi 999"));
 
     _click_action("WiFi 999");
-    const wifi_service_operation_id_t connect_operation =
-        host_wifi_service_current_operation();
+    const connectivity_manager_operation_id_t connect_operation =
+        host_connectivity_manager_current_operation();
     assert(connect_operation != 0);
-    wifi_service_status_snapshot_t queued =
+    connectivity_manager_status_snapshot_t queued =
     {
         .generation = UINT64_C(100000),
-        .session_id = old_session,
         .operation_id = connect_operation,
-        .state = WIFI_SERVICE_STATE_CONNECTING,
+        .state = CONNECTIVITY_MANAGER_STATE_CONNECTING,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .last_error = ESP_OK,
         .available = true,
-        .desired_connected = true,
+        .radio_available = true,
+        .auto_connect = true,
     };
     memcpy(queued.ssid, "WiFi 999", sizeof("WiFi 999"));
     assert(app_manager_ui_call(_publish_status_and_exit_setup_on_ui, &queued,
@@ -1629,35 +1654,30 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    const wifi_service_session_id_t new_session =
-        host_wifi_service_current_session();
-    const wifi_service_operation_id_t new_operation =
-        host_wifi_service_current_operation();
-    assert(new_session != 0 && new_session != old_session);
-    assert(new_operation != 0);
+    const connectivity_manager_operation_id_t new_operation =
+        host_connectivity_manager_current_operation();
+    assert(new_operation != 0U && new_operation != old_operation);
 
-    wifi_service_scan_snapshot_t stale =
+    connectivity_manager_scan_snapshot_t stale =
     {
         .generation = UINT64_C(200000),
-        .session_id = old_session,
         .operation_id = old_operation,
-        .state = WIFI_SERVICE_SCAN_RESULTS,
         .last_error = ESP_OK,
         .record_count = 1,
     };
     memcpy(stale.records[0].ssid, "Old Session AP",
            sizeof("Old Session AP"));
-    stale.records[0].security = WIFI_SERVICE_SECURITY_OPEN;
-    assert(host_wifi_service_publish_raw_scan(&stale, sizeof(stale)) == ESP_OK);
+    stale.records[0].security = CONNECTIVITY_MANAGER_SECURITY_OPEN;
+    assert(host_connectivity_manager_publish_raw_scan(
+               &stale, sizeof(stale)) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(!_ui_has_text("Old Session AP"));
     assert(_ui_has_text("正在扫描"));
 
-    scan.session_id = new_session;
     scan.operation_id = new_operation;
     memcpy(scan.records[0].ssid, "Current Session AP",
            sizeof("Current Session AP"));
-    assert(host_wifi_service_publish_scan(&scan) == ESP_OK);
+    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
     assert(_wait_for_text("Current Session AP"));
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
@@ -1669,13 +1689,14 @@ static void _test_optional_services_unavailable(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     host_optional_services_set_available(false);
-    const wifi_service_status_snapshot_t offline =
+    const connectivity_manager_status_snapshot_t offline =
     {
-        .state = WIFI_SERVICE_STATE_OFFLINE,
+        .state = CONNECTIVITY_MANAGER_STATE_OFFLINE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_RADIO_UNAVAILABLE,
         .last_error = ESP_ERR_NOT_SUPPORTED,
         .available = false,
     };
-    assert(host_wifi_service_publish_status(&offline) == ESP_OK);
+    assert(host_connectivity_manager_publish_status(&offline) == ESP_OK);
     assert(_wait_for_text_with_timers("时间不可用"));
     assert(_wait_for_text_with_timers("未挂载"));
     assert(_ui_visible_text_count("不可用") == 2U);
@@ -1717,13 +1738,16 @@ static void _test_optional_services_unavailable(void)
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     host_optional_services_set_available(true);
-    const wifi_service_status_snapshot_t idle =
+    const connectivity_manager_status_snapshot_t idle =
     {
-        .state = WIFI_SERVICE_STATE_IDLE,
+        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .last_error = ESP_OK,
         .available = true,
+        .radio_available = true,
+        .auto_connect = true,
     };
-    assert(host_wifi_service_publish_status(&idle) == ESP_OK);
+    assert(host_connectivity_manager_publish_status(&idle) == ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
@@ -1734,13 +1758,14 @@ static void _test_optional_services_unavailable(void)
            ESP_OK);
     assert(app_manager_get_running_apps() == 1U);
 
-    const wifi_service_status_snapshot_t uninitialized =
+    const connectivity_manager_status_snapshot_t uninitialized =
     {
-        .state = WIFI_SERVICE_STATE_OFFLINE,
+        .state = CONNECTIVITY_MANAGER_STATE_OFFLINE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_INTERNAL,
         .last_error = ESP_ERR_INVALID_STATE,
         .available = false,
     };
-    assert(host_wifi_service_cache_status(&uninitialized) == ESP_OK);
+    assert(host_connectivity_manager_cache_status(&uninitialized) == ESP_OK);
     assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
@@ -1749,7 +1774,7 @@ static void _test_optional_services_unavailable(void)
     assert(_wait_for_text_with_timers("不可用"));
     assert(!_ui_has_text("初始化中"));
     assert(_ui_visible_text_count("不可用") == 1U);
-    assert(host_wifi_service_publish_status(&idle) == ESP_OK);
+    assert(host_connectivity_manager_publish_status(&idle) == ESP_OK);
     assert(_wait_for_text("未连接"));
 }
 
@@ -2142,11 +2167,9 @@ static void _test_setup_screen_lifecycle(void)
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("正在扫描"));
 
-    const wifi_service_session_id_t old_session =
-        host_wifi_service_current_session();
-    const wifi_service_operation_id_t old_operation =
-        host_wifi_service_current_operation();
-    assert(old_session != 0 && old_operation != 0);
+    const connectivity_manager_operation_id_t old_operation =
+        host_connectivity_manager_current_operation();
+    assert(old_operation != 0U);
     const size_t starts_before = _lifecycle_observed(
                                      APP_MANAGER_ID_SETUP, "root",
                                      APP_MANAGER_MSG_ONSTART,
@@ -2160,9 +2183,7 @@ static void _test_setup_screen_lifecycle(void)
     {
         .snapshot = {
             .generation = UINT64_C(300000),
-            .session_id = old_session,
             .operation_id = old_operation,
-            .state = WIFI_SERVICE_SCAN_RESULTS,
             .last_error = ESP_OK,
             .record_count = 1,
         },
@@ -2170,11 +2191,12 @@ static void _test_setup_screen_lifecycle(void)
     };
     memcpy(queued_pause.snapshot.records[0].ssid, "Paused Session AP",
            sizeof("Paused Session AP"));
-    queued_pause.snapshot.records[0].security = WIFI_SERVICE_SECURITY_OPEN;
+    queued_pause.snapshot.records[0].security =
+        CONNECTIVITY_MANAGER_SECURITY_OPEN;
     atomic_store(&s_queued_scan_probe_count, 0U);
     assert(event_bus_subscribe(
-               WIFI_SERVICE_MSG,
-               WIFI_SERVICE_MSG_SUB_TYPE_SCAN_SNAPSHOT,
+               CONNECTIVITY_MANAGER_MSG,
+               CONNECTIVITY_MANAGER_MSG_SUB_TYPE_SCAN_SNAPSHOT,
                _queued_scan_probe_callback, NULL, EVENT_BUS_DISPATCH_UI,
                &queued_pause.probe_subscription) == ESP_OK);
     _assert_event_slot_headroom(3);
@@ -2183,8 +2205,7 @@ static void _test_setup_screen_lifecycle(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(queued_pause.probe_subscription ==
            EVENT_BUS_SUB_HANDLE_INVALID);
-    assert(host_wifi_service_current_session() == 0);
-    assert(host_wifi_service_current_operation() == 0);
+    assert(host_connectivity_manager_current_operation() == 0U);
     lv_resource_counts_t resources = _lv_resource_counts();
     assert(atomic_load(&s_queued_scan_probe_count) == 0U);
     assert(resources.objects == 0);
@@ -2197,12 +2218,9 @@ static void _test_setup_screen_lifecycle(void)
 
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
-    const wifi_service_session_id_t new_session =
-        host_wifi_service_current_session();
-    const wifi_service_operation_id_t new_operation =
-        host_wifi_service_current_operation();
-    assert(new_session != 0 && new_session != old_session);
-    assert(new_operation != 0 && new_operation != old_operation);
+    const connectivity_manager_operation_id_t new_operation =
+        host_connectivity_manager_current_operation();
+    assert(new_operation != 0U && new_operation != old_operation);
     assert(app_manager_is_actived(APP_MANAGER_ID_SETUP));
     assert(app_page_is_actived(APP_MANAGER_ID_SETUP, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETUP, "root"));
@@ -2222,14 +2240,44 @@ static void _test_setup_screen_lifecycle(void)
     assert(!_ui_has_text("Paused Session AP"));
     assert(_ui_has_text("正在扫描"));
 
-    wifi_service_scan_snapshot_t current = queued_pause.snapshot;
+    connectivity_manager_scan_snapshot_t current = queued_pause.snapshot;
     current.generation++;
-    current.session_id = new_session;
     current.operation_id = new_operation;
     memcpy(current.records[0].ssid, "Resumed Session AP",
            sizeof("Resumed Session AP"));
-    assert(host_wifi_service_publish_scan(&current) == ESP_OK);
+    assert(host_connectivity_manager_publish_scan(&current) == ESP_OK);
     assert(_wait_for_text("Resumed Session AP"));
+
+    const unsigned disconnects = host_connectivity_manager_call_count(
+                                     HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT);
+    connectivity_manager_status_snapshot_t retry =
+    {
+        .state = CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_LINK_LOST,
+        .last_error = ESP_FAIL,
+        .retry_delay_ms = 30000U,
+        .available = true,
+        .radio_available = true,
+        .auto_connect = true,
+    };
+    memcpy(retry.ssid, "Resumed Session AP", sizeof("Resumed Session AP"));
+    assert(host_connectivity_manager_publish_status(&retry) == ESP_OK);
+    assert(_wait_for_text("停止重试"));
+    assert(!_ui_has_text("取消"));
+    _click_action("停止重试");
+    assert(host_connectivity_manager_call_count(
+               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT) ==
+           disconnects + 1U);
+    connectivity_manager_status_snapshot_t stopped = retry;
+    stopped.operation_id = host_connectivity_manager_current_operation();
+    stopped.state = CONNECTIVITY_MANAGER_STATE_IDLE;
+    stopped.failure = CONNECTIVITY_MANAGER_FAILURE_NONE;
+    stopped.last_error = ESP_OK;
+    stopped.retry_delay_ms = 0U;
+    stopped.manual_hold = true;
+    stopped.operation_complete = true;
+    assert(host_connectivity_manager_publish_status(&stopped) == ESP_OK);
+    assert(_wait_for_text("Wi-Fi 已就绪"));
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
@@ -2527,25 +2575,21 @@ static void _test_system_edge_back_gesture(void)
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
-    const wifi_service_session_id_t session =
-        host_wifi_service_current_session();
-    const wifi_service_operation_id_t operation =
-        host_wifi_service_current_operation();
-    assert(session != 0 && operation != 0);
+    const connectivity_manager_operation_id_t operation =
+        host_connectivity_manager_current_operation();
+    assert(operation != 0U);
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 40, 300));
     assert(_touch(TOUCH_ACTION_RELEASE, 40, 300));
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    assert(host_wifi_service_current_session() == session);
-    assert(host_wifi_service_current_operation() == operation);
+    assert(host_connectivity_manager_current_operation() == operation);
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 56, 300));
     assert(_system_gesture_snapshot().arrow_visible);
     assert(_touch(TOUCH_ACTION_RELEASE, 56, 300));
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    assert(host_wifi_service_current_session() == 0);
-    assert(host_wifi_service_current_operation() == 0);
+    assert(host_connectivity_manager_current_operation() == 0U);
     assert(_system_gesture_snapshot().visible_edge_count == 0U);
 }
 

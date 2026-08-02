@@ -12,8 +12,8 @@ The five tests cover:
 - `presentation`: transition effects, completion barriers, and fast-forward.
 - `cross_layer`: Home -> Demo Center -> Motion/Audio/Storage/Clock -> Settings
   -> Setup -> Home navigation, HOME switching, page pause/resume, optional
-  service failures, and release of timers, subscriptions, workers, sessions,
-  SNTP ownership, and page-owned RTC alarms, including trigger-time automatic
+  service failures, and release of timers, subscriptions and page workers,
+  global connectivity snapshots, system SNTP continuity, and page-owned RTC alarms, including trigger-time automatic
   disarm.
 - `test_audio_demo_adapter`: low-amplitude PCM meter response, serialized
   commands, chunked tone cancellation, amplifier ownership, exact owner-side
@@ -22,13 +22,14 @@ The five tests cover:
   of colliding files, 4 KiB verification, partial-write cleanup, PSRAM
   worker-stack release, and retryable unlink failure.
 - `test_clock_demo_adapter`: ten-second alarm configuration, protection of
-  external alarms, owned SNTP/alarm release, PSRAM worker-stack release, and
-  retryable resource cleanup.
+  external alarms, immediate system SNTP restart without page-owned teardown,
+  alarm release, PSRAM worker-stack release, and retryable resource cleanup.
 
-The cross-layer test also proves that latest-only Power and Wi-Fi snapshots
-preserve mailbox headroom. Setup queues a callback immediately before exit,
-verifies teardown cancels it, reopens with a new session, rejects an old
-session snapshot, and renders the current session snapshot.
+The cross-layer test also proves that latest-only Power and connectivity
+snapshots preserve mailbox headroom. Setup queues a callback immediately
+before exit, verifies teardown cancels it, reopens, rejects an old-generation
+snapshot, and renders the current global snapshot. Closing Clock does not stop
+the system-owned periodic SNTP client.
 
 ## Run
 

@@ -15,12 +15,15 @@ set(APP_CORE "${PROJECT_ROOT}/layers/app_manager/app_core")
 set(APPS "${PROJECT_ROOT}/layers/apps")
 set(MIDDLEWARE "${PROJECT_ROOT}/layers/middleware/components")
 set(WIFI_SERVICE "${MIDDLEWARE}/wifi_service")
+set(CONNECTIVITY_MANAGER "${MIDDLEWARE}/connectivity_manager")
 
 add_executable(test_connectivity_pipeline
     test_connectivity_pipeline.c
     host/freertos_host.c
     host/host_mailbox_port.c
+    host/nv_storage_fake.c
     host/wifi_service_port_fake.c
+    "${CONNECTIVITY_MANAGER}/src/connectivity_manager.c"
     "${WIFI_SERVICE}/src/wifi_service.c"
     "${WIFI_SERVICE}/src/wifi_service_worker.c"
     "${WIFI_SERVICE}/src/wifi_service_worker_ops.c"
@@ -32,15 +35,24 @@ add_executable(test_connectivity_pipeline
 target_compile_features(test_connectivity_pipeline PRIVATE c_std_11)
 target_compile_definitions(test_connectivity_pipeline PRIVATE
     HOST_TEST=1
+    WIFI_SERVICE_TESTING=1
     WIFI_SERVICE_RETRY_DELAY_1_MS=100
     WIFI_SERVICE_RETRY_DELAY_2_MS=200
     WIFI_SERVICE_RETRY_DELAY_3_MS=400
+    WIFI_SERVICE_ASSOCIATION_TIMEOUT_MS=150
+    WIFI_SERVICE_DHCP_TIMEOUT_MS=150
+    CONNECTIVITY_MANAGER_RETRY_DELAY_1_MS=1000
+    CONNECTIVITY_MANAGER_RETRY_DELAY_2_MS=2000
+    CONNECTIVITY_MANAGER_RETRY_DELAY_3_MS=4000
+    CONNECTIVITY_MANAGER_RETRY_DELAY_MAX_MS=8000
 )
 target_include_directories(test_connectivity_pipeline PRIVATE
     host/include
+    "${CONNECTIVITY_MANAGER}/include"
     "${WIFI_SERVICE}/include"
     "${WIFI_SERVICE}/src"
     "${MIDDLEWARE}/event_bus/include"
+    "${MIDDLEWARE}/nv_storage/include"
     "${APP_CORE}/include"
     "${APP_CORE}/src"
     "${APPS}/setup_app/src"
@@ -55,6 +67,28 @@ target_compile_options(test_connectivity_pipeline PRIVATE
     -UNDEBUG
 )
 target_link_libraries(test_connectivity_pipeline PRIVATE Threads::Threads)
+
+add_executable(test_wifi_service_idf_port
+    test_wifi_service_idf_port.c
+    host/wifi_service_idf_fake.c
+    "${WIFI_SERVICE}/src/wifi_service_idf_port.c"
+)
+target_compile_features(test_wifi_service_idf_port PRIVATE c_std_11)
+target_include_directories(test_wifi_service_idf_port PRIVATE
+    host/idf/include
+    host/include
+    "${WIFI_SERVICE}/include"
+    "${WIFI_SERVICE}/src"
+    "${MIDDLEWARE}/event_bus/include"
+)
+target_compile_options(test_wifi_service_idf_port PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
+    -Wall
+    -Wextra
+    -Werror
+    -Wpedantic
+    -UNDEBUG
+)
 
 if(CONNECTIVITY_SANITIZER STREQUAL "address")
     target_compile_options(test_connectivity_pipeline PRIVATE
@@ -90,3 +124,5 @@ else()
     add_test(NAME connectivity_pipeline COMMAND test_connectivity_pipeline)
 endif()
 set_tests_properties(connectivity_pipeline PROPERTIES TIMEOUT 40)
+add_test(NAME wifi_service_idf_port COMMAND test_wifi_service_idf_port)
+set_tests_properties(wifi_service_idf_port PROPERTIES TIMEOUT 10)
