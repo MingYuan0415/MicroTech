@@ -65,9 +65,44 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         assignments = dict(re.findall(
             r"^(CONFIG_[A-Z0-9_]+)=(.+)$", defaults, re.MULTILINE
         ))
-        self.assertEqual(assignments.get("CONFIG_ESP_WIFI_NVS_ENABLED"), "y")
+        expected = {
+            "CONFIG_BT_ENABLED": "y",
+            "CONFIG_BT_NIMBLE_ENABLED": "y",
+            "CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE": "6144",
+            "CONFIG_BT_NIMBLE_ROLE_CENTRAL": "n",
+            "CONFIG_BT_NIMBLE_ROLE_PERIPHERAL": "y",
+            "CONFIG_BT_NIMBLE_ROLE_BROADCASTER": "y",
+            "CONFIG_BT_NIMBLE_ROLE_OBSERVER": "n",
+            "CONFIG_BT_NIMBLE_GATT_CLIENT": "n",
+            "CONFIG_BT_NIMBLE_GATT_SERVER": "y",
+            "CONFIG_BT_NIMBLE_SECURITY_ENABLE": "n",
+            "CONFIG_BT_NIMBLE_NVS_PERSIST": "n",
+            "CONFIG_BT_NIMBLE_MAX_CONNECTIONS": "1",
+            "CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU": "500",
+            "CONFIG_BT_CTRL_BLE_MAX_ACT": "2",
+            "CONFIG_ESP_WIFI_NVS_ENABLED": "y",
+            "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2": "y",
+            "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_PATCH_VERSION": "y",
+            "CONFIG_LWIP_SNTP_UPDATE_DELAY": "3600000",
+            "CONFIG_LV_USE_QRCODE": "y",
+            "CONFIG_PROVISIONING_SERVICE_TASK_STACK": "6144",
+        }
         self.assertEqual(
-            assignments.get("CONFIG_LWIP_SNTP_UPDATE_DELAY"), "3600000"
+            {key: assignments.get(key) for key in expected}, expected
+        )
+
+        provisioning_kconfig = (
+            self.root / "layers/middleware/components/provisioning_service/Kconfig"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(
+            provisioning_kconfig,
+            r"config PROVISIONING_SERVICE_TASK_STACK\s+"
+            r"int[^\n]*\s+default 6144\b",
+        )
+        self.assertRegex(
+            provisioning_kconfig,
+            r"config PROVISIONING_SERVICE_QUEUE_DEPTH\s+"
+            r"int[^\n]*\s+default 8\b",
         )
 
 

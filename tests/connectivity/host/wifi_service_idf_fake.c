@@ -13,6 +13,7 @@
 #include <string.h>
 
 #define HOST_EVENT_HANDLER_CAPACITY 4U
+#define HOST_SCAN_RECORD_CAPACITY   16U
 
 typedef struct host_event_handler
 {
@@ -37,6 +38,10 @@ static wifi_storage_t s_storage;
 static TickType_t s_ticks;
 static bool s_submitted_event_valid;
 static wifi_service_port_event_t s_submitted_event;
+static wifi_ap_record_t s_scan_records[HOST_SCAN_RECORD_CAPACITY];
+static size_t s_scan_record_count;
+static size_t s_scan_record_index;
+static unsigned s_scan_clear_count;
 
 esp_event_base_t WIFI_EVENT = "WIFI_EVENT";
 esp_event_base_t IP_EVENT = "IP_EVENT";
@@ -57,6 +62,10 @@ void host_wifi_idf_reset(void)
     s_ticks = 0U;
     s_submitted_event_valid = false;
     memset(&s_submitted_event, 0, sizeof(s_submitted_event));
+    memset(s_scan_records, 0, sizeof(s_scan_records));
+    s_scan_record_count = 0U;
+    s_scan_record_index = 0U;
+    s_scan_clear_count = 0U;
 }
 
 bool host_wifi_idf_init_nvs_enabled(void)
@@ -104,6 +113,27 @@ bool host_wifi_idf_emit_disconnect(uint16_t reason,
         *event = s_submitted_event;
     }
     return true;
+}
+
+void host_wifi_idf_set_scan_records(const wifi_ap_record_t *records,
+                                    size_t count)
+{
+    if (count > HOST_SCAN_RECORD_CAPACITY)
+    {
+        count = HOST_SCAN_RECORD_CAPACITY;
+    }
+    memset(s_scan_records, 0, sizeof(s_scan_records));
+    if (records != NULL && count > 0U)
+    {
+        memcpy(s_scan_records, records, count * sizeof(*records));
+    }
+    s_scan_record_count = count;
+    s_scan_record_index = 0U;
+}
+
+unsigned host_wifi_idf_scan_clear_count(void)
+{
+    return s_scan_clear_count;
 }
 
 esp_err_t esp_event_handler_instance_register(
@@ -268,6 +298,7 @@ esp_err_t esp_wifi_stop(void)
 esp_err_t esp_wifi_scan_start(const wifi_scan_config_t *config, bool block)
 {
     (void)block;
+    s_scan_record_index = 0U;
     return s_wifi_started && config != NULL ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
@@ -278,6 +309,8 @@ esp_err_t esp_wifi_scan_stop(void)
 
 esp_err_t esp_wifi_clear_ap_list(void)
 {
+    ++s_scan_clear_count;
+    s_scan_record_index = s_scan_record_count;
     return s_wifi_initialized ? ESP_OK : ESP_ERR_WIFI_NOT_INIT;
 }
 
@@ -287,7 +320,22 @@ esp_err_t esp_wifi_scan_get_ap_num(uint16_t *number)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    *number = 0U;
+    *number = (uint16_t)s_scan_record_count;
+    return ESP_OK;
+}
+
+esp_err_t esp_wifi_scan_get_ap_record(wifi_ap_record_t *record)
+{
+    if (record == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_scan_record_index >= s_scan_record_count)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    *record = s_scan_records[s_scan_record_index];
+    ++s_scan_record_index;
     return ESP_OK;
 }
 

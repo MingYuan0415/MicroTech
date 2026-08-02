@@ -9,6 +9,7 @@
 #include "connectivity_manager.h"
 #include "imu_service.h"
 #include "power_service.h"
+#include "provisioning_service.h"
 #include "time_service.h"
 
 #if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
@@ -28,10 +29,12 @@ typedef struct app_runtime_sleep_context
 {
     const bsp_input_ops_t *input;
     bool connectivity_participant;
+    bool provisioning_participant;
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
     bool connectivity_resume_required;
+    bool provisioning_resume_required;
     bool imu_resume_required;
     bool audio_resume_required;
     bool time_resume_required;
@@ -49,6 +52,11 @@ static void *s_app_input_context;
 
 static bool _app_runtime_pm_is_standby_allowed(void)
 {
+    if (s_sleep_context.provisioning_participant &&
+            provisioning_service_is_active())
+    {
+        return false;
+    }
 #if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
     return !usb_serial_jtag_is_connected();
 #else
@@ -71,7 +79,9 @@ static void _app_runtime_pm_record_first_error(esp_err_t *first_error,
 static bool _app_runtime_pm_commit_guard(uint32_t generation, void *context)
 {
     (void)context;
-    return app_manager_pm_standby_commit_guard(generation, NULL);
+    return (!s_sleep_context.provisioning_participant ||
+            !provisioning_service_is_active()) &&
+           app_manager_pm_standby_commit_guard(generation, NULL);
 }
 
 static void _app_runtime_pm_commit_callback(uint32_t generation, void *context)
@@ -261,7 +271,8 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 {
     app_runtime_sleep_context_t *sleep = context;
     esp_err_t result = ESP_OK;
-    if (sleep->connectivity_resume_required || sleep->imu_resume_required ||
+    if (sleep->provisioning_resume_required ||
+            sleep->connectivity_resume_required || sleep->imu_resume_required ||
             sleep->audio_resume_required || sleep->time_resume_required ||
             sleep->power_resume_required || sleep->input_resume_required)
     {
@@ -270,6 +281,16 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         {
             return result;
         }
+    }
+
+    if (sleep->provisioning_participant)
+    {
+        result = provisioning_service_suspend(timeout_ms);
+        if (result != ESP_OK)
+        {
+            goto rollback;
+        }
+        sleep->provisioning_resume_required = true;
     }
 
     if (sleep->connectivity_participant)
@@ -395,6 +416,15 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
         if (result == ESP_OK)
         {
             sleep->connectivity_resume_required = false;
+        }
+    }
+    if (sleep->provisioning_resume_required)
+    {
+        const esp_err_t result = provisioning_service_resume(timeout_ms);
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->provisioning_resume_required = false;
         }
     }
     return first_error;
@@ -539,6 +569,11 @@ void app_runtime_pm_clear_power(void)
 void app_runtime_pm_set_connectivity_participant(bool enabled)
 {
     s_sleep_context.connectivity_participant = enabled;
+}
+
+void app_runtime_pm_set_provisioning_participant(bool enabled)
+{
+    s_sleep_context.provisioning_participant = enabled;
 }
 
 void app_runtime_pm_set_imu_participant(bool enabled)

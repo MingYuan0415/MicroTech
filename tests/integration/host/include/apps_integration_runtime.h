@@ -64,6 +64,8 @@ lv_indev_t *host_lv_pointer_indev(void);
  * @return true when an action was clicked; false when not found.
  */
 bool host_lv_click_action(const char *title);
+/** @brief Toggle the unique visible, enabled Switch and emit its change. */
+bool host_lv_toggle_visible_switch(bool checked);
 /** @brief Click the visible back action, if present. */
 bool host_lv_click_back(void);
 /** @brief Start one pointer sequence at a logical display coordinate. */
@@ -133,6 +135,12 @@ size_t host_lv_live_object_count(void);
 size_t host_lv_live_screen_count(void);
 /** @brief Return the number of live LVGL timers. */
 size_t host_lv_live_timer_count(void);
+/** @brief Return the number of live fake QR code objects. */
+size_t host_lv_live_qrcode_count(void);
+/** @brief Return how often QR payloads were rendered. */
+unsigned host_lv_qrcode_update_count(void);
+/** @brief Return how many deleted QR objects were scrubbed first. */
+unsigned host_lv_qrcode_scrubbed_delete_count(void);
 /** @brief Mark every live LVGL timer ready and run it once. */
 void host_lv_timer_step(void);
 /** @brief Return the number of live objects below the fake system layer. */

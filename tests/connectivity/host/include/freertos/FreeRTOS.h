@@ -44,11 +44,24 @@ typedef struct host_static_task
     void *context;
     UBaseType_t priority;
     bool created;
+    bool joinable;
+    bool suspended;
+    bool delete_requested;
 } StaticTask_t;
 
 typedef StaticQueue_t *QueueHandle_t;
 typedef StaticSemaphore_t *SemaphoreHandle_t;
 typedef StaticTask_t *TaskHandle_t;
+
+typedef enum eTaskState
+{
+    eRunning = 0,
+    eReady,
+    eBlocked,
+    eSuspended,
+    eDeleted,
+    eInvalid,
+} eTaskState;
 
 #define pdTRUE  1
 #define pdFALSE 0

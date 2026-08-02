@@ -28,6 +28,7 @@ typedef enum
     HOST_LV_OBJECT_SWITCH,
     HOST_LV_OBJECT_BAR,
     HOST_LV_OBJECT_CANVAS,
+    HOST_LV_OBJECT_QRCODE,
     HOST_LV_OBJECT_IMAGE,
     HOST_LV_OBJECT_SCREEN,
     HOST_LV_OBJECT_LAYER,
@@ -67,6 +68,8 @@ struct lv_obj_t
     lv_draw_buf_t *draw_buf;
     const void *image_source;
     uint32_t invalidation_count;
+    uint32_t qrcode_data_length;
+    bool qrcode_scrubbed;
     lv_obj_flag_t flags;
     lv_state_t state;
     uint64_t z_order;
@@ -183,6 +186,8 @@ static host_lv_snapshot_allocation_call_t
 s_snapshot_allocation_calls[HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY];
 static size_t s_snapshot_allocation_call_count;
 static uint64_t s_z_order;
+static unsigned s_qrcode_update_count;
+static unsigned s_qrcode_scrubbed_delete_count;
 
 static void _host_lv_release_snapshot_allocations(void)
 {
@@ -809,6 +814,8 @@ void host_lv_reset(void)
            sizeof(s_snapshot_allocation_calls));
     s_snapshot_allocation_call_count = 0U;
     s_z_order = 0U;
+    s_qrcode_update_count = 0U;
+    s_qrcode_scrubbed_delete_count = 0U;
 }
 
 lv_indev_t *host_lv_pointer_indev(void)
@@ -970,6 +977,54 @@ lv_obj_t *lv_canvas_create(lv_obj_t *parent)
     return _host_lv_allocate_object(HOST_LV_OBJECT_CANVAS, parent);
 }
 
+lv_obj_t *lv_qrcode_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_QRCODE, parent);
+}
+
+void lv_qrcode_set_size(lv_obj_t *object, int32_t size)
+{
+    if (object != NULL && object->live &&
+            object->kind == HOST_LV_OBJECT_QRCODE)
+    {
+        object->width = size;
+        object->height = size;
+    }
+}
+
+void lv_qrcode_set_dark_color(lv_obj_t *object, lv_color_t color)
+{
+    (void)object;
+    (void)color;
+}
+
+void lv_qrcode_set_light_color(lv_obj_t *object, lv_color_t color)
+{
+    (void)object;
+    (void)color;
+}
+
+void lv_qrcode_set_quiet_zone(lv_obj_t *object, bool enabled)
+{
+    (void)object;
+    (void)enabled;
+}
+
+lv_result_t lv_qrcode_update(lv_obj_t *object, const void *data,
+                             uint32_t data_length)
+{
+    if (object == NULL || !object->live ||
+            object->kind != HOST_LV_OBJECT_QRCODE || data == NULL ||
+            data_length == 0U)
+    {
+        return LV_RESULT_INVALID;
+    }
+    object->qrcode_data_length = data_length;
+    object->qrcode_scrubbed = false;
+    ++s_qrcode_update_count;
+    return LV_RESULT_OK;
+}
+
 lv_obj_t *lv_image_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_IMAGE, parent);
@@ -986,6 +1041,21 @@ void lv_canvas_set_draw_buf(lv_obj_t *canvas, lv_draw_buf_t *draw_buf)
     canvas->draw_buf = draw_buf;
     canvas->width = (int32_t)draw_buf->header.w;
     canvas->height = (int32_t)draw_buf->header.h;
+}
+
+void lv_canvas_fill_bg(lv_obj_t *canvas, lv_color_t color, lv_opa_t opacity)
+{
+    (void)color;
+    (void)opacity;
+    if (canvas == NULL || !canvas->live)
+    {
+        return;
+    }
+    if (canvas->kind == HOST_LV_OBJECT_QRCODE)
+    {
+        canvas->qrcode_data_length = 0U;
+        canvas->qrcode_scrubbed = true;
+    }
 }
 
 void lv_image_set_src(lv_obj_t *image, const void *source)
@@ -1142,6 +1212,11 @@ void lv_obj_delete(lv_obj_t *object)
     if (object == s_active_screen)
     {
         s_active_screen = NULL;
+    }
+    if (object->kind == HOST_LV_OBJECT_QRCODE &&
+            object->qrcode_scrubbed && object->qrcode_data_length == 0U)
+    {
+        ++s_qrcode_scrubbed_delete_count;
     }
     _host_lv_delete_object(object);
 }
@@ -2553,6 +2628,42 @@ bool host_lv_click_action(const char *title)
     return false;
 }
 
+bool host_lv_toggle_visible_switch(bool checked)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *found = NULL;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        lv_obj_t *object = &s_objects[index];
+        if (object->live && _host_lv_is_visible(object) &&
+                object->kind == HOST_LV_OBJECT_SWITCH &&
+                (object->state & LV_STATE_DISABLED) == 0U)
+        {
+            if (found != NULL)
+            {
+                return false;
+            }
+            found = object;
+        }
+    }
+    if (found == NULL)
+    {
+        return false;
+    }
+    if (checked)
+    {
+        found->state |= LV_STATE_CHECKED;
+    }
+    else
+    {
+        found->state &= ~LV_STATE_CHECKED;
+    }
+    return _host_lv_emit(found, LV_EVENT_VALUE_CHANGED);
+}
+
 bool host_lv_click_back(void)
 {
     if (_host_lv_input_is_blocked())
@@ -2663,6 +2774,27 @@ size_t host_lv_live_timer_count(void)
         count += s_timers[index].live && !s_timers[index].paused ? 1U : 0U;
     }
     return count;
+}
+
+size_t host_lv_live_qrcode_count(void)
+{
+    size_t count = 0U;
+    for (size_t index = 0U; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        count += s_objects[index].live &&
+                 s_objects[index].kind == HOST_LV_OBJECT_QRCODE ? 1U : 0U;
+    }
+    return count;
+}
+
+unsigned host_lv_qrcode_update_count(void)
+{
+    return s_qrcode_update_count;
+}
+
+unsigned host_lv_qrcode_scrubbed_delete_count(void)
+{
+    return s_qrcode_scrubbed_delete_count;
 }
 
 size_t host_lv_system_object_count(void)

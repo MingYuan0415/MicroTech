@@ -12,6 +12,7 @@
 #include "event_bus.h"
 #include "host_freertos.h"
 #include "host_connectivity_manager.h"
+#include "host_provisioning_service.h"
 #include "power_service.h"
 #include <assert.h>
 #include <stdatomic.h>
@@ -33,7 +34,6 @@ extern const app_manager_app_desc_t _app_manager_apps_start[];
 extern const app_manager_app_desc_t _app_manager_apps_end[];
 
 static atomic_uint s_noop_count;
-static atomic_uint s_queued_scan_probe_count;
 static atomic_uint s_fifo_completion_count;
 static atomic_uint s_fifo_completion_order[2];
 static atomic_int s_fifo_completion_results[2];
@@ -96,12 +96,6 @@ typedef struct first_frame_probe
     bool expected_text_at_load_start;
     bool forbidden_text_at_load_start;
 } first_frame_probe_t;
-
-typedef struct queued_scan_pause_request
-{
-    connectivity_manager_scan_snapshot_t snapshot;
-    event_bus_sub_handle_t probe_subscription;
-} queued_scan_pause_request_t;
 
 static lifecycle_observation_t
 s_lifecycle_observations[LIFECYCLE_OBSERVATION_CAPACITY];
@@ -447,37 +441,6 @@ static void _subscription_probe_callback(event_bus_msg_id_t msg_id,
     (void)user_data;
 }
 
-static void _queued_scan_probe_callback(event_bus_msg_id_t msg_id,
-                                        uint32_t sub_type, const void *payload,
-                                        size_t payload_size, void *user_data)
-{
-    (void)user_data;
-    assert(msg_id == CONNECTIVITY_MANAGER_MSG);
-    assert(sub_type == CONNECTIVITY_MANAGER_MSG_SUB_TYPE_SCAN_SNAPSHOT);
-    assert(payload != NULL);
-    assert(payload_size == sizeof(connectivity_manager_scan_snapshot_t));
-    atomic_fetch_add(&s_queued_scan_probe_count, 1U);
-}
-
-static esp_err_t _publish_scan_and_pause_on_ui(void *arg)
-{
-    queued_scan_pause_request_t *request = arg;
-    esp_err_t result = host_connectivity_manager_publish_raw_scan(
-                           &request->snapshot, sizeof(request->snapshot));
-    if (result != ESP_OK)
-    {
-        return result;
-    }
-    result = event_bus_unsubscribe(request->probe_subscription);
-    if (result != ESP_OK)
-    {
-        return result;
-    }
-    request->probe_subscription = EVENT_BUS_SUB_HANDLE_INVALID;
-    app_manager_back_gesture_screen_suspend();
-    return app_manager_lifecycle_screen_pause();
-}
-
 static esp_err_t _click_action_on_ui(void *arg)
 {
     return host_lv_click_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
@@ -487,6 +450,13 @@ static esp_err_t _click_back_on_ui(void *arg)
 {
     (void)arg;
     return host_lv_click_back() ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _toggle_switch_on_ui(void *arg)
+{
+    const bool checked = *(const bool *)arg;
+    return host_lv_toggle_visible_switch(checked) ? ESP_OK :
+           ESP_ERR_NOT_FOUND;
 }
 
 typedef struct text_query
@@ -910,6 +880,12 @@ static void _click_action(const char *title)
 static void _click_back(void)
 {
     assert(app_manager_ui_call(_click_back_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _toggle_switch(bool checked)
+{
+    assert(app_manager_ui_call(_toggle_switch_on_ui, &checked,
                                UI_TIMEOUT_MS) == ESP_OK);
 }
 
@@ -1402,67 +1378,30 @@ static void _test_real_app_navigation(void)
     assert(app_manager_is_page_present(APP_MANAGER_ID_MENU, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETUP, "root"));
-    assert(host_connectivity_manager_current_operation() != 0U);
+    assert(host_connectivity_manager_current_operation() == 0U);
+    assert(_wait_for_text("手机配网"));
+    assert(!_ui_has_text("扫描网络"));
+    assert(!_ui_has_text("选择网络"));
+    assert(!_ui_has_text("输入密码"));
 
-    connectivity_manager_scan_snapshot_t scan =
-    {
-        .operation_id = host_connectivity_manager_current_operation(),
-        .last_error = ESP_OK,
-        .record_count = 1,
-    };
-    memcpy(scan.records[0].ssid, "Cross Layer AP",
-           sizeof("Cross Layer AP"));
-    scan.records[0].rssi = -45;
-    scan.records[0].channel = 6;
-    scan.records[0].security = CONNECTIVITY_MANAGER_SECURITY_OPEN;
-    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
-    assert(_wait_for_text("选择网络"));
-    _click_action("Cross Layer AP");
-    connectivity_manager_status_snapshot_t canceled =
-    {
-        .operation_id = host_connectivity_manager_current_operation(),
-        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
-        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
-        .last_error = ESP_ERR_NOT_FINISHED,
-        .available = true,
-        .radio_available = true,
-        .auto_connect = true,
-        .operation_complete = true,
-    };
-    memcpy(canceled.ssid, "Cross Layer AP", sizeof("Cross Layer AP"));
-    assert(host_connectivity_manager_publish_status(&canceled) == ESP_OK);
-    assert(_wait_for_text("连接已取消"));
+    const unsigned opens = host_provisioning_service_open_count();
+    const unsigned closes = host_provisioning_service_close_count();
+    _click_action("手机配网");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
+    assert(_wait_for_text("MT-A1B2C3"));
+    assert(_wait_for_text("等待手机连接"));
+    assert(host_provisioning_service_open_count() >= opens + 1U);
+    assert(host_lv_live_qrcode_count() == 1U);
+    assert(host_lv_qrcode_update_count() == 1U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "root"));
+    assert(host_lv_live_qrcode_count() == 0U);
+    assert(host_lv_qrcode_scrubbed_delete_count() == 1U);
+    assert(host_provisioning_service_close_count() >= closes + 1U);
+    assert(!provisioning_service_is_active());
 
-    _click_action("扫描网络");
-    scan.operation_id = host_connectivity_manager_current_operation();
-    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
-    assert(_wait_for_text("选择网络"));
-    _click_action("Cross Layer AP");
-    connectivity_manager_status_snapshot_t ready =
-    {
-        .operation_id = host_connectivity_manager_current_operation(),
-        .state = CONNECTIVITY_MANAGER_STATE_IP_READY,
-        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
-        .last_error = ESP_OK,
-        .ipv4_address = UINT32_C(0x0100000a),
-        .available = true,
-        .radio_available = true,
-        .saved_profile = true,
-        .profile_persisted = true,
-        .auto_connect = true,
-        .operation_complete = true,
-    };
-    memcpy(ready.ssid, "Cross Layer AP", sizeof("Cross Layer AP"));
-    assert(host_connectivity_manager_publish_status(&ready) == ESP_OK);
-    assert(_wait_for_text("已连接"));
-
-    const unsigned disconnects = host_connectivity_manager_call_count(
-                                     HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT);
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
-    assert(host_connectivity_manager_call_count(
-               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT) ==
-           disconnects);
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _click_back();
@@ -1567,51 +1506,87 @@ static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
 static void _test_latest_wifi_backpressure_and_reopen(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    connectivity_manager_status_snapshot_t status =
+    {
+        .state = CONNECTIVITY_MANAGER_STATE_IP_READY,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
+        .last_error = ESP_OK,
+        .ipv4_address = UINT32_C(0x0100000a),
+        .available = true,
+        .radio_available = true,
+        .saved_profile = true,
+        .profile_persisted = true,
+        .auto_connect = true,
+    };
+    memcpy(status.ssid, "Saved WiFi", sizeof("Saved WiFi"));
+    assert(host_connectivity_manager_publish_status(&status) == ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("已连接"));
-    _click_action("扫描网络");
-
-    const connectivity_manager_operation_id_t old_operation =
-        host_connectivity_manager_current_operation();
-    assert(old_operation != 0U);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
+    _click_action("断开连接");
+    connectivity_manager_operation_id_t operation =
+        host_connectivity_manager_current_operation();
+    connectivity_manager_status_snapshot_t terminal = status;
+    terminal.operation_id = operation;
+    terminal.operation_complete = true;
+    terminal.state = CONNECTIVITY_MANAGER_STATE_IDLE;
+    terminal.ipv4_address = 0U;
+    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
+    assert(_wait_for_text("已断开连接"));
+
+    _click_action("重新连接");
+    operation = host_connectivity_manager_current_operation();
+    terminal = status;
+    terminal.operation_id = operation;
+    terminal.operation_complete = true;
+    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
+    assert(_wait_for_text("已连接"));
+
+    _toggle_switch(false);
+    operation = host_connectivity_manager_current_operation();
+    terminal.operation_id = operation;
+    terminal.operation_complete = true;
+    terminal.auto_connect = false;
+    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
+    assert(_wait_for_text("自动连接已关闭"));
+
+    _toggle_switch(true);
+    operation = host_connectivity_manager_current_operation();
+    terminal.operation_id = operation;
+    terminal.operation_complete = true;
+    terminal.auto_connect = true;
+    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
+    assert(_wait_for_text("自动连接已启用"));
+
+    _click_action("忘记网络");
+    operation = host_connectivity_manager_current_operation();
+    memset(&terminal, 0, sizeof(terminal));
+    terminal.operation_id = operation;
+    terminal.operation_complete = true;
+    terminal.state = CONNECTIVITY_MANAGER_STATE_IDLE;
+    terminal.failure = CONNECTIVITY_MANAGER_FAILURE_NONE;
+    terminal.last_error = ESP_OK;
+    terminal.available = true;
+    terminal.radio_available = true;
+    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
+    assert(_wait_for_text("已忘记网络"));
+
+    assert(host_connectivity_manager_publish_status(&status) == ESP_OK);
+    assert(_wait_for_text("已连接"));
 
     atomic_store(&s_noop_count, 0U);
     app_manager_mailbox_host_timer_pause(true);
-    connectivity_manager_status_snapshot_t status =
-    {
-        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
-        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
-        .last_error = ESP_OK,
-        .available = true,
-        .radio_available = true,
-        .auto_connect = true,
-    };
-    connectivity_manager_scan_snapshot_t scan =
-    {
-        .operation_id = old_operation,
-        .last_error = ESP_OK,
-        .record_count = 1,
-        .running = true,
-    };
-    scan.records[0].rssi = -50;
-    scan.records[0].channel = 6;
-    scan.records[0].security = CONNECTIVITY_MANAGER_SECURITY_OPEN;
     for (unsigned index = 0; index < 1000U; ++index)
     {
-        status.last_error = (int32_t)index;
-        (void)snprintf(scan.records[0].ssid,
-                       sizeof(scan.records[0].ssid),
+        (void)snprintf(status.ssid, sizeof(status.ssid),
                        "WiFi %03u", index);
         assert(host_connectivity_manager_publish_status(&status) == ESP_OK);
-        assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
     }
-    scan.running = false;
-    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
 
-    for (unsigned index = 0; index < 21U; ++index)
+    for (unsigned index = 0; index < 23U; ++index)
     {
         assert(app_manager_ui_post(_noop_callback, NULL) == ESP_OK);
     }
@@ -1621,30 +1596,34 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     app_manager_mailbox_host_timer_step();
     app_manager_mailbox_host_timer_step();
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS &&
-            atomic_load(&s_noop_count) != 21U; ++attempt)
+            atomic_load(&s_noop_count) != 23U; ++attempt)
     {
         _sleep_one_ms();
     }
-    assert(atomic_load(&s_noop_count) == 21U);
+    assert(atomic_load(&s_noop_count) == 23U);
     app_manager_mailbox_host_timer_pause(false);
     assert(_ui_has_text("WiFi 999"));
 
-    _click_action("WiFi 999");
-    const connectivity_manager_operation_id_t connect_operation =
+    const unsigned disconnects = host_connectivity_manager_call_count(
+                                     HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT);
+    _click_action("断开连接");
+    const connectivity_manager_operation_id_t old_operation =
         host_connectivity_manager_current_operation();
-    assert(connect_operation != 0);
+    assert(old_operation != 0U);
+    assert(host_connectivity_manager_call_count(
+               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT) ==
+           disconnects + 1U);
     connectivity_manager_status_snapshot_t queued =
     {
         .generation = UINT64_C(100000),
-        .operation_id = connect_operation,
-        .state = CONNECTIVITY_MANAGER_STATE_CONNECTING,
+        .operation_id = old_operation,
+        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
         .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .last_error = ESP_OK,
         .available = true,
         .radio_available = true,
         .auto_connect = true,
     };
-    memcpy(queued.ssid, "WiFi 999", sizeof("WiFi 999"));
     assert(app_manager_ui_call(_publish_status_and_exit_setup_on_ui, &queued,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
@@ -1654,31 +1633,27 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    const connectivity_manager_operation_id_t new_operation =
-        host_connectivity_manager_current_operation();
-    assert(new_operation != 0U && new_operation != old_operation);
-
-    connectivity_manager_scan_snapshot_t stale =
+    assert(host_connectivity_manager_current_operation() == 0U);
+    connectivity_manager_status_snapshot_t stale =
     {
         .generation = UINT64_C(200000),
         .operation_id = old_operation,
+        .state = CONNECTIVITY_MANAGER_STATE_IDLE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .last_error = ESP_OK,
-        .record_count = 1,
+        .available = true,
+        .radio_available = true,
+        .auto_connect = true,
+        .operation_complete = true,
     };
-    memcpy(stale.records[0].ssid, "Old Session AP",
-           sizeof("Old Session AP"));
-    stale.records[0].security = CONNECTIVITY_MANAGER_SECURITY_OPEN;
-    assert(host_connectivity_manager_publish_raw_scan(
-               &stale, sizeof(stale)) == ESP_OK);
+    assert(event_bus_publish(
+               CONNECTIVITY_MANAGER_MSG,
+               CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+               &stale, sizeof(stale), 0U) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(!_ui_has_text("Old Session AP"));
-    assert(_ui_has_text("正在扫描"));
-
-    scan.operation_id = new_operation;
-    memcpy(scan.records[0].ssid, "Current Session AP",
-           sizeof("Current Session AP"));
-    assert(host_connectivity_manager_publish_scan(&scan) == ESP_OK);
-    assert(_wait_for_text("Current Session AP"));
+    assert(!_ui_has_text("操作已取消"));
+    assert(_ui_has_text("WiFi 999"));
+    assert(!_ui_has_text("扫描网络"));
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
@@ -2165,49 +2140,28 @@ static void _test_setup_screen_lifecycle(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    assert(_wait_for_text("正在扫描"));
-
-    const connectivity_manager_operation_id_t old_operation =
-        host_connectivity_manager_current_operation();
-    assert(old_operation != 0U);
+    assert(_wait_for_text("手机配网"));
+    _click_action("手机配网");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
+    assert(host_lv_live_qrcode_count() == 1U);
+    const unsigned scrubbed_before =
+        host_lv_qrcode_scrubbed_delete_count();
+    const unsigned closes_before =
+        host_provisioning_service_close_count();
     const size_t starts_before = _lifecycle_observed(
-                                     APP_MANAGER_ID_SETUP, "root",
+                                     APP_MANAGER_ID_SETUP, "provisioning",
                                      APP_MANAGER_MSG_ONSTART,
                                      APP_MANAGER_LIFECYCLE_OBSERVER_AFTER);
     const size_t resumes_before = _lifecycle_observed(
-                                      APP_MANAGER_ID_SETUP, "root",
+                                      APP_MANAGER_ID_SETUP, "provisioning",
                                       APP_MANAGER_MSG_ONRESUME,
                                       APP_MANAGER_LIFECYCLE_OBSERVER_AFTER);
 
-    queued_scan_pause_request_t queued_pause =
-    {
-        .snapshot = {
-            .generation = UINT64_C(300000),
-            .operation_id = old_operation,
-            .last_error = ESP_OK,
-            .record_count = 1,
-        },
-        .probe_subscription = EVENT_BUS_SUB_HANDLE_INVALID,
-    };
-    memcpy(queued_pause.snapshot.records[0].ssid, "Paused Session AP",
-           sizeof("Paused Session AP"));
-    queued_pause.snapshot.records[0].security =
-        CONNECTIVITY_MANAGER_SECURITY_OPEN;
-    atomic_store(&s_queued_scan_probe_count, 0U);
-    assert(event_bus_subscribe(
-               CONNECTIVITY_MANAGER_MSG,
-               CONNECTIVITY_MANAGER_MSG_SUB_TYPE_SCAN_SNAPSHOT,
-               _queued_scan_probe_callback, NULL, EVENT_BUS_DISPATCH_UI,
-               &queued_pause.probe_subscription) == ESP_OK);
-    _assert_event_slot_headroom(3);
-
-    assert(app_manager_ui_call(_publish_scan_and_pause_on_ui, &queued_pause,
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
-    assert(queued_pause.probe_subscription ==
-           EVENT_BUS_SUB_HANDLE_INVALID);
-    assert(host_connectivity_manager_current_operation() == 0U);
     lv_resource_counts_t resources = _lv_resource_counts();
-    assert(atomic_load(&s_queued_scan_probe_count) == 0U);
+    assert(host_lv_live_qrcode_count() == 0U);
+    assert(host_lv_qrcode_scrubbed_delete_count() == scrubbed_before + 1U);
     assert(resources.objects == 0);
     assert(resources.screens == 1U);
     assert(resources.timers == 0);
@@ -2218,70 +2172,57 @@ static void _test_setup_screen_lifecycle(void)
 
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
-    const connectivity_manager_operation_id_t new_operation =
-        host_connectivity_manager_current_operation();
-    assert(new_operation != 0U && new_operation != old_operation);
     assert(app_manager_is_actived(APP_MANAGER_ID_SETUP));
-    assert(app_page_is_actived(APP_MANAGER_ID_SETUP, "root"));
-    assert(app_manager_is_page_present(APP_MANAGER_ID_SETUP, "root"));
+    assert(app_page_is_actived(APP_MANAGER_ID_SETUP, "provisioning"));
+    assert(app_manager_is_page_present(APP_MANAGER_ID_SETUP,
+                                       "provisioning"));
     assert(app_manager_get_running_apps() == 2U);
     resources = _lv_resource_counts();
     assert(resources.objects > 0);
     assert(resources.screens == 2U);
     assert(resources.timers == 0);
-    _assert_event_slot_headroom(2);
+    assert(host_lv_live_qrcode_count() == 1U);
+    _assert_event_slot_headroom(1);
 
     assert(_lifecycle_observed(
-               APP_MANAGER_ID_SETUP, "root", APP_MANAGER_MSG_ONSTART,
+               APP_MANAGER_ID_SETUP, "provisioning", APP_MANAGER_MSG_ONSTART,
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == starts_before);
     assert(_lifecycle_observed(
-               APP_MANAGER_ID_SETUP, "root", APP_MANAGER_MSG_ONRESUME,
+               APP_MANAGER_ID_SETUP, "provisioning", APP_MANAGER_MSG_ONRESUME,
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == resumes_before + 1U);
-    assert(!_ui_has_text("Paused Session AP"));
-    assert(_ui_has_text("正在扫描"));
 
-    connectivity_manager_scan_snapshot_t current = queued_pause.snapshot;
-    current.generation++;
-    current.operation_id = new_operation;
-    memcpy(current.records[0].ssid, "Resumed Session AP",
-           sizeof("Resumed Session AP"));
-    assert(host_connectivity_manager_publish_scan(&current) == ESP_OK);
-    assert(_wait_for_text("Resumed Session AP"));
-
-    const unsigned disconnects = host_connectivity_manager_call_count(
-                                     HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT);
-    connectivity_manager_status_snapshot_t retry =
+    provisioning_service_status_t connected =
     {
-        .state = CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
-        .failure = CONNECTIVITY_MANAGER_FAILURE_LINK_LOST,
-        .last_error = ESP_FAIL,
-        .retry_delay_ms = 30000U,
+        .generation = UINT64_C(300000),
+        .state = PROVISIONING_SERVICE_STATE_CONNECTED,
+        .last_error = ESP_OK,
+        .window_remaining_ms = 590000U,
         .available = true,
-        .radio_available = true,
-        .auto_connect = true,
+        .active = true,
+        .client_connected = true,
+        .qr_ready = true,
     };
-    memcpy(retry.ssid, "Resumed Session AP", sizeof("Resumed Session AP"));
-    assert(host_connectivity_manager_publish_status(&retry) == ESP_OK);
-    assert(_wait_for_text("停止重试"));
-    assert(!_ui_has_text("取消"));
-    _click_action("停止重试");
-    assert(host_connectivity_manager_call_count(
-               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT) ==
-           disconnects + 1U);
-    connectivity_manager_status_snapshot_t stopped = retry;
-    stopped.operation_id = host_connectivity_manager_current_operation();
-    stopped.state = CONNECTIVITY_MANAGER_STATE_IDLE;
-    stopped.failure = CONNECTIVITY_MANAGER_FAILURE_NONE;
-    stopped.last_error = ESP_OK;
-    stopped.retry_delay_ms = 0U;
-    stopped.manual_hold = true;
-    stopped.operation_complete = true;
-    assert(host_connectivity_manager_publish_status(&stopped) == ESP_OK);
-    assert(_wait_for_text("Wi-Fi 已就绪"));
+    memcpy(connected.device_name, "MT-A1B2C3", sizeof("MT-A1B2C3"));
+    assert(host_provisioning_service_publish_status(&connected) == ESP_OK);
+    assert(_wait_for_text("手机已连接"));
+
+    provisioning_service_status_t fault = connected;
+    ++fault.generation;
+    fault.state = PROVISIONING_SERVICE_STATE_ERROR;
+    fault.last_error = ESP_FAIL;
+    fault.window_remaining_ms = 0U;
+    fault.client_connected = false;
+    fault.qr_ready = false;
+    assert(host_provisioning_service_publish_status(&fault) == ESP_OK);
+    assert(_wait_for_text("蓝牙关闭失败，需要重启"));
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(host_lv_live_qrcode_count() == 0U);
+    assert(host_lv_qrcode_scrubbed_delete_count() >= scrubbed_before + 2U);
+    assert(host_provisioning_service_close_count() >= closes_before + 1U);
+    assert(!provisioning_service_is_active());
     _assert_event_slot_headroom(2);
 }
 
@@ -2575,14 +2516,23 @@ static void _test_system_edge_back_gesture(void)
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
-    const connectivity_manager_operation_id_t operation =
-        host_connectivity_manager_current_operation();
-    assert(operation != 0U);
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+    _click_action("手机配网");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
+    assert(provisioning_service_is_active());
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 40, 300));
     assert(_touch(TOUCH_ACTION_RELEASE, 40, 300));
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    assert(host_connectivity_manager_current_operation() == operation);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
+    assert(provisioning_service_is_active());
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
+    assert(_touch(TOUCH_ACTION_MOVE, 56, 300));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, 56, 300));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "root"));
+    assert(!provisioning_service_is_active());
+    assert(host_lv_live_qrcode_count() == 0U);
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 56, 300));

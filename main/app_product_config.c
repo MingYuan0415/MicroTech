@@ -9,6 +9,7 @@
 #define APP_PRODUCT_POWER_TASK_PRIORITY       4U
 #define APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY 4U
 #define APP_PRODUCT_WIFI_TASK_PRIORITY        4U
+#define APP_PRODUCT_PROVISIONING_TASK_PRIORITY 4U
 
 #define APP_PRODUCT_PRIORITY_VALID(priority) \
     ((priority) > 0U && (priority) < configMAX_PRIORITIES)
@@ -28,6 +29,9 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(
                "invalid product connectivity task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WIFI_TASK_PRIORITY),
                "invalid product Wi-Fi task priority");
+_Static_assert(APP_PRODUCT_PRIORITY_VALID(
+                   APP_PRODUCT_PROVISIONING_TASK_PRIORITY),
+               "invalid product provisioning task priority");
 
 static const app_product_config_t s_product_config =
 {
@@ -64,6 +68,12 @@ static const app_product_config_t s_product_config =
     .connectivity = {
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,
         .wifi_task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,
+    },
+    .provisioning = {
+        .task_priority = APP_PRODUCT_PROVISIONING_TASK_PRIORITY,
+        .window_ms = 10U * 60U * 1000U,
+        .success_grace_ms = 30U * 1000U,
+        .finish_close_delay_ms = 1000U,
     },
     .system_pm_task_priority = APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY,
     .app_control_task_priority = APP_PRODUCT_APP_CONTROL_TASK_PRIORITY,

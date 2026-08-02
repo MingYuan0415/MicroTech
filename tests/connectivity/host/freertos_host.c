@@ -466,6 +466,9 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
     task_storage->context = context;
     task_storage->priority = priority;
     task_storage->created = true;
+    task_storage->joinable = false;
+    task_storage->suspended = false;
+    task_storage->delete_requested = false;
     (void)pthread_mutex_lock(&s_control_lock);
     ++s_live_tasks;
     ++s_total_task_creates;
@@ -479,7 +482,7 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
         (void)pthread_mutex_unlock(&s_control_lock);
         return NULL;
     }
-    (void)pthread_detach(task_storage->thread);
+    task_storage->joinable = true;
     return task_storage;
 }
 
@@ -540,24 +543,71 @@ void vTaskPrioritySet(TaskHandle_t task, UBaseType_t priority)
     }
 }
 
+void vTaskSuspend(TaskHandle_t task)
+{
+    TaskHandle_t suspended = task != NULL ? task : s_current_task;
+    if (suspended == NULL || suspended != s_current_task)
+    {
+        return;
+    }
+    (void)pthread_mutex_lock(&s_control_lock);
+    suspended->suspended = true;
+    (void)pthread_cond_broadcast(&s_control_changed);
+    while (!suspended->delete_requested)
+    {
+        (void)pthread_cond_wait(&s_control_changed, &s_control_lock);
+    }
+    suspended->suspended = false;
+    (void)pthread_mutex_unlock(&s_control_lock);
+    s_current_task = NULL;
+    pthread_exit(NULL);
+}
+
+eTaskState eTaskGetState(TaskHandle_t task)
+{
+    if (task == NULL)
+    {
+        return eInvalid;
+    }
+    (void)pthread_mutex_lock(&s_control_lock);
+    const eTaskState state = !task->created ? eDeleted :
+                             (task->suspended ? eSuspended : eRunning);
+    (void)pthread_mutex_unlock(&s_control_lock);
+    return state;
+}
+
 void vTaskDelete(TaskHandle_t task)
 {
     TaskHandle_t deleted = task != NULL ? task : s_current_task;
+    bool join = false;
     if (deleted != NULL)
     {
         (void)pthread_mutex_lock(&s_control_lock);
+        if (task != NULL)
+        {
+            deleted->delete_requested = true;
+            deleted->suspended = false;
+        }
         if (deleted->created)
         {
             deleted->created = false;
             --s_live_tasks;
-            (void)pthread_cond_broadcast(&s_control_changed);
         }
+        join = task != NULL && deleted->joinable;
+        (void)pthread_cond_broadcast(&s_control_changed);
         (void)pthread_mutex_unlock(&s_control_lock);
     }
     if (task == NULL)
     {
         s_current_task = NULL;
         pthread_exit(NULL);
+    }
+    if (join)
+    {
+        (void)pthread_join(deleted->thread, NULL);
+        (void)pthread_mutex_lock(&s_control_lock);
+        deleted->joinable = false;
+        (void)pthread_mutex_unlock(&s_control_lock);
     }
 }
 

@@ -81,7 +81,7 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/app_manager/app_core/include
     ../../../layers/app_manager/app_theme/include
     ../../../layers/bsp/include
-    ../../../layers/middleware/components/ble_service/include
+    ../../../layers/middleware/components/provisioning_service/include
     ../../../layers/middleware/components/audio_service/include
     ../../../layers/middleware/components/connectivity_manager/include
     ../../../layers/middleware/components/event_bus/include
@@ -116,6 +116,7 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/middleware/components/imu_service/include
     ../../../layers/middleware/components/mt_log/include
     ../../../layers/middleware/components/power_service/include
+    ../../../layers/middleware/components/provisioning_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
 )

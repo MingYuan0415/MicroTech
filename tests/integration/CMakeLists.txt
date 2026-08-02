@@ -20,6 +20,7 @@ add_executable(test_cross_layer
     host/host_freertos.c
     host/host_services.c
     host/connectivity_manager_fake.c
+    host/provisioning_service_fake.c
     "${APP_CORE}/src/app_manager_mailbox.c"
     "${APP_CORE}/src/app_manager_back_gesture.c"
     "${APP_CORE}/src/app_manager_builtin.c"
@@ -119,6 +120,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/sd_storage_service/include"
     "${MIDDLEWARE}/time_service/include"
     "${MIDDLEWARE}/connectivity_manager/include"
+    "${MIDDLEWARE}/provisioning_service/include"
 )
 target_include_directories(test_presentation PRIVATE
     host/include

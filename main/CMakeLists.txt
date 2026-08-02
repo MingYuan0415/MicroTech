@@ -23,7 +23,7 @@ idf_component_register(
         audio_service
         sd_storage_service
         connectivity_manager
-        ble_service
+        provisioning_service
         app_core
         app_theme
         esp_timer

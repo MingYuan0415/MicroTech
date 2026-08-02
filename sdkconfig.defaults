@@ -3,157 +3,55 @@
 #
 # default:
 CONFIG_IDF_TARGET="esp32s3"
-
-#
-# Serial flasher config
-#
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-# end of Serial flasher config
-
-#
-# Partition Table
-#
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16m_ota_res_data.csv"
-# end of Partition Table
-
-#
-# Compiler options
-#
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
-# end of Compiler options
-
-#
-# Component config
-#
-
-#
-# Power Management
-#
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_GATT_CLIENT=n
+CONFIG_BT_NIMBLE_GATT_SERVER=y
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
+CONFIG_BT_NIMBLE_NVS_PERSIST=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=500
+CONFIG_BT_CTRL_BLE_MAX_ACT=2
 CONFIG_PM_ENABLE=y
-# end of Power Management
-
-#
-# ESP PSRAM
-#
 CONFIG_SPIRAM=y
-
-#
-# SPI RAM config
-#
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=131072
-# end of SPI RAM config
-# end of ESP PSRAM
-
-#
-# ESP System Settings
-#
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
-
-#
-# Cache config
-#
 CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
 CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
-# end of Cache config
-# end of ESP System Settings
-
-#
-# Wi-Fi
-#
 CONFIG_ESP_WIFI_NVS_ENABLED=y
-# end of Wi-Fi
-
-#
-# LWIP
-#
+CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2=y
+CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_PATCH_VERSION=y
 CONFIG_LWIP_SNTP_UPDATE_DELAY=3600000
-# end of LWIP
-
-#
-# FreeRTOS
-#
-
-#
-# Kernel
-#
+CONFIG_PROVISIONING_SERVICE_TASK_STACK=6144
 CONFIG_FREERTOS_HZ=1000
-# end of Kernel
-# end of FreeRTOS
-
-#
-# ESP LV Adapter
-#
 CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS=y
 CONFIG_ESP_LVGL_ADAPTER_ENABLE_FREETYPE=y
-# end of ESP LV Adapter
-
-#
-# LVGL configuration
-#
-
-#
-# Memory Settings
-#
 CONFIG_LV_USE_CLIB_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
-# end of Memory Settings
-
-#
-# HAL Settings
-#
 CONFIG_LV_DEF_REFR_PERIOD=15
-# end of HAL Settings
-
-#
-# Operating System (OS)
-#
 CONFIG_LV_OS_FREERTOS=y
-# end of Operating System (OS)
-
-#
-# Rendering Configuration
-#
 CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
 CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
-# end of Rendering Configuration
-
-#
-# Feature Configuration
-#
-
-#
-# Others
-#
 CONFIG_LV_OBJ_STYLE_CACHE=y
 CONFIG_LV_USE_GESTURE_RECOGNITION=y
-# end of Others
-# end of Feature Configuration
-
-#
-# Compiler Settings
-#
 CONFIG_LV_USE_FLOAT=y
-# end of Compiler Settings
-
-#
-# Font Usage
-#
 CONFIG_LV_FONT_DEFAULT_MONTSERRAT_18=y
-# end of Font Usage
-
-#
-# 3rd Party Libraries
-#
+CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_USE_FREETYPE=y
 CONFIG_LV_FREETYPE_USE_LVGL_PORT=y
-# end of 3rd Party Libraries
-# end of LVGL configuration
-# end of Component config

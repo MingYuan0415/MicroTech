@@ -13,7 +13,6 @@
 #include "app_manager.h"
 #include "app_manager_config.h"
 #include "audio_service.h"
-#include "ble_service.h"
 #include "bsp_hal.h"
 #include "connectivity_manager.h"
 #include "event_bus.h"
@@ -22,6 +21,7 @@
 #include "network_runtime.h"
 #include "nv_storage.h"
 #include "power_service.h"
+#include "provisioning_service.h"
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
@@ -57,7 +57,7 @@ typedef struct app_runtime_ownership
     bool sd_attempted;
     bool connectivity_owned;
     event_bus_sub_handle_t connectivity_subscription;
-    bool ble_attempted;
+    bool provisioning_attempted;
 #if CONFIG_MAIN_DISPLAY_BENCHMARK
     bool display_benchmark_attempted;
 #endif
@@ -284,7 +284,8 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.audio_attempted || s_ownership.sd_attempted ||
                  s_ownership.connectivity_owned ||
                  s_ownership.connectivity_subscription !=
-                 EVENT_BUS_SUB_HANDLE_INVALID || s_ownership.ble_attempted;
+                 EVENT_BUS_SUB_HANDLE_INVALID ||
+                 s_ownership.provisioning_attempted;
 #if CONFIG_MAIN_DISPLAY_BENCHMARK
     owned = owned || s_ownership.display_benchmark_attempted;
 #endif
@@ -378,14 +379,16 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.system_pm_cancelable = false;
     }
-    if (s_ownership.ble_attempted)
+    if (s_ownership.provisioning_attempted)
     {
-        result = ble_service_deinit();
+        result = provisioning_service_deinit(
+                     PROVISIONING_SERVICE_WAIT_FOREVER);
         if (result != ESP_OK)
         {
             return result;
         }
-        s_ownership.ble_attempted = false;
+        s_ownership.provisioning_attempted = false;
+        app_runtime_pm_set_provisioning_participant(false);
     }
     if (s_ownership.connectivity_owned)
     {
@@ -941,8 +944,12 @@ static esp_err_t _app_runtime_start_connectivity(
         }
     }
 
-    s_ownership.ble_attempted = true;
-    result = ble_service_init();
+    s_ownership.provisioning_attempted = true;
+    result = provisioning_service_init(&product->provisioning);
+    if (result == ESP_OK)
+    {
+        app_runtime_pm_set_provisioning_participant(true);
+    }
     return result;
 }
 

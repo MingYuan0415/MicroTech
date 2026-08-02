@@ -127,6 +127,7 @@ esp_err_t esp_wifi_scan_start(const wifi_scan_config_t *config, bool block);
 esp_err_t esp_wifi_scan_stop(void);
 esp_err_t esp_wifi_clear_ap_list(void);
 esp_err_t esp_wifi_scan_get_ap_num(uint16_t *number);
+esp_err_t esp_wifi_scan_get_ap_record(wifi_ap_record_t *record);
 esp_err_t esp_wifi_scan_get_ap_records(uint16_t *number,
                                        wifi_ap_record_t *records);
 esp_err_t esp_wifi_set_config(wifi_interface_t interface,

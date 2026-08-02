@@ -239,6 +239,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_AUDIO     "audio"
 #define LV_SYMBOL_BELL      "bell"
 #define LV_SYMBOL_BACKSPACE "backspace"
+#define LV_SYMBOL_BLUETOOTH "bluetooth"
 #define LV_SYMBOL_CLOSE     "close"
 #define LV_SYMBOL_GPS       "gps"
 #define LV_SYMBOL_HOME      "home"
@@ -297,10 +298,20 @@ lv_obj_t *lv_switch_create(lv_obj_t *parent);
 lv_obj_t *lv_bar_create(lv_obj_t *parent);
 /** @brief Create a fake Canvas. */
 lv_obj_t *lv_canvas_create(lv_obj_t *parent);
+/** @brief Create a fake QR code object. */
+lv_obj_t *lv_qrcode_create(lv_obj_t *parent);
+void lv_qrcode_set_size(lv_obj_t *object, int32_t size);
+void lv_qrcode_set_dark_color(lv_obj_t *object, lv_color_t color);
+void lv_qrcode_set_light_color(lv_obj_t *object, lv_color_t color);
+void lv_qrcode_set_quiet_zone(lv_obj_t *object, bool enabled);
+lv_result_t lv_qrcode_update(lv_obj_t *object, const void *data,
+                             uint32_t data_length);
 /** @brief Create a fake Image. */
 lv_obj_t *lv_image_create(lv_obj_t *parent);
 /** @brief Bind a static fake draw buffer to a Canvas. */
 void lv_canvas_set_draw_buf(lv_obj_t *canvas, lv_draw_buf_t *draw_buf);
+/** @brief Fill a fake Canvas or QR code and scrub QR payload state. */
+void lv_canvas_fill_bg(lv_obj_t *canvas, lv_color_t color, lv_opa_t opacity);
 /** @brief Bind a fake Image to a draw buffer or other source. */
 void lv_image_set_src(lv_obj_t *image, const void *source);
 /** @brief Initialize a caller-owned fake draw buffer. */
