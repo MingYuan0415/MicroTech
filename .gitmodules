@@ -10,3 +10,6 @@
 [submodule "apps"]
 	path = layers/apps
 	url = https://github.com/MingYuan0415/apps.git
+[submodule "contracts/provisioning"]
+	path = contracts/provisioning
+	url = git@github.com:MingYuan0415/mt-provisioning-contract.git
