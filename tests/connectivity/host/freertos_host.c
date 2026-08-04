@@ -449,14 +449,15 @@ static void *_host_task_trampoline(void *argument)
     return NULL;
 }
 
-TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
-                               uint32_t stack_depth, void *context,
-                               UBaseType_t priority, StackType_t *stack,
-                               StaticTask_t *task_storage)
+TaskHandle_t xTaskCreateStaticPinnedToCore(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, StackType_t *stack,
+    StaticTask_t *task_storage, BaseType_t core_id)
 {
     (void)name;
     (void)stack;
     if (entry == NULL || task_storage == NULL || task_storage->created ||
+            core_id != CONFIG_MAIN_PROJECT_TASK_CORE_ID ||
             _host_consume(&s_fail_task_creates))
     {
         return NULL;
@@ -465,6 +466,7 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
     task_storage->context = context;
     task_storage->priority = priority;
     task_storage->stack_depth = stack_depth;
+    task_storage->core_id = core_id;
     task_storage->created = true;
     task_storage->joinable = false;
     task_storage->suspended = false;
@@ -484,6 +486,11 @@ TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
     }
     task_storage->joinable = true;
     return task_storage;
+}
+
+BaseType_t xTaskGetCoreID(TaskHandle_t task)
+{
+    return task == NULL ? tskNO_AFFINITY : task->core_id;
 }
 
 TaskHandle_t xTaskGetCurrentTaskHandle(void)

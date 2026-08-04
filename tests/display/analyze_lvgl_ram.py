@@ -53,6 +53,7 @@ class RamRunReport:
     minimum_render_stack_high_water: int | None = None
     render_task_found: bool | None = None
     render_task_stack_in_psram: bool | None = None
+    render_task_core_id: int | None = None
     internal_gain: int | None = None
     validation_errors: list[str] = field(default_factory=list)
     gate_failures: list[str] = field(default_factory=list)
@@ -111,6 +112,8 @@ def _profile_config(profile: ram_profiles.RamProfile) -> dict[str, object]:
         "draw_prio": 0 if profile.os_none else 3,
         "freetype_pool": 4096 if profile.small_freetype_pool else 16384,
         "adapter_stack": 32768 if profile.os_none else 8192,
+        "lvgl_core": 1 if profile.task_affinity else -1,
+        "project_core": 0 if profile.task_affinity else -1,
     }
 
 
@@ -215,6 +218,7 @@ def _validate_memory(lines: Sequence[str], profile: ram_profiles.RamProfile,
     parsed: dict[str, dict[str, int]] = {}
     task_expected = profile.name != "B0"
     psram_expected = profile.name == "C"
+    core_expected = 1 if profile.task_affinity else -1
     for load in clock_analyzer.LOADS:
         records = by_load.get(load, [])
         context = f"memory {load}"
@@ -259,6 +263,11 @@ def _validate_memory(lines: Sequence[str], profile: ram_profiles.RamProfile,
             report.gate_failures.append(
                 f"{context}: render_stack_hwm={high_water}, expected 0"
             )
+        if values["render_core"] != core_expected:
+            report.gate_failures.append(
+                f"{context}: render_core={values['render_core']}, "
+                f"expected {core_expected}"
+            )
 
     summary = _one_record(
         lines, "display_bench: display memory summary ",
@@ -295,6 +304,7 @@ def _validate_memory(lines: Sequence[str], profile: ram_profiles.RamProfile,
     report.render_task_stack_in_psram = bool(
         summary_values["render_stack_psram"]
     )
+    report.render_task_core_id = summary_values["render_core"]
     if summary_values["render_task"] != int(task_expected):
         report.gate_failures.append(
             f"memory summary: render_task={summary_values['render_task']}, "
@@ -317,6 +327,11 @@ def _validate_memory(lines: Sequence[str], profile: ram_profiles.RamProfile,
         report.gate_failures.append(
             f"memory summary: render_stack_hwm={summary_high_water}, "
             "expected 0"
+        )
+    if summary_values["render_core"] != core_expected:
+        report.gate_failures.append(
+            "memory summary: render_core="
+            f"{summary_values['render_core']}, expected {core_expected}"
         )
 
 

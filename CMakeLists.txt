@@ -10,6 +10,29 @@ set(EXTRA_COMPONENT_DIRS
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(microtech)
 
+set(_project_task_affinity_enabled FALSE)
+if(CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0 OR
+        CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1)
+    set(_project_task_affinity_enabled TRUE)
+endif()
+set(_lvgl_task_affinity_enabled FALSE)
+if(CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU0 OR
+        CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1)
+    set(_lvgl_task_affinity_enabled TRUE)
+endif()
+if((_project_task_affinity_enabled OR _lvgl_task_affinity_enabled) AND
+        (CONFIG_FREERTOS_UNICORE OR CONFIG_FREERTOS_SMP OR
+         NOT CONFIG_FREERTOS_NUMBER_OF_CORES EQUAL 2))
+    message(FATAL_ERROR
+        "Task-core isolation requires ESP32-S3 legacy dual-core FreeRTOS")
+endif()
+if(_project_task_affinity_enabled AND _lvgl_task_affinity_enabled AND
+        CONFIG_MAIN_PROJECT_TASK_CORE_ID EQUAL
+        CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID)
+    message(FATAL_ERROR
+        "Project-owned tasks and the LVGL worker must use different cores")
+endif()
+
 if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FREETYPE AND NOT CONFIG_LV_USE_CLIB_MALLOC)
     message(FATAL_ERROR
         "LVGL FreeType requires the libc allocator for fonts larger than "

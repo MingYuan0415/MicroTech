@@ -5,10 +5,12 @@
 #include "freertos/FreeRTOS.h"
 
 /** @brief Create a pthread-backed static task. */
-TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
-                               uint32_t stack_depth, void *context,
-                               UBaseType_t priority, StackType_t *stack,
-                               StaticTask_t *task_storage);
+TaskHandle_t xTaskCreateStaticPinnedToCore(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, StackType_t *stack,
+    StaticTask_t *task_storage, BaseType_t core_id);
+/** @brief Return the modeled task core affinity. */
+BaseType_t xTaskGetCoreID(TaskHandle_t task);
 /** @brief Return the current host task handle. */
 TaskHandle_t xTaskGetCurrentTaskHandle(void);
 /** @brief Return a modeled minimum-free stack value. */

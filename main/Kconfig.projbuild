@@ -1,5 +1,32 @@
 menu "MicroTech product integration"
 
+choice MAIN_PROJECT_TASK_AFFINITY
+    prompt "Project-owned task core affinity"
+    default MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY
+    help
+        Select one core for tasks created by project-owned components. The
+        default preserves scheduler freedom; diagnostic profiles may isolate
+        application and service work from the LVGL worker.
+
+config MAIN_PROJECT_TASK_AFFINITY_CPU0
+    bool "CPU0"
+    depends on !FREERTOS_UNICORE
+
+config MAIN_PROJECT_TASK_AFFINITY_CPU1
+    bool "CPU1"
+    depends on !FREERTOS_UNICORE
+
+config MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY
+    bool "No affinity"
+
+endchoice
+
+config MAIN_PROJECT_TASK_CORE_ID
+    hex
+    default 0x0 if MAIN_PROJECT_TASK_AFFINITY_CPU0
+    default 0x1 if MAIN_PROJECT_TASK_AFFINITY_CPU1
+    default FREERTOS_NO_AFFINITY
+
 config SYSTEM_PM_DEVELOPMENT_MODE
     bool "Keep USB Serial/JTAG available while connected"
     depends on PM_ENABLE && SOC_USB_SERIAL_JTAG_SUPPORTED && \

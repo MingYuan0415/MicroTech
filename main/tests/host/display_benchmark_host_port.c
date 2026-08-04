@@ -27,6 +27,7 @@ typedef struct host_task
     TaskFunction_t entry;
     void *arg;
     UBaseType_t high_water;
+    BaseType_t core_id;
     StackType_t *stack_start;
 } host_task_t;
 
@@ -56,6 +57,7 @@ static atomic_size_t s_delete_count;
 static uint32_t s_stack_depths[HOST_TASK_CAPACITY];
 static unsigned s_stack_caps[HOST_TASK_CAPACITY];
 static unsigned s_priorities[HOST_TASK_CAPACITY];
+static int s_core_ids[HOST_TASK_CAPACITY];
 static const char *s_deleted_names[HOST_TASK_CAPACITY];
 
 static struct timespec _host_deadline(TickType_t ticks)
@@ -92,6 +94,7 @@ void display_benchmark_host_port_reset(void)
         s_stack_depths[index] = 0U;
         s_stack_caps[index] = 0U;
         s_priorities[index] = 0U;
+        s_core_ids[index] = tskNO_AFFINITY;
         s_deleted_names[index] = NULL;
         s_tasks[index] = NULL;
     }
@@ -101,6 +104,9 @@ void display_benchmark_host_port_reset(void)
         s_external_tasks[index].name = s_external_task_names[index];
         s_external_tasks[index].available = true;
         s_external_tasks[index].high_water = 8192U;
+        s_external_tasks[index].core_id = index == 0U ?
+                                          TEST_LVGL_CORE_ID :
+                                          TEST_PROJECT_CORE_ID;
         s_external_tasks[index].stack_start = &s_external_stack_marker;
     }
     (void)pthread_mutex_unlock(&s_task_registry_lock);
@@ -155,16 +161,22 @@ unsigned display_benchmark_host_port_priority(size_t index)
     return index < HOST_TASK_CAPACITY ? s_priorities[index] : 0U;
 }
 
+int display_benchmark_host_port_core_id(size_t index)
+{
+    return index < HOST_TASK_CAPACITY ? s_core_ids[index] :
+           tskNO_AFFINITY;
+}
+
 const char *display_benchmark_host_port_deleted_name(size_t index)
 {
     return index < atomic_load(&s_delete_count) ? s_deleted_names[index] :
            NULL;
 }
 
-BaseType_t xTaskCreateWithCaps(TaskFunction_t entry, const char *name,
-                               uint32_t stack_depth, void *arg,
-                               UBaseType_t priority, TaskHandle_t *task_handle,
-                               UBaseType_t memory_caps)
+BaseType_t xTaskCreatePinnedToCoreWithCaps(
+    TaskFunction_t entry, const char *name, uint32_t stack_depth, void *arg,
+    UBaseType_t priority, TaskHandle_t *task_handle, BaseType_t core_id,
+    UBaseType_t memory_caps)
 {
     if (entry == NULL || task_handle == NULL)
     {
@@ -188,6 +200,7 @@ BaseType_t xTaskCreateWithCaps(TaskFunction_t entry, const char *name,
     task->name = name;
     task->available = true;
     task->high_water = 8192U;
+    task->core_id = core_id;
     task->stack_start = &s_external_stack_marker;
     (void)pthread_mutex_init(&task->lock, NULL);
     (void)pthread_cond_init(&task->condition, NULL);
@@ -204,6 +217,7 @@ BaseType_t xTaskCreateWithCaps(TaskFunction_t entry, const char *name,
     s_stack_depths[index] = stack_depth;
     s_stack_caps[index] = memory_caps;
     s_priorities[index] = priority;
+    s_core_ids[index] = core_id;
     (void)pthread_mutex_lock(&s_task_registry_lock);
     s_tasks[index] = task;
     (void)pthread_mutex_unlock(&s_task_registry_lock);
@@ -311,6 +325,12 @@ UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task_handle)
 {
     host_task_t *task = task_handle;
     return task != NULL ? task->high_water : 0U;
+}
+
+BaseType_t xTaskGetCoreID(TaskHandle_t task_handle)
+{
+    host_task_t *task = task_handle;
+    return task != NULL ? task->core_id : tskNO_AFFINITY;
 }
 
 StackType_t *xTaskGetStackStart(TaskHandle_t task_handle)

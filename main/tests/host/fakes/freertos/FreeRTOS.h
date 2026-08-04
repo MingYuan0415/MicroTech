@@ -17,6 +17,7 @@ typedef void (*TaskFunction_t)(void *);
 #define pdFAIL        0
 #define pdPASS        1
 #define configMAX_PRIORITIES 25U
+#define tskNO_AFFINITY ((BaseType_t)0x7FFFFFFF)
 #define portMAX_DELAY UINT32_MAX
 #define pdMS_TO_TICKS(milliseconds) ((TickType_t)(milliseconds))
 

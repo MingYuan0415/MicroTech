@@ -974,6 +974,7 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
 {
     assert(report != NULL);
     memset(report, 0, sizeof(*report));
+    report->render_task_core_id = -1;
     const test_report_quality_t quality =
         (test_report_quality_t)atomic_load(&s_report_quality);
 #if TEST_LV_OS_NONE
@@ -995,6 +996,7 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
     report->minimum_render_stack_high_water = 8192U;
     report->render_task_found = true;
     report->render_task_stack_in_psram = true;
+    report->render_task_core_id = TEST_LVGL_CORE_ID;
     if (quality == TEST_REPORT_RENDER_ZERO_HWM)
     {
         report->minimum_render_stack_high_water = 0U;
@@ -1003,6 +1005,7 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
     {
         report->render_task_found = false;
         report->render_task_stack_in_psram = false;
+        report->render_task_core_id = -1;
         report->minimum_render_stack_high_water = 0U;
     }
 #endif
@@ -1641,6 +1644,8 @@ static void _test_runs_configured_load(void)
         assert(display_benchmark_host_port_stack_depth(index) == 4096U);
         assert(display_benchmark_host_port_stack_caps(index) ==
                (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        assert(display_benchmark_host_port_core_id(index) ==
+               TEST_PROJECT_CORE_ID);
     }
     assert(display_benchmark_host_port_priority(0U) == 1U);
 #if TEST_REQUIRES_AUDIO

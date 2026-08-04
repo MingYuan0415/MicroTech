@@ -17,14 +17,17 @@ typedef enum
 /** @brief Return the current host task handle. */
 TaskHandle_t xTaskGetCurrentTaskHandle(void);
 /** @brief Create a pthread-backed static task. */
-TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
-                               uint32_t stack_depth, void *context,
-                               UBaseType_t priority, StackType_t *stack,
-                               StaticTask_t *task_storage);
+TaskHandle_t xTaskCreateStaticPinnedToCore(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, StackType_t *stack,
+    StaticTask_t *task_storage, BaseType_t core_id);
 /** @brief Create a dynamically allocated pthread-backed task. */
-BaseType_t xTaskCreate(void (*entry)(void *), const char *name,
-                       uint32_t stack_depth, void *context,
-                       UBaseType_t priority, TaskHandle_t *out_task);
+BaseType_t xTaskCreatePinnedToCore(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, TaskHandle_t *out_task,
+    BaseType_t core_id);
+/** @brief Return the modeled task core affinity. */
+BaseType_t xTaskGetCoreID(TaskHandle_t task);
 /** @brief Send a notification to a host task. */
 BaseType_t xTaskNotify(TaskHandle_t task, uint32_t value,
                        eNotifyAction action);

@@ -30,6 +30,7 @@ class RamProfile:
     nimble_external: bool = False
     provisioning_diagnostics: bool = False
     benchmark_profile: str = "characterization_full.json"
+    task_affinity: bool = False
 
 
 PROFILES = {
@@ -47,11 +48,15 @@ PROFILES = {
                       True, 49152),
 }
 DIAGNOSTIC_PROFILES = {
-    "C_EXT": RamProfile("C_EXT", "lvgl_ram_c.defaults", True, 1, None,
-                        False, 65536, True),
+    "C_EXT": RamProfile(
+        "C_EXT", "lvgl_ram_c.defaults", True, 1, None,
+        False, 65536, nimble_external=True, task_affinity=True,
+    ),
     "C_EXT_STRESS": RamProfile(
         "C_EXT_STRESS", "lvgl_ram_c.defaults", True, 1, None,
-        False, 65536, True, True, "c_ext_stress_1800.json",
+        False, 65536, nimble_external=True,
+        provisioning_diagnostics=True,
+        benchmark_profile="c_ext_stress_1800.json", task_affinity=True,
     ),
 }
 PRIMARY_PROFILE_ORDER = ("B0", "C")
@@ -89,7 +94,121 @@ NIMBLE_MATERIALIZED_CONFIG_KEYS = NIMBLE_EXTERNAL_CONFIG_KEYS | frozenset(
         "CONFIG_NIMBLE_MEM_ALLOC_MODE_EXTERNAL",
     }
 )
+NIMBLE_INTERNAL_FRAGMENT_EXPECTED = {
+    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL": "y",
+    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "n",
+    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_DEFAULT": "n",
+}
+NIMBLE_ALLOCATOR_CHANGED_CONFIG_KEYS = frozenset(
+    {
+        "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL",
+        "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL",
+    }
+)
 STRESS_CONFIG_KEYS = frozenset({"CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS"})
+AFFINITY_FRAGMENT_EXPECTED = {
+    "CONFIG_FREERTOS_UNICORE": "n",
+    "CONFIG_FREERTOS_SMP": "n",
+    "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0": "y",
+    "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY": "n",
+    "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU0": "n",
+    "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1": "y",
+    "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_NO_AFFINITY": "n",
+    "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0": "y",
+    "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_ESP_MAIN_TASK_AFFINITY_NO_AFFINITY": "n",
+    "CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0": "y",
+    "CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1": "n",
+    "CONFIG_BT_CTRL_PINNED_TO_CORE_0": "y",
+    "CONFIG_BT_CTRL_PINNED_TO_CORE_1": "n",
+    "CONFIG_BT_NIMBLE_PINNED_TO_CORE_0": "y",
+    "CONFIG_BT_NIMBLE_PINNED_TO_CORE_1": "n",
+    "CONFIG_LWIP_TCPIP_TASK_AFFINITY_NO_AFFINITY": "n",
+    "CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0": "y",
+    "CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_ESP_TIMER_TASK_AFFINITY_CPU0": "y",
+    "CONFIG_ESP_TIMER_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_ESP_TIMER_TASK_AFFINITY_NO_AFFINITY": "n",
+    "CONFIG_ESP_TIMER_ISR_AFFINITY_CPU0": "y",
+    "CONFIG_ESP_TIMER_ISR_AFFINITY_CPU1": "n",
+    "CONFIG_ESP_TIMER_ISR_AFFINITY_NO_AFFINITY": "n",
+    "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU0": "y",
+    "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_FREERTOS_TIMER_TASK_NO_AFFINITY": "n",
+    "CONFIG_PTHREAD_DEFAULT_CORE_NO_AFFINITY": "n",
+    "CONFIG_PTHREAD_DEFAULT_CORE_0": "y",
+    "CONFIG_PTHREAD_DEFAULT_CORE_1": "n",
+}
+AFFINITY_CONFIG_KEYS = frozenset(AFFINITY_FRAGMENT_EXPECTED)
+LEGACY_AFFINITY_FRAGMENT_EXPECTED = {
+    "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0": "n",
+    "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY": "y",
+    "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU0": "n",
+    "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1": "n",
+    "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_NO_AFFINITY": "y",
+    "CONFIG_LWIP_TCPIP_TASK_AFFINITY_NO_AFFINITY": "y",
+    "CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0": "n",
+    "CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU0": "n",
+    "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU1": "n",
+    "CONFIG_FREERTOS_TIMER_TASK_NO_AFFINITY": "y",
+    "CONFIG_PTHREAD_DEFAULT_CORE_NO_AFFINITY": "y",
+    "CONFIG_PTHREAD_DEFAULT_CORE_0": "n",
+    "CONFIG_PTHREAD_DEFAULT_CORE_1": "n",
+}
+LEGACY_AFFINITY_CONFIG_KEYS = frozenset(
+    LEGACY_AFFINITY_FRAGMENT_EXPECTED
+)
+LEGACY_AFFINITY_CHANGED_CONFIG_KEYS = frozenset(
+    {
+        "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0",
+        "CONFIG_MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY",
+        "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1",
+        "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_NO_AFFINITY",
+        "CONFIG_LWIP_TCPIP_TASK_AFFINITY_NO_AFFINITY",
+        "CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0",
+        "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU0",
+        "CONFIG_FREERTOS_TIMER_TASK_NO_AFFINITY",
+        "CONFIG_PTHREAD_DEFAULT_CORE_NO_AFFINITY",
+        "CONFIG_PTHREAD_DEFAULT_CORE_0",
+    }
+)
+AFFINITY_MATERIALIZED_OMITTED_KEYS = frozenset(
+    {
+        "CONFIG_ESP_TIMER_TASK_AFFINITY_CPU1",
+        "CONFIG_ESP_TIMER_TASK_AFFINITY_NO_AFFINITY",
+        "CONFIG_ESP_TIMER_ISR_AFFINITY_CPU1",
+        "CONFIG_ESP_TIMER_ISR_AFFINITY_NO_AFFINITY",
+    }
+)
+AFFINITY_MATERIALIZED_CONFIG_KEYS = AFFINITY_CONFIG_KEYS | frozenset(
+    {
+        "CONFIG_MAIN_PROJECT_TASK_CORE_ID",
+        "CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID",
+        "CONFIG_ESP_MAIN_TASK_AFFINITY",
+        "CONFIG_BT_CTRL_PINNED_TO_CORE",
+        "CONFIG_BT_NIMBLE_PINNED_TO_CORE",
+        "CONFIG_LWIP_TCPIP_TASK_AFFINITY",
+        "CONFIG_ESP_TIMER_TASK_AFFINITY",
+        "CONFIG_FREERTOS_TIMER_SERVICE_TASK_CORE_AFFINITY",
+        "CONFIG_PTHREAD_TASK_CORE_DEFAULT",
+        "CONFIG_FREERTOS_NUMBER_OF_CORES",
+        "CONFIG_NIMBLE_PINNED_TO_CORE",
+        "CONFIG_NIMBLE_PINNED_TO_CORE_0",
+        "CONFIG_NIMBLE_PINNED_TO_CORE_1",
+        "CONFIG_ESP32_WIFI_TASK_PINNED_TO_CORE_0",
+        "CONFIG_ESP32_WIFI_TASK_PINNED_TO_CORE_1",
+        "CONFIG_TCPIP_TASK_AFFINITY",
+        "CONFIG_TCPIP_TASK_AFFINITY_NO_AFFINITY",
+        "CONFIG_TCPIP_TASK_AFFINITY_CPU0",
+        "CONFIG_TCPIP_TASK_AFFINITY_CPU1",
+        "CONFIG_ESP32_DEFAULT_PTHREAD_CORE_NO_AFFINITY",
+        "CONFIG_ESP32_DEFAULT_PTHREAD_CORE_0",
+        "CONFIG_ESP32_DEFAULT_PTHREAD_CORE_1",
+    }
+)
 
 
 def project_root() -> Path:
@@ -107,10 +226,20 @@ def profile_defaults(root: Path, profile: RamProfile) -> tuple[Path, ...]:
         assets / "clock_40.defaults",
         assets / profile.defaults,
     )
-    if profile.nimble_external:
-        defaults += (assets / "nimble_external.defaults",)
+    defaults += (
+        assets / (
+            "nimble_external.defaults" if profile.nimble_external else
+            "nimble_internal.defaults"
+        ),
+    )
     if profile.provisioning_diagnostics:
         defaults += (assets / "c_ext_stress.defaults",)
+    defaults += (
+        assets / (
+            "c_ext_affinity.defaults" if profile.task_affinity else
+            "c_legacy_affinity.defaults"
+        ),
+    )
     return defaults
 
 
@@ -170,6 +299,12 @@ def expected_values(profile: RamProfile) -> dict[str, str]:
                 "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_DEFAULT": "n",
             }
         )
+    else:
+        values.update(NIMBLE_INTERNAL_FRAGMENT_EXPECTED)
+    if profile.task_affinity:
+        values.update(AFFINITY_FRAGMENT_EXPECTED)
+    else:
+        values.update(LEGACY_AFFINITY_FRAGMENT_EXPECTED)
     return values
 
 
@@ -181,6 +316,42 @@ def materialized_expected_values(profile: RamProfile) -> dict[str, str]:
             {
                 "CONFIG_NIMBLE_MEM_ALLOC_MODE_INTERNAL": "n",
                 "CONFIG_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "y",
+            }
+        )
+    else:
+        values.update(
+            {
+                "CONFIG_NIMBLE_MEM_ALLOC_MODE_INTERNAL": "y",
+                "CONFIG_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "n",
+            }
+        )
+    if profile.task_affinity:
+        for key in AFFINITY_MATERIALIZED_OMITTED_KEYS:
+            values.pop(key)
+        values.update(
+            {
+                "CONFIG_MAIN_PROJECT_TASK_CORE_ID": "0x0",
+                "CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID": "1",
+                "CONFIG_ESP_MAIN_TASK_AFFINITY": "0x0",
+                "CONFIG_BT_CTRL_PINNED_TO_CORE": "0",
+                "CONFIG_BT_NIMBLE_PINNED_TO_CORE": "0",
+                "CONFIG_LWIP_TCPIP_TASK_AFFINITY": "0x0",
+                "CONFIG_ESP_TIMER_TASK_AFFINITY": "0x0",
+                "CONFIG_FREERTOS_TIMER_SERVICE_TASK_CORE_AFFINITY": "0x0",
+                "CONFIG_PTHREAD_TASK_CORE_DEFAULT": "0",
+                "CONFIG_FREERTOS_NUMBER_OF_CORES": "2",
+            }
+        )
+    else:
+        values.update(
+            {
+                "CONFIG_MAIN_PROJECT_TASK_CORE_ID": "0x7FFFFFFF",
+                "CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID": "-1",
+                "CONFIG_LWIP_TCPIP_TASK_AFFINITY": "0x7FFFFFFF",
+                "CONFIG_FREERTOS_TIMER_SERVICE_TASK_CORE_AFFINITY":
+                    "0x7FFFFFFF",
+                "CONFIG_PTHREAD_TASK_CORE_DEFAULT": "-1",
+                "CONFIG_FREERTOS_NUMBER_OF_CORES": "2",
             }
         )
     return values
@@ -265,6 +436,14 @@ def validate_assets(root: Path) -> None:
             "nimble_external.defaults has unexpected settings: "
             f"{nimble_fragment}"
         )
+    internal_nimble_fragment = display_profiles.parse_config(
+        assets / "nimble_internal.defaults"
+    )
+    if internal_nimble_fragment != NIMBLE_INTERNAL_FRAGMENT_EXPECTED:
+        raise ProfileError(
+            "nimble_internal.defaults has unexpected settings: "
+            f"{internal_nimble_fragment}"
+        )
     synchronous = display_profiles.merge_configs(
         profile_defaults(root, PROFILES["C"])
     )
@@ -273,10 +452,10 @@ def validate_assets(root: Path) -> None:
     )
     unexpected = display_profiles.differing_keys(
         synchronous, external
-    ) - NIMBLE_EXTERNAL_CONFIG_KEYS
+    ) - (NIMBLE_EXTERNAL_CONFIG_KEYS | LEGACY_AFFINITY_CONFIG_KEYS)
     if unexpected:
         raise ProfileError(
-            "C/C_EXT defaults differ outside NimBLE allocation settings: "
+            "C/C_EXT defaults differ outside NimBLE and affinity settings: "
             f"{sorted(unexpected)}"
         )
     stress_fragment = display_profiles.parse_config(
@@ -288,6 +467,27 @@ def validate_assets(root: Path) -> None:
             "c_ext_stress.defaults has unexpected settings: "
             f"{stress_fragment}"
         )
+    affinity_fragment = display_profiles.parse_config(
+        assets / "c_ext_affinity.defaults"
+    )
+    if affinity_fragment != AFFINITY_FRAGMENT_EXPECTED:
+        raise ProfileError(
+            "c_ext_affinity.defaults has unexpected settings: "
+            f"{affinity_fragment}"
+        )
+    legacy_affinity_fragment = display_profiles.parse_config(
+        assets / "c_legacy_affinity.defaults"
+    )
+    if legacy_affinity_fragment != LEGACY_AFFINITY_FRAGMENT_EXPECTED:
+        raise ProfileError(
+            "c_legacy_affinity.defaults has unexpected settings: "
+            f"{legacy_affinity_fragment}"
+        )
+    if AFFINITY_FRAGMENT_EXPECTED[
+            "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0"] != "y" or \
+            AFFINITY_FRAGMENT_EXPECTED[
+                "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1"] != "y":
+        raise ProfileError("C_EXT task cores are not isolated")
     stress = display_profiles.merge_configs(
         profile_defaults(root, DIAGNOSTIC_PROFILES["C_EXT_STRESS"])
     )
@@ -436,6 +636,8 @@ def validate_matrix(root: Path, output_dir: Path,
             allowed |= NIMBLE_MATERIALIZED_CONFIG_KEYS
         if ALL_PROFILES[name].provisioning_diagnostics:
             allowed |= STRESS_CONFIG_KEYS
+        if ALL_PROFILES[name].task_affinity:
+            allowed |= AFFINITY_MATERIALIZED_CONFIG_KEYS
         unexpected = display_profiles.differing_keys(
             values["B0"], values[name]
         ) - allowed

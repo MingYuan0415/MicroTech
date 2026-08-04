@@ -133,11 +133,12 @@ class LvglRamProfilesTest(unittest.TestCase):
             expected["CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE"], "32768"
         )
 
-    def test_external_nimble_diagnostic_changes_only_allocator(self):
+    def test_external_nimble_diagnostic_adds_allocator_and_affinity(self):
         profile = profiles.DIAGNOSTIC_PROFILES["C_EXT"]
         expected = profiles.expected_values(profile)
         self.assertTrue(profile.os_none)
         self.assertTrue(profile.nimble_external)
+        self.assertTrue(profile.task_affinity)
         self.assertEqual(
             expected["CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL"], "n"
         )
@@ -165,7 +166,57 @@ class LvglRamProfilesTest(unittest.TestCase):
         differences = profiles.display_profiles.differing_keys(
             c_values, external_values
         )
-        self.assertEqual(differences, profiles.NIMBLE_EXTERNAL_CONFIG_KEYS)
+        self.assertEqual(
+            differences,
+            profiles.NIMBLE_ALLOCATOR_CHANGED_CONFIG_KEYS |
+            profiles.LEGACY_AFFINITY_CHANGED_CONFIG_KEYS,
+        )
+        self.assertEqual(
+            expected["CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0"], "y"
+        )
+        self.assertEqual(
+            expected["CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1"], "y"
+        )
+        self.assertEqual(
+            materialized["CONFIG_MAIN_PROJECT_TASK_CORE_ID"], "0x0"
+        )
+        self.assertEqual(
+            materialized["CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID"], "1"
+        )
+        self.assertTrue(
+            profiles.AFFINITY_MATERIALIZED_OMITTED_KEYS.isdisjoint(
+                materialized
+            )
+        )
+
+    def test_non_external_profiles_restore_legacy_affinity(self):
+        for profile in profiles.PROFILES.values():
+            self.assertFalse(profile.task_affinity)
+            expected = profiles.expected_values(profile)
+            self.assertEqual(
+                expected["CONFIG_MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY"],
+                "y",
+            )
+            self.assertEqual(
+                expected["CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_NO_AFFINITY"],
+                "y",
+            )
+            self.assertEqual(
+                expected["CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL"], "y"
+            )
+
+    def test_external_stress_inherits_affinity(self):
+        base = profiles.DIAGNOSTIC_PROFILES["C_EXT"]
+        stress = profiles.DIAGNOSTIC_PROFILES["C_EXT_STRESS"]
+        self.assertTrue(stress.task_affinity)
+        self.assertEqual(
+            profiles.expected_values(stress)[
+                "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1"
+            ],
+            profiles.expected_values(base)[
+                "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1"
+            ],
+        )
 
     def test_external_nimble_materialized_profile_is_isolated(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -175,6 +226,21 @@ class LvglRamProfilesTest(unittest.TestCase):
             profiles.validate_matrix(
                 self.project_root, output_dir, ("B0", "C_EXT")
             )
+
+    def test_external_affinity_materialization_rejects_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            self._write_materialized(output_dir, "B0")
+            self._write_materialized(
+                output_dir,
+                "C_EXT",
+                {"CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID": "0"},
+            )
+            with self.assertRaisesRegex(
+                    profiles.ProfileError, "invalid settings"):
+                profiles.validate_matrix(
+                    self.project_root, output_dir, ("B0", "C_EXT")
+                )
 
     def test_stress_materialized_profile_is_isolated(self):
         with tempfile.TemporaryDirectory() as temporary:

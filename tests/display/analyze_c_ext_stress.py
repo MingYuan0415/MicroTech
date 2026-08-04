@@ -139,6 +139,8 @@ def _validate_config(lines: Sequence[str], analysis: StressAnalysis) -> None:
         "draw_units": 1,
         "draw_stack": 0,
         "adapter_stack": 32_768,
+        "lvgl_core": 1,
+        "project_core": 0,
     }
     for name, expected in expected_int.items():
         value = _integer(record, name, "display config", analysis)
@@ -177,6 +179,9 @@ def _validate_samples(lines: Sequence[str], analysis: StressAnalysis) -> None:
             )
         missing = _integer(record, "task_missing", context, analysis)
         internal = _integer(record, "task_internal", context, analysis)
+        core_mismatch = _integer(
+            record, "task_core_mismatch", context, analysis
+        )
         dma_largest = _integer(record, "dma_largest", context, analysis)
         for name in (
             "internal_free",
@@ -195,6 +200,10 @@ def _validate_samples(lines: Sequence[str], analysis: StressAnalysis) -> None:
         if internal is not None and internal & required_psram_mask:
             analysis.gate_failures.append(
                 f"{context}: required PSRAM task mask=0x{internal:x}"
+            )
+        if core_mismatch not in (None, 0):
+            analysis.gate_failures.append(
+                f"{context}: task_core_mismatch=0x{core_mismatch:x}"
             )
         if dma_largest is not None and dma_largest < DMA_LARGEST_MINIMUM:
             analysis.gate_failures.append(
@@ -219,6 +228,11 @@ def _validate_tasks(lines: Sequence[str], analysis: StressAnalysis) -> None:
         minimum = _integer(record, "min_hwm", context, analysis)
         found = _integer(record, "found", context, analysis)
         psram = _integer(record, "stack_psram", context, analysis)
+        core = _integer(record, "core", context, analysis)
+        expected_core = _integer(
+            record, "expected_core", context, analysis
+        )
+        core_match = _integer(record, "core_match", context, analysis)
         required = 4096 if name == "lvgl" else 1024
         if minimum is not None and minimum < required:
             analysis.gate_failures.append(
@@ -228,6 +242,18 @@ def _validate_tasks(lines: Sequence[str], analysis: StressAnalysis) -> None:
             analysis.gate_failures.append(f"{context}: found={found}")
         if name in PSRAM_TASKS and psram not in (None, 1):
             analysis.gate_failures.append(f"{context}: stack_psram={psram}")
+        wanted_core = 1 if name == "lvgl" else 0
+        if core is not None and core != wanted_core:
+            analysis.gate_failures.append(f"{context}: core={core}")
+        if expected_core is not None and expected_core != wanted_core:
+            analysis.validation_errors.append(
+                f"{context}: expected_core={expected_core}, "
+                f"wanted {wanted_core}"
+            )
+        if core_match not in (None, 1):
+            analysis.gate_failures.append(
+                f"{context}: core_match={core_match}"
+            )
 
 
 def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:

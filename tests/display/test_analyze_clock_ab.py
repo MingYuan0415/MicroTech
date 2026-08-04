@@ -107,7 +107,8 @@ class ClockAbAnalyzerTest(unittest.TestCase):
                 "min_internal_largest=50000 min_dma_free=80000 "
                 f"min_dma_largest={minimum_by_load[load]} "
                 "min_psram_free=6000000 min_psram_largest=5900000 "
-                "render_task=0 render_stack_psram=0 render_stack_hwm=0"
+                "render_task=0 render_stack_psram=0 render_stack_hwm=0 "
+                "render_core=-1"
             )
         stability = (
             "PASS"
@@ -129,7 +130,8 @@ class ClockAbAnalyzerTest(unittest.TestCase):
                 "min_dma_free=80000 "
                 f"min_dma_largest={minimum_dma} "
                 "min_psram_free=6000000 min_psram_largest=5900000 "
-                "render_task=0 render_stack_psram=0 render_stack_hwm=0",
+                "render_task=0 render_stack_psram=0 render_stack_hwm=0 "
+                "render_core=-1",
                 "I (8) display_bench: display load profile=full tcp_required=1 "
                 "tcp_tx_bytes=1000000 tcp_rx_bytes=1000000 "
                 "tcp_target_bytes=1000000 tcp_active_us=1000000 "

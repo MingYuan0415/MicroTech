@@ -14,6 +14,7 @@ uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit,
                           TickType_t timeout_ticks);
 void vTaskSuspend(TaskHandle_t task);
 TaskHandle_t xTaskGetHandle(const char *name);
+BaseType_t xTaskGetCoreID(TaskHandle_t task);
 UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task);
 StackType_t *xTaskGetStackStart(TaskHandle_t task);
 

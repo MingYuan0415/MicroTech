@@ -179,9 +179,14 @@ C 必须满足既有稳定性、FLOOR、snapshot 与 DMA 门槛，并报告 `ren
 
 ### BLE 配网诊断
 
-`C_EXT` 是 C 的隔离诊断变体，只把 NimBLE Host 动态分配从内部 RAM 移到 PSRAM，
-用于判别 BLE 激活后内部 DMA 连续块不足导致的二维码页面残帧。它不属于候选矩阵，不能
-传给 `analyze_lvgl_ram.py`，也不能仅凭二维码恢复就写入生产 `sdkconfig.defaults`：
+`C_EXT` 现为生产默认配置：它把 NimBLE Host 动态分配从内部 RAM 移到 PSRAM，
+并将唯一的 `lvgl` adapter worker 固定到 CPU1，将项目任务及 ESP-IDF 可配置的 main、
+Wi-Fi、BT Controller、NimBLE、LwIP、esp_timer、FreeRTOS timer 和 pthread 默认任务
+固定到 CPU0。原始 C profile 通过隔离 fragment 恢复内部 NimBLE，以及项目、LVGL、
+LwIP、FreeRTOS timer 和 pthread 的修改前亲和性，用于历史基线对照。IDLE、IPC、
+驱动内部任务和 ISR 不在项目任务保证范围内；esp_timer ISR 仅按 ESP-IDF 提供的配置固定。
+C_EXT 仍可用于判别 BLE 激活后的内部 DMA 连续块并验证双核隔离。它不属于旧候选矩阵，
+不能传给 `analyze_lvgl_ram.py`；其 benchmark 构建仍保持隔离：
 
 ```sh
 python3 tests/display/lvgl_ram_profiles.py prepare --reset --profiles C_EXT
@@ -192,9 +197,10 @@ python3 tests/display/lvgl_ram_profiles.py validate --profiles C_EXT
 执行 `prepare` 后运行其打印的隔离构建命令，再验证镜像。真机按主页、Setup、BLE 二维码、
 Security 2 配网、关闭 BLE 的顺序记录 internal/DMA/PSRAM 最小 free/largest；二维码必须
 持续可读、不得出现 SPI/DMA 分配失败，BLE 激活时 `dma_largest` 至少为 `14,720 B`，
-关闭后内存应恢复。NimBLE Host task 的 6 KiB 栈仍在内部 RAM；该配置只移动 NimBLE
-动态分配。ESP-IDF Security 2 内部 SRP/session heap 释放前未保证显式清零的问题也仍然
-存在，持久化生产配置前必须完成安全与生命周期复核。
+`display config` 必须报告 `lvgl_core=1 project_core=0`，memory 记录必须保持
+`render_core=1`。关闭后内存应恢复。NimBLE Host task 的 6 KiB 栈仍在内部 RAM；该配置
+只移动 NimBLE 动态分配。ESP-IDF Security 2 内部 SRP/session heap 释放前未保证显式清零的问题也仍然
+存在，发布前仍须完成安全与生命周期复核。
 
 ### C_EXT 并发系统压力测试
 

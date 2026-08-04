@@ -23,19 +23,19 @@ class CExtStressAnalyzerTest(unittest.TestCase):
             "I display_bench: display config qspi_hz=40000000 draw_rows=60 "
             "color=RGB565 snapshot=enabled dma_rows=10 queue=2 direct=0 te=0 "
             "lv_os=none draw_units=1 draw_stack=0 adapter_stack=32768 "
-            "load_profile=full",
+            "load_profile=full lvgl_core=1 project_core=0",
             "I display_bench: c_ext_stress phase=load_start sequence=2",
             "I display_bench: c_ext_stress phase=provisioning_wait sequence=3",
             "I display_bench: c_ext_stress phase=warmup sequence=4",
             "I display_bench: c_ext_stress sample=1 phase=warmup "
             "internal_free=120000 internal_largest=60000 dma_free=80000 "
             "dma_largest=20000 psram_free=6000000 psram_largest=5900000 "
-            "task_missing=0x0 task_internal=0x1e",
+            "task_missing=0x0 task_internal=0x1e task_core_mismatch=0x0",
             "I display_bench: c_ext_stress phase=measure sequence=5",
             "I display_bench: c_ext_stress sample=2 phase=measure "
             "internal_free=110000 internal_largest=50000 dma_free=70000 "
             "dma_largest=18000 psram_free=5900000 psram_largest=5800000 "
-            "task_missing=0x0 task_internal=0x1e",
+            "task_missing=0x0 task_internal=0x1e task_core_mismatch=0x0",
             "I display_bench: display profile load=full diagnostics=PASS "
             "snapshot=enabled snapshot_fallbacks=0 min_dma=18000",
             "I display_bench: c_ext_stress phase=cleanup sequence=6",
@@ -48,7 +48,9 @@ class CExtStressAnalyzerTest(unittest.TestCase):
             lines.append(
                 "I display_bench: c_ext_stress "
                 f"task={name} result=PASS samples=3600 found=1 "
-                f"stack_psram={psram} min_hwm={hwm}"
+                f"stack_psram={psram} core={1 if name == 'lvgl' else 0} "
+                f"expected_core={1 if name == 'lvgl' else 0} "
+                f"core_match=1 min_hwm={hwm}"
             )
         lines.extend([
             "I display_bench: c_ext_stress ble result=PASS "

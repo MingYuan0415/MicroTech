@@ -44,6 +44,7 @@ typedef struct host_static_task
     void *context;
     UBaseType_t priority;
     uint32_t stack_depth;
+    BaseType_t core_id;
     bool created;
     bool joinable;
     bool suspended;
@@ -68,6 +69,7 @@ typedef enum eTaskState
 #define pdFALSE 0
 #define pdPASS  1
 #define pdFAIL  0
+#define tskNO_AFFINITY (-1)
 
 #define configTICK_RATE_HZ  1000U
 #define configMAX_PRIORITIES 25U

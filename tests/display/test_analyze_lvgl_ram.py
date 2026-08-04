@@ -71,7 +71,8 @@ class LvglRamAnalyzerTest(unittest.TestCase):
                 "min_psram_largest=5900000 "
                 f"render_task={int(task_found)} "
                 f"render_stack_psram={int(stack_psram)} "
-                f"render_stack_hwm={stack_high_water}"
+                f"render_stack_hwm={stack_high_water} "
+                f"render_core={1 if profile.task_affinity else -1}"
             )
         lines.extend(
             [
@@ -88,7 +89,8 @@ class LvglRamAnalyzerTest(unittest.TestCase):
                 "min_psram_largest=5900000 "
                 f"render_task={int(task_found)} "
                 f"render_stack_psram={int(stack_psram)} "
-                f"render_stack_hwm={stack_high_water}",
+                f"render_stack_hwm={stack_high_water} "
+                f"render_core={1 if profile.task_affinity else -1}",
                 "I (7) display_bench: display load profile=full "
                 "tcp_rate_ok=1 tcp_reconnects=0 wifi_disconnects=0 "
                 "workload=0x0 control=0x0 audio=0x0 tcp=0x0",

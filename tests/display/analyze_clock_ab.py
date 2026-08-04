@@ -136,6 +136,7 @@ MEMORY_INTEGER_FIELDS = (
     "render_task",
     "render_stack_psram",
     "render_stack_hwm",
+    "render_core",
 )
 
 LOAD_INTEGER_FIELDS = (

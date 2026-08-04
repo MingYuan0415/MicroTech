@@ -13,6 +13,7 @@ size_t display_benchmark_host_port_delete_count(void);
 uint32_t display_benchmark_host_port_stack_depth(size_t index);
 unsigned display_benchmark_host_port_stack_caps(size_t index);
 unsigned display_benchmark_host_port_priority(size_t index);
+int display_benchmark_host_port_core_id(size_t index);
 const char *display_benchmark_host_port_deleted_name(size_t index);
 
 #endif /* __DISPLAY_BENCHMARK_HOST_PORT_H__ */

@@ -131,6 +131,11 @@ function(add_display_benchmark_test target port stress characterization
     if(ARGC GREATER 9)
         set(c_ext_stress ${ARGV9})
     endif()
+    if(os_none)
+        set(lvgl_core_id 1)
+    else()
+        set(lvgl_core_id -1)
+    endif()
     add_executable(${target}
         display_benchmark_test.c
         display_benchmark_host_port.c
@@ -148,6 +153,12 @@ function(add_display_benchmark_test target port stress characterization
     )
     target_compile_definitions(${target} PRIVATE
         CONFIG_MAIN_DISPLAY_BENCHMARK=1
+        CONFIG_MAIN_PROJECT_TASK_CORE_ID=0
+        CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0=1
+        CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1=0
+        CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID=${lvgl_core_id}
+        TEST_PROJECT_CORE_ID=0
+        TEST_LVGL_CORE_ID=${lvgl_core_id}
         CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS=${c_ext_stress}
         TEST_C_EXT_STRESS=${c_ext_stress}
         TEST_DISPLAY_BENCHMARK_MODE_STRESS=${stress}

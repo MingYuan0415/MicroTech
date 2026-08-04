@@ -5,11 +5,11 @@
 #include "freertos/task.h"
 
 /** @brief Create a pthread-backed task with recorded stack capabilities. */
-BaseType_t xTaskCreateWithCaps(void (*entry)(void *), const char *name,
-                               uint32_t stack_depth, void *context,
-                               UBaseType_t priority, TaskHandle_t *out_task,
-                               UBaseType_t memory_caps);
-/** @brief Delete a task created by xTaskCreateWithCaps(). */
+BaseType_t xTaskCreatePinnedToCoreWithCaps(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, TaskHandle_t *out_task,
+    BaseType_t core_id, UBaseType_t memory_caps);
+/** @brief Delete a task created by xTaskCreatePinnedToCoreWithCaps(). */
 void vTaskDeleteWithCaps(TaskHandle_t task);
 
 #endif /* __CROSS_LAYER_FREERTOS_IDF_ADDITIONS_H__ */

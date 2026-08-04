@@ -241,6 +241,7 @@ typedef struct display_benchmark_stability_summary
     size_t minimum_psram_free;
     size_t minimum_psram_largest;
     uint32_t minimum_render_stack_high_water;
+    int8_t render_task_core_id;
     uint32_t dma_failure_count;
     uint32_t frame_submit_count;
     uint32_t submit_failure_count;
@@ -280,8 +281,11 @@ typedef struct display_benchmark_stress_task_metric
     const char *name;
     uint32_t minimum_high_water;
     uint32_t sample_count;
+    int8_t expected_core_id;
+    int8_t observed_core_id;
     bool found_in_every_sample;
     bool stack_in_psram_in_every_sample;
+    bool core_matched_in_every_sample;
 } display_benchmark_stress_task_metric_t;
 
 typedef struct display_benchmark_stress_route
@@ -980,14 +984,20 @@ static esp_err_t _display_benchmark_worker_start(
     {
         return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreateWithCaps(task, name, stack_depth, worker,
-                            priority, &worker->task,
-                            DISPLAY_BENCHMARK_TASK_CAPS) != pdPASS)
+    if (xTaskCreatePinnedToCoreWithCaps(
+                task, name, stack_depth, worker, priority, &worker->task,
+                CONFIG_MAIN_PROJECT_TASK_CORE_ID,
+                DISPLAY_BENCHMARK_TASK_CAPS) != pdPASS)
     {
         vSemaphoreDelete(worker->stopped);
         memset(worker, 0, sizeof(*worker));
         return ESP_ERR_NO_MEM;
     }
+#if CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0 || \
+    CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1
+    LOG_I("task affinity name=%s core=%d", name,
+          (int)xTaskGetCoreID(worker->task));
+#endif
     return ESP_OK;
 }
 
@@ -1220,7 +1230,8 @@ exit:
 
 static void _display_benchmark_stress_sample_task(
     display_benchmark_stress_context_t *context, size_t index,
-    uint32_t *high_water, uint32_t *missing_mask, uint32_t *internal_mask)
+    uint32_t *high_water, uint32_t *missing_mask, uint32_t *internal_mask,
+    uint32_t *core_mismatch_mask)
 {
     display_benchmark_stress_task_metric_t *metric = &context->tasks[index];
     TaskHandle_t task = xTaskGetHandle(metric->name);
@@ -1230,11 +1241,19 @@ static void _display_benchmark_stress_sample_task(
     const StackType_t *stack_start = found ? xTaskGetStackStart(task) : NULL;
     const bool stack_in_psram = stack_start != NULL &&
                                 esp_ptr_external_ram(stack_start);
+    const BaseType_t task_core_id = found ? xTaskGetCoreID(task) :
+                                    tskNO_AFFINITY;
+    const int8_t observed_core_id = task_core_id == 0 || task_core_id == 1 ?
+                                    (int8_t)task_core_id : -1;
+    const bool core_matched = found &&
+                              observed_core_id == metric->expected_core_id;
     if (metric->sample_count == 0U)
     {
         metric->minimum_high_water = current_high_water;
+        metric->observed_core_id = observed_core_id;
         metric->found_in_every_sample = found;
         metric->stack_in_psram_in_every_sample = stack_in_psram;
+        metric->core_matched_in_every_sample = core_matched;
     }
     else
     {
@@ -1246,6 +1265,12 @@ static void _display_benchmark_stress_sample_task(
             metric->found_in_every_sample && found;
         metric->stack_in_psram_in_every_sample =
             metric->stack_in_psram_in_every_sample && stack_in_psram;
+        metric->core_matched_in_every_sample =
+            metric->core_matched_in_every_sample && core_matched;
+        if (metric->observed_core_id != observed_core_id)
+        {
+            metric->observed_core_id = -1;
+        }
     }
     ++metric->sample_count;
     high_water[index] = current_high_water;
@@ -1256,6 +1281,10 @@ static void _display_benchmark_stress_sample_task(
     else if (!stack_in_psram)
     {
         *internal_mask |= 1U << index;
+    }
+    if (!core_matched)
+    {
+        *core_mismatch_mask |= 1U << index;
     }
 }
 
@@ -1360,11 +1389,13 @@ static void _display_benchmark_stress_sampler_task(void *arg)
         uint32_t high_water[DISPLAY_BENCHMARK_STRESS_TASK_COUNT] = {0};
         uint32_t missing_mask = 0U;
         uint32_t internal_mask = 0U;
+        uint32_t core_mismatch_mask = 0U;
         for (size_t index = 0U;
                 index < DISPLAY_BENCHMARK_STRESS_TASK_COUNT; ++index)
         {
             _display_benchmark_stress_sample_task(
-                context, index, high_water, &missing_mask, &internal_mask);
+                context, index, high_water, &missing_mask, &internal_mask,
+                &core_mismatch_mask);
         }
         _display_benchmark_stress_observe_ble(context, now_us);
         const int64_t measure_start_us = atomic_load_explicit(
@@ -1378,13 +1409,14 @@ static void _display_benchmark_stress_sampler_task(void *arg)
             sample->elapsed_us = now_us - measure_start_us;
             sample->psram_free = psram_free;
         }
-        LOG_I("c_ext_stress sample=%u phase=%s internal_free=%u internal_largest=%u dma_free=%u dma_largest=%u psram_free=%u psram_largest=%u task_missing=0x%x task_internal=0x%x hwm_lvgl=%u hwm_connectivity=%u hwm_wifi=%u hwm_provisioning=%u hwm_nimble=%u hwm_supervisor=%u hwm_tcp=%u hwm_audio_tx=%u hwm_audio_rx=%u hwm_sampler=%u",
+        LOG_I("c_ext_stress sample=%u phase=%s internal_free=%u internal_largest=%u dma_free=%u dma_largest=%u psram_free=%u psram_largest=%u task_missing=0x%x task_internal=0x%x task_core_mismatch=0x%x hwm_lvgl=%u hwm_connectivity=%u hwm_wifi=%u hwm_provisioning=%u hwm_nimble=%u hwm_supervisor=%u hwm_tcp=%u hwm_audio_tx=%u hwm_audio_rx=%u hwm_sampler=%u",
               (unsigned)context->tasks[0].sample_count,
               _display_benchmark_stress_phase_name(sample_phase),
               (unsigned)internal_free, (unsigned)internal_largest,
               (unsigned)dma_free, (unsigned)dma_largest,
               (unsigned)psram_free, (unsigned)psram_largest,
               (unsigned)missing_mask, (unsigned)internal_mask,
+              (unsigned)core_mismatch_mask,
               (unsigned)high_water[0], (unsigned)high_water[1],
               (unsigned)high_water[2], (unsigned)high_water[3],
               (unsigned)high_water[4], (unsigned)high_water[5],
@@ -2011,6 +2043,14 @@ static void _display_benchmark_accumulate_stability(
                                           report->render_task_stack_in_psram :
                                           summary->render_task_stack_in_psram &&
                                           report->render_task_stack_in_psram;
+    if (first_report)
+    {
+        summary->render_task_core_id = report->render_task_core_id;
+    }
+    else if (summary->render_task_core_id != report->render_task_core_id)
+    {
+        summary->render_task_core_id = -1;
+    }
     if (first_report || report->minimum_render_stack_high_water <
             summary->minimum_render_stack_high_water)
     {
@@ -2123,7 +2163,7 @@ static void _display_benchmark_log_profile(
           (unsigned)report->frame_submit_count,
           (unsigned)report->panel_submit_count,
           (unsigned)report->submit_failure_count);
-    LOG_I("display memory load=%s min_internal_free=%u min_internal_largest=%u min_dma_free=%u min_dma_largest=%u min_psram_free=%u min_psram_largest=%u render_task=%u render_stack_psram=%u render_stack_hwm=%u",
+    LOG_I("display memory load=%s min_internal_free=%u min_internal_largest=%u min_dma_free=%u min_dma_largest=%u min_psram_free=%u min_psram_largest=%u render_task=%u render_stack_psram=%u render_stack_hwm=%u render_core=%d",
           load_name,
           (unsigned)report->minimum_internal_free,
           (unsigned)report->minimum_internal_largest,
@@ -2133,7 +2173,8 @@ static void _display_benchmark_log_profile(
           (unsigned)report->minimum_psram_largest,
           report->render_task_found ? 1U : 0U,
           report->render_task_stack_in_psram ? 1U : 0U,
-          (unsigned)report->minimum_render_stack_high_water);
+          (unsigned)report->minimum_render_stack_high_water,
+          (int)report->render_task_core_id);
 }
 
 static void _display_benchmark_log_final(
@@ -2163,6 +2204,10 @@ static void _display_benchmark_log_final(
                          DISPLAY_BENCHMARK_RENDER_MINIMUM_HWM;
 #if defined(CONFIG_LV_OS_NONE) && CONFIG_LV_OS_NONE
     render_passed = render_passed && summary->render_task_stack_in_psram;
+#endif
+#if CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID >= 0
+    render_passed = render_passed && summary->render_task_core_id ==
+                    CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID;
 #endif
 #else
     const bool render_passed = true;
@@ -2198,7 +2243,7 @@ static void _display_benchmark_log_final(
           (unsigned)summary->frame_submit_count,
           (unsigned)summary->submit_failure_count,
           (unsigned)summary->transition_cancel_count);
-    LOG_I("display memory summary min_internal_free=%u min_internal_largest=%u min_dma_free=%u min_dma_largest=%u min_psram_free=%u min_psram_largest=%u render_task=%u render_stack_psram=%u render_stack_hwm=%u",
+    LOG_I("display memory summary min_internal_free=%u min_internal_largest=%u min_dma_free=%u min_dma_largest=%u min_psram_free=%u min_psram_largest=%u render_task=%u render_stack_psram=%u render_stack_hwm=%u render_core=%d",
           (unsigned)summary->minimum_internal_free,
           (unsigned)summary->minimum_internal_largest,
           (unsigned)summary->minimum_dma_free,
@@ -2207,7 +2252,8 @@ static void _display_benchmark_log_final(
           (unsigned)summary->minimum_psram_largest,
           summary->render_task_found ? 1U : 0U,
           summary->render_task_stack_in_psram ? 1U : 0U,
-          (unsigned)summary->minimum_render_stack_high_water);
+          (unsigned)summary->minimum_render_stack_high_water,
+          (int)summary->render_task_core_id);
     LOG_I("display load profile=%s tcp_required=%u tcp_tx_bytes=%llu tcp_rx_bytes=%llu tcp_target_bytes=%llu tcp_active_us=%llu tcp_rate_ok=%u tcp_reconnects=%u tcp_down_ms=%llu tcp_pacing_late=%u tcp_pacing_max_lag_us=%llu wifi_disconnects=%u workload=0x%x control=0x%x audio=0x%x tcp=0x%x",
           _display_benchmark_load_name(load),
           tcp_report->required ? 1U : 0U,
@@ -2228,7 +2274,7 @@ static void _display_benchmark_log_final(
 
 static void _display_benchmark_log_config(void)
 {
-    LOG_I("display config qspi_hz=%u draw_rows=%u color=%s snapshot=%s dma_rows=%u dma_max_full_rows=%u queue=%u direct=%u te=%u lv_os=%s draw_units=%u draw_stack=%u draw_prio=%u freetype_pool=%u adapter_stack=%u tcp_payload=%u tcp_prio=%u load_profile=%s lifecycle_log=%u",
+    LOG_I("display config qspi_hz=%u draw_rows=%u color=%s snapshot=%s dma_rows=%u dma_max_full_rows=%u queue=%u direct=%u te=%u lv_os=%s draw_units=%u draw_stack=%u draw_prio=%u freetype_pool=%u adapter_stack=%u lvgl_core=%d project_core=%d tcp_payload=%u tcp_prio=%u load_profile=%s lifecycle_log=%u",
           (unsigned)CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ,
           (unsigned)CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT,
           DISPLAY_BENCHMARK_COLOR_FORMAT,
@@ -2244,6 +2290,8 @@ static void _display_benchmark_log_config(void)
           (unsigned)DISPLAY_BENCHMARK_DRAW_PRIORITY,
           (unsigned)DISPLAY_BENCHMARK_FREETYPE_RENDER_POOL_SIZE,
           (unsigned)CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE,
+          (int)CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID,
+          (int)CONFIG_MAIN_PROJECT_TASK_CORE_ID,
           (unsigned)DISPLAY_BENCHMARK_TCP_PAYLOAD_BYTES,
           (unsigned)DISPLAY_BENCHMARK_TCP_PRIORITY,
           _display_benchmark_load_name(s_config.load),
@@ -2557,14 +2605,18 @@ static bool _display_benchmark_stress_tasks_passed(
         const bool psram_required = index == 0U || index >= 5U;
         const bool task_passed = metric->sample_count > 0U &&
                                  metric->found_in_every_sample &&
+                                 metric->core_matched_in_every_sample &&
                                  metric->minimum_high_water >= minimum &&
                                  (!psram_required ||
                                   metric->stack_in_psram_in_every_sample);
-        LOG_I("c_ext_stress task=%s result=%s samples=%u found=%u stack_psram=%u min_hwm=%u required_hwm=%u required_psram=%u",
+        LOG_I("c_ext_stress task=%s result=%s samples=%u found=%u stack_psram=%u core=%d expected_core=%d core_match=%u min_hwm=%u required_hwm=%u required_psram=%u",
               metric->name, task_passed ? "PASS" : "FAIL",
               (unsigned)metric->sample_count,
               metric->found_in_every_sample ? 1U : 0U,
               metric->stack_in_psram_in_every_sample ? 1U : 0U,
+              (int)metric->observed_core_id,
+              (int)metric->expected_core_id,
+              metric->core_matched_in_every_sample ? 1U : 0U,
               (unsigned)metric->minimum_high_water, (unsigned)minimum,
               psram_required ? 1U : 0U);
         passed = passed && task_passed;
@@ -2789,6 +2841,9 @@ static void _display_benchmark_c_ext_stress_supervisor(void)
             ++index)
     {
         context->tasks[index].name = s_stress_task_names[index];
+        context->tasks[index].expected_core_id = index == 0U ?
+            CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID :
+            (int8_t)CONFIG_MAIN_PROJECT_TASK_CORE_ID;
     }
     const int64_t configured_duration_us =
         _display_benchmark_stress_duration_us();
@@ -3499,13 +3554,18 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
             return result;
         }
     }
-    if (xTaskCreateWithCaps(_display_benchmark_supervisor_task,
-                            "display_bench",
-                            DISPLAY_BENCHMARK_SUPERVISOR_STACK, NULL,
-                            DISPLAY_BENCHMARK_SUPERVISOR_PRIORITY,
-                            &s_supervisor_task,
-                            DISPLAY_BENCHMARK_TASK_CAPS) == pdPASS)
+    if (xTaskCreatePinnedToCoreWithCaps(
+                _display_benchmark_supervisor_task, "display_bench",
+                DISPLAY_BENCHMARK_SUPERVISOR_STACK, NULL,
+                DISPLAY_BENCHMARK_SUPERVISOR_PRIORITY, &s_supervisor_task,
+                CONFIG_MAIN_PROJECT_TASK_CORE_ID,
+                DISPLAY_BENCHMARK_TASK_CAPS) == pdPASS)
     {
+#if CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0 || \
+    CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1
+        LOG_I("task affinity name=display_bench core=%d",
+              (int)xTaskGetCoreID(s_supervisor_task));
+#endif
         return ESP_OK;
     }
     s_supervisor_task = NULL;

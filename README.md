@@ -38,7 +38,9 @@ idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
-`sdkconfig.defaults` 固定性能、PSRAM、RGB565 LVGL 和 16 MB 分区基线，并为
+`sdkconfig.defaults` 固定性能、PSRAM、RGB565 LVGL 和 16 MB 分区基线，并采用
+`LV_OS_NONE` 单 draw unit、32 KiB PSRAM LVGL worker。LVGL 固定到 CPU1，项目任务和
+ESP-IDF 可配置的主要系统任务固定到 CPU0；NimBLE 动态内存使用 PSRAM，同时为
 DMA/internal 分配保留 128 KiB 内部内存。分区表提供双 OTA 应用槽、8 MB 只读 `res` 分区、
 LittleFS `data` 分区和 coredump 分区。修改缓存、DMA 内存预留或资源后，应运行
 `idf.py size` 并在真机上检查显示、触摸、待机和唤醒。

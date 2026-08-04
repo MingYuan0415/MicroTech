@@ -505,19 +505,21 @@ static bool _host_task_start(TaskHandle_t task, void (*entry)(void *),
     return true;
 }
 
-TaskHandle_t xTaskCreateStatic(void (*entry)(void *), const char *name,
-                               uint32_t stack_depth, void *context,
-                               UBaseType_t priority, StackType_t *stack,
-                               StaticTask_t *task_storage)
+TaskHandle_t xTaskCreateStaticPinnedToCore(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, StackType_t *stack,
+    StaticTask_t *task_storage, BaseType_t core_id)
 {
     (void)name;
     (void)stack_depth;
     (void)priority;
     (void)stack;
-    if (entry == NULL || task_storage == NULL || task_storage->created)
+    if (entry == NULL || task_storage == NULL || task_storage->created ||
+            core_id != CONFIG_MAIN_PROJECT_TASK_CORE_ID)
     {
         return NULL;
     }
+    task_storage->core_id = core_id;
     if (!_host_task_start(task_storage, entry, context, false))
     {
         return NULL;
@@ -532,12 +534,13 @@ static BaseType_t _host_task_create_dynamic(
     void (*entry)(void *), const char *name,
     uint32_t stack_depth, void *context,
     UBaseType_t priority, TaskHandle_t *out_task,
-    bool with_caps, UBaseType_t memory_caps)
+    bool with_caps, UBaseType_t memory_caps, BaseType_t core_id)
 {
     (void)name;
     (void)stack_depth;
     (void)priority;
-    if (entry == NULL || out_task == NULL)
+    if (entry == NULL || out_task == NULL ||
+            core_id != CONFIG_MAIN_PROJECT_TASK_CORE_ID)
     {
         return pdFAIL;
     }
@@ -549,6 +552,7 @@ static BaseType_t _host_task_create_dynamic(
     }
     task->created_with_caps = with_caps;
     task->stack_memory_caps = memory_caps;
+    task->core_id = core_id;
     atomic_fetch_add_explicit(&s_dynamic_task_count, 1U,
                               memory_order_relaxed);
     if (with_caps)
@@ -574,21 +578,28 @@ static BaseType_t _host_task_create_dynamic(
     return pdPASS;
 }
 
-BaseType_t xTaskCreate(void (*entry)(void *), const char *name,
-                       uint32_t stack_depth, void *context,
-                       UBaseType_t priority, TaskHandle_t *out_task)
+BaseType_t xTaskCreatePinnedToCore(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, TaskHandle_t *out_task,
+    BaseType_t core_id)
 {
     return _host_task_create_dynamic(entry, name, stack_depth, context,
-                                     priority, out_task, false, 0U);
+                                     priority, out_task, false, 0U, core_id);
 }
 
-BaseType_t xTaskCreateWithCaps(void (*entry)(void *), const char *name,
-                               uint32_t stack_depth, void *context,
-                               UBaseType_t priority, TaskHandle_t *out_task,
-                               UBaseType_t memory_caps)
+BaseType_t xTaskCreatePinnedToCoreWithCaps(
+    void (*entry)(void *), const char *name, uint32_t stack_depth,
+    void *context, UBaseType_t priority, TaskHandle_t *out_task,
+    BaseType_t core_id, UBaseType_t memory_caps)
 {
     return _host_task_create_dynamic(entry, name, stack_depth, context,
-                                     priority, out_task, true, memory_caps);
+                                     priority, out_task, true, memory_caps,
+                                     core_id);
+}
+
+BaseType_t xTaskGetCoreID(TaskHandle_t task)
+{
+    return task == NULL ? tskNO_AFFINITY : task->core_id;
 }
 
 BaseType_t xTaskNotify(TaskHandle_t task, uint32_t value,

@@ -12,6 +12,11 @@ CONFIG_FALLBACK = re.compile(r"^\s*#\s*ifndef\s+CONFIG_[A-Z0-9_]+", re.MULTILINE
 TICK_REDEFINITION = re.compile(
     r"^\s*#\s*define\s+configTICK_RATE_HZ\b", re.MULTILINE
 )
+UNPINNED_TASK_CREATE = (
+    re.compile(r"\bxTaskCreate\s*\("),
+    re.compile(r"\bxTaskCreateStatic\s*\("),
+    re.compile(r"\bxTaskCreateWithCaps\s*\("),
+)
 DEPRECATED_CONFIG_TOKENS = (
     "CONFIG_BSP_AUDIO_",
     "CONFIG_AUDIO_SERVICE_",
@@ -55,6 +60,9 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 failures.append(f"{relative}: CONFIG fallback")
             if TICK_REDEFINITION.search(text):
                 failures.append(f"{relative}: configTICK_RATE_HZ redefinition")
+            if path.suffix in {".c", ".h"} and any(
+                    pattern.search(text) for pattern in UNPINNED_TASK_CREATE):
+                failures.append(f"{relative}: unpinned task creation")
             for token in DEPRECATED_CONFIG_TOKENS:
                 if token in text:
                     failures.append(f"{relative}: deprecated {token}")
@@ -68,6 +76,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         expected = {
             "CONFIG_BT_ENABLED": "y",
             "CONFIG_BT_NIMBLE_ENABLED": "y",
+            "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "y",
             "CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE": "6144",
             "CONFIG_BT_NIMBLE_ROLE_CENTRAL": "n",
             "CONFIG_BT_NIMBLE_ROLE_PERIPHERAL": "y",
@@ -80,10 +89,24 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_BT_NIMBLE_MAX_CONNECTIONS": "1",
             "CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU": "500",
             "CONFIG_BT_CTRL_BLE_MAX_ACT": "2",
+            "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0": "y",
+            "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1": "y",
+            "CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE": "32768",
+            "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0": "y",
+            "CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0": "y",
+            "CONFIG_BT_CTRL_PINNED_TO_CORE_0": "y",
+            "CONFIG_BT_NIMBLE_PINNED_TO_CORE_0": "y",
+            "CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0": "y",
+            "CONFIG_ESP_TIMER_TASK_AFFINITY_CPU0": "y",
+            "CONFIG_ESP_TIMER_ISR_AFFINITY_CPU0": "y",
+            "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU0": "y",
+            "CONFIG_PTHREAD_DEFAULT_CORE_0": "y",
             "CONFIG_ESP_WIFI_NVS_ENABLED": "y",
             "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2": "y",
             "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_PATCH_VERSION": "y",
             "CONFIG_LV_USE_QRCODE": "y",
+            "CONFIG_LV_OS_NONE": "y",
+            "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": "1",
             "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "6144",
             "CONFIG_PROVISIONING_SERVICE_TASK_STACK": "6144",
         }
