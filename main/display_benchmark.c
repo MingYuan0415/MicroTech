@@ -8,7 +8,9 @@
 
 #include "app_manager.h"
 #include "app_manager_display_diagnostics.h"
+#include "app_runtime_pm.h"
 #include "audio_service.h"
+#include "bsp_hal.h"
 #include "connectivity_manager.h"
 #if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
     #include "provisioning_service.h"
@@ -39,7 +41,6 @@
 #define DISPLAY_BENCHMARK_SUPERVISOR_PRIORITY    1U
 #define DISPLAY_BENCHMARK_AUDIO_PRIORITY         1U
 #define DISPLAY_BENCHMARK_TCP_PRIORITY           2U
-#define DISPLAY_BENCHMARK_DMA_MAX_FULL_LINES    44U
 #define DISPLAY_BENCHMARK_TASK_CAPS              \
     (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 #ifndef DISPLAY_BENCHMARK_WIFI_POLL_MS
@@ -60,7 +61,6 @@
      CONFIG_LWIP_TCP_MSS)
 #define DISPLAY_BENCHMARK_TCP_MINIMUM_PERCENT      95U
 #define DISPLAY_BENCHMARK_FPS_CROSS_CHECK          30U
-#define DISPLAY_BENCHMARK_MINIMUM_DMA_LARGEST     14720U
 #define DISPLAY_BENCHMARK_TARGET_FPS                30U
 #define DISPLAY_BENCHMARK_FLOOR_FPS                 25U
 #define DISPLAY_BENCHMARK_TARGET_PERCENT            95U
@@ -120,31 +120,14 @@
         (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 #endif
 
-#if CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
-    #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565_SWAPPED"
-#else
-    #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565"
-#endif
+#define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565"
 
-#if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION && \
-    !CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
+#if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED 1U
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME "enabled"
 #else
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED 0U
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME "n/a"
-#endif
-
-#if CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT
-    #define DISPLAY_BENCHMARK_DIRECT_DMA_ENABLED 1U
-#else
-    #define DISPLAY_BENCHMARK_DIRECT_DMA_ENABLED 0U
-#endif
-
-#if CONFIG_BSP_DISPLAY_TE_SYNC
-    #define DISPLAY_BENCHMARK_TE_ENABLED 1U
-#else
-    #define DISPLAY_BENCHMARK_TE_ENABLED 0U
 #endif
 
 #if defined(CONFIG_LV_OS_NONE) && CONFIG_LV_OS_NONE
@@ -424,6 +407,10 @@ static atomic_uint s_tcp_reconnect_count;
 static atomic_uint s_tcp_pacing_late_count;
 static event_bus_sub_handle_t s_wifi_subscription;
 static display_benchmark_config_t s_config;
+static atomic_bool s_pm_inhibitor_owned;
+static bsp_display_transport_t s_display_transport;
+static uint16_t s_display_width;
+static bool s_te_enabled;
 static char s_ipv4_host[INET_ADDRSTRLEN];
 static atomic_bool s_wifi_monitoring_active;
 static atomic_bool s_wifi_was_ready;
@@ -472,6 +459,20 @@ static bool _display_benchmark_config_valid(
 #endif
     }
     return valid;
+}
+
+static const char *_display_benchmark_transport_name(
+    bsp_display_transport_kind_t kind)
+{
+    return kind == BSP_DISPLAY_TRANSPORT_QSPI ? "qspi" : "unknown";
+}
+
+static size_t _display_benchmark_minimum_dma_largest(void)
+{
+    return (size_t)s_display_width *
+           s_display_transport.max_transfer_lines *
+           s_display_transport.bits_per_pixel / 8U *
+           s_display_transport.transaction_queue_depth;
 }
 
 static int64_t _display_benchmark_stress_duration_us(void)
@@ -2274,16 +2275,17 @@ static void _display_benchmark_log_final(
 
 static void _display_benchmark_log_config(void)
 {
-    LOG_I("display config qspi_hz=%u draw_rows=%u color=%s snapshot=%s dma_rows=%u dma_max_full_rows=%u queue=%u direct=%u te=%u lv_os=%s draw_units=%u draw_stack=%u draw_prio=%u freetype_pool=%u adapter_stack=%u lvgl_core=%d project_core=%d tcp_payload=%u tcp_prio=%u load_profile=%s lifecycle_log=%u",
-          (unsigned)CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ,
+    LOG_I("display config transport=%s bus_hz=%u draw_rows=%u color=%s snapshot=%s dma_rows=%u dma_max_full_rows=%u queue=%u direct=%u te=%u lv_os=%s draw_units=%u draw_stack=%u draw_prio=%u freetype_pool=%u adapter_stack=%u lvgl_core=%d project_core=%d tcp_payload=%u tcp_prio=%u load_profile=%s lifecycle_log=%u",
+          _display_benchmark_transport_name(s_display_transport.kind),
+          (unsigned)s_display_transport.clock_hz,
           (unsigned)CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT,
           DISPLAY_BENCHMARK_COLOR_FORMAT,
           DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME,
-          (unsigned)CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES,
-          (unsigned)DISPLAY_BENCHMARK_DMA_MAX_FULL_LINES,
-          (unsigned)CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH,
-          (unsigned)DISPLAY_BENCHMARK_DIRECT_DMA_ENABLED,
-          (unsigned)DISPLAY_BENCHMARK_TE_ENABLED,
+          (unsigned)s_display_transport.max_transfer_lines,
+          (unsigned)s_display_transport.dma_max_full_lines,
+          (unsigned)s_display_transport.transaction_queue_depth,
+          s_display_transport.psram_dma_direct ? 1U : 0U,
+          s_te_enabled ? 1U : 0U,
           DISPLAY_BENCHMARK_LVGL_OS_NAME,
           (unsigned)CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT,
           (unsigned)DISPLAY_BENCHMARK_DRAW_STACK_SIZE,
@@ -2709,7 +2711,7 @@ static esp_err_t _display_benchmark_begin_profile(void)
 {
     return app_manager_display_diagnostics_begin_benchmark(
                DISPLAY_BENCHMARK_FPS_CROSS_CHECK,
-               DISPLAY_BENCHMARK_MINIMUM_DMA_LARGEST);
+               _display_benchmark_minimum_dma_largest());
 }
 
 static esp_err_t _display_benchmark_run_characterization_profile(
@@ -3219,7 +3221,7 @@ cleanup:
                                  context->minimum_internal_largest > 0U &&
                                  context->minimum_dma_free > 0U &&
                                  context->minimum_dma_largest >=
-                                 DISPLAY_BENCHMARK_MINIMUM_DMA_LARGEST &&
+                                 _display_benchmark_minimum_dma_largest() &&
                                  context->minimum_psram_free > 0U &&
                                  context->minimum_psram_largest > 0U;
         const size_t maximum_psram_decline =
@@ -3327,6 +3329,15 @@ cleanup:
 }
 #endif
 
+static void _display_benchmark_release_pm_inhibitor(void)
+{
+    if (atomic_exchange_explicit(&s_pm_inhibitor_owned, false,
+                                 memory_order_acq_rel))
+    {
+        (void)app_runtime_pm_set_benchmark_inhibited(false);
+    }
+}
+
 static void _display_benchmark_supervisor_task(void *arg)
 {
     (void)arg;
@@ -3334,6 +3345,7 @@ static void _display_benchmark_supervisor_task(void *arg)
     if (_display_benchmark_is_c_ext_stress())
     {
         _display_benchmark_c_ext_stress_supervisor();
+        _display_benchmark_release_pm_inhibitor();
         (void)xSemaphoreGive(s_supervisor_stopped);
         vTaskSuspend(NULL);
         return;
@@ -3476,6 +3488,7 @@ exit:
             atomic_load_explicit(&s_stop_requested, memory_order_relaxed));
     }
     heap_caps_free(report);
+    _display_benchmark_release_pm_inhibitor();
     (void)xSemaphoreGive(s_supervisor_stopped);
     vTaskSuspend(NULL);
 }
@@ -3506,6 +3519,33 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
     {
         return ESP_ERR_INVALID_STATE;
     }
+    const bsp_display_port_t *display_port = bsp_display_get_port();
+    if (display_port == NULL ||
+            display_port->transport.kind == BSP_DISPLAY_TRANSPORT_UNKNOWN ||
+            display_port->transport.clock_hz == 0U ||
+            display_port->transport.max_transfer_lines == 0U ||
+            display_port->transport.max_transfer_lines >
+            display_port->height ||
+            display_port->transport.dma_max_full_lines == 0U ||
+            display_port->transport.max_transfer_lines >
+            display_port->transport.dma_max_full_lines ||
+            display_port->transport.transaction_queue_depth == 0U ||
+            display_port->transport.data_lines == 0U ||
+            display_port->transport.bits_per_pixel != 16U)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_display_transport = display_port->transport;
+    s_display_width = display_port->width;
+    s_te_enabled = display_port->te.enabled;
+    esp_err_t result = app_runtime_pm_set_benchmark_inhibited(true);
+    if (result != ESP_OK)
+    {
+        (void)app_runtime_pm_set_benchmark_inhibited(false);
+        return result;
+    }
+    atomic_store_explicit(&s_pm_inhibitor_owned, true,
+                          memory_order_release);
     memcpy(s_ipv4_host, config->ipv4_host,
            strlen(config->ipv4_host) + 1U);
     s_config = *config;
@@ -3513,7 +3553,8 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
     s_supervisor_stopped = xSemaphoreCreateBinary();
     if (s_supervisor_stopped == NULL)
     {
-        return ESP_ERR_NO_MEM;
+        result = ESP_ERR_NO_MEM;
+        goto fail;
     }
     atomic_store_explicit(&s_stop_requested, false, memory_order_release);
     atomic_store_explicit(&s_load_stop_requested, false, memory_order_release);
@@ -3537,7 +3578,6 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
     atomic_store_explicit(&s_wifi_disconnect_count, 0U,
                           memory_order_relaxed);
     atomic_store_explicit(&s_tcp_connected, false, memory_order_relaxed);
-    esp_err_t result = ESP_OK;
     if (_display_benchmark_load_requires_tcp(
                 s_config.load))
     {
@@ -3549,9 +3589,7 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
                      &s_wifi_subscription);
         if (result != ESP_OK)
         {
-            vSemaphoreDelete(s_supervisor_stopped);
-            s_supervisor_stopped = NULL;
-            return result;
+            goto fail;
         }
     }
     if (xTaskCreatePinnedToCoreWithCaps(
@@ -3569,10 +3607,24 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
         return ESP_OK;
     }
     s_supervisor_task = NULL;
-    vSemaphoreDelete(s_supervisor_stopped);
-    s_supervisor_stopped = NULL;
-    (void)_display_benchmark_unsubscribe_wifi();
-    return ESP_ERR_NO_MEM;
+    result = ESP_ERR_NO_MEM;
+
+fail:
+    {
+        const esp_err_t unsubscribe_result =
+            _display_benchmark_unsubscribe_wifi();
+        if (result == ESP_OK)
+        {
+            result = unsubscribe_result;
+        }
+    }
+    if (s_supervisor_stopped != NULL)
+    {
+        vSemaphoreDelete(s_supervisor_stopped);
+        s_supervisor_stopped = NULL;
+    }
+    _display_benchmark_release_pm_inhibitor();
+    return result;
 }
 
 esp_err_t display_benchmark_stop(void)
@@ -3590,7 +3642,12 @@ esp_err_t display_benchmark_stop(void)
         vSemaphoreDelete(s_supervisor_stopped);
         s_supervisor_stopped = NULL;
     }
-    return _display_benchmark_unsubscribe_wifi();
+    const esp_err_t result = _display_benchmark_unsubscribe_wifi();
+    if (result == ESP_OK)
+    {
+        _display_benchmark_release_pm_inhibitor();
+    }
+    return result;
 }
 
 #else

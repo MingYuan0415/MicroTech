@@ -146,10 +146,12 @@ function(add_display_benchmark_test target port stress characterization
         ../..
         ../../../layers/app_manager/app_core/include
         ../../../layers/app_manager/app_theme/include
+        ../../../layers/bsp/include
         ../../../layers/middleware/components/audio_service/include
         ../../../layers/middleware/components/connectivity_manager/include
         ../../../layers/middleware/components/event_bus/include
         ../../../layers/middleware/components/mt_log/include
+        ../../../layers/middleware/components/system_pm/include
     )
     target_compile_definitions(${target} PRIVATE
         CONFIG_MAIN_DISPLAY_BENCHMARK=1
@@ -169,13 +171,7 @@ function(add_display_benchmark_test target port stress characterization
         TEST_DISPLAY_BENCHMARK_TCP_PORT=${port}
         TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S=2048
         CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT=60
-        CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED=0
         CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION=${snapshot_animation}
-        CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ=40000000
-        CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES=10
-        CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH=2
-        CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT=0
-        CONFIG_BSP_DISPLAY_TE_SYNC=0
         CONFIG_LV_OS_NONE=${os_none}
         TEST_LV_OS_NONE=${os_none}
         CONFIG_LWIP_TCP_MSS=1440

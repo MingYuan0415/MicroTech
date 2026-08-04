@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-import analyze_clock_ab as clock_analyzer
+import display_log_utils as log_utils
 import lvgl_ram_profiles as ram_profiles
 
 
@@ -20,7 +20,7 @@ C_INTERNAL_GAIN_MINIMUM = 48 * 1024
 FALLBACK_RECLAIM_PERCENT = 75
 
 FIXED_CONFIG = {
-    "qspi_hz": 40_000_000,
+    "bus_hz": 40_000_000,
     "draw_rows": 60,
     "dma_rows": 10,
     "dma_max_full_rows": 44,
@@ -32,12 +32,13 @@ FIXED_CONFIG = {
     "lifecycle_log": 0,
 }
 FIXED_CONFIG_STRINGS = {
+    "transport": "qspi",
     "color": "RGB565",
     "snapshot": "enabled",
     "load_profile": "full",
 }
-MEMORY_FIELDS = clock_analyzer.MEMORY_INTEGER_FIELDS
-FATAL_MARKERS = clock_analyzer.FATAL_MARKERS + (
+MEMORY_FIELDS = log_utils.MEMORY_INTEGER_FIELDS
+FATAL_MARKERS = log_utils.FATAL_MARKERS + (
     "lvgl task psram allocation failed",
 )
 
@@ -80,7 +81,7 @@ class RamAnalysis:
 
 
 def _records(lines: Sequence[str], marker: str) -> list[dict[str, str]]:
-    return clock_analyzer._records(lines, marker)
+    return log_utils.records(lines, marker)
 
 
 def _one_record(lines: Sequence[str], marker: str, context: str,
@@ -98,7 +99,7 @@ def _integer(record: dict[str, str], name: str, context: str,
         errors.append(f"{context}: missing {name}")
         return None
     try:
-        return clock_analyzer._integer(record[name])
+        return log_utils.integer(record[name])
     except ValueError:
         errors.append(f"{context}: invalid integer {name}={record[name]!r}")
         return None
@@ -147,8 +148,8 @@ def _validate_effects(lines: Sequence[str], errors: list[str]) -> None:
     for record in _records(lines, "display_bench: display perf "):
         key = (record.get("load", ""), record.get("effect", ""))
         by_key.setdefault(key, []).append(record)
-    for load in clock_analyzer.LOADS:
-        for effect in clock_analyzer.EFFECTS:
+    for load in log_utils.LOADS:
+        for effect in log_utils.EFFECTS:
             records = by_key.get((load, effect), [])
             context = f"effect {load}/{effect}"
             if len(records) != 1:
@@ -165,7 +166,7 @@ def _validate_profile_records(lines: Sequence[str], report: RamRunReport) -> Non
     by_load: dict[str, list[dict[str, str]]] = {}
     for record in _records(lines, "display_bench: display profile "):
         by_load.setdefault(record.get("load", ""), []).append(record)
-    for load in clock_analyzer.LOADS:
+    for load in log_utils.LOADS:
         records = by_load.get(load, [])
         context = f"profile {load}"
         if len(records) != 1:
@@ -219,7 +220,7 @@ def _validate_memory(lines: Sequence[str], profile: ram_profiles.RamProfile,
     task_expected = profile.name != "B0"
     psram_expected = profile.name == "C"
     core_expected = 1 if profile.task_affinity else -1
-    for load in clock_analyzer.LOADS:
+    for load in log_utils.LOADS:
         records = by_load.get(load, [])
         context = f"memory {load}"
         if len(records) != 1:
@@ -284,7 +285,7 @@ def _validate_memory(lines: Sequence[str], profile: ram_profiles.RamProfile,
             summary_values[name] = value
     if len(summary_values) != len(MEMORY_FIELDS):
         return
-    if len(parsed) == len(clock_analyzer.LOADS):
+    if len(parsed) == len(log_utils.LOADS):
         for name in MEMORY_FIELDS[:6] + ("render_stack_hwm",):
             expected = min(values[name] for values in parsed.values())
             if summary_values[name] != expected:
@@ -431,7 +432,7 @@ def parse_log(profile_name: str, path: Path) -> RamRunReport:
     for marker in FATAL_MARKERS:
         if marker in lower_text:
             report.gate_failures.append(f"fatal log marker: {marker}")
-    for marker in clock_analyzer.RESTART_MARKERS:
+    for marker in log_utils.RESTART_MARKERS:
         if text.count(marker) > 1:
             report.gate_failures.append(
                 f"repeated startup marker: {marker}"

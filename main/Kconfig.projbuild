@@ -27,19 +27,9 @@ config MAIN_PROJECT_TASK_CORE_ID
     default 0x1 if MAIN_PROJECT_TASK_AFFINITY_CPU1
     default FREERTOS_NO_AFFINITY
 
-config SYSTEM_PM_DEVELOPMENT_MODE
-    bool "Keep USB Serial/JTAG available while connected"
-    depends on PM_ENABLE && SOC_USB_SERIAL_JTAG_SUPPORTED && \
-               ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED && USJ_ENABLE_USB_SERIAL_JTAG
-    select USJ_NO_AUTO_LS_ON_CONNECTION
-    default n
-    help
-        Suppress application standby while a USB Serial/JTAG host is attached.
-        This is a root product-development policy and increases power use.
-
 config MAIN_DISPLAY_BENCHMARK
     bool "Enable the display benchmark product profile"
-    depends on SYSTEM_PM_DEVELOPMENT_MODE && APP_MANAGER_DISPLAY_DIAGNOSTICS
+    depends on APP_MANAGER_DISPLAY_DIAGNOSTICS
     default n
     help
         Build the root-owned runtime benchmark from a generated typed profile.

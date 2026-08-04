@@ -28,6 +28,18 @@ void app_runtime_pm_close_admission(void);
 void app_runtime_pm_open_admission(void);
 
 /**
+ * @brief Temporarily prevent standby while a display benchmark is active.
+ *
+ * Enabling the inhibitor cancels any admitted standby request before the
+ * benchmark starts. Disabling it restores the normal GUI timeout policy.
+ *
+ * @param inhibited is true while benchmark work owns the runtime.
+ *
+ * @return ESP_OK on success, otherwise the standby cancellation error.
+ */
+esp_err_t app_runtime_pm_set_benchmark_inhibited(bool inhibited);
+
+/**
  * @brief Build the system PM configuration from registered BSP operations.
  *
  * @param config receives the complete system PM configuration.

@@ -543,7 +543,8 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
     }
     if (strstr(message, "display config ") != NULL)
     {
-        assert(strstr(message, "qspi_hz=40000000") != NULL);
+        assert(strstr(message, "transport=qspi") != NULL);
+        assert(strstr(message, "bus_hz=40000000") != NULL);
         assert(strstr(message, "draw_rows=60") != NULL);
         assert(strstr(message, "color=RGB565") != NULL);
         assert(strstr(message, "snapshot=" TEST_SNAPSHOT_NAME) != NULL);
@@ -1834,8 +1835,14 @@ static void _test_wifi_disconnect_marks_stability_without_shortening(void)
 static void _test_task_create_failure_releases_subscription(void)
 {
     _reset();
+    display_benchmark_host_port_fail_next_pm_inhibit();
+    assert(display_benchmark_start() == ESP_FAIL);
+    assert(!display_benchmark_host_port_pm_inhibited());
+    assert(atomic_load(&s_event_subscribe_count) == 0U);
+
     display_benchmark_host_port_fail_next_create();
     assert(display_benchmark_start() == ESP_ERR_NO_MEM);
+    assert(!display_benchmark_host_port_pm_inhibited());
     assert(atomic_load(&s_event_subscribe_count) == TEST_REQUIRES_TCP);
     assert(atomic_load(&s_event_unsubscribe_count) == TEST_REQUIRES_TCP);
     assert(display_benchmark_host_port_create_count() == 0U);
@@ -2161,8 +2168,10 @@ static void _test_stop_while_waiting_for_ip(void)
 {
     _reset();
     assert(display_benchmark_start() == ESP_OK);
+    assert(display_benchmark_host_port_pm_inhibited());
     (void)usleep(20000U);
     assert(display_benchmark_stop() == ESP_OK);
+    assert(!display_benchmark_host_port_pm_inhibited());
     assert(atomic_load(&s_audio_start_count) == 0U);
     assert(atomic_load(&s_diagnostics_begin_count) == 0U);
     assert(atomic_load(&s_navigation_count) == 0U);

@@ -602,6 +602,33 @@ static void _test_standby_admission(void)
     _test_expect_trace(requests, TEST_ARRAY_SIZE(requests));
 }
 
+static void _test_benchmark_standby_inhibitor(void)
+{
+    _test_reset();
+    system_pm_config_t config = _test_build_config(false, false, false, false);
+    app_manager_standby_ops_t ops = app_runtime_pm_get_standby_ops();
+    app_runtime_pm_open_admission();
+    _test_clear_trace();
+
+    assert(app_runtime_pm_set_benchmark_inhibited(true) == ESP_OK);
+    assert(!ops.is_standby_allowed());
+    assert(ops.request_standby() == ESP_ERR_INVALID_STATE);
+    assert(!config.commit_guard(61U, config.commit_context));
+    const test_call_t canceled[] = {TEST_CALL_SYSTEM_CANCEL};
+    _test_expect_trace(canceled, TEST_ARRAY_SIZE(canceled));
+
+    assert(app_runtime_pm_set_benchmark_inhibited(false) == ESP_OK);
+    assert(ops.is_standby_allowed());
+    assert(config.commit_guard(62U, config.commit_context));
+
+    _test_clear_trace();
+    _test_fail_once(TEST_CALL_SYSTEM_CANCEL, ESP_FAIL);
+    assert(app_runtime_pm_set_benchmark_inhibited(true) == ESP_FAIL);
+    assert(!ops.is_standby_allowed());
+    assert(app_runtime_pm_set_benchmark_inhibited(false) == ESP_OK);
+    assert(ops.is_standby_allowed());
+}
+
 static void _test_standby_race(void)
 {
     _test_reset();
@@ -1072,6 +1099,7 @@ int main(void)
 {
     _test_config_and_bridges();
     _test_standby_admission();
+    _test_benchmark_standby_inhibitor();
     _test_standby_race();
     _test_sleep_order();
     _test_ready_audio_is_not_resumed();

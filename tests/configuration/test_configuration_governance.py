@@ -31,6 +31,15 @@ DEPRECATED_CONFIG_TOKENS = (
     "CONFIG_WIFI_SERVICE_EVENT_DRAIN_TIMEOUT_MS",
     "CONFIG_SYSTEM_PM_STANDBY_TASK_PRIO",
     "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK",
+    "CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED",
+    "CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT",
+    "CONFIG_BSP_DISPLAY_SPI_CLOCK_40M",
+    "CONFIG_BSP_DISPLAY_SPI_CLOCK_80M",
+    "CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ",
+    "CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES",
+    "CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH",
+    "CONFIG_BSP_DISPLAY_TE_SYNC",
+    "CONFIG_SYSTEM_PM_DEVELOPMENT_MODE",
 )
 
 
@@ -67,6 +76,35 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 if token in text:
                     failures.append(f"{relative}: deprecated {token}")
         self.assertEqual(failures, [], "\n".join(failures))
+
+    def test_removed_configuration_is_absent_from_defaults(self) -> None:
+        paths = [self.root / "sdkconfig.defaults"]
+        paths.extend(sorted(
+            (self.root / "tests/display/profile_defaults").glob("*.defaults")
+        ))
+        failures = []
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for token in DEPRECATED_CONFIG_TOKENS[-9:]:
+                if token in text:
+                    failures.append(
+                        f"{path.relative_to(self.root)}: deprecated {token}"
+                    )
+        self.assertEqual(failures, [], "\n".join(failures))
+
+    def test_project_kconfig_symbol_count(self) -> None:
+        symbols = []
+        for path in self.root.rglob("Kconfig*"):
+            relative = path.relative_to(self.root)
+            if any(part in {"managed_components", "build"}
+                   for part in relative.parts):
+                continue
+            symbols.extend(re.findall(
+                r"^\s*config\s+([A-Z0-9_]+)\b",
+                path.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            ))
+        self.assertEqual(len(symbols), 38, sorted(symbols))
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")

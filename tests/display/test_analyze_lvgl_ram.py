@@ -47,8 +47,8 @@ class LvglRamAnalyzerTest(unittest.TestCase):
             f"{key}={value}" for key, value in config.items()
         )
         lines = [f"I (1) display_bench: display config {config_text}"]
-        for load in analyzer.clock_analyzer.LOADS:
-            for effect in analyzer.clock_analyzer.EFFECTS:
+        for load in analyzer.log_utils.LOADS:
+            for effect in analyzer.log_utils.EFFECTS:
                 lines.append(
                     "I (2) display_bench: display perf "
                     f"load={load} effect={effect} result=FLOOR "

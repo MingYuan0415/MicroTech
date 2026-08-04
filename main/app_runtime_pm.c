@@ -12,10 +12,6 @@
 #include "provisioning_service.h"
 #include "time_service.h"
 
-#if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
-    #include "driver/usb_serial_jtag.h"
-#endif
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -44,6 +40,7 @@ typedef struct app_runtime_sleep_context
 
 static atomic_bool s_standby_admitted = ATOMIC_VAR_INIT(false);
 static atomic_uint s_standby_request_users = ATOMIC_VAR_INIT(0U);
+static atomic_bool s_benchmark_inhibited = ATOMIC_VAR_INIT(false);
 static app_runtime_sleep_context_t s_sleep_context;
 static const bsp_power_ops_t *s_bsp_power;
 static const bsp_input_ops_t *s_bsp_input;
@@ -52,16 +49,16 @@ static void *s_app_input_context;
 
 static bool _app_runtime_pm_is_standby_allowed(void)
 {
+    if (atomic_load_explicit(&s_benchmark_inhibited, memory_order_acquire))
+    {
+        return false;
+    }
     if (s_sleep_context.provisioning_participant &&
             provisioning_service_is_active())
     {
         return false;
     }
-#if CONFIG_SYSTEM_PM_DEVELOPMENT_MODE
-    return !usb_serial_jtag_is_connected();
-#else
     return true;
-#endif
 }
 
 static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
@@ -79,7 +76,9 @@ static void _app_runtime_pm_record_first_error(esp_err_t *first_error,
 static bool _app_runtime_pm_commit_guard(uint32_t generation, void *context)
 {
     (void)context;
-    return (!s_sleep_context.provisioning_participant ||
+    return !atomic_load_explicit(&s_benchmark_inhibited,
+                                 memory_order_acquire) &&
+           (!s_sleep_context.provisioning_participant ||
             !provisioning_service_is_active()) &&
            app_manager_pm_standby_commit_guard(generation, NULL);
 }
@@ -440,6 +439,8 @@ static void _app_runtime_pm_system_wake_callback(
 
 void app_runtime_pm_reset(void)
 {
+    atomic_store_explicit(&s_benchmark_inhibited, false,
+                          memory_order_release);
     memset(&s_sleep_context, 0, sizeof(s_sleep_context));
     s_bsp_power = NULL;
     s_bsp_input = NULL;
@@ -460,6 +461,13 @@ void app_runtime_pm_close_admission(void)
 void app_runtime_pm_open_admission(void)
 {
     atomic_store_explicit(&s_standby_admitted, true, memory_order_release);
+}
+
+esp_err_t app_runtime_pm_set_benchmark_inhibited(bool inhibited)
+{
+    atomic_store_explicit(&s_benchmark_inhibited, inhibited,
+                          memory_order_release);
+    return inhibited ? system_pm_cancel_standby() : ESP_OK;
 }
 
 esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)

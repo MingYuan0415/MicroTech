@@ -62,8 +62,8 @@ ctest --test-dir /tmp/mt-main --output-on-failure
 ## 显示压力基准
 
 App Manager 的显示诊断和自动压力基准默认关闭，仅在开发固件中启用：menuconfig
-同时打开 `SYSTEM_PM_DEVELOPMENT_MODE`、`APP_MANAGER_DISPLAY_DIAGNOSTICS` 和
-`MAIN_DISPLAY_BENCHMARK`（生产配置必须保持关闭）。campaign 的模式、时长、负载和
+同时打开 `APP_MANAGER_DISPLAY_DIAGNOSTICS` 和 `MAIN_DISPLAY_BENCHMARK`（生产配置必须
+保持关闭）。benchmark 运行期间由运行时抑制待机；campaign 的模式、时长、负载和
 TCP 参数来自 `tests/display/profiles/*.json` 生成的类型化头文件；构建工具为每个隔离
 build 目录传入 `DISPLAY_BENCHMARK_PROFILE_DIR`。`STRESS` 运行生产 fade/push 转场与
 audio/TCP 负载；`CHARACTERIZATION` 依次测试五种转场的 display-only 和指定负载窗口。
@@ -78,8 +78,8 @@ python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001
 Hyper-V 防火墙放行 TCP 5001，规则示例见
 [`tests/display/README.md`](tests/display/README.md)。
 
-默认显示传输配置为 40 MHz QSPI、60 行双 PSRAM draw buffer、10 行 SPI DMA chunk 和
-`RGB565`；默认启用的全分辨率快照转场
+Waveshare 板型固定使用 368x448、40 MHz QSPI、10 行 SPI DMA chunk、queue depth 2、
+`RGB565`，关闭 Direct DMA 和 TE；LVGL 默认使用 60 行双 PSRAM draw buffer。默认启用的全分辨率快照转场
 （`CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`）用于降低动画期间的软件
 绘制负担，失败时自动回退原生 Screen 动画。验收门槛、配置基线及 buffer/时钟表征
 历史详见 [`tests/display/README.md`](tests/display/README.md)。

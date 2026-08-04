@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-import clock_ab_profiles as display_profiles
+import display_profile_utils as display_profiles
 
 
 ProfileError = display_profiles.ProfileError
@@ -217,13 +217,11 @@ def project_root() -> Path:
 
 
 def profile_defaults(root: Path, profile: RamProfile) -> tuple[Path, ...]:
-    """Return ordered defaults for one fixed 40 MHz production candidate."""
+    """Return ordered defaults for one fixed board display candidate."""
     assets = display_profiles.config_assets_dir(root)
     defaults = (
         root / "sdkconfig.defaults",
-        assets / "clock_ab_common.defaults",
-        assets / "production.defaults",
-        assets / "clock_40.defaults",
+        assets / "benchmark_baseline.defaults",
         assets / profile.defaults,
     )
     defaults += (
@@ -270,10 +268,7 @@ def expected_values(profile: RamProfile) -> dict[str, str]:
     values.update(
         {
             "CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT": "60",
-            "CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED": "n",
-            "CONFIG_BSP_DISPLAY_SPI_CLOCK_40M": "y",
-            "CONFIG_BSP_DISPLAY_SPI_CLOCK_80M": "n",
-            "CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ": "40000000",
+            "CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION": "y",
             "CONFIG_LV_OS_NONE": "y" if profile.os_none else "n",
             "CONFIG_LV_OS_FREERTOS": "n" if profile.os_none else "y",
             "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": str(profile.draw_units),
@@ -362,7 +357,6 @@ def _assert_expected(name: str, values: dict[str, str],
     expected = materialized_expected_values(profile) if materialized else \
         expected_values(profile)
     if not materialized:
-        expected.pop("CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ")
         expected.pop("CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE")
     mismatches = []
     for key, expected_value in expected.items():

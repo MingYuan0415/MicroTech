@@ -20,7 +20,8 @@ class CExtStressAnalyzerTest(unittest.TestCase):
     def _valid_lines():
         lines = [
             "I display_bench: c_ext_stress phase=begin sequence=1",
-            "I display_bench: display config qspi_hz=40000000 draw_rows=60 "
+            "I display_bench: display config transport=qspi bus_hz=40000000 "
+            "draw_rows=60 "
             "color=RGB565 snapshot=enabled dma_rows=10 queue=2 direct=0 te=0 "
             "lv_os=none draw_units=1 draw_stack=0 adapter_stack=32768 "
             "load_profile=full lvgl_core=1 project_core=0",

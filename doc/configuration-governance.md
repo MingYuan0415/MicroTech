@@ -38,7 +38,6 @@ BSP 固定 I2S0、GPIO16/9/45/8/10、PA GPIO46 和 30 dB 麦克风校准。BSP �
 | App Manager navigation/mailbox/control queue | 24/24/16 | 各 1..64 |
 | App Manager control stack | 4096 | 2048..16384 |
 | Time worker stack | 3072 | 2048..8192 |
-| LCD transaction queue | 2 | 1..10 |
 
 公共容量宏保留原名并映射到 `CONFIG_*`。代码必须以编译期断言保护 callback pool 不小于
 subscriber pool，以及所有窄整数索引的容量上限。宿主测试由每个独立 Git 仓库唯一的
@@ -63,14 +62,21 @@ fake `sdkconfig.h` 提供静态预算；目标特例可用 CMake definition 覆�
 `1 <= priority < configMAX_PRIORITIES`。应用、Board Input、diagnostics 和 benchmark
 栈大小没有高水位证据前不加入 Kconfig。
 
+Waveshare ESP32-S3 Touch AMOLED 1.8 的 368x448 分辨率、QSPI 40 MHz、10 行传输、
+DMA 完整行上限 44、queue depth 2、RGB565、Direct DMA 关闭和 TE 关闭均为板级 profile
+事实，不通过 Kconfig 暴露。LVGL draw buffer、Snapshot、任务栈和诊断 gate 仍属于跨板
+静态资源或构建能力。
+
 ## Display profile
 
 `MAIN_DISPLAY_BENCHMARK=y` 只负责把 benchmark 编译进开发固件。campaign 使用严格 JSON：
 mode 只能为 `stress|characterization`，load 只能为
 `full|audio_only|tcp_only`，未知或缺失字段直接拒绝。工具在每个隔离构建目录生成固定名
 `display_benchmark_profile.h`；gate 开启但未提供生成目录或头文件时 CMake 必须失败。
-40/80 MHz、draw rows 和颜色格式仍由 sdkconfig fragment 控制；stress/soak 仅由 JSON
-duration 区分。
+固定 benchmark defaults fragment 只声明 60 行 LVGL draw buffer、Snapshot 和诊断
+gate 等跨板构建配置；板级传输参数不进入 sdkconfig fragment。stress/soak 仅由 JSON
+duration 区分。时钟、Direct DMA 和 RGB swapped A/B 工具已经退役，历史结论保留在
+`tests/display/README.md`。
 
 ## 变更与检查
 

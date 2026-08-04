@@ -358,8 +358,6 @@ static void _test_effect_matrix(void)
             host_lv_generic_animation_start_count();
         const size_t animation_completion_base =
             host_lv_generic_animation_completion_count();
-#elif CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
-        const size_t capture_base = host_lv_snapshot_capture_count();
 #endif
         s_completion_count = 0U;
         _diagnostics_reset();
@@ -396,9 +394,6 @@ static void _test_effect_matrix(void)
             host_lv_advance_generic_animations(110U);
             assert(app_manager_presentation_is_running());
             _assert_snapshot_images(screens[target_index], effect, 500);
-#elif CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED
-            assert(host_lv_snapshot_capture_count() == capture_base);
-            assert(host_lv_generic_animation_count() == 0U);
 #endif
             _complete_normally(screens[target_index]);
             assert(!app_manager_presentation_is_running());

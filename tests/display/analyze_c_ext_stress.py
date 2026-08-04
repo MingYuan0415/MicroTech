@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-import analyze_clock_ab as clock_analyzer
+import display_log_utils as log_utils
 
 
 PHASES = (
@@ -43,7 +43,7 @@ PSRAM_TASKS = {
 }
 DMA_LARGEST_MINIMUM = 14_720
 SNAPSHOT_P95_MAXIMUM_US = 100_000
-FATAL_MARKERS = clock_analyzer.FATAL_MARKERS + (
+FATAL_MARKERS = log_utils.FATAL_MARKERS + (
     "display submit failed",
     "display frozen",
     "lvgl lock sample failed",
@@ -67,7 +67,7 @@ class StressAnalysis:
 
 
 def _records(lines: Sequence[str], marker: str) -> list[dict[str, str]]:
-    return clock_analyzer._records(lines, marker)
+    return log_utils.records(lines, marker)
 
 
 def _one(lines: Sequence[str], marker: str, context: str,
@@ -88,7 +88,7 @@ def _integer(record: dict[str, str], name: str, context: str,
         analysis.validation_errors.append(f"{context}: missing {name}")
         return None
     try:
-        return clock_analyzer._integer(value)
+        return log_utils.integer(value)
     except ValueError:
         analysis.validation_errors.append(
             f"{context}: invalid {name}={value!r}"
@@ -130,7 +130,7 @@ def _validate_config(lines: Sequence[str], analysis: StressAnalysis) -> None:
     if record is None:
         return
     expected_int = {
-        "qspi_hz": 40_000_000,
+        "bus_hz": 40_000_000,
         "draw_rows": 60,
         "dma_rows": 10,
         "queue": 2,
@@ -149,6 +149,7 @@ def _validate_config(lines: Sequence[str], analysis: StressAnalysis) -> None:
                 f"display config: {name}={value}, expected {expected}"
             )
     expected_text = {
+        "transport": "qspi",
         "color": "RGB565",
         "snapshot": "enabled",
         "lv_os": "none",

@@ -13,7 +13,6 @@ idf_component_register(
         esp_event
         esp_netif
         esp_partition
-        esp_driver_usb_serial_jtag
         event_bus
         nv_storage
         time_service

@@ -1,5 +1,7 @@
 #include "display_benchmark_host_port.h"
 
+#include "app_runtime_pm.h"
+#include "bsp_hal.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -54,11 +56,31 @@ static const char *const s_external_task_names[HOST_EXTERNAL_TASK_COUNT] =
 static atomic_size_t s_fail_create_index;
 static atomic_size_t s_create_count;
 static atomic_size_t s_delete_count;
+static atomic_bool s_pm_inhibited;
+static atomic_bool s_pm_inhibit_fail_once;
 static uint32_t s_stack_depths[HOST_TASK_CAPACITY];
 static unsigned s_stack_caps[HOST_TASK_CAPACITY];
 static unsigned s_priorities[HOST_TASK_CAPACITY];
 static int s_core_ids[HOST_TASK_CAPACITY];
 static const char *s_deleted_names[HOST_TASK_CAPACITY];
+static const bsp_display_port_t s_display_port =
+{
+    .width = 368U,
+    .height = 448U,
+    .transport = {
+        .kind = BSP_DISPLAY_TRANSPORT_QSPI,
+        .clock_hz = 40000000U,
+        .max_transfer_lines = 10U,
+        .dma_max_full_lines = 44U,
+        .transaction_queue_depth = 2U,
+        .data_lines = 4U,
+        .bits_per_pixel = 16U,
+        .psram_dma_direct = false,
+    },
+    .te = {
+        .enabled = false,
+    },
+};
 
 static struct timespec _host_deadline(TickType_t ticks)
 {
@@ -88,6 +110,8 @@ void display_benchmark_host_port_reset(void)
     atomic_store(&s_fail_create_index, SIZE_MAX);
     atomic_store(&s_create_count, 0U);
     atomic_store(&s_delete_count, 0U);
+    atomic_store(&s_pm_inhibited, false);
+    atomic_store(&s_pm_inhibit_fail_once, false);
     (void)pthread_mutex_lock(&s_task_registry_lock);
     for (size_t index = 0U; index < HOST_TASK_CAPACITY; ++index)
     {
@@ -110,6 +134,31 @@ void display_benchmark_host_port_reset(void)
         s_external_tasks[index].stack_start = &s_external_stack_marker;
     }
     (void)pthread_mutex_unlock(&s_task_registry_lock);
+}
+
+void display_benchmark_host_port_fail_next_pm_inhibit(void)
+{
+    atomic_store(&s_pm_inhibit_fail_once, true);
+}
+
+bool display_benchmark_host_port_pm_inhibited(void)
+{
+    return atomic_load(&s_pm_inhibited);
+}
+
+esp_err_t app_runtime_pm_set_benchmark_inhibited(bool inhibited)
+{
+    atomic_store(&s_pm_inhibited, inhibited);
+    if (inhibited && atomic_exchange(&s_pm_inhibit_fail_once, false))
+    {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+const bsp_display_port_t *bsp_display_get_port(void)
+{
+    return &s_display_port;
 }
 
 void display_benchmark_host_port_fail_next_create(void)
