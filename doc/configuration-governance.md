@@ -29,7 +29,7 @@ BSP 固定 I2S0、GPIO16/9/45/8/10、PA GPIO46 和 30 dB 麦克风校准。BSP �
 
 ## 静态资源
 
-| 资源 | 默认值 | Kconfig 范围 |
+| 资源 | 组件 Kconfig 默认值 | Kconfig 范围 |
 | --- | ---: | ---: |
 | Event Bus subscriber/callback/payload pool | 24/24/24 | 各 1..64 |
 | Event Bus payload bytes | 256 | 32..1024 |
@@ -38,6 +38,9 @@ BSP 固定 I2S0、GPIO16/9/45/8/10、PA GPIO46 和 30 dB 麦克风校准。BSP �
 | App Manager navigation/mailbox/control queue | 24/24/16 | 各 1..64 |
 | App Manager control stack | 4096 | 2048..16384 |
 | Time worker stack | 3072 | 2048..8192 |
+
+当前 Waveshare S3 产品 profile 将 App Manager navigation/mailbox/control queue 覆盖为
+`8/12/16`，并由配置治理测试锁定；其他未覆盖的静态资源沿用组件 Kconfig 默认值。
 
 公共容量宏保留原名并映射到 `CONFIG_*`。代码必须以编译期断言保护 callback pool 不小于
 subscriber pool，以及所有窄整数索引的容量上限。宿主测试由每个独立 Git 仓库唯一的

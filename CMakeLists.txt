@@ -67,6 +67,10 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
         message(FATAL_ERROR
             "Wi-Fi, I2S, and LCD DMA staging require a 128 KiB internal reserve")
     endif()
+    if(NOT CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY)
+        message(FATAL_ERROR
+            "The Waveshare ESP32-S3 profile requires external BSS in PSRAM")
+    endif()
 else()
     message(FATAL_ERROR "The selected MicroTech board has no root build profile")
 endif()

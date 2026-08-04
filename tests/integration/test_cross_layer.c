@@ -1463,7 +1463,9 @@ static void _test_latest_power_backpressure(void)
                    EVENT_BUS_PUBLISH_FLAG_UI_LATEST) == ESP_OK);
     }
 
-    for (unsigned index = 0; index < 23U; ++index)
+    const unsigned mailbox_available =
+        CONFIG_APP_MANAGER_MAILBOX_CAPACITY - 1U;
+    for (unsigned index = 0; index < mailbox_available; ++index)
     {
         assert(app_manager_ui_post(_noop_callback, NULL) == ESP_OK);
     }
@@ -1472,13 +1474,12 @@ static void _test_latest_power_backpressure(void)
 
     app_manager_mailbox_host_timer_step();
     app_manager_mailbox_host_timer_step();
-    app_manager_mailbox_host_timer_step();
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS &&
-            atomic_load(&s_noop_count) != 23U; ++attempt)
+            atomic_load(&s_noop_count) != mailbox_available; ++attempt)
     {
         _sleep_one_ms();
     }
-    assert(atomic_load(&s_noop_count) == 23U);
+    assert(atomic_load(&s_noop_count) == mailbox_available);
     app_manager_mailbox_host_timer_pause(false);
     assert(_ui_has_text("99% · 电池供电"));
 }
@@ -1586,7 +1587,9 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
         assert(host_connectivity_manager_publish_status(&status) == ESP_OK);
     }
 
-    for (unsigned index = 0; index < 23U; ++index)
+    const unsigned mailbox_available =
+        CONFIG_APP_MANAGER_MAILBOX_CAPACITY - 1U;
+    for (unsigned index = 0; index < mailbox_available; ++index)
     {
         assert(app_manager_ui_post(_noop_callback, NULL) == ESP_OK);
     }
@@ -1594,13 +1597,12 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(atomic_load(&s_noop_count) == 0U);
     app_manager_mailbox_host_timer_step();
     app_manager_mailbox_host_timer_step();
-    app_manager_mailbox_host_timer_step();
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS &&
-            atomic_load(&s_noop_count) != 23U; ++attempt)
+            atomic_load(&s_noop_count) != mailbox_available; ++attempt)
     {
         _sleep_one_ms();
     }
-    assert(atomic_load(&s_noop_count) == 23U);
+    assert(atomic_load(&s_noop_count) == mailbox_available);
     app_manager_mailbox_host_timer_pause(false);
     assert(_ui_has_text("WiFi 999"));
 

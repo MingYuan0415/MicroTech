@@ -130,6 +130,8 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0": "y",
             "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1": "y",
             "CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE": "32768",
+            "CONFIG_APP_MANAGER_NAV_COMMAND_CAPACITY": "8",
+            "CONFIG_APP_MANAGER_MAILBOX_CAPACITY": "12",
             "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0": "y",
             "CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0": "y",
             "CONFIG_BT_CTRL_PINNED_TO_CORE_0": "y",
