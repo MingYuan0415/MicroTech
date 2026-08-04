@@ -54,8 +54,11 @@ FINGERPRINT_EXPECTED = {
     "queue": 2,
     "direct": 0,
     "te": 0,
+    "draw_stack": 32768,
     "draw_units": 2,
     "draw_prio": 3,
+    "freetype_pool": 16384,
+    "adapter_stack": 8192,
     "tcp_payload": 5760,
     "tcp_prio": 2,
     "load_profile": "full",
@@ -121,6 +124,18 @@ BENCHMARK_INTEGER_FIELDS = (
     "frame_submits",
     "submit_fail",
     "transition_cancel",
+)
+
+MEMORY_INTEGER_FIELDS = (
+    "min_internal_free",
+    "min_internal_largest",
+    "min_dma_free",
+    "min_dma_largest",
+    "min_psram_free",
+    "min_psram_largest",
+    "render_task",
+    "render_stack_psram",
+    "render_stack_hwm",
 )
 
 LOAD_INTEGER_FIELDS = (
@@ -365,8 +380,11 @@ def _validate_fingerprint(
         "queue",
         "direct",
         "te",
+        "draw_stack",
         "draw_units",
         "draw_prio",
+        "freetype_pool",
+        "adapter_stack",
         "tcp_payload",
         "tcp_prio",
         "lifecycle_log",
@@ -384,8 +402,12 @@ def _validate_fingerprint(
     for key, expected_value in expected_config.items():
         if key in values and values[key] != expected_value:
             errors.append(f"config: {key}={values[key]}, expected {expected_value}")
-    for key in ("color", "load_profile"):
-        expected_value = spec.color if key == "color" else FINGERPRINT_EXPECTED[key]
+    expected_strings = {
+        "color": spec.color,
+        "lv_os": "freertos",
+        "load_profile": FINGERPRINT_EXPECTED["load_profile"],
+    }
+    for key, expected_value in expected_strings.items():
         if key not in config:
             errors.append(f"config: missing {key}")
         elif config[key] != expected_value:
@@ -524,6 +546,74 @@ def _validate_profiles(
                 f"profile {load}: dma_fail={values['dma_fail']}"
             )
     return parsed
+
+
+def _validate_memory_records(
+    records: list[dict[str, str]],
+    summary_raw: dict[str, str] | None,
+    run: RunReport,
+) -> None:
+    by_load: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for record in records:
+        load = record.get("load")
+        if load is None:
+            run.validation_errors.append("memory record missing load")
+            continue
+        by_load[load].append(record)
+    parsed = {}
+    for load in LOADS:
+        candidates = by_load.get(load, [])
+        if len(candidates) != 1:
+            run.validation_errors.append(
+                f"expected one memory record for {load}, found "
+                f"{len(candidates)}"
+            )
+            continue
+        values = _required_integer_fields(
+            candidates[0], MEMORY_INTEGER_FIELDS,
+            f"memory {load}", run.validation_errors,
+        )
+        if not all(name in values for name in MEMORY_INTEGER_FIELDS):
+            continue
+        parsed[load] = values
+        for name in (
+                "min_internal_free", "min_internal_largest",
+                "min_dma_free", "min_dma_largest", "min_psram_free",
+                "min_psram_largest"):
+            if values[name] <= 0:
+                run.stability_errors.append(
+                    f"memory {load}: {name}={values[name]}"
+                )
+        for name in ("render_task", "render_stack_psram", "render_stack_hwm"):
+            if values[name] != 0:
+                run.validation_errors.append(
+                    f"memory {load}: {name}={values[name]}, expected 0"
+                )
+
+    if summary_raw is None:
+        return
+    summary = _required_integer_fields(
+        summary_raw, MEMORY_INTEGER_FIELDS, "memory summary",
+        run.validation_errors,
+    )
+    if not all(name in summary for name in MEMORY_INTEGER_FIELDS):
+        return
+    if len(parsed) == len(LOADS):
+        for name in (
+                "min_internal_free", "min_internal_largest",
+                "min_dma_free", "min_dma_largest", "min_psram_free",
+                "min_psram_largest"):
+            expected = min(item[name] for item in parsed.values())
+            if summary[name] != expected:
+                run.validation_errors.append(
+                    f"memory summary {name}={summary[name]}, "
+                    f"profile minimum={expected}"
+                )
+    for name in ("render_task", "render_stack_psram", "render_stack_hwm"):
+        if summary[name] != 0:
+            run.validation_errors.append(
+                f"memory summary {name}={summary[name]}, expected 0"
+            )
 
 
 def _validate_final_records(
@@ -691,6 +781,17 @@ def parse_log(label: str, path: Path) -> RunReport:
     )
     profiles = _validate_profiles(
         _records(lines, "display_bench: display profile "), run
+    )
+    memory_summary = _one_record(
+        _records(lines, "display_bench: display memory summary "),
+        "memory summary",
+        run.validation_errors,
+    )
+    memory_records = _records(lines, "display_bench: display memory ")
+    _validate_memory_records(
+        [record for record in memory_records if "load" in record],
+        memory_summary,
+        run,
     )
     benchmark = _one_record(
         _records(lines, "display_bench: display benchmark "),

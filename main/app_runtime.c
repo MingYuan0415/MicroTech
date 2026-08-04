@@ -944,8 +944,23 @@ static esp_err_t _app_runtime_start_connectivity(
         }
     }
 
+    provisioning_service_config_t provisioning = product->provisioning;
+#if CONFIG_MAIN_DISPLAY_BENCHMARK
+    if (g_display_benchmark_profile.ble_mode ==
+            DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED)
+    {
+        const uint64_t window_ms =
+            ((uint64_t)g_display_benchmark_profile.stress_duration_sec +
+             300U + 60U) * 1000U;
+        if (window_ms > UINT32_MAX)
+        {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        provisioning.window_ms = (uint32_t)window_ms;
+    }
+#endif
     s_ownership.provisioning_attempted = true;
-    result = provisioning_service_init(&product->provisioning);
+    result = provisioning_service_init(&provisioning);
     if (result == ESP_OK)
     {
         app_runtime_pm_set_provisioning_participant(true);

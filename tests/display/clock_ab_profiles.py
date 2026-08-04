@@ -32,6 +32,9 @@ BENCHMARK_PROFILE_FIELDS = frozenset(
         "stress_duration_sec",
         "effect_duration_sec",
         "load",
+        "ble_mode",
+        "app_workload",
+        "audio_volume_percent",
         "ipv4_host",
         "port",
         "rate_kbit_s",
@@ -105,7 +108,12 @@ COMMON_EXPECTED = {
     "CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG": "n",
     "CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS": "y",
     "CONFIG_MAIN_DISPLAY_BENCHMARK": "y",
+    "CONFIG_LV_OS_NONE": "n",
+    "CONFIG_LV_OS_FREERTOS": "y",
     "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": "2",
+    "CONFIG_LV_DRAW_THREAD_STACK_SIZE": "32768",
+    "CONFIG_ESP_LVGL_ADAPTER_FREETYPE_SMALL_RENDER_POOL": "n",
+    "CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS": "n",
 }
 
 
@@ -144,11 +152,18 @@ def load_benchmark_profile(path: Path) -> dict[str, object]:
         raise ProfileError("benchmark mode must be stress or characterization")
     if value["load"] not in ("full", "audio_only", "tcp_only"):
         raise ProfileError("benchmark load must be full, audio_only, or tcp_only")
+    if value["ble_mode"] not in ("off", "security2_connected"):
+        raise ProfileError("benchmark ble_mode must be off or security2_connected")
+    if value["app_workload"] not in ("display_routes", "system_routes"):
+        raise ProfileError(
+            "benchmark app_workload must be display_routes or system_routes"
+        )
     integer_ranges = {
         "stress_duration_sec": (10, 28800),
         "effect_duration_sec": (5, 300),
         "port": (1, 65535),
         "rate_kbit_s": (64, 20000),
+        "audio_volume_percent": (0, 100),
     }
     for field, (minimum, maximum) in integer_ranges.items():
         field_value = value[field]
@@ -183,6 +198,17 @@ def render_profile_header(value: dict[str, object]) -> str:
         "audio_only": "DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY",
         "tcp_only": "DISPLAY_BENCHMARK_LOAD_TCP_ONLY",
     }[str(value["load"])]
+    ble_mode = {
+        "off": "DISPLAY_BENCHMARK_BLE_OFF",
+        "security2_connected":
+            "DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED",
+    }[str(value["ble_mode"])]
+    app_workload = {
+        "display_routes":
+            "DISPLAY_BENCHMARK_APP_WORKLOAD_DISPLAY_ROUTES",
+        "system_routes":
+            "DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES",
+    }[str(value["app_workload"])]
     return (
         "#ifndef __GENERATED_DISPLAY_BENCHMARK_PROFILE_H__\n"
         "#define __GENERATED_DISPLAY_BENCHMARK_PROFILE_H__\n\n"
@@ -192,6 +218,9 @@ def render_profile_header(value: dict[str, object]) -> str:
         f"    .stress_duration_sec = {value['stress_duration_sec']}U,\n"
         f"    .effect_duration_sec = {value['effect_duration_sec']}U,\n"
         f"    .load = {load},\n"
+        f"    .ble_mode = {ble_mode},\n"
+        f"    .app_workload = {app_workload},\n"
+        f"    .audio_volume_percent = {value['audio_volume_percent']}U,\n"
         f"    .ipv4_host = \"{value['ipv4_host']}\",\n"
         f"    .port = {value['port']}U,\n"
         f"    .rate_kbit_s = {value['rate_kbit_s']}U,\n"

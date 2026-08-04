@@ -13,5 +13,8 @@ BaseType_t xTaskNotifyGive(TaskHandle_t task);
 uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit,
                           TickType_t timeout_ticks);
 void vTaskSuspend(TaskHandle_t task);
+TaskHandle_t xTaskGetHandle(const char *name);
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task);
+StackType_t *xTaskGetStackStart(TaskHandle_t task);
 
 #endif /* __FREERTOS_TASK_H__ */

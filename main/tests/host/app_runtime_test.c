@@ -917,7 +917,7 @@ esp_err_t provisioning_service_init(
 {
     assert(config != NULL);
     assert(config->task_priority == 4U);
-    assert(config->window_ms == 600000U);
+    assert(config->window_ms == 2160000U);
     assert(config->success_grace_ms == 30000U);
     assert(config->finish_close_delay_ms == 1000U);
     return _test_result(TEST_EVENT_BLE_INIT);

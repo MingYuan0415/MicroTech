@@ -4,6 +4,9 @@
 #include "app_manager_display_diagnostics.h"
 #include "audio_service.h"
 #include "connectivity_manager.h"
+#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
+    #include "provisioning_service.h"
+#endif
 #include "display_benchmark_host_port.h"
 #include "esp_heap_caps.h"
 
@@ -87,10 +90,29 @@ static const display_benchmark_config_t s_benchmark_config =
 #else
     .load = DISPLAY_BENCHMARK_LOAD_FULL,
 #endif
+    .ble_mode = DISPLAY_BENCHMARK_BLE_OFF,
+    .app_workload = DISPLAY_BENCHMARK_APP_WORKLOAD_DISPLAY_ROUTES,
+    .audio_volume_percent = 60U,
     .ipv4_host = "127.0.0.1",
     .port = TEST_DISPLAY_BENCHMARK_TCP_PORT,
     .rate_kbit_s = TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S,
 };
+
+#if TEST_C_EXT_STRESS
+static const display_benchmark_config_t s_c_ext_stress_config =
+{
+    .mode = DISPLAY_BENCHMARK_MODE_STRESS,
+    .stress_duration_sec = 1800U,
+    .effect_duration_sec = 30U,
+    .load = DISPLAY_BENCHMARK_LOAD_FULL,
+    .ble_mode = DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED,
+    .app_workload = DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES,
+    .audio_volume_percent = 5U,
+    .ipv4_host = "127.0.0.1",
+    .port = TEST_DISPLAY_BENCHMARK_TCP_PORT,
+    .rate_kbit_s = TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S,
+};
+#endif
 
 #define display_benchmark_start() display_benchmark_start(&s_benchmark_config)
 
@@ -117,7 +139,26 @@ typedef enum test_report_quality
     TEST_REPORT_SNAPSHOT_PREPARE_SLOW_AUXILIARY,
     TEST_REPORT_SNAPSHOT_FALLBACK_AUXILIARY,
     TEST_REPORT_SNAPSHOT_FALLBACK_WITHOUT_START,
+    TEST_REPORT_ZERO_HEAP_MINIMUM,
+    TEST_REPORT_RENDER_ZERO_HWM,
+    TEST_REPORT_RENDER_MISSING_LATER,
 } test_report_quality_t;
+
+#if TEST_C_EXT_STRESS
+typedef enum test_audio_io_fault
+{
+    TEST_AUDIO_IO_FAULT_NONE = 0,
+    TEST_AUDIO_IO_FAULT_TX_SHORT,
+    TEST_AUDIO_IO_FAULT_RX_SHORT,
+    TEST_AUDIO_IO_FAULT_TX_TIMEOUT,
+    TEST_AUDIO_IO_FAULT_RX_TIMEOUT,
+    TEST_AUDIO_IO_FAULT_TX_ERROR,
+    TEST_AUDIO_IO_FAULT_RX_ERROR,
+    TEST_AUDIO_IO_FAULT_TX_DEADLINE,
+    TEST_AUDIO_IO_FAULT_RX_DEADLINE,
+    TEST_AUDIO_IO_FAULT_STATE_ERROR,
+} test_audio_io_fault_t;
+#endif
 
 EVENT_BUS_DEFINE_ID(CONNECTIVITY_MANAGER_MSG);
 
@@ -129,6 +170,10 @@ static atomic_uint s_event_subscribe_count;
 static atomic_uint s_event_unsubscribe_count;
 static atomic_int s_wifi_state;
 static atomic_bool s_audio_fail;
+static atomic_int s_audio_state;
+static atomic_uchar s_audio_volume;
+static atomic_bool s_audio_muted;
+static atomic_bool s_audio_pa_enabled;
 static atomic_uint s_audio_start_count;
 static atomic_uint s_audio_stop_count;
 static atomic_uint s_audio_write_count;
@@ -175,8 +220,27 @@ static atomic_uint s_log_wifi_disconnect_count;
 static atomic_uint s_heap_allocate_count;
 static atomic_uint s_heap_free_count;
 static atomic_size_t s_heap_maximum_allocation;
+static atomic_bool s_stress_heap_exhausted;
 static uint32_t s_minimum_fps;
 static size_t s_minimum_dma_largest;
+#if TEST_C_EXT_STRESS
+    static atomic_bool s_c_ext_active;
+    static atomic_bool s_provisioning_active;
+    static atomic_bool s_provisioning_connected;
+    static atomic_bool s_protected_fail;
+    static atomic_int s_provisioning_close_result;
+    static atomic_uint_fast64_t s_protected_success_count;
+    static atomic_uint_fast64_t s_protected_failure_count;
+    static atomic_uint_fast64_t s_snapshot_success_count;
+    static atomic_uint_fast64_t s_snapshot_request_id;
+    static atomic_int_fast64_t s_snapshot_success_us;
+    static atomic_uint s_c_ext_phase_mask;
+    static atomic_uint s_c_ext_summary_result;
+    static atomic_bool s_c_ext_summary_completed;
+    static atomic_int s_audio_io_fault;
+    static atomic_bool s_audio_io_fault_injected;
+    static atomic_bool s_audio_restore_volume_fail;
+#endif
 
 static int64_t _monotonic_us(void)
 {
@@ -212,6 +276,46 @@ void heap_caps_free(void *memory)
     free(memory);
 }
 
+size_t heap_caps_get_free_size(unsigned caps)
+{
+#if TEST_C_EXT_STRESS
+    if (atomic_load(&s_stress_heap_exhausted))
+    {
+        return 0U;
+    }
+#endif
+    if ((caps & MALLOC_CAP_SPIRAM) != 0U)
+    {
+        return 6000000U;
+    }
+    if ((caps & MALLOC_CAP_DMA) != 0U)
+    {
+        return 120000U;
+    }
+    assert((caps & MALLOC_CAP_INTERNAL) != 0U);
+    return 160000U;
+}
+
+size_t heap_caps_get_largest_free_block(unsigned caps)
+{
+#if TEST_C_EXT_STRESS
+    if (atomic_load(&s_stress_heap_exhausted))
+    {
+        return 0U;
+    }
+#endif
+    if ((caps & MALLOC_CAP_SPIRAM) != 0U)
+    {
+        return 5900000U;
+    }
+    if ((caps & MALLOC_CAP_DMA) != 0U)
+    {
+        return 40000U;
+    }
+    assert((caps & MALLOC_CAP_INTERNAL) != 0U);
+    return 80000U;
+}
+
 void test_log_write(const char *level, const char *tag, const char *format, ...)
 {
     (void)level;
@@ -221,6 +325,81 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
     va_start(arguments, format);
     (void)vsnprintf(message, sizeof(message), format, arguments);
     va_end(arguments);
+#if TEST_C_EXT_STRESS
+    static const char *const phases[] =
+    {
+        "phase=begin ",
+        "phase=load_start ",
+        "phase=provisioning_wait ",
+        "phase=warmup ",
+        "phase=measure ",
+        "phase=cleanup ",
+        "phase=end ",
+    };
+    for (size_t index = 0U; index < sizeof(phases) / sizeof(phases[0]);
+            ++index)
+    {
+        if (strstr(message, phases[index]) != NULL)
+        {
+            atomic_fetch_or(&s_c_ext_phase_mask, 1U << index);
+        }
+    }
+    if (strstr(message, "c_ext_stress summary result=PASS") != NULL)
+    {
+        atomic_store(&s_c_ext_summary_result, 1U);
+    }
+    else if (strstr(message, "c_ext_stress summary result=FAIL") != NULL)
+    {
+        atomic_store(&s_c_ext_summary_result, 2U);
+    }
+    if (strstr(message, "c_ext_stress summary ") != NULL)
+    {
+        atomic_store(&s_c_ext_summary_completed,
+                     strstr(message, " completed=1 ") != NULL);
+    }
+    if (strstr(message, "c_ext_stress audio ") != NULL)
+    {
+        assert(strstr(message, " tx_short=") != NULL);
+        assert(strstr(message, " rx_short=") != NULL);
+        assert(strstr(message, " tx_timeout=") != NULL);
+        assert(strstr(message, " rx_timeout=") != NULL);
+        assert(strstr(message, " tx_error=") != NULL);
+        assert(strstr(message, " rx_error=") != NULL);
+        assert(strstr(message, " tx_deadline_miss=") != NULL);
+        assert(strstr(message, " rx_deadline_miss=") != NULL);
+        switch ((test_audio_io_fault_t)atomic_load(&s_audio_io_fault))
+        {
+        case TEST_AUDIO_IO_FAULT_TX_SHORT:
+            assert(strstr(message, " tx_short=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_RX_SHORT:
+            assert(strstr(message, " rx_short=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_TX_TIMEOUT:
+            assert(strstr(message, " tx_timeout=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_RX_TIMEOUT:
+            assert(strstr(message, " rx_timeout=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_TX_ERROR:
+            assert(strstr(message, " tx_error=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_RX_ERROR:
+        case TEST_AUDIO_IO_FAULT_STATE_ERROR:
+            assert(strstr(message, " rx_error=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_TX_DEADLINE:
+            assert(strstr(message, " tx_deadline_miss=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_RX_DEADLINE:
+            assert(strstr(message, " rx_deadline_miss=1 ") != NULL);
+            break;
+        case TEST_AUDIO_IO_FAULT_NONE:
+        default:
+            break;
+        }
+    }
+#endif
     const char *final_report = strstr(message, "display benchmark stability=");
     if (final_report != NULL)
     {
@@ -303,6 +482,65 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
     {
         atomic_store(&s_log_has_legacy_fields, true);
     }
+    if (strstr(message, "display memory load=") != NULL ||
+            strstr(message, "display memory summary ") != NULL)
+    {
+        if (strstr(message, "min_internal_free=0") != NULL)
+        {
+            if (strstr(message, "min_internal_largest=0") != NULL)
+            {
+                assert(strstr(message, "display memory summary ") != NULL);
+                assert(strstr(message, "min_dma_free=0") != NULL);
+                assert(strstr(message, "min_dma_largest=0") != NULL);
+                assert(strstr(message, "min_psram_free=0") != NULL);
+                assert(strstr(message, "min_psram_largest=0") != NULL);
+            }
+            else
+            {
+                assert(atomic_load(&s_report_quality) ==
+                       TEST_REPORT_ZERO_HEAP_MINIMUM);
+                assert(strstr(message, "min_internal_largest=80000") != NULL);
+                assert(strstr(message, "min_dma_free=120000") != NULL);
+                assert(strstr(message, "min_dma_largest=40000") != NULL);
+                assert(strstr(message, "min_psram_free=6000000") != NULL);
+                assert(strstr(message, "min_psram_largest=5900000") != NULL);
+            }
+            return;
+        }
+        assert(strstr(message, "min_internal_free=160000") != NULL);
+        assert(strstr(message, "min_internal_largest=80000") != NULL);
+        assert(strstr(message, "min_dma_free=120000") != NULL);
+        assert(strstr(message, "min_dma_largest=40000") != NULL);
+        assert(strstr(message, "min_psram_free=6000000") != NULL);
+        assert(strstr(message, "min_psram_largest=5900000") != NULL);
+#if TEST_LV_OS_NONE
+        const test_report_quality_t quality =
+            (test_report_quality_t)atomic_load(&s_report_quality);
+        if (quality == TEST_REPORT_RENDER_ZERO_HWM)
+        {
+            assert(strstr(message, "render_task=1") != NULL);
+            assert(strstr(message, "render_stack_psram=1") != NULL);
+            assert(strstr(message, "render_stack_hwm=0") != NULL);
+        }
+        else if (quality == TEST_REPORT_RENDER_MISSING_LATER &&
+                 atomic_load(&s_diagnostics_end_count) > 1U)
+        {
+            assert(strstr(message, "render_task=0") != NULL);
+            assert(strstr(message, "render_stack_psram=0") != NULL);
+            assert(strstr(message, "render_stack_hwm=0") != NULL);
+        }
+        else
+        {
+            assert(strstr(message, "render_task=1") != NULL);
+            assert(strstr(message, "render_stack_psram=1") != NULL);
+            assert(strstr(message, "render_stack_hwm=8192") != NULL);
+        }
+#else
+        assert(strstr(message, "render_task=0") != NULL);
+        assert(strstr(message, "render_stack_psram=0") != NULL);
+        assert(strstr(message, "render_stack_hwm=0") != NULL);
+#endif
+    }
     if (strstr(message, "display config ") != NULL)
     {
         assert(strstr(message, "qspi_hz=40000000") != NULL);
@@ -314,8 +552,20 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
         assert(strstr(message, "queue=2") != NULL);
         assert(strstr(message, "direct=0") != NULL);
         assert(strstr(message, "te=0") != NULL);
+#if TEST_LV_OS_NONE
+        assert(strstr(message, "lv_os=none") != NULL);
+        assert(strstr(message, "draw_units=1") != NULL);
+        assert(strstr(message, "draw_stack=0") != NULL);
+        assert(strstr(message, "draw_prio=0") != NULL);
+        assert(strstr(message, "adapter_stack=32768") != NULL);
+#else
+        assert(strstr(message, "lv_os=freertos") != NULL);
         assert(strstr(message, "draw_units=2") != NULL);
+        assert(strstr(message, "draw_stack=32768") != NULL);
         assert(strstr(message, "draw_prio=3") != NULL);
+        assert(strstr(message, "adapter_stack=8192") != NULL);
+#endif
+        assert(strstr(message, "freetype_pool=16384") != NULL);
         assert(strstr(message, "tcp_payload=5760") != NULL);
         assert(strstr(message, "tcp_prio=2") != NULL);
         char expected_profile[32];
@@ -461,19 +711,157 @@ esp_err_t connectivity_manager_get_status(
     return ESP_OK;
 }
 
+#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
+esp_err_t provisioning_service_get_status(
+    provisioning_service_status_t *status)
+{
+    assert(status != NULL);
+    memset(status, 0, sizeof(*status));
+    const bool active = atomic_load(&s_provisioning_active);
+    const bool connected = active && atomic_load(&s_provisioning_connected);
+    status->available = true;
+    status->active = active;
+    status->client_connected = connected;
+    status->state = connected ? PROVISIONING_SERVICE_STATE_CONNECTED :
+                    (active ? PROVISIONING_SERVICE_STATE_ADVERTISING :
+                     PROVISIONING_SERVICE_STATE_IDLE);
+    return ESP_OK;
+}
+
+esp_err_t provisioning_service_get_diagnostics(
+    provisioning_service_diagnostics_t *diagnostics)
+{
+    assert(diagnostics != NULL);
+    if (atomic_load(&s_provisioning_active) &&
+            atomic_load(&s_provisioning_connected))
+    {
+        if (atomic_load(&s_protected_fail))
+        {
+            atomic_fetch_add(&s_protected_failure_count, 1U);
+        }
+        else
+        {
+            atomic_fetch_add(&s_snapshot_request_id, 1U);
+            atomic_fetch_add(&s_protected_success_count, 1U);
+            atomic_fetch_add(&s_snapshot_success_count, 1U);
+            atomic_store(&s_snapshot_success_us, esp_timer_get_time());
+        }
+    }
+    *diagnostics = (provisioning_service_diagnostics_t)
+    {
+        .protected_request_count =
+            atomic_load(&s_protected_success_count),
+            .protected_success_count =
+                atomic_load(&s_protected_success_count),
+                .protected_failure_count =
+                    atomic_load(&s_protected_failure_count),
+                    .snapshot_success_count =
+                        atomic_load(&s_snapshot_success_count),
+                        .last_snapshot_request_id = atomic_load(&s_snapshot_request_id),
+                        .last_snapshot_success_us = atomic_load(&s_snapshot_success_us),
+                        .worker_stack_high_water = 8192U,
+                        .worker_found = true,
+    };
+    return ESP_OK;
+}
+
+esp_err_t provisioning_service_close_window(void)
+{
+    atomic_store(&s_provisioning_active, false);
+    return atomic_load(&s_provisioning_close_result);
+}
+
+bool provisioning_service_is_active(void)
+{
+    return atomic_load(&s_provisioning_active);
+}
+#endif
+
 esp_err_t audio_service_start(void)
 {
     atomic_fetch_add(&s_audio_start_count, 1U);
+    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_RUNNING);
     return ESP_OK;
 }
 
 esp_err_t audio_service_stop(void)
 {
-    const size_t delete_count = display_benchmark_host_port_delete_count();
-    assert(delete_count > 0U);
-    assert(strcmp(display_benchmark_host_port_deleted_name(delete_count - 1U),
-                  "display_audio") == 0);
+#if TEST_C_EXT_STRESS
+    if (!atomic_load(&s_c_ext_active))
+#endif
+    {
+        const size_t delete_count = display_benchmark_host_port_delete_count();
+        assert(delete_count > 0U);
+        assert(strcmp(
+                   display_benchmark_host_port_deleted_name(delete_count - 1U),
+                   "display_audio") == 0);
+    }
     atomic_fetch_add(&s_audio_stop_count, 1U);
+    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
+    return ESP_OK;
+}
+
+audio_service_state_t audio_service_get_state(void)
+{
+    return (audio_service_state_t)atomic_load(&s_audio_state);
+}
+
+esp_err_t audio_service_get_config(audio_service_config_t *config)
+{
+    assert(config != NULL);
+    *config = (audio_service_config_t)
+    {
+        .sample_rate_hz = 48000U,
+        .bits_per_sample = 16U,
+        .channels = 2U,
+        .mclk_multiple = 256U,
+    };
+    return ESP_OK;
+}
+
+esp_err_t audio_service_set_volume(uint8_t percent)
+{
+    assert(percent <= 100U);
+#if TEST_C_EXT_STRESS
+    if (percent == 37U && atomic_load(&s_audio_restore_volume_fail))
+    {
+        return ESP_FAIL;
+    }
+#endif
+    atomic_store(&s_audio_volume, percent);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_get_volume(uint8_t *percent)
+{
+    assert(percent != NULL);
+    *percent = atomic_load(&s_audio_volume);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_set_mute(bool muted)
+{
+    atomic_store(&s_audio_muted, muted);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_get_mute(bool *muted)
+{
+    assert(muted != NULL);
+    *muted = atomic_load(&s_audio_muted);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_set_pa(bool enabled)
+{
+    atomic_store(&s_audio_pa_enabled, enabled);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_get_pa(bool *enabled)
+{
+    assert(enabled != NULL);
+    *enabled = atomic_load(&s_audio_pa_enabled);
     return ESP_OK;
 }
 
@@ -485,6 +873,37 @@ esp_err_t audio_service_write(void *data, size_t bytes, size_t *written,
     assert(timeout_ms > 0U);
     atomic_fetch_add(&s_audio_write_count, 1U);
     *written = bytes;
+#if TEST_C_EXT_STRESS
+    const test_audio_io_fault_t fault =
+        (test_audio_io_fault_t)atomic_load(&s_audio_io_fault);
+    bool expected = false;
+    if ((fault == TEST_AUDIO_IO_FAULT_TX_SHORT ||
+            fault == TEST_AUDIO_IO_FAULT_TX_TIMEOUT ||
+            fault == TEST_AUDIO_IO_FAULT_TX_ERROR ||
+            fault == TEST_AUDIO_IO_FAULT_TX_DEADLINE) &&
+            atomic_compare_exchange_strong(&s_audio_io_fault_injected,
+                                           &expected, true))
+    {
+        if (fault == TEST_AUDIO_IO_FAULT_TX_SHORT)
+        {
+            *written = bytes - 1U;
+        }
+        else if (fault == TEST_AUDIO_IO_FAULT_TX_TIMEOUT)
+        {
+            *written = 0U;
+            return ESP_ERR_TIMEOUT;
+        }
+        else if (fault == TEST_AUDIO_IO_FAULT_TX_ERROR)
+        {
+            *written = 0U;
+            return ESP_FAIL;
+        }
+        else
+        {
+            (void)usleep(70000U);
+        }
+    }
+#endif
     (void)usleep(100U);
     return ESP_OK;
 }
@@ -496,7 +915,46 @@ esp_err_t audio_service_read(void *data, size_t bytes, size_t *read,
     assert(read != NULL);
     assert(timeout_ms > 0U);
     atomic_fetch_add(&s_audio_read_count, 1U);
+    memset(data, 0x5A, bytes);
     *read = bytes;
+#if TEST_C_EXT_STRESS
+    const test_audio_io_fault_t fault =
+        (test_audio_io_fault_t)atomic_load(&s_audio_io_fault);
+    bool expected = false;
+    if ((fault == TEST_AUDIO_IO_FAULT_RX_SHORT ||
+            fault == TEST_AUDIO_IO_FAULT_RX_TIMEOUT ||
+            fault == TEST_AUDIO_IO_FAULT_RX_ERROR ||
+            fault == TEST_AUDIO_IO_FAULT_RX_DEADLINE ||
+            fault == TEST_AUDIO_IO_FAULT_STATE_ERROR) &&
+            atomic_compare_exchange_strong(&s_audio_io_fault_injected,
+                                           &expected, true))
+    {
+        if (fault == TEST_AUDIO_IO_FAULT_RX_SHORT)
+        {
+            *read = bytes - 1U;
+        }
+        else if (fault == TEST_AUDIO_IO_FAULT_RX_TIMEOUT)
+        {
+            *read = 0U;
+            return ESP_ERR_TIMEOUT;
+        }
+        else if (fault == TEST_AUDIO_IO_FAULT_RX_ERROR)
+        {
+            *read = 0U;
+            return ESP_FAIL;
+        }
+        else if (fault == TEST_AUDIO_IO_FAULT_RX_DEADLINE)
+        {
+            (void)usleep(70000U);
+        }
+        else
+        {
+            atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_ERROR);
+            *read = 0U;
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+#endif
     (void)usleep(100U);
     return atomic_load(&s_audio_fail) ? ESP_FAIL : ESP_OK;
 }
@@ -518,9 +976,36 @@ esp_err_t app_manager_display_diagnostics_end_benchmark(
     memset(report, 0, sizeof(*report));
     const test_report_quality_t quality =
         (test_report_quality_t)atomic_load(&s_report_quality);
+#if TEST_LV_OS_NONE
+    const unsigned report_index = atomic_load(&s_diagnostics_end_count);
+#endif
     report->sample_count = 2U;
     report->minimum_fps = 35U;
+    report->minimum_internal_free = 160000U;
+    report->minimum_internal_largest = 80000U;
+    report->minimum_dma_free = 120000U;
     report->minimum_dma_largest = 40000U;
+    report->minimum_psram_free = 6000000U;
+    report->minimum_psram_largest = 5900000U;
+    if (quality == TEST_REPORT_ZERO_HEAP_MINIMUM)
+    {
+        report->minimum_internal_free = 0U;
+    }
+#if TEST_LV_OS_NONE
+    report->minimum_render_stack_high_water = 8192U;
+    report->render_task_found = true;
+    report->render_task_stack_in_psram = true;
+    if (quality == TEST_REPORT_RENDER_ZERO_HWM)
+    {
+        report->minimum_render_stack_high_water = 0U;
+    }
+    if (quality == TEST_REPORT_RENDER_MISSING_LATER && report_index > 0U)
+    {
+        report->render_task_found = false;
+        report->render_task_stack_in_psram = false;
+        report->minimum_render_stack_high_water = 0U;
+    }
+#endif
     report->frame_submit_count = 10U;
     report->sample_error_count =
         quality == TEST_REPORT_STABILITY_FAIL ? 1U : 0U;
@@ -697,6 +1182,35 @@ esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
 {
     assert(request != NULL);
     assert(timeout_ms == APP_MANAGER_TRANSITION_MAX_DURATION_MS + 1000U);
+#if TEST_C_EXT_STRESS
+    if (atomic_load(&s_c_ext_active))
+    {
+        if (request->operation == APP_MANAGER_NAV_OP_CLEANUP_BACKGROUND)
+        {
+            assert(request->app_id == NULL);
+            assert(request->page_id == NULL);
+        }
+        else
+        {
+            assert(request->operation == APP_MANAGER_NAV_OP_OPEN_PAGE ||
+                   request->operation == APP_MANAGER_NAV_OP_RUN);
+            assert(request->app_id != NULL);
+            assert(request->operation == APP_MANAGER_NAV_OP_RUN ||
+                   request->page_id != NULL);
+            if (strcmp(request->app_id, APP_MANAGER_ID_SETUP) == 0 &&
+                    request->page_id != NULL &&
+                    strcmp(request->page_id, "provisioning") == 0)
+            {
+                atomic_store(&s_provisioning_active, true);
+            }
+            atomic_fetch_or(&s_profile_effect_mask,
+                            1U << (unsigned)request->transition.effect);
+        }
+        atomic_fetch_add(&s_navigation_count, 1U);
+        (void)usleep(100U);
+        return ESP_OK;
+    }
+#endif
     assert(request->transition.duration_ms ==
            APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS);
     atomic_fetch_or(&s_profile_effect_mask,
@@ -881,6 +1395,10 @@ static void _reset(void)
     atomic_store(&s_event_unsubscribe_count, 0U);
     atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IDLE);
     atomic_store(&s_audio_fail, false);
+    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
+    atomic_store(&s_audio_volume, 37U);
+    atomic_store(&s_audio_muted, true);
+    atomic_store(&s_audio_pa_enabled, false);
     atomic_store(&s_audio_start_count, 0U);
     atomic_store(&s_audio_stop_count, 0U);
     atomic_store(&s_audio_write_count, 0U);
@@ -927,8 +1445,27 @@ static void _reset(void)
     atomic_store(&s_heap_allocate_count, 0U);
     atomic_store(&s_heap_free_count, 0U);
     atomic_store(&s_heap_maximum_allocation, 0U);
+    atomic_store(&s_stress_heap_exhausted, false);
     s_minimum_fps = 0U;
     s_minimum_dma_largest = 0U;
+#if TEST_C_EXT_STRESS
+    atomic_store(&s_c_ext_active, false);
+    atomic_store(&s_provisioning_active, false);
+    atomic_store(&s_provisioning_connected, true);
+    atomic_store(&s_protected_fail, false);
+    atomic_store(&s_provisioning_close_result, ESP_OK);
+    atomic_store(&s_protected_success_count, 0U);
+    atomic_store(&s_protected_failure_count, 0U);
+    atomic_store(&s_snapshot_success_count, 0U);
+    atomic_store(&s_snapshot_request_id, 0U);
+    atomic_store(&s_snapshot_success_us, 0);
+    atomic_store(&s_c_ext_phase_mask, 0U);
+    atomic_store(&s_c_ext_summary_result, 0U);
+    atomic_store(&s_c_ext_summary_completed, false);
+    atomic_store(&s_audio_io_fault, TEST_AUDIO_IO_FAULT_NONE);
+    atomic_store(&s_audio_io_fault_injected, false);
+    atomic_store(&s_audio_restore_volume_fail, false);
+#endif
 }
 
 static void _test_invalid_config(void)
@@ -950,6 +1487,18 @@ static void _test_invalid_config(void)
     assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
     config = s_benchmark_config;
     config.load = (display_benchmark_load_t)99;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.ble_mode = (display_benchmark_ble_mode_t)99;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.app_workload = (display_benchmark_app_workload_t)99;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.audio_volume_percent = 101U;
+    assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
+    config = s_benchmark_config;
+    config.ble_mode = DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED;
     assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
     config = s_benchmark_config;
     config.ipv4_host = NULL;
@@ -1315,6 +1864,234 @@ static void _test_presentation_wait_failure_cleans_up(void)
     assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
 }
 
+#if TEST_C_EXT_STRESS
+static void _c_ext_stress_start(echo_server_t *server)
+{
+    _echo_server_start(server, false, false, 0U);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
+    atomic_store(&s_c_ext_active, true);
+    assert((display_benchmark_start)(&s_c_ext_stress_config) == ESP_OK);
+}
+
+static void _c_ext_stress_finish(echo_server_t *server)
+{
+    _wait_for_counter(&s_c_ext_summary_result, 1U);
+    assert(display_benchmark_stop() == ESP_OK);
+    atomic_store(&s_c_ext_active, false);
+    _echo_server_stop(server);
+}
+
+static void _test_c_ext_stress_runs_and_restores_state(void)
+{
+    _reset();
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _c_ext_stress_finish(&server);
+
+    assert(atomic_load(&s_c_ext_summary_result) == 1U);
+    assert(atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_c_ext_phase_mask) == 0x7FU);
+    assert(atomic_load(&s_log_result) == 1U);
+    assert(atomic_load(&s_log_performance) == 1U);
+    assert(!atomic_load(&s_provisioning_active));
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+    assert(atomic_load(&s_audio_volume) == 37U);
+    assert(atomic_load(&s_audio_muted));
+    assert(!atomic_load(&s_audio_pa_enabled));
+    assert(atomic_load(&s_audio_start_count) == 1U);
+    assert(atomic_load(&s_audio_stop_count) == 1U);
+    assert(atomic_load(&s_audio_write_count) > 0U);
+    assert(atomic_load(&s_audio_read_count) > 0U);
+    assert(atomic_load(&s_snapshot_success_count) > 0U);
+    assert(atomic_load(&s_navigation_count) > 26U);
+    assert(display_benchmark_host_port_create_count() == 5U);
+    assert(display_benchmark_host_port_delete_count() == 5U);
+    for (size_t index = 0U; index < 5U; ++index)
+    {
+        assert(display_benchmark_host_port_stack_caps(index) ==
+               (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+}
+
+static void _test_c_ext_stress_ble_wait_timeout_cleans_up(void)
+{
+    _reset();
+    atomic_store(&s_provisioning_connected, false);
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _c_ext_stress_finish(&server);
+
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(!atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_c_ext_phase_mask) == 0x67U);
+    assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
+    assert(!atomic_load(&s_provisioning_active));
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+    assert(display_benchmark_host_port_create_count() == 4U);
+    assert(display_benchmark_host_port_delete_count() == 4U);
+}
+
+static void _test_c_ext_stress_protected_failure_is_soft(void)
+{
+    _reset();
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _wait_for_counter(&s_navigation_count, 30U);
+    atomic_store(&s_protected_fail, true);
+    _c_ext_stress_finish(&server);
+
+    assert(atomic_load(&s_protected_failure_count) > 0U);
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_navigation_count) > 30U);
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+}
+
+static void _test_c_ext_stress_missing_task_fails_closed(void)
+{
+    _reset();
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _wait_for_counter(&s_navigation_count, 30U);
+    display_benchmark_host_port_hide_external_task("provisioning");
+    _c_ext_stress_finish(&server);
+
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_navigation_count) > 30U);
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+}
+
+static void _test_c_ext_stress_heap_exhaustion_exits(void)
+{
+    _reset();
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _wait_for_counter(&s_navigation_count, 30U);
+    atomic_store(&s_stress_heap_exhausted, true);
+    _c_ext_stress_finish(&server);
+
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(!atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_NO_MEM);
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+}
+
+static void _test_c_ext_stress_audio_soft_faults_continue(void)
+{
+    static const test_audio_io_fault_t faults[] =
+    {
+        TEST_AUDIO_IO_FAULT_TX_SHORT,
+        TEST_AUDIO_IO_FAULT_RX_SHORT,
+        TEST_AUDIO_IO_FAULT_TX_TIMEOUT,
+        TEST_AUDIO_IO_FAULT_RX_TIMEOUT,
+        TEST_AUDIO_IO_FAULT_TX_ERROR,
+        TEST_AUDIO_IO_FAULT_RX_ERROR,
+        TEST_AUDIO_IO_FAULT_TX_DEADLINE,
+        TEST_AUDIO_IO_FAULT_RX_DEADLINE,
+    };
+    for (size_t index = 0U; index < sizeof(faults) / sizeof(faults[0]); ++index)
+    {
+        _reset();
+        echo_server_t server;
+        _c_ext_stress_start(&server);
+        _wait_for_counter(&s_navigation_count, 30U);
+        atomic_store(&s_audio_io_fault, faults[index]);
+        _c_ext_stress_finish(&server);
+
+        assert(atomic_load(&s_audio_io_fault_injected));
+        assert(atomic_load(&s_c_ext_summary_result) == 2U);
+        assert(atomic_load(&s_c_ext_summary_completed));
+        assert(atomic_load(&s_navigation_count) > 30U);
+        assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+        assert(atomic_load(&s_audio_volume) == 37U);
+        assert(atomic_load(&s_audio_muted));
+        assert(!atomic_load(&s_audio_pa_enabled));
+    }
+}
+
+static void _test_c_ext_stress_audio_state_failure_exits_and_restores(void)
+{
+    static const audio_service_state_t original_states[] =
+    {
+        AUDIO_SERVICE_STATE_READY,
+        AUDIO_SERVICE_STATE_RUNNING,
+    };
+    for (size_t index = 0U;
+            index < sizeof(original_states) / sizeof(original_states[0]);
+            ++index)
+    {
+        _reset();
+        atomic_store(&s_audio_state, original_states[index]);
+        echo_server_t server;
+        _c_ext_stress_start(&server);
+        _wait_for_counter(&s_navigation_count, 30U);
+        atomic_store(&s_audio_io_fault, TEST_AUDIO_IO_FAULT_STATE_ERROR);
+        _c_ext_stress_finish(&server);
+
+        assert(atomic_load(&s_audio_io_fault_injected));
+        assert(atomic_load(&s_c_ext_summary_result) == 2U);
+        assert(!atomic_load(&s_c_ext_summary_completed));
+        assert((audio_service_state_t)atomic_load(&s_audio_state) ==
+               original_states[index]);
+        assert(atomic_load(&s_audio_stop_count) == 1U);
+        assert(atomic_load(&s_audio_start_count) == 1U);
+    }
+}
+
+static void _test_c_ext_stress_partial_worker_start_rolls_back(void)
+{
+    static const char *const expected_deleted[][4] =
+    {
+        {"display_tcp", "display_bench", NULL, NULL},
+        {"stress_audio_tx", "display_tcp", "display_bench", NULL},
+        {"stress_audio_rx", "stress_audio_tx", "display_tcp", "display_bench"},
+    };
+    for (size_t fail_index = 2U; fail_index <= 4U; ++fail_index)
+    {
+        _reset();
+        display_benchmark_host_port_fail_create_on(fail_index);
+        echo_server_t server;
+        _c_ext_stress_start(&server);
+        _c_ext_stress_finish(&server);
+
+        assert(atomic_load(&s_c_ext_summary_result) == 2U);
+        assert(!atomic_load(&s_c_ext_summary_completed));
+        assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_NO_MEM);
+        assert(display_benchmark_host_port_create_count() == fail_index);
+        assert(display_benchmark_host_port_delete_count() == fail_index);
+        for (size_t index = 0U; index < fail_index; ++index)
+        {
+            assert(strcmp(display_benchmark_host_port_deleted_name(index),
+                          expected_deleted[fail_index - 2U][index]) == 0);
+        }
+        assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+        assert(atomic_load(&s_audio_volume) == 37U);
+        assert(atomic_load(&s_audio_muted));
+        assert(!atomic_load(&s_audio_pa_enabled));
+    }
+}
+
+static void _test_c_ext_stress_cleanup_preserves_first_error(void)
+{
+    _reset();
+    atomic_store(&s_provisioning_close_result, ESP_ERR_TIMEOUT);
+    atomic_store(&s_audio_restore_volume_fail, true);
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _c_ext_stress_finish(&server);
+
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
+    assert(!atomic_load(&s_provisioning_active));
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+    assert(atomic_load(&s_audio_volume) == 5U);
+    assert(atomic_load(&s_audio_muted));
+    assert(!atomic_load(&s_audio_pa_enabled));
+}
+#endif
+
 #if TEST_REQUIRES_TCP
 static void _test_tcp_worker_create_failure_fails_rate(void)
 {
@@ -1412,6 +2189,13 @@ int main(void)
     _test_report_classification(TEST_REPORT_FLOOR, 1U, 2U);
     _test_report_classification(TEST_REPORT_FAIL, 1U, 3U);
     _test_report_classification(TEST_REPORT_STABILITY_FAIL, 2U, 1U);
+    _test_report_classification(TEST_REPORT_ZERO_HEAP_MINIMUM, 2U, 1U);
+#if TEST_LV_OS_NONE
+    _test_report_classification(TEST_REPORT_RENDER_ZERO_HWM, 2U, 1U);
+#if TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION
+    _test_report_classification(TEST_REPORT_RENDER_MISSING_LATER, 2U, 1U);
+#endif
+#endif
 #if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
     _test_report_classification(TEST_REPORT_SNAPSHOT_PREPARE_SLOW, 1U, 3U);
     _test_report_classification(TEST_REPORT_SNAPSHOT_FALLBACK, 1U, 3U);
@@ -1426,6 +2210,17 @@ int main(void)
 #endif
     _test_task_create_failure_releases_subscription();
     _test_presentation_wait_failure_cleans_up();
+#if TEST_C_EXT_STRESS
+    _test_c_ext_stress_runs_and_restores_state();
+    _test_c_ext_stress_ble_wait_timeout_cleans_up();
+    _test_c_ext_stress_protected_failure_is_soft();
+    _test_c_ext_stress_missing_task_fails_closed();
+    _test_c_ext_stress_heap_exhaustion_exits();
+    _test_c_ext_stress_audio_soft_faults_continue();
+    _test_c_ext_stress_audio_state_failure_exits_and_restores();
+    _test_c_ext_stress_partial_worker_start_rolls_back();
+    _test_c_ext_stress_cleanup_preserves_first_error();
+#endif
 #if TEST_REQUIRES_TCP
     _test_tcp_worker_create_failure_fails_rate();
     _test_unsubscribe_failure_is_retryable();

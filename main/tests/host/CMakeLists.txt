@@ -97,6 +97,7 @@ target_include_directories(app_runtime_test PRIVATE
 configure_main_host_target(app_runtime_test)
 target_compile_definitions(app_runtime_test PRIVATE
     CONFIG_MAIN_DISPLAY_BENCHMARK=1
+    APP_RUNTIME_TEST_SECURITY2=1
 )
 add_main_host_test(app_runtime_test app_runtime_test)
 
@@ -125,7 +126,11 @@ configure_main_host_target(app_runtime_pm_test)
 add_main_host_test(app_runtime_pm_test app_runtime_pm_test)
 
 function(add_display_benchmark_test target port stress characterization
-         load_full load_audio_only load_tcp_only snapshot_animation)
+         load_full load_audio_only load_tcp_only snapshot_animation os_none)
+    set(c_ext_stress 0)
+    if(ARGC GREATER 9)
+        set(c_ext_stress ${ARGV9})
+    endif()
     add_executable(${target}
         display_benchmark_test.c
         display_benchmark_host_port.c
@@ -143,12 +148,13 @@ function(add_display_benchmark_test target port stress characterization
     )
     target_compile_definitions(${target} PRIVATE
         CONFIG_MAIN_DISPLAY_BENCHMARK=1
+        CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS=${c_ext_stress}
+        TEST_C_EXT_STRESS=${c_ext_stress}
         TEST_DISPLAY_BENCHMARK_MODE_STRESS=${stress}
         TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION=${characterization}
         TEST_DISPLAY_BENCHMARK_LOAD_FULL=${load_full}
         TEST_DISPLAY_BENCHMARK_LOAD_AUDIO_ONLY=${load_audio_only}
         TEST_DISPLAY_BENCHMARK_LOAD_TCP_ONLY=${load_tcp_only}
-        CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG=0
         TEST_DISPLAY_BENCHMARK_TCP_PORT=${port}
         TEST_DISPLAY_BENCHMARK_TCP_RATE_KBIT_S=2048
         CONFIG_APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT=60
@@ -159,8 +165,8 @@ function(add_display_benchmark_test target port stress characterization
         CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH=2
         CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT=0
         CONFIG_BSP_DISPLAY_TE_SYNC=0
-        CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
-        CONFIG_LV_DRAW_THREAD_PRIO=3
+        CONFIG_LV_OS_NONE=${os_none}
+        TEST_LV_OS_NONE=${os_none}
         CONFIG_LWIP_TCP_MSS=1440
         CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760
         DISPLAY_BENCHMARK_DURATION_US=200000LL
@@ -171,6 +177,32 @@ function(add_display_benchmark_test target port stress characterization
         DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS=10U
         DISPLAY_BENCHMARK_TCP_RECONNECT_MS=10U
     )
+    if(c_ext_stress)
+        target_compile_definitions(${target} PRIVATE
+            DISPLAY_BENCHMARK_STRESS_SAMPLE_MS=1U
+            DISPLAY_BENCHMARK_STRESS_TCP_CONNECT_MS=1000U
+            DISPLAY_BENCHMARK_STRESS_PROVISIONING_MS=100U
+            DISPLAY_BENCHMARK_STRESS_CLEANUP_MS=100U
+            DISPLAY_BENCHMARK_STRESS_NORMAL_DWELL_MS=1U
+            DISPLAY_BENCHMARK_STRESS_HEAVY_DWELL_MS=1U
+        )
+        target_include_directories(${target} PRIVATE
+            ../../../layers/middleware/components/provisioning_service/include
+        )
+    endif()
+    if(os_none)
+        target_compile_definitions(${target} PRIVATE
+            CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE=32768
+            CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+        )
+    else()
+        target_compile_definitions(${target} PRIVATE
+            CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE=8192
+            CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+            CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
+            CONFIG_LV_DRAW_THREAD_PRIO=3
+        )
+    endif()
     target_link_libraries(${target} PRIVATE Threads::Threads)
     configure_main_host_target(${target})
     add_main_host_test(${target} ${target})
@@ -181,29 +213,44 @@ set(DISPLAY_BENCHMARK_CHARACTERIZATION_FULL_PORT 55011)
 set(DISPLAY_BENCHMARK_CHARACTERIZATION_AUDIO_PORT 55021)
 set(DISPLAY_BENCHMARK_CHARACTERIZATION_TCP_PORT 55031)
 set(DISPLAY_BENCHMARK_SNAPSHOT_DISABLED_PORT 55041)
+set(DISPLAY_BENCHMARK_OS_NONE_PORT 55051)
+set(DISPLAY_BENCHMARK_OS_NONE_CHARACTERIZATION_PORT 55061)
+set(DISPLAY_BENCHMARK_C_EXT_STRESS_PORT 55071)
 if(MAIN_HOST_SANITIZER STREQUAL "address")
     set(DISPLAY_BENCHMARK_STRESS_PORT 55002)
     set(DISPLAY_BENCHMARK_CHARACTERIZATION_FULL_PORT 55012)
     set(DISPLAY_BENCHMARK_CHARACTERIZATION_AUDIO_PORT 55022)
     set(DISPLAY_BENCHMARK_CHARACTERIZATION_TCP_PORT 55032)
     set(DISPLAY_BENCHMARK_SNAPSHOT_DISABLED_PORT 55042)
+    set(DISPLAY_BENCHMARK_OS_NONE_PORT 55052)
+    set(DISPLAY_BENCHMARK_OS_NONE_CHARACTERIZATION_PORT 55062)
+    set(DISPLAY_BENCHMARK_C_EXT_STRESS_PORT 55072)
 elseif(MAIN_HOST_SANITIZER STREQUAL "thread")
     set(DISPLAY_BENCHMARK_STRESS_PORT 55003)
     set(DISPLAY_BENCHMARK_CHARACTERIZATION_FULL_PORT 55013)
     set(DISPLAY_BENCHMARK_CHARACTERIZATION_AUDIO_PORT 55023)
     set(DISPLAY_BENCHMARK_CHARACTERIZATION_TCP_PORT 55033)
     set(DISPLAY_BENCHMARK_SNAPSHOT_DISABLED_PORT 55043)
+    set(DISPLAY_BENCHMARK_OS_NONE_PORT 55053)
+    set(DISPLAY_BENCHMARK_OS_NONE_CHARACTERIZATION_PORT 55063)
+    set(DISPLAY_BENCHMARK_C_EXT_STRESS_PORT 55073)
 endif()
 add_display_benchmark_test(display_benchmark_test
-    ${DISPLAY_BENCHMARK_STRESS_PORT} 1 0 0 0 0 1)
+    ${DISPLAY_BENCHMARK_STRESS_PORT} 1 0 0 0 0 1 0)
 add_display_benchmark_test(display_benchmark_characterization_full_test
-    ${DISPLAY_BENCHMARK_CHARACTERIZATION_FULL_PORT} 0 1 1 0 0 1)
+    ${DISPLAY_BENCHMARK_CHARACTERIZATION_FULL_PORT} 0 1 1 0 0 1 0)
 add_display_benchmark_test(display_benchmark_characterization_audio_test
-    ${DISPLAY_BENCHMARK_CHARACTERIZATION_AUDIO_PORT} 0 1 0 1 0 1)
+    ${DISPLAY_BENCHMARK_CHARACTERIZATION_AUDIO_PORT} 0 1 0 1 0 1 0)
 add_display_benchmark_test(display_benchmark_characterization_tcp_test
-    ${DISPLAY_BENCHMARK_CHARACTERIZATION_TCP_PORT} 0 1 0 0 1 1)
+    ${DISPLAY_BENCHMARK_CHARACTERIZATION_TCP_PORT} 0 1 0 0 1 1 0)
 add_display_benchmark_test(display_benchmark_snapshot_disabled_test
-    ${DISPLAY_BENCHMARK_SNAPSHOT_DISABLED_PORT} 1 0 0 0 0 0)
+    ${DISPLAY_BENCHMARK_SNAPSHOT_DISABLED_PORT} 1 0 0 0 0 0 0)
+add_display_benchmark_test(display_benchmark_os_none_test
+    ${DISPLAY_BENCHMARK_OS_NONE_PORT} 1 0 0 0 0 1 1)
+add_display_benchmark_test(display_benchmark_os_none_characterization_test
+    ${DISPLAY_BENCHMARK_OS_NONE_CHARACTERIZATION_PORT} 0 1 0 0 1 1 1)
+add_display_benchmark_test(display_benchmark_c_ext_stress_test
+    ${DISPLAY_BENCHMARK_C_EXT_STRESS_PORT} 1 0 1 0 0 1 1 1)
 
 function(add_fs_storage_test target mmap_enabled)
     add_executable(${target}

@@ -28,6 +28,20 @@ typedef enum display_benchmark_load
     DISPLAY_BENCHMARK_LOAD_TCP_ONLY,
 } display_benchmark_load_t;
 
+/** @brief BLE workload required by the generated development profile. */
+typedef enum display_benchmark_ble_mode
+{
+    DISPLAY_BENCHMARK_BLE_OFF = 0,
+    DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED,
+} display_benchmark_ble_mode_t;
+
+/** @brief Navigation workload selected for the measured stage. */
+typedef enum display_benchmark_app_workload
+{
+    DISPLAY_BENCHMARK_APP_WORKLOAD_DISPLAY_ROUTES = 0,
+    DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES,
+} display_benchmark_app_workload_t;
+
 /** @brief Complete generated benchmark campaign configuration. */
 typedef struct display_benchmark_config
 {
@@ -35,6 +49,9 @@ typedef struct display_benchmark_config
     uint32_t stress_duration_sec;  /**< Stress runtime, 10 through 28800 seconds. */
     uint32_t effect_duration_sec;  /**< Per-effect runtime, 5 through 300 seconds. */
     display_benchmark_load_t load; /**< Concurrent characterization workload. */
+    display_benchmark_ble_mode_t ble_mode; /**< Protected BLE session policy. */
+    display_benchmark_app_workload_t app_workload; /**< Navigation route set. */
+    uint8_t audio_volume_percent; /**< Stress playback volume, 0 through 100. */
     const char *ipv4_host;         /**< Numeric IPv4 echo-server address. */
     uint16_t port;                 /**< Echo-server TCP port. */
     uint32_t rate_kbit_s;          /**< Per-direction TCP traffic rate. */

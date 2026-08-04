@@ -7,6 +7,7 @@
 void display_benchmark_host_port_reset(void);
 void display_benchmark_host_port_fail_next_create(void);
 void display_benchmark_host_port_fail_create_on(size_t index);
+void display_benchmark_host_port_hide_external_task(const char *name);
 size_t display_benchmark_host_port_create_count(void);
 size_t display_benchmark_host_port_delete_count(void);
 uint32_t display_benchmark_host_port_stack_depth(size_t index);

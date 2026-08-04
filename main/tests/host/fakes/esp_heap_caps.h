@@ -6,6 +6,7 @@
 #define MALLOC_CAP_8BIT     (1U << 2)
 #define MALLOC_CAP_SPIRAM   (1U << 10)
 #define MALLOC_CAP_INTERNAL (1U << 11)
+#define MALLOC_CAP_DMA      (1U << 12)
 
 /**
  * @brief Allocate host memory while accepting ESP-IDF capability choices.
@@ -19,6 +20,8 @@ void *heap_caps_malloc_prefer(size_t size, size_t preference_count, ...);
 
 /** @brief Allocate host memory with one required capability mask. */
 void *heap_caps_malloc(size_t size, unsigned caps);
+size_t heap_caps_get_free_size(unsigned caps);
+size_t heap_caps_get_largest_free_block(unsigned caps);
 
 /**
  * @brief Release memory returned by heap_caps_malloc_prefer().

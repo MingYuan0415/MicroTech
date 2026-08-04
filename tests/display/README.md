@@ -129,6 +129,110 @@ ESP-IDF 会将请求拆成不超过硬件边界的 DMA 段，不应将其误认�
 超时应单独记录，不归因于显示性能；WDT、panic、OOM、音频错误、显示冻结或任何 Wi-Fi
 断连均使稳定性失败。
 
+## LVGL 内部 RAM 候选
+
+LVGL RAM 工具固定生产显示基线、full-load characterization 和源码指纹，只改变
+LVGL OS、software draw unit、draw-thread stack 与 FreeType render pool：
+
+| Profile | LVGL OS | Draw unit / stack | FreeType pool | 理论内部 RAM 回收 |
+| --- | --- | --- | ---: | ---: |
+| B0 | FreeRTOS | 2 / 32 KiB | 16 KiB | 基线 |
+| C | NONE | 1 / 无 draw task | 16 KiB | 64 KiB |
+| A | FreeRTOS | 1 / 32 KiB | 16 KiB | 32 KiB |
+| B24/B20/B16 | FreeRTOS | 1 / 24/20/16 KiB | 4 KiB | 40/44/48 KiB |
+
+先准备并构建 B0/C；只有 C 未通过时才依次准备 A、B24、B20、B16：
+
+```sh
+python3 tests/display/lvgl_ram_profiles.py prepare --reset
+python3 tests/display/lvgl_ram_profiles.py prepare --reset \
+  --profiles A B24 B20 B16
+```
+
+命令只写 `/tmp/mt-lvgl-ram/<profile>/`，并打印隔离的 `idf.py build size` 命令。
+源码改动后必须重新 `prepare --reset`。构建完成后验证镜像、源码指纹及配置差异：
+
+```sh
+python3 tests/display/lvgl_ram_profiles.py validate --profiles B0 C
+```
+
+保存同负载的 characterization 串口日志后执行候选门槛分析：
+
+```sh
+python3 tests/display/analyze_lvgl_ram.py \
+  --log B0=/path/to/b0.log --log C=/path/to/c.log
+```
+
+只有 C 失败时才追加 `A`，并按 `B24`、`B20`、`B16` 顺序追加日志。分析器校验
+profile 指纹、两阶段五种 effect、稳定性、FLOOR、snapshot、DMA、render task、栈位置、
+high-water 和实际 internal free 收益，并按固定停止规则输出 `selected`。`--json` 可生成
+机器可读结果。该结果仅覆盖 characterization 日志；13 种转场人工检查、完整字号/字形、
+10 分钟 full-load、1800 秒 stress、冷启动和休眠恢复仍须分别执行并记录，全部通过前不得
+将候选写入生产 `sdkconfig.defaults`。
+
+C 必须满足既有稳定性、FLOOR、snapshot 与 DMA 门槛，并报告 `render_task=1`、
+`render_stack_psram=1`、`render_stack_hwm>=4096`；相同负载下
+`min_internal_free` 至少比 B0 增加 48 KiB。A/B 的 high-water 同样至少 4 KiB，
+内部 RAM 收益至少达到理论值的 75%。adapter 出现 PSRAM 栈分配失败回退日志时，
+候选直接失败。B0 只提供同负载基线，其自身可因现存内部 RAM 问题失败，但日志必须完整、
+配置有效并包含内存汇总。B24/B20/B16 任一级失败后不继续测试更小栈。
+
+### BLE 配网诊断
+
+`C_EXT` 是 C 的隔离诊断变体，只把 NimBLE Host 动态分配从内部 RAM 移到 PSRAM，
+用于判别 BLE 激活后内部 DMA 连续块不足导致的二维码页面残帧。它不属于候选矩阵，不能
+传给 `analyze_lvgl_ram.py`，也不能仅凭二维码恢复就写入生产 `sdkconfig.defaults`：
+
+```sh
+python3 tests/display/lvgl_ram_profiles.py prepare --reset --profiles C_EXT
+python3 tests/display/lvgl_ram_profiles.py command C_EXT
+python3 tests/display/lvgl_ram_profiles.py validate --profiles C_EXT
+```
+
+执行 `prepare` 后运行其打印的隔离构建命令，再验证镜像。真机按主页、Setup、BLE 二维码、
+Security 2 配网、关闭 BLE 的顺序记录 internal/DMA/PSRAM 最小 free/largest；二维码必须
+持续可读、不得出现 SPI/DMA 分配失败，BLE 激活时 `dma_largest` 至少为 `14,720 B`，
+关闭后内存应恢复。NimBLE Host task 的 6 KiB 栈仍在内部 RAM；该配置只移动 NimBLE
+动态分配。ESP-IDF Security 2 内部 SRP/session heap 释放前未保证显式清零的问题也仍然
+存在，持久化生产配置前必须完成安全与生命周期复核。
+
+### C_EXT 并发系统压力测试
+
+`C_EXT_STRESS` 在 C_EXT 上额外启用 provisioning diagnostics，并固定加载
+`c_ext_stress_1800.json`。它仍是隔离的开发 profile，不修改生产 `sdkconfig.defaults`：
+
+```sh
+python3 tests/display/lvgl_ram_profiles.py prepare --reset \
+  --profiles C_EXT C_EXT_STRESS
+python3 tests/display/lvgl_ram_profiles.py command C_EXT
+python3 tests/display/lvgl_ram_profiles.py command C_EXT_STRESS
+python3 tests/display/lvgl_ram_profiles.py validate \
+  --profiles C_EXT C_EXT_STRESS
+```
+
+依次执行命令输出的隔离 `idf.py build size`。记录两份 size 输出，
+`C_EXT_STRESS` 相比 C_EXT 的静态 DIRAM 增量不得超过 2 KiB。烧录
+`C_EXT_STRESS` 前启动 TCP echo server：
+
+```sh
+python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001
+```
+
+设备进入 `provisioning_wait` 后，手机扫描 Setup 页二维码并建立 Security 2。手机侧按
+`contracts/provisioning/docs/stress-session.md` 严格串行发送 `GetSnapshot`：2 秒一次、
+request ID 非零且不复用，不发送 mutation 或 `FinishSession`，测量阶段不主动断连或重连。
+设备在首个 protected snapshot 成功后完成 warmup，并进入 1800 秒 measure。保存完整串口
+日志后运行：
+
+```sh
+python3 tests/display/analyze_c_ext_stress.py /path/to/c_ext_stress.log
+```
+
+分析器要求七个 phase 按固定顺序各出现一次，并校验显示基线、heap/DMA、任务 HWM/栈位置、
+BLE cadence、TCP、Audio TX/RX、13 种动画、页面覆盖、cleanup 恢复和致命日志。完整通过只
+证明一次 1800 秒并发 campaign；10 分钟预检、20 次 BLE 开关、3 次 TCP 中断恢复、冷启动、
+休眠恢复和 8 小时 soak 均是独立验收项，不能互相替代。
+
 ## 40/80 MHz 单板 A/B
 
 SH8601A preliminary Table 14 给出的 Quad SPI 最小写周期为 50 ns，对应约 20 MHz

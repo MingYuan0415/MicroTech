@@ -9,6 +9,7 @@ typedef int BaseType_t;
 typedef unsigned UBaseType_t;
 typedef void *TaskHandle_t;
 typedef void *SemaphoreHandle_t;
+typedef uint32_t StackType_t;
 typedef void (*TaskFunction_t)(void *);
 
 #define pdFALSE       0

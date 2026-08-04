@@ -3,6 +3,9 @@
   "stress_duration_sec": 1800,
   "effect_duration_sec": 30,
   "load": "full",
+  "ble_mode": "off",
+  "app_workload": "display_routes",
+  "audio_volume_percent": 60,
   "ipv4_host": "192.168.0.205",
   "port": 5001,
   "rate_kbit_s": 2048

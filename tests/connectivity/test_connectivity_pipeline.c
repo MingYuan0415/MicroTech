@@ -366,6 +366,23 @@ static bool _wait_status_failure(
     return false;
 }
 
+static bool _wait_status_operation(
+    connectivity_manager_operation_id_t operation_id, bool complete)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_status_snapshot_t snapshot;
+        if (connectivity_manager_get_status(&snapshot) == ESP_OK &&
+                snapshot.operation_id == operation_id &&
+                snapshot.operation_complete == complete)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
 static bool _wait_scan(bool running, esp_err_t result,
                        connectivity_manager_scan_snapshot_t *output)
 {
@@ -772,6 +789,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(connectivity_manager_request_scan(&scan_operation) == ESP_OK);
     CHECK(scan_operation != 0U);
     CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_wait_status_operation(scan_operation, false));
     CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
                         WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
     connectivity_manager_scan_snapshot_t scan;
@@ -779,6 +797,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(scan.record_count == 1U);
     CHECK(strcmp(scan.records[0].ssid, "Current AP") == 0);
     CHECK(_wait_terminal(scan_operation, ESP_OK, true));
+    CHECK(_wait_status_operation(0U, false));
 
     CHECK(connectivity_manager_request_scan(&scan_operation) == ESP_OK);
     CHECK(_wait_scan(true, ESP_OK, NULL));

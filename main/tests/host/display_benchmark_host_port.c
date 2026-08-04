@@ -8,10 +8,12 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
-#define HOST_TASK_CAPACITY 4U
+#define HOST_TASK_CAPACITY 12U
+#define HOST_EXTERNAL_TASK_COUNT 5U
 
 typedef struct host_task
 {
@@ -20,9 +22,12 @@ typedef struct host_task
     pthread_cond_t condition;
     uint32_t notifications;
     bool deleted;
+    bool available;
     const char *name;
     TaskFunction_t entry;
     void *arg;
+    UBaseType_t high_water;
+    StackType_t *stack_start;
 } host_task_t;
 
 typedef struct host_semaphore
@@ -33,6 +38,18 @@ typedef struct host_semaphore
 } host_semaphore_t;
 
 static _Thread_local host_task_t *s_current_task;
+static pthread_mutex_t s_task_registry_lock = PTHREAD_MUTEX_INITIALIZER;
+static StackType_t s_external_stack_marker;
+static host_task_t *s_tasks[HOST_TASK_CAPACITY];
+static host_task_t s_external_tasks[HOST_EXTERNAL_TASK_COUNT];
+static const char *const s_external_task_names[HOST_EXTERNAL_TASK_COUNT] =
+{
+    "lvgl",
+    "connectivity",
+    "wifi_service",
+    "provisioning",
+    "nimble_host",
+};
 static atomic_size_t s_fail_create_index;
 static atomic_size_t s_create_count;
 static atomic_size_t s_delete_count;
@@ -69,13 +86,24 @@ void display_benchmark_host_port_reset(void)
     atomic_store(&s_fail_create_index, SIZE_MAX);
     atomic_store(&s_create_count, 0U);
     atomic_store(&s_delete_count, 0U);
+    (void)pthread_mutex_lock(&s_task_registry_lock);
     for (size_t index = 0U; index < HOST_TASK_CAPACITY; ++index)
     {
         s_stack_depths[index] = 0U;
         s_stack_caps[index] = 0U;
         s_priorities[index] = 0U;
         s_deleted_names[index] = NULL;
+        s_tasks[index] = NULL;
     }
+    for (size_t index = 0U; index < HOST_EXTERNAL_TASK_COUNT; ++index)
+    {
+        memset(&s_external_tasks[index], 0, sizeof(s_external_tasks[index]));
+        s_external_tasks[index].name = s_external_task_names[index];
+        s_external_tasks[index].available = true;
+        s_external_tasks[index].high_water = 8192U;
+        s_external_tasks[index].stack_start = &s_external_stack_marker;
+    }
+    (void)pthread_mutex_unlock(&s_task_registry_lock);
 }
 
 void display_benchmark_host_port_fail_next_create(void)
@@ -86,6 +114,20 @@ void display_benchmark_host_port_fail_next_create(void)
 void display_benchmark_host_port_fail_create_on(size_t index)
 {
     atomic_store(&s_fail_create_index, index);
+}
+
+void display_benchmark_host_port_hide_external_task(const char *name)
+{
+    (void)pthread_mutex_lock(&s_task_registry_lock);
+    for (size_t index = 0U; index < HOST_EXTERNAL_TASK_COUNT; ++index)
+    {
+        if (strcmp(s_external_tasks[index].name, name) == 0)
+        {
+            s_external_tasks[index].available = false;
+            break;
+        }
+    }
+    (void)pthread_mutex_unlock(&s_task_registry_lock);
 }
 
 size_t display_benchmark_host_port_create_count(void)
@@ -144,6 +186,9 @@ BaseType_t xTaskCreateWithCaps(TaskFunction_t entry, const char *name,
     task->entry = entry;
     task->arg = arg;
     task->name = name;
+    task->available = true;
+    task->high_water = 8192U;
+    task->stack_start = &s_external_stack_marker;
     (void)pthread_mutex_init(&task->lock, NULL);
     (void)pthread_cond_init(&task->condition, NULL);
     const size_t index = atomic_fetch_add(&s_create_count, 1U);
@@ -159,6 +204,9 @@ BaseType_t xTaskCreateWithCaps(TaskFunction_t entry, const char *name,
     s_stack_depths[index] = stack_depth;
     s_stack_caps[index] = memory_caps;
     s_priorities[index] = priority;
+    (void)pthread_mutex_lock(&s_task_registry_lock);
+    s_tasks[index] = task;
+    (void)pthread_mutex_unlock(&s_task_registry_lock);
     *task_handle = task;
     return pdPASS;
 }
@@ -225,6 +273,57 @@ void vTaskSuspend(TaskHandle_t task_handle)
     (void)pthread_mutex_unlock(&task->lock);
 }
 
+TaskHandle_t xTaskGetHandle(const char *name)
+{
+    if (name == NULL)
+    {
+        return NULL;
+    }
+    TaskHandle_t found = NULL;
+    if (s_current_task != NULL && strcmp(s_current_task->name, name) == 0)
+    {
+        return s_current_task;
+    }
+    (void)pthread_mutex_lock(&s_task_registry_lock);
+    for (size_t index = 0U; index < HOST_TASK_CAPACITY; ++index)
+    {
+        if (s_tasks[index] != NULL && s_tasks[index]->available &&
+                strcmp(s_tasks[index]->name, name) == 0)
+        {
+            found = s_tasks[index];
+            break;
+        }
+    }
+    for (size_t index = 0U; found == NULL &&
+            index < HOST_EXTERNAL_TASK_COUNT; ++index)
+    {
+        if (s_external_tasks[index].available &&
+                strcmp(s_external_tasks[index].name, name) == 0)
+        {
+            found = &s_external_tasks[index];
+        }
+    }
+    (void)pthread_mutex_unlock(&s_task_registry_lock);
+    return found;
+}
+
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task_handle)
+{
+    host_task_t *task = task_handle;
+    return task != NULL ? task->high_water : 0U;
+}
+
+StackType_t *xTaskGetStackStart(TaskHandle_t task_handle)
+{
+    host_task_t *task = task_handle;
+    return task != NULL ? task->stack_start : NULL;
+}
+
+bool esp_ptr_external_ram(const void *pointer)
+{
+    return pointer == &s_external_stack_marker;
+}
+
 void vTaskDeleteWithCaps(TaskHandle_t task_handle)
 {
     host_task_t *task = task_handle;
@@ -237,6 +336,16 @@ void vTaskDeleteWithCaps(TaskHandle_t task_handle)
     (void)pthread_cond_broadcast(&task->condition);
     (void)pthread_mutex_unlock(&task->lock);
     (void)pthread_join(task->thread, NULL);
+    (void)pthread_mutex_lock(&s_task_registry_lock);
+    for (size_t index = 0U; index < HOST_TASK_CAPACITY; ++index)
+    {
+        if (s_tasks[index] == task)
+        {
+            s_tasks[index] = NULL;
+            break;
+        }
+    }
+    (void)pthread_mutex_unlock(&s_task_registry_lock);
     (void)pthread_cond_destroy(&task->condition);
     (void)pthread_mutex_destroy(&task->lock);
     const size_t delete_index = atomic_fetch_add(&s_delete_count, 1U);

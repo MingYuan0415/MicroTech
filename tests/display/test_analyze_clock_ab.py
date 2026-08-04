@@ -50,8 +50,10 @@ class ClockAbAnalyzerTest(unittest.TestCase):
             "I (3) display_bench: display config "
             f"qspi_hz={config_clock_hz or spec.clock_hz} "
             f"draw_rows={spec.draw_rows} color={spec.color} dma_rows=10 "
-            "dma_max_full_rows=44 queue=2 direct=0 te=0 draw_units=2 "
-            "draw_prio=3 tcp_payload=5760 tcp_prio=2 load_profile=full "
+            "dma_max_full_rows=44 queue=2 direct=0 te=0 lv_os=freertos "
+            "draw_units=2 draw_stack=32768 draw_prio=3 "
+            "freetype_pool=16384 adapter_stack=8192 "
+            "tcp_payload=5760 tcp_prio=2 load_profile=full "
             "lifecycle_log=0",
         ]
         effect_overrides = effect_overrides or {}
@@ -99,6 +101,14 @@ class ClockAbAnalyzerTest(unittest.TestCase):
                 f"dma_fail={failures_by_load[load]} frame_submits=500 "
                 "panel_submits=2000 submit_fail=0"
             )
+            lines.append(
+                "I (6) display_bench: display memory "
+                f"load={load} min_internal_free=100000 "
+                "min_internal_largest=50000 min_dma_free=80000 "
+                f"min_dma_largest={minimum_by_load[load]} "
+                "min_psram_free=6000000 min_psram_largest=5900000 "
+                "render_task=0 render_stack_psram=0 render_stack_hwm=0"
+            )
         stability = (
             "PASS"
             if minimum_dma >= analyzer.DMA_LARGEST_MINIMUM
@@ -114,6 +124,12 @@ class ClockAbAnalyzerTest(unittest.TestCase):
                 "fps_lock_max_us=10 "
                 f"min_dma={minimum_dma} dma_fail={dma_fail} "
                 "frame_submits=1000 submit_fail=0 transition_cancel=0",
+                "I (7) display_bench: display memory summary "
+                "min_internal_free=100000 min_internal_largest=50000 "
+                "min_dma_free=80000 "
+                f"min_dma_largest={minimum_dma} "
+                "min_psram_free=6000000 min_psram_largest=5900000 "
+                "render_task=0 render_stack_psram=0 render_stack_hwm=0",
                 "I (8) display_bench: display load profile=full tcp_required=1 "
                 "tcp_tx_bytes=1000000 tcp_rx_bytes=1000000 "
                 "tcp_target_bytes=1000000 tcp_active_us=1000000 "
