@@ -14,6 +14,7 @@
 #include "time_service.h"
 #include "weather_service.h"
 
+#include <assert.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -48,6 +49,7 @@ static atomic_uint s_audio_set_volume_count;
 static atomic_int s_audio_read_peak;
 static atomic_bool s_audio_fail_next_volume;
 static atomic_uint s_weather_snapshot_index;
+static atomic_uint s_weather_snapshot_leases;
 static atomic_uint s_weather_refresh_count;
 static atomic_int s_weather_refresh_result;
 static atomic_int s_weather_state;
@@ -88,6 +90,7 @@ void host_runtime_reset(void)
     atomic_store(&s_audio_read_peak, 512);
     atomic_store(&s_audio_fail_next_volume, false);
     atomic_store(&s_weather_snapshot_index, 0U);
+    atomic_store(&s_weather_snapshot_leases, 0U);
     atomic_store(&s_weather_refresh_count, 0U);
     atomic_store(&s_weather_refresh_result, ESP_OK);
     atomic_store(&s_weather_state, WEATHER_SERVICE_STATE_READY);
@@ -177,7 +180,7 @@ void host_runtime_reset(void)
         }
         snapshot->alerts.meta.available = true;
     }
-    s_weather_snapshots[0].alerts.count = 1U;
+    s_weather_snapshots[0].alerts.count = 2U;
     s_weather_snapshots[0].alerts.items[0].key = UINT64_C(0x1234);
     memcpy(s_weather_snapshots[0].alerts.items[0].title, "暴雨红色预警",
            sizeof("暴雨红色预警"));
@@ -196,6 +199,25 @@ void host_runtime_reset(void)
     s_weather_snapshots[0].alerts.items[0].starts_at.offset_minutes = 480;
     s_weather_snapshots[0].alerts.items[0].ends_at.epoch_seconds = 1785909600;
     s_weather_snapshots[0].alerts.items[0].ends_at.offset_minutes = 480;
+    s_weather_snapshots[0].alerts.items[1].key = UINT64_C(0x5678);
+    memcpy(s_weather_snapshots[0].alerts.items[1].title, "高温橙色预警",
+           sizeof("高温橙色预警"));
+    memcpy(s_weather_snapshots[0].alerts.items[1].type_name, "高温",
+           sizeof("高温"));
+    memcpy(s_weather_snapshots[0].alerts.items[1].severity, "moderate",
+           sizeof("moderate"));
+    memcpy(s_weather_snapshots[0].alerts.items[1].status, "active",
+           sizeof("active"));
+    memcpy(s_weather_snapshots[0].alerts.items[1].description,
+           "预计午后最高气温超过三十七度。",
+           sizeof("预计午后最高气温超过三十七度。"));
+    memcpy(s_weather_snapshots[0].alerts.items[1].instruction,
+           "请减少户外活动。", sizeof("请减少户外活动。"));
+    s_weather_snapshots[0].alerts.items[1].starts_at.epoch_seconds =
+        1785891600;
+    s_weather_snapshots[0].alerts.items[1].starts_at.offset_minutes = 480;
+    s_weather_snapshots[0].alerts.items[1].ends_at.epoch_seconds = 1785931200;
+    s_weather_snapshots[0].alerts.items[1].ends_at.offset_minutes = 480;
     host_lv_reset();
     host_connectivity_manager_reset();
     host_provisioning_service_reset();
@@ -204,6 +226,11 @@ void host_runtime_reset(void)
 unsigned host_weather_refresh_count(void)
 {
     return atomic_load(&s_weather_refresh_count);
+}
+
+unsigned host_weather_snapshot_lease_count(void)
+{
+    return atomic_load(&s_weather_snapshot_leases);
 }
 
 void host_weather_set_refresh_result(esp_err_t result)
@@ -319,13 +346,20 @@ esp_err_t weather_service_snapshot_acquire(
     unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
                                           memory_order_acquire);
     *snapshot = &s_weather_snapshots[index];
+    atomic_fetch_add_explicit(&s_weather_snapshot_leases, 1U,
+                              memory_order_relaxed);
     return ESP_OK;
 }
 
 void weather_service_snapshot_release(
     const weather_service_snapshot_t *snapshot)
 {
-    (void)snapshot;
+    assert(snapshot == &s_weather_snapshots[0] ||
+           snapshot == &s_weather_snapshots[1]);
+    unsigned previous = atomic_fetch_sub_explicit(
+                            &s_weather_snapshot_leases, 1U,
+                            memory_order_relaxed);
+    assert(previous > 0U);
 }
 
 esp_err_t weather_service_request_refresh(void)

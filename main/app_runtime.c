@@ -877,7 +877,6 @@ static esp_err_t _app_runtime_start_app_services(
         },
         .input_ops = app_runtime_pm_get_input_ops(),
         .standby_ops = app_runtime_pm_get_standby_ops(),
-        .page_memory_bytes = 32U * 1024U,
         .max_resident_apps = APP_MANAGER_MAX_RESIDENT_APPS,
         .resident_policy = APP_MANAGER_RESIDENT_REJECT,
         .app_forward_transition = {

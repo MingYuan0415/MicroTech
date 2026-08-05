@@ -6,7 +6,6 @@
 #include "app_manager_lifecycle.h"
 #include "app_manager_mailbox.h"
 #include "app_manager_navigation.h"
-#include "app_manager_page_arena.h"
 #include "app_manager_presentation.h"
 #include "app_theme.h"
 #include "event_bus.h"
@@ -14,6 +13,7 @@
 #include "host_connectivity_manager.h"
 #include "host_provisioning_service.h"
 #include "power_service.h"
+#include "weather_app_internal.h"
 #include "weather_service.h"
 #include <assert.h>
 #include <stdatomic.h>
@@ -26,7 +26,7 @@
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
 #define BUILTIN_APP_COUNT 5U
-#define LIFECYCLE_OBSERVATION_CAPACITY 1024U
+#define LIFECYCLE_OBSERVATION_CAPACITY 1536U
 #define LIFECYCLE_ID_BYTES 32U
 
 EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
@@ -238,6 +238,30 @@ static esp_err_t _navigate(app_manager_nav_operation_t operation,
         .app_id = app_id,
         .page_id = page_id,
     };
+    return app_manager_navigate(&request, UI_TIMEOUT_MS);
+}
+
+static esp_err_t _navigate_weather_alert_detail(uint64_t alert_key,
+        uint16_t argument_type)
+{
+    const weather_alert_arguments_t arguments =
+    {
+        .alert_key = alert_key,
+    };
+    app_manager_nav_request_t request =
+    {
+        .operation = APP_MANAGER_NAV_OP_OPEN_PAGE,
+        .app_id = APP_MANAGER_ID_WEATHER,
+        .page_id = WEATHER_PAGE_DETAIL,
+        .has_arguments = true,
+        .arguments =
+        {
+            .version = APP_MANAGER_TYPED_BLOB_VERSION,
+            .type = argument_type,
+            .size = sizeof(arguments),
+        },
+    };
+    memcpy(request.arguments.payload, &arguments, sizeof(arguments));
     return app_manager_navigate(&request, UI_TIMEOUT_MS);
 }
 
@@ -1257,15 +1281,14 @@ static void _initialize_stack(void)
     assert(app_manager_register_builtin_descriptors(
                _app_manager_apps_start,
                (size_t)app_descriptor_count) == ESP_OK);
-    assert(app_manager_builtin_registry_validate(
-               app_manager_page_arena_stride(0U)) == ESP_OK);
+    assert(app_manager_builtin_registry_validate() == ESP_OK);
     assert(app_manager_builtin_discover() == (int)BUILTIN_APP_COUNT);
     assert(app_manager_ui_call(_presentation_init_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_lifecycle_configure(
                0, APP_MANAGER_RESIDENT_REJECT,
                NULL, NULL, NULL, NULL) == ESP_OK);
-    assert(app_manager_lifecycle_init(0) == ESP_OK);
+    assert(app_manager_lifecycle_init() == ESP_OK);
     assert(app_manager_navigation_init() == ESP_OK);
     assert(app_manager_ui_call(_back_gesture_init_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
@@ -1446,7 +1469,7 @@ static void _test_real_app_navigation(void)
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("--°"));
-    assert(_ui_has_text("暴雨红色预警 · severe · 共 1 条"));
+    assert(_ui_has_text("暴雨红色预警 · severe · 共 2 条"));
     assert(_ui_has_text("09:00"));
     host_weather_set_available_mask(
         WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
@@ -1484,13 +1507,13 @@ static void _test_real_app_navigation(void)
     host_weather_set_alert_freshness(true, false);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    _click_action("暴雨红色预警 · severe · 共 1 条 · 缓存");
+    _click_action("暴雨红色预警 · severe · 共 2 条 · 缓存");
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
-    assert(_ui_has_text("共 1 条气象预警，使用缓存数据"));
+    assert(_ui_has_text("共 2 条气象预警，使用缓存数据"));
     host_weather_set_alert_freshness(false, false);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("共 1 条气象预警"));
+    assert(_ui_has_text("共 2 条气象预警"));
     host_weather_set_available_mask(
         WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
         WEATHER_SERVICE_DATA_HOURLY | WEATHER_SERVICE_DATA_DAILY);
@@ -1505,7 +1528,7 @@ static void _test_real_app_navigation(void)
     host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("共 1 条气象预警"));
+    assert(_ui_has_text("共 2 条气象预警"));
     assert(_ui_has_text("severe · active\n08-05 08:00 - 08-05 14:00"));
     assert(_ui_text_has_font("暴雨红色预警",
                              &s_theme_fonts[APP_THEME_FONT_SMALL]));
@@ -1516,6 +1539,13 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("请减少外出。"));
     assert(_ui_text_has_font("预计未来三小时有强降雨。",
                              &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_navigate_weather_alert_detail(
+               UINT64_C(0x5678), WEATHER_ARGUMENT_ALERT_KEY) == ESP_OK);
+    assert(_ui_has_text("预计午后最高气温超过三十七度。"));
+    assert(_ui_has_text("请减少户外活动。"));
+    assert(_navigate_weather_alert_detail(
+               UINT64_C(0x1234), WEATHER_ARGUMENT_ALERT_KEY + 1U) == ESP_OK);
+    assert(_ui_has_text("该预警已失效或被撤销"));
     assert(host_weather_publish(false) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("该预警已失效或被撤销"));
@@ -2066,6 +2096,7 @@ static void _assert_real_page_start_contract(void)
     {
         {APP_MANAGER_ID_HOME, "root"},
         {APP_MANAGER_ID_WEATHER, "root"},
+        {APP_MANAGER_ID_WEATHER, "forecast"},
         {APP_MANAGER_ID_WEATHER, "alerts"},
         {APP_MANAGER_ID_WEATHER, "alert-detail"},
         {APP_MANAGER_ID_MENU, "root"},
@@ -2125,7 +2156,7 @@ static void _assert_real_page_start_contract(void)
 static void _exercise_real_page_screen_lifecycle(
     const char *app_id, const char *page_id, const char *visible_text,
     size_t active_timers, size_t active_workers,
-    size_t active_subscriptions)
+    size_t active_subscriptions, size_t active_weather_snapshots)
 {
     assert(app_manager_is_actived(app_id));
     assert(app_page_is_actived(app_id, page_id));
@@ -2134,6 +2165,7 @@ static void _exercise_real_page_screen_lifecycle(
     assert(resources.timers == active_timers);
     assert(_wait_for_dynamic_task_count(active_workers));
     _assert_event_slot_headroom(active_subscriptions);
+    assert(host_weather_snapshot_lease_count() == active_weather_snapshots);
 
     const size_t starts_before = _lifecycle_observed(
                                      app_id, page_id,
@@ -2156,6 +2188,7 @@ static void _exercise_real_page_screen_lifecycle(
     assert(resources.timers == 0U);
     assert(_wait_for_dynamic_task_count(0U));
     _assert_event_slot_headroom(0);
+    assert(host_weather_snapshot_lease_count() == 0U);
     assert(!app_manager_is_actived(app_id));
     assert(!app_page_is_actived(app_id, page_id));
     assert(app_manager_get_active_app_id() == NULL);
@@ -2171,6 +2204,7 @@ static void _exercise_real_page_screen_lifecycle(
     assert(resources.timers == active_timers);
     assert(_wait_for_dynamic_task_count(active_workers));
     _assert_event_slot_headroom(active_subscriptions);
+    assert(host_weather_snapshot_lease_count() == active_weather_snapshots);
     assert(_ui_has_text(visible_text));
 
     assert(_lifecycle_observed(
@@ -2184,6 +2218,52 @@ static void _exercise_real_page_screen_lifecycle(
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == pauses_before + 1U);
 }
 
+static void _test_weather_page_screen_lifecycles(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    assert(host_weather_snapshot_lease_count() == 0U);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
+           ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_WEATHER, "root", "Shenzhen", 0U, 0U, 1U, 1U);
+
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE,
+                     APP_MANAGER_ID_WEATHER, WEATHER_PAGE_FORECAST) == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER,
+                                 WEATHER_PAGE_FORECAST));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_WEATHER, WEATHER_PAGE_FORECAST,
+        "详细预报", 0U, 0U, 1U, 1U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
+
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE,
+                     APP_MANAGER_ID_WEATHER, WEATHER_PAGE_ALERTS) == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER,
+                                 WEATHER_PAGE_ALERTS));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_WEATHER, WEATHER_PAGE_ALERTS,
+        "气象预警", 0U, 0U, 1U, 1U);
+
+    assert(_navigate_weather_alert_detail(
+               UINT64_C(0x1234), WEATHER_ARGUMENT_ALERT_KEY) == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER,
+                                 WEATHER_PAGE_DETAIL));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_WEATHER, WEATHER_PAGE_DETAIL,
+        "预计未来三小时有强降雨。", 0U, 0U, 1U, 1U);
+
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER,
+                                 WEATHER_PAGE_ALERTS));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
+    _click_back();
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(host_weather_snapshot_lease_count() == 0U);
+}
+
 static void _test_other_real_app_screen_lifecycles(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
@@ -2193,7 +2273,7 @@ static void _test_other_real_app_screen_lifecycles(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_MENU, "root", "演示中心", 0U, 0U, 0U);
+        APP_MANAGER_ID_MENU, "root", "演示中心", 0U, 0U, 0U, 0U);
 
     static const struct
     {
@@ -2219,7 +2299,7 @@ static void _test_other_real_app_screen_lifecycles(void)
             APP_MANAGER_ID_MENU, demo_pages[index].page_id,
             demo_pages[index].visible_text, 1U,
             demo_pages[index].workers,
-            demo_pages[index].subscriptions);
+            demo_pages[index].subscriptions, 0U);
         _click_back();
         assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
     }
@@ -2228,12 +2308,12 @@ static void _test_other_real_app_screen_lifecycles(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_SETTINGS, "root", "系统设置", 0U, 0U, 0U);
+        APP_MANAGER_ID_SETTINGS, "root", "系统设置", 0U, 0U, 0U, 0U);
 
     _click_action("电源状态");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_SETTINGS, "power", "3910 mV", 0U, 0U, 1U);
+        APP_MANAGER_ID_SETTINGS, "power", "3910 mV", 0U, 0U, 1U, 0U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
@@ -2241,7 +2321,7 @@ static void _test_other_real_app_screen_lifecycles(void)
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "about",
-        "test-version", 0U, 0U, 0U);
+        "test-version", 0U, 0U, 0U, 0U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
@@ -2853,6 +2933,7 @@ int main(void)
 {
     _initialize_stack();
     _test_real_app_navigation();
+    _test_weather_page_screen_lifecycles();
     _test_home_resume_before_first_draw();
     _test_latest_power_backpressure();
     _test_latest_wifi_backpressure_and_reopen();

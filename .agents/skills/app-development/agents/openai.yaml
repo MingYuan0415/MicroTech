@@ -1,0 +1,4 @@
+interface:
+  display_name: "MicroTech App Development"
+  short_description: "Build and review lifecycle-safe MicroTech apps"
+  default_prompt: "Use $app-development to create, modify, or review a built-in MicroTech App or Page in layers/apps."

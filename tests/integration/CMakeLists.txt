@@ -98,6 +98,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${APP_CORE}/src"
     "${APP_THEME}/include"
     "${APPS}/common/include"
+    "${APPS}/weather_app/src"
     "${APPS}/menu_app/src"
     "${APPS}/setup_app/src"
     "${MIDDLEWARE}/event_bus/include"

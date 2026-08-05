@@ -40,6 +40,8 @@ void host_runtime_reset(void);
 void host_optional_services_set_available(bool available);
 /** @brief Return accepted weather refresh requests. */
 unsigned host_weather_refresh_count(void);
+/** @brief Return currently retained immutable weather snapshots. */
+unsigned host_weather_snapshot_lease_count(void);
 /** @brief Select the result returned by weather manual refresh. */
 void host_weather_set_refresh_result(esp_err_t result);
 /** @brief Publish a new immutable weather snapshot with or without alerts. */
