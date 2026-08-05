@@ -14,6 +14,7 @@
 #include "host_connectivity_manager.h"
 #include "host_provisioning_service.h"
 #include "power_service.h"
+#include "weather_service.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -471,6 +472,15 @@ typedef struct text_count_query
     size_t count;
 } text_count_query_t;
 
+typedef struct font_query
+{
+    const char *text;
+    const lv_font_t *font;
+    bool found;
+} font_query_t;
+
+static lv_font_t s_theme_fonts[APP_THEME_FONT_MAX];
+
 typedef struct visible_slider_snapshot
 {
     int32_t value;
@@ -551,6 +561,13 @@ static esp_err_t _query_text_count_on_ui(void *arg)
 {
     text_count_query_t *query = arg;
     query->count = host_lv_visible_text_count(query->text);
+    return ESP_OK;
+}
+
+static esp_err_t _query_font_on_ui(void *arg)
+{
+    font_query_t *query = arg;
+    query->found = host_lv_text_has_font(query->text, query->font);
     return ESP_OK;
 }
 
@@ -733,6 +750,19 @@ static size_t _ui_visible_text_count(const char *text)
     assert(app_manager_ui_call(_query_text_count_on_ui, &query,
                                UI_TIMEOUT_MS) == ESP_OK);
     return query.count;
+}
+
+static bool _ui_text_has_font(const char *text,
+                              const lv_font_t *font)
+{
+    font_query_t query =
+    {
+        .text = text,
+        .font = font,
+    };
+    assert(app_manager_ui_call(_query_font_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return query.found;
 }
 
 static snapshot_transition_counts_t _snapshot_transition_counts(void)
@@ -1165,8 +1195,9 @@ static void _initialize_stack(void)
     assert(app_theme_init() == ESP_OK);
     for (int id = 0; id < APP_THEME_FONT_MAX; ++id)
     {
+        s_theme_fonts[id].marker = (uint8_t)(id + 10);
         assert(app_theme_set_font((app_theme_font_id_t)id,
-                                  LV_FONT_DEFAULT) == ESP_OK);
+                                  &s_theme_fonts[id]) == ESP_OK);
     }
     assert(app_manager_mailbox_init() == ESP_OK);
     assert(event_bus_init() == ESP_OK);
@@ -1231,9 +1262,23 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
     assert(_ui_has_text("Shenzhen"));
     assert(_ui_has_text("31°"));
-    assert(_ui_has_text("多云 · 体感 36°"));
-    assert(_ui_has_text("天气数据：和风天气/QWeather · 定位：ipapi.is"));
-    assert(_ui_visible_text_count(LV_SYMBOL_IMAGE) >= 2U);
+    assert(_ui_has_text("多云"));
+    assert(_ui_has_text("体感 36°  ·  34° / 27°"));
+    assert(_ui_has_text("08-05 08:00 更新"));
+    assert(_ui_has_text("72%"));
+    assert(_ui_has_text("1.8 mm"));
+    assert(_ui_visible_text_count(LV_SYMBOL_IMAGE) >= 5U);
+    assert(_ui_text_has_font("Shenzhen", &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    assert(_ui_text_has_font("31°", &s_theme_fonts[APP_THEME_FONT_TITLE]));
+    assert(_ui_text_has_font("多云", &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    assert(_ui_text_has_font("08-05 08:00 更新",
+                             &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font("72%", &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    assert(_ui_text_has_font("09:00", &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font(LV_SYMBOL_REFRESH, LV_FONT_DEFAULT));
+    assert(_ui_text_has_font(LV_SYMBOL_IMAGE, LV_FONT_DEFAULT));
+    assert(_ui_text_has_font(LV_SYMBOL_LEFT, LV_FONT_DEFAULT));
+    assert(_ui_text_has_font(LV_SYMBOL_RIGHT, LV_FONT_DEFAULT));
     _assert_event_slot_headroom(1U);
 
     unsigned refreshes = host_weather_refresh_count();
@@ -1241,18 +1286,118 @@ static void _test_real_app_navigation(void)
     assert(host_weather_refresh_count() == refreshes + 1U);
     assert(_ui_has_text("已请求更新"));
     host_weather_set_refresh_result(ESP_ERR_TIMEOUT);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_RATE_LIMITED, 23U);
     _click_action(LV_SYMBOL_REFRESH);
-    assert(_ui_has_text("刷新间隔至少 60 秒"));
+    assert(_ui_has_text("23 秒后可刷新"));
     host_weather_set_refresh_result(ESP_OK);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
 
-    _click_action("暴雨红色预警  ·  共 1 条");
+    _click_action("查看详细预报");
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "forecast"));
+    assert(_ui_has_text("实况"));
+    assert(_ui_has_text("逐小时"));
+    assert(_ui_has_text("7 天"));
+    assert(_ui_has_text("35.6°C"));
+    assert(_ui_has_text("数据来源：QWeather"));
+    assert(_ui_text_has_font("实况", &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    assert(_ui_text_has_font("35.6°C",
+                             &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_AUTH_ERROR, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("服务状态：服务认证失败，显示已有数据"));
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
+    _click_action("逐小时");
+    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+    assert(_ui_text_has_font("降水 0%\n湿度 65% · 10 km/h",
+                             &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+
+    _click_action("7 天");
+    assert(_ui_has_text("晴 / 晴"));
+    assert(_ui_has_text("降水 0.0 mm · UV 7"));
+    assert(_ui_text_has_font("晴 / 晴",
+                             &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("晴 / 晴"));
+
+    const uint32_t forecast_only = WEATHER_SERVICE_DATA_LOCATION |
+                                   WEATHER_SERVICE_DATA_ALERTS |
+                                   WEATHER_SERVICE_DATA_HOURLY |
+                                   WEATHER_SERVICE_DATA_DAILY;
+    host_weather_set_available_mask(forecast_only);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    _click_action("实况");
+    assert(_ui_has_text("暂无实况数据"));
+    _click_action("逐小时");
+    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+    host_weather_set_available_mask(
+        WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
+        WEATHER_SERVICE_DATA_ALERTS | WEATHER_SERVICE_DATA_HOURLY |
+        WEATHER_SERVICE_DATA_DAILY);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
+
+    host_weather_set_available_mask(forecast_only);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("--°"));
+    assert(_ui_has_text("暴雨红色预警 · severe · 共 1 条"));
+    assert(_ui_has_text("09:00"));
+    host_weather_set_available_mask(
+        WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
+        WEATHER_SERVICE_DATA_ALERTS | WEATHER_SERVICE_DATA_HOURLY |
+        WEATHER_SERVICE_DATA_DAILY);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
+    host_weather_set_current_freshness(true, false);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_DEGRADED, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("显示缓存实况"));
+    host_weather_set_current_freshness(false, true);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("实况已过期"));
+    host_weather_set_current_freshness(false, false);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
+    host_weather_set_alert_freshness(true, false);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    _click_action("暴雨红色预警 · severe · 共 1 条 · 缓存");
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
+    assert(_ui_has_text("共 1 条气象预警，使用缓存数据"));
+    host_weather_set_alert_freshness(false, false);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("共 1 条气象预警"));
+    assert(_ui_has_text("severe · active\n08-05 08:00 - 08-05 14:00"));
+    assert(_ui_text_has_font("暴雨红色预警",
+                             &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    assert(_ui_text_has_font(LV_SYMBOL_WARNING, LV_FONT_DEFAULT));
     _click_action("暴雨红色预警");
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alert-detail"));
+    assert(_ui_has_text("预计未来三小时有强降雨。"));
+    assert(_ui_has_text("请减少外出。"));
+    assert(_ui_text_has_font("预计未来三小时有强降雨。",
+                             &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(host_weather_publish(false) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("该预警已失效或被撤销。"));
+    assert(_ui_has_text("该预警已失效或被撤销"));
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
     assert(_ui_has_text("当前没有生效预警"));

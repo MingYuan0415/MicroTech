@@ -24,6 +24,8 @@ typedef struct lv_display_t lv_display_t;
 typedef struct lv_indev_t lv_indev_t;
 /** @brief Opaque fake LVGL image descriptor. */
 typedef struct lv_image_dsc_t lv_image_dsc_t;
+/** @brief Opaque fake LVGL chart series. */
+typedef struct lv_chart_series_t lv_chart_series_t;
 /** @brief Fake LVGL animation with the public timing fields used by LVGL. */
 typedef struct _lv_anim_t lv_anim_t;
 
@@ -176,6 +178,9 @@ extern const lv_font_t host_lv_default_font;
 #define LV_ALIGN_CENTER               1
 #define LV_ANIM_OFF                   0
 #define LV_ANIM_ON                    1
+#define LV_BAR_MODE_RANGE             1
+#define LV_CHART_AXIS_PRIMARY_Y       0
+#define LV_CHART_TYPE_LINE            0
 #define LV_DIR_VER                    1
 #define LV_DIR_HOR                    2
 #define LV_EVENT_ALL                  0
@@ -301,6 +306,8 @@ lv_obj_t *lv_slider_create(lv_obj_t *parent);
 lv_obj_t *lv_switch_create(lv_obj_t *parent);
 /** @brief Create a fake progress bar. */
 lv_obj_t *lv_bar_create(lv_obj_t *parent);
+/** @brief Create a fake line chart. */
+lv_obj_t *lv_chart_create(lv_obj_t *parent);
 /** @brief Create a fake Canvas. */
 lv_obj_t *lv_canvas_create(lv_obj_t *parent);
 /** @brief Create a fake QR code object. */
@@ -446,10 +453,33 @@ void lv_indev_wait_release(lv_indev_t *indev);
 void lv_label_set_text(lv_obj_t *label, const char *text);
 /** @brief Set formatted fake label text. */
 void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...);
+/** @brief Record an explicitly assigned fake text font. */
+void lv_obj_set_style_text_font(lv_obj_t *object, const lv_font_t *font,
+                                lv_style_selector_t selector);
 /** @brief Set fake progress-bar range. */
 void lv_bar_set_range(lv_obj_t *bar, int32_t minimum, int32_t maximum);
 /** @brief Set fake progress-bar value. */
 void lv_bar_set_value(lv_obj_t *bar, int32_t value, int animation);
+/** @brief Set the fake range-bar start value. */
+void lv_bar_set_start_value(lv_obj_t *bar, int32_t value, int animation);
+/** @brief Select the fake progress-bar mode. */
+void lv_bar_set_mode(lv_obj_t *bar, int mode);
+/** @brief Select a fake chart type. */
+void lv_chart_set_type(lv_obj_t *chart, int type);
+/** @brief Set the number of fake chart points. */
+void lv_chart_set_point_count(lv_obj_t *chart, uint32_t count);
+/** @brief Set the fake chart's vertical range. */
+void lv_chart_set_axis_range(lv_obj_t *chart, int axis, int32_t minimum,
+                             int32_t maximum);
+/** @brief Configure fake chart division lines. */
+void lv_chart_set_div_line_count(lv_obj_t *chart, uint32_t horizontal,
+                                 uint32_t vertical);
+/** @brief Add a fake chart series. */
+lv_chart_series_t *lv_chart_add_series(lv_obj_t *chart, lv_color_t color,
+                                       int axis);
+/** @brief Append a value to a fake chart series. */
+void lv_chart_set_next_value(lv_obj_t *chart, lv_chart_series_t *series,
+                             int32_t value);
 /** @brief Set fake slider range. */
 void lv_slider_set_range(lv_obj_t *slider, int32_t minimum, int32_t maximum);
 /** @brief Set fake slider value. */
@@ -640,7 +670,6 @@ HOST_LV_NOOP_3(lv_obj_set_style_radius, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_shadow_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_align, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_text_font, lv_obj_t *, const lv_font_t *, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_4(lv_obj_align, lv_obj_t *, int, int32_t, int32_t)
 HOST_LV_NOOP_4(lv_obj_set_flex_align, lv_obj_t *, int, int, int)

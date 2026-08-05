@@ -27,6 +27,7 @@ typedef enum
     HOST_LV_OBJECT_SLIDER,
     HOST_LV_OBJECT_SWITCH,
     HOST_LV_OBJECT_BAR,
+    HOST_LV_OBJECT_CHART,
     HOST_LV_OBJECT_CANVAS,
     HOST_LV_OBJECT_QRCODE,
     HOST_LV_OBJECT_IMAGE,
@@ -56,6 +57,7 @@ struct lv_obj_t
     int32_t slider_minimum;
     int32_t slider_maximum;
     int32_t slider_value;
+    int32_t bar_start_value;
     int32_t x;
     int32_t y;
     int32_t width;
@@ -72,10 +74,17 @@ struct lv_obj_t
     bool qrcode_scrubbed;
     lv_obj_flag_t flags;
     lv_state_t state;
+    const lv_font_t *text_font;
     void *user_data;
     uint64_t z_order;
     lv_event_dsc_t bindings[HOST_LV_EVENT_CAPACITY];
     size_t binding_count;
+};
+
+struct lv_chart_series_t
+{
+    lv_obj_t *chart;
+    int32_t last_value;
 };
 
 struct lv_indev_t
@@ -189,6 +198,7 @@ static size_t s_snapshot_allocation_call_count;
 static uint64_t s_z_order;
 static unsigned s_qrcode_update_count;
 static unsigned s_qrcode_scrubbed_delete_count;
+static lv_chart_series_t s_chart_series;
 
 static void _host_lv_release_snapshot_allocations(void)
 {
@@ -817,6 +827,7 @@ void host_lv_reset(void)
     s_z_order = 0U;
     s_qrcode_update_count = 0U;
     s_qrcode_scrubbed_delete_count = 0U;
+    memset(&s_chart_series, 0, sizeof(s_chart_series));
 }
 
 lv_indev_t *host_lv_pointer_indev(void)
@@ -971,6 +982,11 @@ lv_obj_t *lv_switch_create(lv_obj_t *parent)
 lv_obj_t *lv_bar_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_BAR, parent);
+}
+
+lv_obj_t *lv_chart_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_CHART, parent);
 }
 
 lv_obj_t *lv_canvas_create(lv_obj_t *parent)
@@ -1726,6 +1742,16 @@ void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...)
     va_end(args);
 }
 
+void lv_obj_set_style_text_font(lv_obj_t *object, const lv_font_t *font,
+                                lv_style_selector_t selector)
+{
+    (void)selector;
+    if (object != NULL && object->live)
+    {
+        object->text_font = font;
+    }
+}
+
 void lv_bar_set_range(lv_obj_t *bar, int32_t minimum, int32_t maximum)
 {
     if (bar != NULL && bar->live)
@@ -1741,6 +1767,75 @@ void lv_bar_set_value(lv_obj_t *bar, int32_t value, int animation)
     if (bar != NULL && bar->live)
     {
         bar->slider_value = value;
+    }
+}
+
+void lv_bar_set_start_value(lv_obj_t *bar, int32_t value, int animation)
+{
+    (void)animation;
+    if (bar != NULL && bar->live)
+    {
+        bar->bar_start_value = value;
+    }
+}
+
+void lv_bar_set_mode(lv_obj_t *bar, int mode)
+{
+    (void)bar;
+    (void)mode;
+}
+
+void lv_chart_set_type(lv_obj_t *chart, int type)
+{
+    (void)chart;
+    (void)type;
+}
+
+void lv_chart_set_point_count(lv_obj_t *chart, uint32_t count)
+{
+    (void)chart;
+    (void)count;
+}
+
+void lv_chart_set_axis_range(lv_obj_t *chart, int axis, int32_t minimum,
+                             int32_t maximum)
+{
+    (void)axis;
+    if (chart != NULL && chart->live)
+    {
+        chart->slider_minimum = minimum;
+        chart->slider_maximum = maximum;
+    }
+}
+
+void lv_chart_set_div_line_count(lv_obj_t *chart, uint32_t horizontal,
+                                 uint32_t vertical)
+{
+    (void)chart;
+    (void)horizontal;
+    (void)vertical;
+}
+
+lv_chart_series_t *lv_chart_add_series(lv_obj_t *chart, lv_color_t color,
+                                       int axis)
+{
+    (void)color;
+    (void)axis;
+    if (chart == NULL || !chart->live)
+    {
+        return NULL;
+    }
+    s_chart_series.chart = chart;
+    return &s_chart_series;
+}
+
+void lv_chart_set_next_value(lv_obj_t *chart, lv_chart_series_t *series,
+                             int32_t value)
+{
+    if (chart != NULL && chart->live && series != NULL &&
+            series->chart == chart)
+    {
+        series->last_value = value;
     }
 }
 
@@ -2739,6 +2834,25 @@ size_t host_lv_visible_text_count(const char *text)
         }
     }
     return count;
+}
+
+bool host_lv_text_has_font(const char *text, const lv_font_t *font)
+{
+    if (text == NULL || font == NULL)
+    {
+        return false;
+    }
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        const lv_obj_t *object = &s_objects[index];
+        if (object->live && _host_lv_is_visible(object) &&
+                object->kind == HOST_LV_OBJECT_LABEL &&
+                strcmp(object->text, text) == 0 && object->text_font == font)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool host_lv_transition_target_has_text(const char *text)

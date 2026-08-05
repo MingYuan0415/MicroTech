@@ -43,6 +43,15 @@ unsigned host_weather_refresh_count(void);
 void host_weather_set_refresh_result(esp_err_t result);
 /** @brief Publish a new immutable weather snapshot with or without alerts. */
 esp_err_t host_weather_publish(bool with_alert);
+/** @brief Select dataset availability on the active weather snapshot. */
+void host_weather_set_available_mask(uint32_t available_mask);
+/** @brief Select current-observation freshness on the active snapshot. */
+void host_weather_set_current_freshness(bool stale, bool expired);
+/** @brief Select alert-dataset freshness on the active snapshot. */
+void host_weather_set_alert_freshness(bool stale, bool expired);
+/** @brief Select the weather-service status and refresh retry delay. */
+void host_weather_set_service_state(int state,
+                                    uint32_t retry_after_seconds);
 /** @brief Return whether the fake RTC alarm is currently enabled. */
 bool host_time_alarm_is_enabled(void);
 /** @brief Return whether the fake SNTP request is owned by the clock page. */
@@ -129,6 +138,8 @@ bool host_lv_active_screen_snapshot(
 bool host_lv_has_text(const char *text);
 /** @brief Count visible labels whose text exactly matches the query. */
 size_t host_lv_visible_text_count(const char *text);
+/** @brief Check the explicit font bound to a visible exact-text label. */
+bool host_lv_text_has_font(const char *text, const lv_font_t *font);
 /**
  * @brief Report whether the pending transition target contains exact text.
  * @param text is the label text to match.

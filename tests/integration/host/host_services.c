@@ -49,6 +49,8 @@ static atomic_bool s_audio_fail_next_volume;
 static atomic_uint s_weather_snapshot_index;
 static atomic_uint s_weather_refresh_count;
 static atomic_int s_weather_refresh_result;
+static atomic_int s_weather_state;
+static atomic_uint s_weather_retry_after_seconds;
 static weather_service_snapshot_t s_weather_snapshots[2];
 static const esp_app_desc_t s_app_description =
 {
@@ -87,6 +89,8 @@ void host_runtime_reset(void)
     atomic_store(&s_weather_snapshot_index, 0U);
     atomic_store(&s_weather_refresh_count, 0U);
     atomic_store(&s_weather_refresh_result, ESP_OK);
+    atomic_store(&s_weather_state, WEATHER_SERVICE_STATE_READY);
+    atomic_store(&s_weather_retry_after_seconds, 0U);
     memset(s_weather_snapshots, 0, sizeof(s_weather_snapshots));
     for (size_t index = 0U; index < 2U; ++index)
     {
@@ -107,28 +111,69 @@ void host_runtime_reset(void)
         snapshot->current.meta.available = true;
         snapshot->current.temperature_tenths_c = 312;
         snapshot->current.feels_like_tenths_c = 356;
+        snapshot->current.observed_at.epoch_seconds = 1785888000;
+        snapshot->current.observed_at.offset_minutes = 480;
+        snapshot->current.meta.updated_at = snapshot->current.observed_at;
+        snapshot->current.meta.fetched_at = snapshot->current.observed_at;
         snapshot->current.condition_code = 101U;
         memcpy(snapshot->current.condition_text, "多云", sizeof("多云"));
         snapshot->current.humidity_percent = 72U;
+        snapshot->current.precipitation_tenths_mm = 18U;
         snapshot->current.wind_speed_tenths_kmh = 123U;
         memcpy(snapshot->current.wind_direction, "东南风", sizeof("东南风"));
+        memcpy(snapshot->current.wind_scale, "3 级", sizeof("3 级"));
         snapshot->current.pressure_hpa = 1004U;
         snapshot->current.visibility_tenths_km = 185U;
         snapshot->hourly.meta.available = true;
-        snapshot->hourly.count = 1U;
-        snapshot->hourly.items[0].forecast_at.epoch_seconds = 1785891600;
-        snapshot->hourly.items[0].forecast_at.offset_minutes = 480;
-        snapshot->hourly.items[0].temperature_tenths_c = 320;
-        snapshot->hourly.items[0].condition_code = 100U;
+        snapshot->hourly.count = 12U;
+        snapshot->hourly.meta.updated_at = snapshot->current.observed_at;
+        snapshot->hourly.meta.fetched_at = snapshot->current.observed_at;
+        for (uint8_t hour = 0U; hour < snapshot->hourly.count; ++hour)
+        {
+            weather_service_hour_t *item = &snapshot->hourly.items[hour];
+            item->forecast_at.epoch_seconds = 1785891600 +
+                                              (int64_t)hour * 3600;
+            item->forecast_at.offset_minutes = 480;
+            item->temperature_tenths_c = (int16_t)(320 - (int16_t)hour * 3);
+            item->condition_code = hour % 3U == 0U ? 100U : 101U;
+            memcpy(item->condition_text, hour % 3U == 0U ? "晴" : "多云",
+                   hour % 3U == 0U ? sizeof("晴") : sizeof("多云"));
+            item->humidity_percent = (uint8_t)(65U + hour);
+            item->precipitation_chance_percent = (uint8_t)(hour * 3U);
+            item->precipitation_tenths_mm = (uint16_t)(hour * 2U);
+            item->wind_speed_tenths_kmh = (uint16_t)(100U + hour * 4U);
+            memcpy(item->wind_direction, "东南风", sizeof("东南风"));
+        }
         snapshot->daily.meta.available = true;
-        snapshot->daily.count = 1U;
-        memcpy(snapshot->daily.items[0].date, "2026-08-05",
-               sizeof("2026-08-05"));
-        snapshot->daily.items[0].maximum_temperature_tenths_c = 340;
-        snapshot->daily.items[0].minimum_temperature_tenths_c = 270;
-        snapshot->daily.items[0].day_condition_code = 100U;
-        memcpy(snapshot->daily.items[0].day_condition_text, "晴",
-               sizeof("晴"));
+        snapshot->daily.count = 7U;
+        snapshot->daily.meta.updated_at = snapshot->current.observed_at;
+        snapshot->daily.meta.fetched_at = snapshot->current.observed_at;
+        static const char *const dates[] =
+        {
+            "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08",
+            "2026-08-09", "2026-08-10", "2026-08-11",
+        };
+        for (uint8_t day = 0U; day < snapshot->daily.count; ++day)
+        {
+            weather_service_day_t *item = &snapshot->daily.items[day];
+            memcpy(item->date, dates[day], sizeof(item->date));
+            item->maximum_temperature_tenths_c =
+                (int16_t)(340 - (int16_t)day * 4);
+            item->minimum_temperature_tenths_c =
+                (int16_t)(270 - (int16_t)day * 2);
+            item->day_condition_code = day % 2U == 0U ? 100U : 305U;
+            item->night_condition_code = day % 2U == 0U ? 150U : 305U;
+            memcpy(item->day_condition_text,
+                   day % 2U == 0U ? "晴" : "小雨",
+                   day % 2U == 0U ? sizeof("晴") : sizeof("小雨"));
+            memcpy(item->night_condition_text,
+                   day % 2U == 0U ? "晴" : "小雨",
+                   day % 2U == 0U ? sizeof("晴") : sizeof("小雨"));
+            item->humidity_percent = (uint8_t)(65U + day);
+            item->precipitation_tenths_mm = (uint16_t)(day * 12U);
+            item->visibility_tenths_km = 180U;
+            item->uv_index = (uint8_t)(7U - day);
+        }
         snapshot->alerts.meta.available = true;
     }
     s_weather_snapshots[0].alerts.count = 1U;
@@ -145,6 +190,11 @@ void host_runtime_reset(void)
            "预计未来三小时有强降雨。", sizeof("预计未来三小时有强降雨。"));
     memcpy(s_weather_snapshots[0].alerts.items[0].instruction,
            "请减少外出。", sizeof("请减少外出。"));
+    s_weather_snapshots[0].alerts.items[0].starts_at.epoch_seconds =
+        1785888000;
+    s_weather_snapshots[0].alerts.items[0].starts_at.offset_minutes = 480;
+    s_weather_snapshots[0].alerts.items[0].ends_at.epoch_seconds = 1785909600;
+    s_weather_snapshots[0].alerts.items[0].ends_at.offset_minutes = 480;
     host_lv_reset();
     host_connectivity_manager_reset();
     host_provisioning_service_reset();
@@ -169,13 +219,54 @@ esp_err_t host_weather_publish(bool with_alert)
     {
         .generation = s_weather_snapshots[index].generation,
         .changed_mask = WEATHER_SERVICE_DATA_ALERTS,
-        .state = WEATHER_SERVICE_STATE_READY,
+        .state = (weather_service_state_t)atomic_load(&s_weather_state),
         .failure = WEATHER_SERVICE_FAILURE_NONE,
     };
     return event_bus_publish(WEATHER_SERVICE_MSG,
                              WEATHER_SERVICE_MSG_SUB_TYPE_SNAPSHOT,
                              &event, sizeof(event),
                              EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
+}
+
+void host_weather_set_available_mask(uint32_t available_mask)
+{
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    weather_service_snapshot_t *snapshot = &s_weather_snapshots[index];
+    snapshot->available_mask = available_mask;
+    snapshot->location.available =
+        (available_mask & WEATHER_SERVICE_DATA_LOCATION) != 0U;
+    snapshot->current.meta.available =
+        (available_mask & WEATHER_SERVICE_DATA_CURRENT) != 0U;
+    snapshot->alerts.meta.available =
+        (available_mask & WEATHER_SERVICE_DATA_ALERTS) != 0U;
+    snapshot->hourly.meta.available =
+        (available_mask & WEATHER_SERVICE_DATA_HOURLY) != 0U;
+    snapshot->daily.meta.available =
+        (available_mask & WEATHER_SERVICE_DATA_DAILY) != 0U;
+}
+
+void host_weather_set_current_freshness(bool stale, bool expired)
+{
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    s_weather_snapshots[index].current.meta.stale = stale;
+    s_weather_snapshots[index].current.meta.expired = expired;
+}
+
+void host_weather_set_alert_freshness(bool stale, bool expired)
+{
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    s_weather_snapshots[index].alerts.meta.stale = stale;
+    s_weather_snapshots[index].alerts.meta.expired = expired;
+}
+
+void host_weather_set_service_state(int state,
+                                    uint32_t retry_after_seconds)
+{
+    atomic_store(&s_weather_state, state);
+    atomic_store(&s_weather_retry_after_seconds, retry_after_seconds);
 }
 
 esp_err_t weather_service_get_status(
@@ -190,12 +281,13 @@ esp_err_t weather_service_get_status(
     *status = (weather_service_status_snapshot_t)
     {
         .generation = s_weather_snapshots[index].generation,
-        .state = WEATHER_SERVICE_STATE_READY,
+        .state = (weather_service_state_t)atomic_load(&s_weather_state),
         .failure = WEATHER_SERVICE_FAILURE_NONE,
         .available_mask = s_weather_snapshots[index].available_mask,
         .initialized = true,
         .configured = true,
         .network_ready = true,
+        .retry_after_seconds = atomic_load(&s_weather_retry_after_seconds),
     };
     return ESP_OK;
 }
