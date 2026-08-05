@@ -75,6 +75,7 @@ struct lv_obj_t
     lv_obj_flag_t flags;
     lv_state_t state;
     const lv_font_t *text_font;
+    int label_long_mode;
     void *user_data;
     uint64_t z_order;
     lv_event_dsc_t bindings[HOST_LV_EVENT_CAPACITY];
@@ -966,7 +967,12 @@ lv_obj_t *lv_button_create(lv_obj_t *parent)
 
 lv_obj_t *lv_label_create(lv_obj_t *parent)
 {
-    return _host_lv_allocate_object(HOST_LV_OBJECT_LABEL, parent);
+    lv_obj_t *label = _host_lv_allocate_object(HOST_LV_OBJECT_LABEL, parent);
+    if (label != NULL)
+    {
+        label->label_long_mode = LV_LABEL_LONG_WRAP;
+    }
+    return label;
 }
 
 lv_obj_t *lv_slider_create(lv_obj_t *parent)
@@ -1740,6 +1746,15 @@ void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...)
     va_start(args, format);
     (void)vsnprintf(label->text, sizeof(label->text), format, args);
     va_end(args);
+}
+
+void lv_label_set_long_mode(lv_obj_t *label, int mode)
+{
+    if (label != NULL && label->live &&
+            label->kind == HOST_LV_OBJECT_LABEL)
+    {
+        label->label_long_mode = mode;
+    }
 }
 
 void lv_obj_set_style_text_font(lv_obj_t *object, const lv_font_t *font,
@@ -2969,6 +2984,7 @@ static void _host_lv_snapshot_object(
                               object->draw_buf->flush_count,
                               .invalidation_count = object->invalidation_count,
                               .text = object->text,
+                              .label_long_mode = object->label_long_mode,
     };
 }
 
@@ -3014,6 +3030,31 @@ bool host_lv_system_label_snapshot(
                 _host_lv_is_descendant(object, &s_sys_layer) &&
                 _host_lv_is_visible(object) &&
                 strcmp(object->text, text) == 0)
+        {
+            if (snapshot != NULL)
+            {
+                _host_lv_snapshot_object(object, snapshot);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+bool host_lv_visible_label_snapshot(
+    const char *text, const lv_font_t *font,
+    host_lv_system_object_snapshot_t *snapshot)
+{
+    if (text == NULL)
+    {
+        return false;
+    }
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        const lv_obj_t *object = &s_objects[index];
+        if (object->live && object->kind == HOST_LV_OBJECT_LABEL &&
+                _host_lv_is_visible(object) && strcmp(object->text, text) == 0 &&
+                object->text_font == font)
         {
             if (snapshot != NULL)
             {

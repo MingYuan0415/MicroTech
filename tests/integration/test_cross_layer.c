@@ -488,6 +488,17 @@ typedef struct visible_slider_snapshot
     bool disabled;
 } visible_slider_snapshot_t;
 
+typedef struct label_layout_query
+{
+    const char *text;
+    const lv_font_t *font;
+    bool found;
+    int long_mode;
+    int32_t height;
+    int32_t parent_height;
+    int32_t grandparent_height;
+} label_layout_query_t;
+
 typedef enum touch_action
 {
     TOUCH_ACTION_PRESS = 0,
@@ -568,6 +579,25 @@ static esp_err_t _query_font_on_ui(void *arg)
 {
     font_query_t *query = arg;
     query->found = host_lv_text_has_font(query->text, query->font);
+    return ESP_OK;
+}
+
+static esp_err_t _query_label_layout_on_ui(void *arg)
+{
+    label_layout_query_t *query = arg;
+    host_lv_system_object_snapshot_t snapshot;
+    query->found = host_lv_visible_label_snapshot(query->text, query->font,
+                   &snapshot);
+    if (!query->found)
+    {
+        return ESP_OK;
+    }
+    query->long_mode = snapshot.label_long_mode;
+    query->height = snapshot.height;
+    lv_obj_t *parent = lv_obj_get_parent(snapshot.object);
+    lv_obj_t *grandparent = parent == NULL ? NULL : lv_obj_get_parent(parent);
+    query->parent_height = lv_obj_get_height(parent);
+    query->grandparent_height = lv_obj_get_height(grandparent);
     return ESP_OK;
 }
 
@@ -763,6 +793,20 @@ static bool _ui_text_has_font(const char *text,
     assert(app_manager_ui_call(_query_font_on_ui, &query,
                                UI_TIMEOUT_MS) == ESP_OK);
     return query.found;
+}
+
+static label_layout_query_t _ui_label_layout(const char *text,
+        const lv_font_t *font)
+{
+    label_layout_query_t query =
+    {
+        .text = text,
+        .font = font,
+    };
+    assert(app_manager_ui_call(_query_label_layout_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(query.found);
+    return query;
 }
 
 static snapshot_transition_counts_t _snapshot_transition_counts(void)
@@ -1281,6 +1325,51 @@ static void _test_real_app_navigation(void)
     assert(_ui_text_has_font(LV_SYMBOL_RIGHT, LV_FONT_DEFAULT));
     _assert_event_slot_headroom(1U);
 
+    assert(host_weather_publish(false) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    const label_layout_query_t city_layout = _ui_label_layout(
+            "Shenzhen", &s_theme_fonts[APP_THEME_FONT_HEAD]);
+    const label_layout_query_t hero_layout = _ui_label_layout(
+            "31°", &s_theme_fonts[APP_THEME_FONT_TITLE]);
+    const label_layout_query_t status_layout =
+        _ui_label_layout("08-05 08:00 更新",
+                         &s_theme_fonts[APP_THEME_FONT_BODY]);
+    const label_layout_query_t metric_layout = _ui_label_layout(
+            "72%", &s_theme_fonts[APP_THEME_FONT_SMALL]);
+    const label_layout_query_t hourly_layout = _ui_label_layout(
+            "09:00", &s_theme_fonts[APP_THEME_FONT_BODY]);
+    const label_layout_query_t detail_layout =
+        _ui_label_layout("查看详细预报",
+                         &s_theme_fonts[APP_THEME_FONT_SMALL]);
+    assert(city_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(city_layout.height == 32);
+    assert(hero_layout.parent_height == 112);
+    assert(hero_layout.grandparent_height == 112);
+    assert(status_layout.height == 22);
+    assert(metric_layout.parent_height == 52);
+    assert(metric_layout.grandparent_height == 52);
+    assert(hourly_layout.parent_height == 82);
+    assert(hourly_layout.grandparent_height == 82);
+    assert(detail_layout.parent_height == 44);
+    assert(hero_layout.grandparent_height + status_layout.height +
+           metric_layout.grandparent_height +
+           hourly_layout.grandparent_height + detail_layout.parent_height +
+           4 * 10 == 352);
+
+    host_weather_set_city("Shenzhen-Guangdong-Weather-Location");
+    assert(host_weather_publish(false) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    const label_layout_query_t long_city_layout =
+        _ui_label_layout("Shenzhen-Guangdong-Weather-Location",
+                         &s_theme_fonts[APP_THEME_FONT_HEAD]);
+    assert(long_city_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(long_city_layout.height == 32);
+    assert(_ui_text_has_font("Shenzhen-Guangdong-Weather-Location",
+                             &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    host_weather_set_city("Shenzhen");
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
     unsigned refreshes = host_weather_refresh_count();
     _click_action(LV_SYMBOL_REFRESH);
     assert(host_weather_refresh_count() == refreshes + 1U);
@@ -1332,10 +1421,15 @@ static void _test_real_app_navigation(void)
                                    WEATHER_SERVICE_DATA_HOURLY |
                                    WEATHER_SERVICE_DATA_DAILY;
     host_weather_set_available_mask(forecast_only);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_AUTH_ERROR, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     _click_action("实况");
     assert(_ui_has_text("暂无实况数据"));
+    assert(_ui_has_text("服务状态：服务认证失败，显示已有数据"));
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     _click_action("逐小时");
     assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
     host_weather_set_available_mask(
@@ -1361,15 +1455,27 @@ static void _test_real_app_navigation(void)
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
 
+    host_weather_set_current_freshness(false, true);
+    host_weather_set_location_reused(true);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_AUTH_ERROR, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("认证失败 · 实况过期 · 沿用位置"));
+    host_weather_set_current_freshness(false, false);
+    host_weather_set_location_reused(false);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
     host_weather_set_current_freshness(true, false);
     host_weather_set_service_state(WEATHER_SERVICE_STATE_DEGRADED, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("显示缓存实况"));
+    assert(_ui_has_text("服务降级 · 缓存实况"));
     host_weather_set_current_freshness(false, true);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("实况已过期"));
+    assert(_ui_has_text("服务降级 · 实况过期"));
     host_weather_set_current_freshness(false, false);
     host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
     assert(host_weather_publish(true) == ESP_OK);
@@ -1382,6 +1488,21 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
     assert(_ui_has_text("共 1 条气象预警，使用缓存数据"));
     host_weather_set_alert_freshness(false, false);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("共 1 条气象预警"));
+    host_weather_set_available_mask(
+        WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
+        WEATHER_SERVICE_DATA_HOURLY | WEATHER_SERVICE_DATA_DAILY);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_RATE_LIMITED, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("请求受限，显示已有数据"));
+    host_weather_set_available_mask(
+        WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
+        WEATHER_SERVICE_DATA_ALERTS | WEATHER_SERVICE_DATA_HOURLY |
+        WEATHER_SERVICE_DATA_DAILY);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("共 1 条气象预警"));

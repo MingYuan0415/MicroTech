@@ -15,6 +15,7 @@
 #include "weather_service.h"
 
 #include <stdatomic.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -260,6 +261,22 @@ void host_weather_set_alert_freshness(bool stale, bool expired)
                                           memory_order_acquire);
     s_weather_snapshots[index].alerts.meta.stale = stale;
     s_weather_snapshots[index].alerts.meta.expired = expired;
+}
+
+void host_weather_set_city(const char *city)
+{
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    weather_service_snapshot_t *snapshot = &s_weather_snapshots[index];
+    (void)snprintf(snapshot->location.city, sizeof(snapshot->location.city),
+                   "%s", city == NULL ? "" : city);
+}
+
+void host_weather_set_location_reused(bool reused)
+{
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    s_weather_snapshots[index].location.reused = reused;
 }
 
 void host_weather_set_service_state(int state,

@@ -453,6 +453,8 @@ void lv_indev_wait_release(lv_indev_t *indev);
 void lv_label_set_text(lv_obj_t *label, const char *text);
 /** @brief Set formatted fake label text. */
 void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...);
+/** @brief Record a fake label's overflow mode. */
+void lv_label_set_long_mode(lv_obj_t *label, int mode);
 /** @brief Record an explicitly assigned fake text font. */
 void lv_obj_set_style_text_font(lv_obj_t *object, const lv_font_t *font,
                                 lv_style_selector_t selector);
@@ -655,7 +657,6 @@ HOST_LV_NOOP_2(lv_obj_set_flex_flow, lv_obj_t *, int)
 HOST_LV_NOOP_2(lv_obj_set_flex_grow, lv_obj_t *, int)
 HOST_LV_NOOP_2(lv_obj_set_scroll_dir, lv_obj_t *, int)
 HOST_LV_NOOP_2(lv_obj_set_scrollbar_mode, lv_obj_t *, int)
-HOST_LV_NOOP_2(lv_label_set_long_mode, lv_obj_t *, int)
 HOST_LV_NOOP_3(lv_obj_set_style_bg_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_all, lv_obj_t *, int32_t, int)

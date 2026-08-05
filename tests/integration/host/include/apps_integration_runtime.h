@@ -28,6 +28,7 @@ typedef struct host_lv_system_object_snapshot
     uint32_t canvas_flush_count;
     uint32_t invalidation_count;
     const char *text;
+    int label_long_mode;
 } host_lv_system_object_snapshot_t;
 
 /** @brief Reset all host service and LVGL fixtures. */
@@ -49,6 +50,10 @@ void host_weather_set_available_mask(uint32_t available_mask);
 void host_weather_set_current_freshness(bool stale, bool expired);
 /** @brief Select alert-dataset freshness on the active snapshot. */
 void host_weather_set_alert_freshness(bool stale, bool expired);
+/** @brief Replace the active weather snapshot's display city. */
+void host_weather_set_city(const char *city);
+/** @brief Select whether the active weather location is reused. */
+void host_weather_set_location_reused(bool reused);
 /** @brief Select the weather-service status and refresh retry delay. */
 void host_weather_set_service_state(int state,
                                     uint32_t retry_after_seconds);
@@ -178,6 +183,10 @@ bool host_lv_system_object_snapshot(
  */
 bool host_lv_system_label_snapshot(
     const char *text, host_lv_system_object_snapshot_t *snapshot);
+/** @brief Snapshot one visible fake Label matching exact text and font. */
+bool host_lv_visible_label_snapshot(
+    const char *text, const lv_font_t *font,
+    host_lv_system_object_snapshot_t *snapshot);
 /**
  * @brief Read one A8 pixel from a live fake Canvas.
  * @param canvas is the Canvas identity returned by an object snapshot.
