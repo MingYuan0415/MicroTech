@@ -12,6 +12,7 @@
 
 #include "app_manager.h"
 #include "app_manager_config.h"
+#include "app_manager_image_ids.h"
 #include "audio_service.h"
 #include "bsp_hal.h"
 #include "connectivity_manager.h"
@@ -25,6 +26,14 @@
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
+#include "weather_service.h"
+
+#ifdef ESP_PLATFORM
+    #include "mmap_generate_res.h"
+#else
+    #define MMAP_RES_FILES    1U
+    #define MMAP_RES_CHECKSUM 0x4303U
+#endif
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -46,6 +55,7 @@ typedef struct app_runtime_ownership
     bool fs_attempted;
     bool bsp_attempted;
     bool time_attempted;
+    bool weather_attempted;
     bool system_pm_attempted;
     bool system_pm_cancelable;
     bool app_manager_attempted;
@@ -78,6 +88,109 @@ static const bsp_rtc_ops_t *s_runtime_rtc;
 static const bsp_imu_ops_t *s_runtime_imu;
 static const bsp_sd_ops_t *s_runtime_sd;
 
+#if APP_WEATHER_IMAGES_ENABLED
+#define APP_RUNTIME_WEATHER_IMAGE(id, asset, width_value, height_value) \
+    { \
+        .semantic_id = (id), \
+        .asset_index = (asset), \
+        .width = (width_value), \
+        .height = (height_value), \
+    }
+
+static const app_manager_image_resource_config_t s_weather_images[] =
+{
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_APP,
+    MMAP_RES_WEATHER_APP_BIN, 64U, 64U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_CLEAR_DAY_MAIN,
+    MMAP_RES_WEATHER_CLEAR_DAY_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_CLEAR_NIGHT_MAIN,
+    MMAP_RES_WEATHER_CLEAR_NIGHT_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_PARTLY_DAY_MAIN,
+    MMAP_RES_WEATHER_PARTLY_DAY_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_PARTLY_NIGHT_MAIN,
+    MMAP_RES_WEATHER_PARTLY_NIGHT_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_CLOUDY_MAIN,
+    MMAP_RES_WEATHER_CLOUDY_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_OVERCAST_MAIN,
+    MMAP_RES_WEATHER_OVERCAST_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_DRIZZLE_MAIN,
+    MMAP_RES_WEATHER_DRIZZLE_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_RAIN_MAIN,
+    MMAP_RES_WEATHER_RAIN_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HEAVY_RAIN_MAIN,
+    MMAP_RES_WEATHER_HEAVY_RAIN_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_THUNDER_MAIN,
+    MMAP_RES_WEATHER_THUNDER_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HAIL_MAIN,
+    MMAP_RES_WEATHER_HAIL_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_FREEZING_RAIN_MAIN,
+    MMAP_RES_WEATHER_FREEZING_RAIN_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_SNOW_MAIN,
+    MMAP_RES_WEATHER_SNOW_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HEAVY_SNOW_MAIN,
+    MMAP_RES_WEATHER_HEAVY_SNOW_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_SLEET_MAIN,
+    MMAP_RES_WEATHER_SLEET_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_FOG_MAIN,
+    MMAP_RES_WEATHER_FOG_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HAZE_MAIN,
+    MMAP_RES_WEATHER_HAZE_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HOT_MAIN,
+    MMAP_RES_WEATHER_HOT_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_COLD_MAIN,
+    MMAP_RES_WEATHER_COLD_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_UNKNOWN_MAIN,
+    MMAP_RES_WEATHER_UNKNOWN_112_BIN, 112U, 112U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_CLEAR_DAY_SMALL,
+    MMAP_RES_WEATHER_CLEAR_DAY_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_CLEAR_NIGHT_SMALL,
+    MMAP_RES_WEATHER_CLEAR_NIGHT_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_PARTLY_DAY_SMALL,
+    MMAP_RES_WEATHER_PARTLY_DAY_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_PARTLY_NIGHT_SMALL,
+    MMAP_RES_WEATHER_PARTLY_NIGHT_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_CLOUDY_SMALL,
+    MMAP_RES_WEATHER_CLOUDY_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_OVERCAST_SMALL,
+    MMAP_RES_WEATHER_OVERCAST_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_DRIZZLE_SMALL,
+    MMAP_RES_WEATHER_DRIZZLE_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_RAIN_SMALL,
+    MMAP_RES_WEATHER_RAIN_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HEAVY_RAIN_SMALL,
+    MMAP_RES_WEATHER_HEAVY_RAIN_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_THUNDER_SMALL,
+    MMAP_RES_WEATHER_THUNDER_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HAIL_SMALL,
+    MMAP_RES_WEATHER_HAIL_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_FREEZING_RAIN_SMALL,
+    MMAP_RES_WEATHER_FREEZING_RAIN_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_SNOW_SMALL,
+    MMAP_RES_WEATHER_SNOW_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HEAVY_SNOW_SMALL,
+    MMAP_RES_WEATHER_HEAVY_SNOW_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_SLEET_SMALL,
+    MMAP_RES_WEATHER_SLEET_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_FOG_SMALL,
+    MMAP_RES_WEATHER_FOG_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HAZE_SMALL,
+    MMAP_RES_WEATHER_HAZE_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_HOT_SMALL,
+    MMAP_RES_WEATHER_HOT_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_COLD_SMALL,
+    MMAP_RES_WEATHER_COLD_40_BIN, 40U, 40U),
+    APP_RUNTIME_WEATHER_IMAGE(APP_IMAGE_WEATHER_UNKNOWN_SMALL,
+    MMAP_RES_WEATHER_UNKNOWN_40_BIN, 40U, 40U),
+};
+
+#define APP_RUNTIME_WEATHER_IMAGES s_weather_images
+#define APP_RUNTIME_WEATHER_IMAGE_COUNT \
+    (sizeof(s_weather_images) / sizeof(s_weather_images[0]))
+#else
+#define APP_RUNTIME_WEATHER_IMAGES NULL
+#define APP_RUNTIME_WEATHER_IMAGE_COUNT 0U
+#endif
+
 static void _app_runtime_record_first_error(esp_err_t *first_error,
         esp_err_t result)
 {
@@ -107,6 +220,14 @@ static void _app_runtime_connectivity_event(
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE)
     {
         LOG_W("time network update failed: %s", esp_err_to_name(result));
+    }
+    const esp_err_t weather_result = weather_service_set_network_ready(
+                                         snapshot.ipv4_address != 0U,
+                                         snapshot.ipv4_address);
+    if (weather_result != ESP_OK && weather_result != ESP_ERR_INVALID_STATE)
+    {
+        LOG_W("weather network update failed: %s",
+              esp_err_to_name(weather_result));
     }
 }
 
@@ -276,6 +397,7 @@ static bool _app_runtime_has_owned_resources(void)
 {
     bool owned = s_ownership.nv_attempted || s_ownership.fs_attempted ||
                  s_ownership.bsp_attempted || s_ownership.time_attempted ||
+                 s_ownership.weather_attempted ||
                  s_ownership.system_pm_attempted ||
                  s_ownership.app_manager_attempted ||
                  s_ownership.ui_dispatch_registered ||
@@ -316,6 +438,7 @@ static bool _app_runtime_required_apps_present(void)
         APP_MANAGER_ID_MENU,
         APP_MANAGER_ID_SETTINGS,
         APP_MANAGER_ID_SETUP,
+        APP_MANAGER_ID_WEATHER,
     };
     bool found[sizeof(required_ids) / sizeof(required_ids[0])] = {false};
     bool all_found = true;
@@ -389,6 +512,21 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.provisioning_attempted = false;
         app_runtime_pm_set_provisioning_participant(false);
+    }
+    if (s_ownership.weather_attempted)
+    {
+        result = weather_service_set_network_ready(false, 0U);
+        if (result != ESP_OK && result != ESP_ERR_INVALID_STATE)
+        {
+            return result;
+        }
+        result = weather_service_deinit(WEATHER_SERVICE_WAIT_FOREVER);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.weather_attempted = false;
+        app_runtime_pm_set_weather_participant(false);
     }
     if (s_ownership.connectivity_owned)
     {
@@ -723,6 +861,10 @@ static esp_err_t _app_runtime_start_app_services(
         .font_sizes = font_sizes,
         .font_count = sizeof(font_sizes) / sizeof(font_sizes[0]),
         .res_fs_letter = 'F',
+        .resource_file_count = MMAP_RES_FILES,
+        .resource_checksum = MMAP_RES_CHECKSUM,
+        .image_resources = APP_RUNTIME_WEATHER_IMAGES,
+        .image_resource_count = APP_RUNTIME_WEATHER_IMAGE_COUNT,
         .screen_ops = {
             .suspend = context->screen->suspend,
             .resume_prepare = context->screen->resume_prepare,
@@ -899,7 +1041,15 @@ static esp_err_t _app_runtime_start_app_services(
 static esp_err_t _app_runtime_start_connectivity(
     const app_product_config_t *product)
 {
-    esp_err_t result = network_runtime_init();
+    s_ownership.weather_attempted = true;
+    esp_err_t result = weather_service_init(&product->weather);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    app_runtime_pm_set_weather_participant(true);
+
+    result = network_runtime_init();
     if (result != ESP_OK || !network_runtime_is_ready())
     {
         LOG_W("network foundation unavailable; continuing offline: %s",
@@ -937,6 +1087,12 @@ static esp_err_t _app_runtime_start_connectivity(
             }
             result = time_service_set_network_ready(
                          status.ipv4_address != 0U);
+            if (result != ESP_OK)
+            {
+                return result;
+            }
+            result = weather_service_set_network_ready(
+                         status.ipv4_address != 0U, status.ipv4_address);
             if (result != ESP_OK)
             {
                 return result;

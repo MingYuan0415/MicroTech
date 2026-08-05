@@ -1,5 +1,6 @@
 #include "apps_integration_runtime.h"
 
+#include "app_manager.h"
 #include "audio_service.h"
 #include "event_bus.h"
 #include "esp_app_desc.h"
@@ -11,6 +12,7 @@
 #include "power_service.h"
 #include "sd_storage_service.h"
 #include "time_service.h"
+#include "weather_service.h"
 
 #include <stdatomic.h>
 #include <string.h>
@@ -19,6 +21,7 @@
 EVENT_BUS_DEFINE_ID(POWER_SERVICE_MSG);
 EVENT_BUS_DEFINE_ID(IMU_SERVICE_MSG);
 EVENT_BUS_DEFINE_ID(TIME_SERVICE_MSG);
+EVENT_BUS_DEFINE_ID(WEATHER_SERVICE_MSG);
 
 static uint8_t s_brightness = 192;
 static int32_t s_screen_timeout_ms = 30000;
@@ -43,6 +46,10 @@ static atomic_uint s_audio_read_count;
 static atomic_uint s_audio_set_volume_count;
 static atomic_int s_audio_read_peak;
 static atomic_bool s_audio_fail_next_volume;
+static atomic_uint s_weather_snapshot_index;
+static atomic_uint s_weather_refresh_count;
+static atomic_int s_weather_refresh_result;
+static weather_service_snapshot_t s_weather_snapshots[2];
 static const esp_app_desc_t s_app_description =
 {
     .version = "test-version",
@@ -77,9 +84,156 @@ void host_runtime_reset(void)
     atomic_store(&s_audio_set_volume_count, 0U);
     atomic_store(&s_audio_read_peak, 512);
     atomic_store(&s_audio_fail_next_volume, false);
+    atomic_store(&s_weather_snapshot_index, 0U);
+    atomic_store(&s_weather_refresh_count, 0U);
+    atomic_store(&s_weather_refresh_result, ESP_OK);
+    memset(s_weather_snapshots, 0, sizeof(s_weather_snapshots));
+    for (size_t index = 0U; index < 2U; ++index)
+    {
+        weather_service_snapshot_t *snapshot = &s_weather_snapshots[index];
+        snapshot->generation = index + 1U;
+        snapshot->available_mask = WEATHER_SERVICE_DATA_LOCATION |
+                                   WEATHER_SERVICE_DATA_CURRENT |
+                                   WEATHER_SERVICE_DATA_ALERTS |
+                                   WEATHER_SERVICE_DATA_HOURLY |
+                                   WEATHER_SERVICE_DATA_DAILY;
+        memcpy(snapshot->location.city, "Shenzhen", sizeof("Shenzhen"));
+        memcpy(snapshot->location.region, "Guangdong", sizeof("Guangdong"));
+        memcpy(snapshot->location.country, "CN", sizeof("CN"));
+        memcpy(snapshot->location.timezone, "Asia/Shanghai",
+               sizeof("Asia/Shanghai"));
+        memcpy(snapshot->location.provider, "ipapi.is", sizeof("ipapi.is"));
+        snapshot->location.available = true;
+        snapshot->current.meta.available = true;
+        snapshot->current.temperature_tenths_c = 312;
+        snapshot->current.feels_like_tenths_c = 356;
+        snapshot->current.condition_code = 101U;
+        memcpy(snapshot->current.condition_text, "多云", sizeof("多云"));
+        snapshot->current.humidity_percent = 72U;
+        snapshot->current.wind_speed_tenths_kmh = 123U;
+        memcpy(snapshot->current.wind_direction, "东南风", sizeof("东南风"));
+        snapshot->current.pressure_hpa = 1004U;
+        snapshot->current.visibility_tenths_km = 185U;
+        snapshot->hourly.meta.available = true;
+        snapshot->hourly.count = 1U;
+        snapshot->hourly.items[0].forecast_at.epoch_seconds = 1785891600;
+        snapshot->hourly.items[0].forecast_at.offset_minutes = 480;
+        snapshot->hourly.items[0].temperature_tenths_c = 320;
+        snapshot->hourly.items[0].condition_code = 100U;
+        snapshot->daily.meta.available = true;
+        snapshot->daily.count = 1U;
+        memcpy(snapshot->daily.items[0].date, "2026-08-05",
+               sizeof("2026-08-05"));
+        snapshot->daily.items[0].maximum_temperature_tenths_c = 340;
+        snapshot->daily.items[0].minimum_temperature_tenths_c = 270;
+        snapshot->daily.items[0].day_condition_code = 100U;
+        memcpy(snapshot->daily.items[0].day_condition_text, "晴",
+               sizeof("晴"));
+        snapshot->alerts.meta.available = true;
+    }
+    s_weather_snapshots[0].alerts.count = 1U;
+    s_weather_snapshots[0].alerts.items[0].key = UINT64_C(0x1234);
+    memcpy(s_weather_snapshots[0].alerts.items[0].title, "暴雨红色预警",
+           sizeof("暴雨红色预警"));
+    memcpy(s_weather_snapshots[0].alerts.items[0].type_name, "暴雨",
+           sizeof("暴雨"));
+    memcpy(s_weather_snapshots[0].alerts.items[0].severity, "severe",
+           sizeof("severe"));
+    memcpy(s_weather_snapshots[0].alerts.items[0].status, "active",
+           sizeof("active"));
+    memcpy(s_weather_snapshots[0].alerts.items[0].description,
+           "预计未来三小时有强降雨。", sizeof("预计未来三小时有强降雨。"));
+    memcpy(s_weather_snapshots[0].alerts.items[0].instruction,
+           "请减少外出。", sizeof("请减少外出。"));
     host_lv_reset();
     host_connectivity_manager_reset();
     host_provisioning_service_reset();
+}
+
+unsigned host_weather_refresh_count(void)
+{
+    return atomic_load(&s_weather_refresh_count);
+}
+
+void host_weather_set_refresh_result(esp_err_t result)
+{
+    atomic_store(&s_weather_refresh_result, result);
+}
+
+esp_err_t host_weather_publish(bool with_alert)
+{
+    unsigned index = with_alert ? 0U : 1U;
+    atomic_store_explicit(&s_weather_snapshot_index, index,
+                          memory_order_release);
+    const weather_service_event_t event =
+    {
+        .generation = s_weather_snapshots[index].generation,
+        .changed_mask = WEATHER_SERVICE_DATA_ALERTS,
+        .state = WEATHER_SERVICE_STATE_READY,
+        .failure = WEATHER_SERVICE_FAILURE_NONE,
+    };
+    return event_bus_publish(WEATHER_SERVICE_MSG,
+                             WEATHER_SERVICE_MSG_SUB_TYPE_SNAPSHOT,
+                             &event, sizeof(event),
+                             EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
+}
+
+esp_err_t weather_service_get_status(
+    weather_service_status_snapshot_t *status)
+{
+    if (status == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    *status = (weather_service_status_snapshot_t)
+    {
+        .generation = s_weather_snapshots[index].generation,
+        .state = WEATHER_SERVICE_STATE_READY,
+        .failure = WEATHER_SERVICE_FAILURE_NONE,
+        .available_mask = s_weather_snapshots[index].available_mask,
+        .initialized = true,
+        .configured = true,
+        .network_ready = true,
+    };
+    return ESP_OK;
+}
+
+esp_err_t weather_service_snapshot_acquire(
+    const weather_service_snapshot_t **snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    *snapshot = &s_weather_snapshots[index];
+    return ESP_OK;
+}
+
+void weather_service_snapshot_release(
+    const weather_service_snapshot_t *snapshot)
+{
+    (void)snapshot;
+}
+
+esp_err_t weather_service_request_refresh(void)
+{
+    atomic_fetch_add(&s_weather_refresh_count, 1U);
+    return atomic_load(&s_weather_refresh_result);
+}
+
+esp_err_t app_manager_get_image(uint32_t semantic_id,
+                                const lv_image_dsc_t **image)
+{
+    if (semantic_id == 0U || image == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *image = NULL;
+    return ESP_ERR_NOT_FOUND;
 }
 
 void host_optional_services_set_available(bool available)

@@ -24,7 +24,7 @@
 
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
-#define BUILTIN_APP_COUNT 4U
+#define BUILTIN_APP_COUNT 5U
 #define LIFECYCLE_OBSERVATION_CAPACITY 1024U
 #define LIFECYCLE_ID_BYTES 32U
 
@@ -1227,6 +1227,41 @@ static void _test_real_app_navigation(void)
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("90% · 充电中"));
 
+    _click_action("天气");
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    assert(_ui_has_text("Shenzhen"));
+    assert(_ui_has_text("31°"));
+    assert(_ui_has_text("多云 · 体感 36°"));
+    assert(_ui_has_text("天气数据：和风天气/QWeather · 定位：ipapi.is"));
+    assert(_ui_visible_text_count(LV_SYMBOL_IMAGE) >= 2U);
+    _assert_event_slot_headroom(1U);
+
+    unsigned refreshes = host_weather_refresh_count();
+    _click_action(LV_SYMBOL_REFRESH);
+    assert(host_weather_refresh_count() == refreshes + 1U);
+    assert(_ui_has_text("已请求更新"));
+    host_weather_set_refresh_result(ESP_ERR_TIMEOUT);
+    _click_action(LV_SYMBOL_REFRESH);
+    assert(_ui_has_text("刷新间隔至少 60 秒"));
+    host_weather_set_refresh_result(ESP_OK);
+
+    _click_action("暴雨红色预警  ·  共 1 条");
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
+    assert(_ui_has_text("共 1 条气象预警"));
+    _click_action("暴雨红色预警");
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alert-detail"));
+    assert(host_weather_publish(false) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("该预警已失效或被撤销。"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
+    assert(_ui_has_text("当前没有生效预警"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
+    _click_back();
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(host_weather_publish(true) == ESP_OK);
+
     _click_action("演示中心");
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
@@ -1764,6 +1799,9 @@ static void _assert_real_page_start_contract(void)
     } expected_pages[] =
     {
         {APP_MANAGER_ID_HOME, "root"},
+        {APP_MANAGER_ID_WEATHER, "root"},
+        {APP_MANAGER_ID_WEATHER, "alerts"},
+        {APP_MANAGER_ID_WEATHER, "alert-detail"},
         {APP_MANAGER_ID_MENU, "root"},
         {APP_MANAGER_ID_MENU, "motion"},
         {APP_MANAGER_ID_MENU, "audio"},

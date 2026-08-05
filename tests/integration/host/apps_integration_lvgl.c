@@ -72,6 +72,7 @@ struct lv_obj_t
     bool qrcode_scrubbed;
     lv_obj_flag_t flags;
     lv_state_t state;
+    void *user_data;
     uint64_t z_order;
     lv_event_dsc_t bindings[HOST_LV_EVENT_CAPACITY];
     size_t binding_count;
@@ -1305,6 +1306,19 @@ bool lv_obj_has_flag(const lv_obj_t *object, lv_obj_flag_t flags)
            (object->flags & flags) == flags;
 }
 
+void lv_obj_set_user_data(lv_obj_t *object, void *user_data)
+{
+    if (object != NULL && object->live)
+    {
+        object->user_data = user_data;
+    }
+}
+
+void *lv_obj_get_user_data(lv_obj_t *object)
+{
+    return object != NULL && object->live ? object->user_data : NULL;
+}
+
 void lv_obj_add_state(lv_obj_t *object, lv_state_t state)
 {
     if (object != NULL && object->live)
@@ -2360,6 +2374,12 @@ void host_lv_heap_caps_free(void *pointer)
 {
     _host_lv_untrack_snapshot_allocation(pointer);
     free(pointer);
+}
+
+void *heap_caps_malloc(size_t size, uint32_t caps)
+{
+    (void)caps;
+    return malloc(size);
 }
 
 size_t host_lv_snapshot_live_allocation_count(void)

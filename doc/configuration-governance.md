@@ -38,6 +38,8 @@ BSP 固定 I2S0、GPIO16/9/45/8/10、PA GPIO46 和 30 dB 麦克风校准。BSP �
 | App Manager navigation/mailbox/control queue | 24/24/16 | 各 1..64 |
 | App Manager control stack | 4096 | 2048..16384 |
 | Time worker stack | 3072 | 2048..8192 |
+| Weather worker stack | 8192 | 4096..16384 |
+| Weather response buffer | 256 KiB | 64..512 KiB |
 
 当前 Waveshare S3 产品 profile 将 App Manager navigation/mailbox/control queue 覆盖为
 `8/12/16`，并由配置治理测试锁定；其他未覆盖的静态资源沿用组件 Kconfig 默认值。
@@ -55,6 +57,7 @@ fake `sdkconfig.h` 提供静态预算；目标特例可用 CMake definition 覆�
 | App Control worker | 5 | 根运行时产品配置 |
 | Board Input worker | 5 | BSP 私有常量 |
 | Time / Power / Wi-Fi worker | 4 | 根运行时产品配置 |
+| Weather worker | 4 | 根运行时产品配置 |
 | Clock demo worker | 4 | 应用私有常量 |
 | Audio / Storage demo worker | 2 | 应用私有常量 |
 | Display benchmark TCP worker | 2 | 测试实现私有常量 |

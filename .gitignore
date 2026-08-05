@@ -15,4 +15,5 @@ releases/
 mmap_generate_*.h
 .clangd
 apps_local.cmake
+/main/weather_private_config.h
 /.omo/run-continuation/

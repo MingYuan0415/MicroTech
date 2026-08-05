@@ -1,0 +1,3 @@
+# Required by the locked LVGLImage.py when weather PNG resources are converted to RGB565A8 BIN.
+pypng==0.20220715.0
+lz4==4.4.5

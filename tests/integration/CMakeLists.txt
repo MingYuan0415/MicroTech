@@ -33,6 +33,7 @@ add_executable(test_cross_layer
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
     "${APPS}/common/src/app_ui.c"
     "${APPS}/home_app/src/home_app.c"
+    "${APPS}/weather_app/src/weather_app.c"
     "${APPS}/menu_app/src/menu_app.c"
     "${APPS}/menu_app/src/audio_demo.c"
     "${APPS}/menu_app/src/audio_demo_adapter.c"
@@ -101,6 +102,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/audio_service/include"
     "${MIDDLEWARE}/sd_storage_service/include"
     "${MIDDLEWARE}/time_service/include"
+    "${MIDDLEWARE}/weather_service/include"
     "${MIDDLEWARE}/connectivity_manager/include"
     "${MIDDLEWARE}/provisioning_service/include"
 )

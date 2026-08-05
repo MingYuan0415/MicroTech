@@ -22,6 +22,8 @@ typedef struct lv_event_dsc_t lv_event_dsc_t;
 typedef struct lv_display_t lv_display_t;
 /** @brief Opaque fake LVGL input device. */
 typedef struct lv_indev_t lv_indev_t;
+/** @brief Opaque fake LVGL image descriptor. */
+typedef struct lv_image_dsc_t lv_image_dsc_t;
 /** @brief Fake LVGL animation with the public timing fields used by LVGL. */
 typedef struct _lv_anim_t lv_anim_t;
 
@@ -175,6 +177,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_ANIM_OFF                   0
 #define LV_ANIM_ON                    1
 #define LV_DIR_VER                    1
+#define LV_DIR_HOR                    2
 #define LV_EVENT_ALL                  0
 #define LV_EVENT_CLICKED              1
 #define LV_EVENT_VALUE_CHANGED        2
@@ -224,6 +227,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_PART_INDICATOR             1
 #define LV_PART_KNOB                  2
 #define LV_SCROLLBAR_MODE_AUTO        0
+#define LV_SCROLLBAR_MODE_OFF         1
 #define LV_SIZE_CONTENT               (-1)
 #define LV_RADIUS_CIRCLE              32767
 #define LV_STATE_PRESSED              1
@@ -243,6 +247,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_CLOSE     "close"
 #define LV_SYMBOL_GPS       "gps"
 #define LV_SYMBOL_HOME      "home"
+#define LV_SYMBOL_IMAGE     "image"
 #define LV_SYMBOL_LEFT      "left"
 #define LV_SYMBOL_LIST      "list"
 #define LV_SYMBOL_LOOP      "loop"
@@ -341,6 +346,10 @@ bool lv_obj_remove_event_dsc(lv_obj_t *object, lv_event_dsc_t *descriptor);
 void lv_obj_add_flag(lv_obj_t *object, lv_obj_flag_t flags);
 /** @brief Remove behavior flags from a fake object. */
 void lv_obj_remove_flag(lv_obj_t *object, lv_obj_flag_t flags);
+/** @brief Set opaque fake object user data. */
+void lv_obj_set_user_data(lv_obj_t *object, void *user_data);
+/** @brief Return opaque fake object user data. */
+void *lv_obj_get_user_data(lv_obj_t *object);
 /** @brief Return whether all requested fake object flags are set. */
 bool lv_obj_has_flag(const lv_obj_t *object, lv_obj_flag_t flags);
 /** @brief Add state flags to a fake object. */

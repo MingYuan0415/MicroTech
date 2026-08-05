@@ -2,6 +2,17 @@
 
 #include "freertos/FreeRTOS.h"
 
+#if __has_include("weather_private_config.h")
+    #include "weather_private_config.h"
+#endif
+
+#ifndef APP_WEATHER_SERVER_BASE_URL
+    #define APP_WEATHER_SERVER_BASE_URL ""
+#endif
+#ifndef APP_WEATHER_DEVICE_TOKEN
+    #define APP_WEATHER_DEVICE_TOKEN ""
+#endif
+
 #define APP_PRODUCT_IMU_TASK_PRIORITY         6U
 #define APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY   5U
 #define APP_PRODUCT_APP_CONTROL_TASK_PRIORITY 5U
@@ -10,6 +21,7 @@
 #define APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY 4U
 #define APP_PRODUCT_WIFI_TASK_PRIORITY        4U
 #define APP_PRODUCT_PROVISIONING_TASK_PRIORITY 4U
+#define APP_PRODUCT_WEATHER_TASK_PRIORITY      4U
 
 #define APP_PRODUCT_PRIORITY_VALID(priority) \
     ((priority) > 0U && (priority) < configMAX_PRIORITIES)
@@ -32,6 +44,8 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WIFI_TASK_PRIORITY),
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(
                    APP_PRODUCT_PROVISIONING_TASK_PRIORITY),
                "invalid product provisioning task priority");
+_Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WEATHER_TASK_PRIORITY),
+               "invalid product weather task priority");
 
 static const app_product_config_t s_product_config =
 {
@@ -64,6 +78,19 @@ static const app_product_config_t s_product_config =
         .timezone = "CST-8",
         .sntp_server = "pool.ntp.org",
         .task_priority = APP_PRODUCT_TIME_TASK_PRIORITY,
+    },
+    .weather = {
+        .server_base_url = APP_WEATHER_SERVER_BASE_URL,
+        .device_token = APP_WEATHER_DEVICE_TOKEN,
+        .location_url = "https://api.ipapi.is/",
+        .cache_directory = "/data",
+        .task_priority = APP_PRODUCT_WEATHER_TASK_PRIORITY,
+        .current_refresh_seconds = 20U * 60U,
+        .alerts_refresh_seconds = 10U * 60U,
+        .hourly_refresh_seconds = 60U * 60U,
+        .daily_refresh_seconds = 4U * 60U * 60U,
+        .manual_refresh_min_seconds = 60U,
+        .allow_private_http = false,
     },
     .connectivity = {
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,

@@ -9,6 +9,7 @@
 #include "provisioning_service.h"
 #include "system_pm.h"
 #include "time_service.h"
+#include "weather_service.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -45,6 +46,8 @@ typedef enum
     TEST_CALL_IMU_RESUME,
     TEST_CALL_TIME_SUSPEND,
     TEST_CALL_TIME_RESUME,
+    TEST_CALL_WEATHER_SUSPEND,
+    TEST_CALL_WEATHER_RESUME,
     TEST_CALL_POWER_SUSPEND,
     TEST_CALL_POWER_RESUME,
     TEST_CALL_INPUT_PREPARE,
@@ -260,6 +263,7 @@ static system_pm_config_t _test_build_config(bool wifi_participant,
     app_runtime_pm_set_imu_participant(imu_participant);
     app_runtime_pm_set_audio_participant(audio_participant);
     app_runtime_pm_set_time_participant(time_participant);
+    app_runtime_pm_set_weather_participant(false);
     return config;
 }
 
@@ -455,6 +459,18 @@ esp_err_t time_service_resume(uint32_t timeout_ms)
 {
     assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
     return _test_scripted_call(TEST_CALL_TIME_RESUME);
+}
+
+esp_err_t weather_service_suspend(uint32_t timeout_ms)
+{
+    assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
+    return _test_scripted_call(TEST_CALL_WEATHER_SUSPEND);
+}
+
+esp_err_t weather_service_resume(uint32_t timeout_ms)
+{
+    assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
+    return _test_scripted_call(TEST_CALL_WEATHER_RESUME);
 }
 
 esp_err_t power_service_suspend(uint32_t timeout_ms)
@@ -723,6 +739,31 @@ static void _test_sleep_order(void)
         TEST_CALL_POWER_RESUME,
     };
     _test_expect_trace(offline_complete, TEST_ARRAY_SIZE(offline_complete));
+
+    _test_reset();
+    config = _test_build_config(true, false, false, false);
+    app_runtime_pm_set_weather_participant(true);
+    _test_clear_trace();
+    assert(_test_prepare(&config) == ESP_OK);
+    const test_call_t weather_prepare[] =
+    {
+        TEST_CALL_WEATHER_SUSPEND,
+        TEST_CALL_WIFI_SUSPEND,
+        TEST_CALL_POWER_SUSPEND,
+        TEST_CALL_INPUT_PREPARE,
+        TEST_CALL_PREPARE_GUARD,
+    };
+    _test_expect_trace(weather_prepare, TEST_ARRAY_SIZE(weather_prepare));
+    _test_clear_trace();
+    assert(_test_complete(&config) == ESP_OK);
+    const test_call_t weather_complete[] =
+    {
+        TEST_CALL_INPUT_COMPLETE,
+        TEST_CALL_POWER_RESUME,
+        TEST_CALL_WIFI_RESUME,
+        TEST_CALL_WEATHER_RESUME,
+    };
+    _test_expect_trace(weather_complete, TEST_ARRAY_SIZE(weather_complete));
 }
 
 static void _test_ready_audio_is_not_resumed(void)

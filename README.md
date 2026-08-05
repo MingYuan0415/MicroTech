@@ -45,6 +45,36 @@ DMA/internal 分配保留 128 KiB 内部内存。分区表提供双 OTA 应用�
 LittleFS `data` 分区和 coredump 分区。修改缓存、DMA 内存预留或资源后，应运行
 `idf.py size` 并在真机上检查显示、触摸、待机和唤醒。
 
+## 天气功能
+
+天气由后台 `weather_service` 获取和缓存，Weather App 只读取引用计数的不可变快照。
+服务在每个新的 IPv4 联网会话定位一次，随后依次更新实时天气、预警、24 小时和 7 日
+预报；网络 I/O、JSON、重试和 `/data` A/B 缓存均不在 LVGL worker 中执行。大型快照、
+HTTP/JSON 缓冲、缓存编解码缓冲和 weather worker stack 优先使用 PSRAM。
+
+复制私有配置示例并填写 mt-server HTTPS Origin 与设备令牌：
+
+```sh
+cp main/weather_private_config.example.h main/weather_private_config.h
+```
+
+`main/weather_private_config.h` 已忽略且不得提交；文件缺失时固件仍可构建，天气页显示
+“服务未配置”。定位地址固定为 `https://api.ipapi.is/`，服务只保留城市级字段和 0.1 度
+网格坐标，不记录定位响应中的 IP、ASN 或运营商信息。
+
+天气图片采用 1 个 64x64 应用图标，以及 20 类条件各自的 112x112 与 40x40 透明 PNG。
+41 个文件必须全部放入 `main/res_fs/`，否则 CMake 在配置阶段拒绝不完整集合。首次构建
+图片资源前，在当前 ESP-IDF Python 环境安装固定转换依赖：
+
+```sh
+python -m pip install -r requirements-weather-assets.txt
+```
+
+构建期使用锁定的 LVGL 9.5 `scripts/LVGLImage.py` 转换为 `RGB565A8` BIN，再由
+`esp_mmap_assets` 打包进 `res` 分区；转换过程不下载远程脚本。运行时通过 mmap Flash
+地址直接构造持久 `lv_image_dsc_t`，不解码图片、不写资源文件路径。未提供整套图片时
+保留字体资源和 LVGL symbol 回退，FreeType 继续使用 `F:font.ttf`。
+
 ## 宿主测试
 
 主运行时测试：

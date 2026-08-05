@@ -11,6 +11,7 @@
 #include "power_service.h"
 #include "provisioning_service.h"
 #include "time_service.h"
+#include "weather_service.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -29,11 +30,13 @@ typedef struct app_runtime_sleep_context
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
+    bool weather_participant;
     bool connectivity_resume_required;
     bool provisioning_resume_required;
     bool imu_resume_required;
     bool audio_resume_required;
     bool time_resume_required;
+    bool weather_resume_required;
     bool power_resume_required;
     bool input_resume_required;
 } app_runtime_sleep_context_t;
@@ -273,6 +276,7 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
     if (sleep->provisioning_resume_required ||
             sleep->connectivity_resume_required || sleep->imu_resume_required ||
             sleep->audio_resume_required || sleep->time_resume_required ||
+            sleep->weather_resume_required ||
             sleep->power_resume_required || sleep->input_resume_required)
     {
         result = _app_runtime_pm_complete_sleep(timeout_ms, sleep);
@@ -290,6 +294,16 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
             goto rollback;
         }
         sleep->provisioning_resume_required = true;
+    }
+
+    if (sleep->weather_participant)
+    {
+        sleep->weather_resume_required = true;
+        result = weather_service_suspend(timeout_ms);
+        if (result != ESP_OK)
+        {
+            goto rollback;
+        }
     }
 
     if (sleep->connectivity_participant)
@@ -415,6 +429,15 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
         if (result == ESP_OK)
         {
             sleep->connectivity_resume_required = false;
+        }
+    }
+    if (sleep->weather_resume_required)
+    {
+        const esp_err_t result = weather_service_resume(timeout_ms);
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->weather_resume_required = false;
         }
     }
     if (sleep->provisioning_resume_required)
@@ -597,6 +620,11 @@ void app_runtime_pm_set_audio_participant(bool enabled)
 void app_runtime_pm_set_time_participant(bool enabled)
 {
     s_sleep_context.time_participant = enabled;
+}
+
+void app_runtime_pm_set_weather_participant(bool enabled)
+{
+    s_sleep_context.weather_participant = enabled;
 }
 
 void app_runtime_pm_detach_bsp(void)

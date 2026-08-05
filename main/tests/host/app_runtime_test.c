@@ -17,6 +17,7 @@
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
+#include "weather_service.h"
 
 #include <assert.h>
 #include <stdarg.h>
@@ -98,6 +99,9 @@ typedef struct test_runtime
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
+    bool weather_participant;
+    bool weather_network_ready;
+    uint32_t weather_ipv4_address;
     bool sd_mounted;
     uint32_t imu_sample_rate_hz;
     esp_err_t sd_mount_result;
@@ -126,6 +130,10 @@ static const app_manager_app_desc_t s_required_apps[] =
     },
     {
         .name = "setup", .id = APP_MANAGER_ID_SETUP, .root_page_id = "root",
+    },
+    {
+        .name = "weather", .id = APP_MANAGER_ID_WEATHER,
+        .root_page_id = "root",
     },
 };
 
@@ -576,6 +584,35 @@ esp_err_t time_service_set_network_ready(bool ready)
     return _test_result(TEST_EVENT_TIME_NETWORK_READY);
 }
 
+esp_err_t weather_service_init(const weather_service_config_t *config)
+{
+    assert(config != NULL);
+    assert(strcmp(config->location_url, "https://api.ipapi.is/") == 0);
+    assert(strcmp(config->cache_directory, "/data") == 0);
+    assert(config->task_priority == 4U);
+    assert(config->current_refresh_seconds == 1200U);
+    assert(config->alerts_refresh_seconds == 600U);
+    assert(config->hourly_refresh_seconds == 3600U);
+    assert(config->daily_refresh_seconds == 14400U);
+    assert(config->manual_refresh_min_seconds == 60U);
+    assert(!config->allow_private_http);
+    return ESP_OK;
+}
+
+esp_err_t weather_service_deinit(uint32_t timeout_ms)
+{
+    assert(timeout_ms == WEATHER_SERVICE_WAIT_FOREVER);
+    return ESP_OK;
+}
+
+esp_err_t weather_service_set_network_ready(bool ready,
+        uint32_t ipv4_address)
+{
+    s_test.weather_network_ready = ready;
+    s_test.weather_ipv4_address = ipv4_address;
+    return ESP_OK;
+}
+
 esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
 {
     assert(config != NULL);
@@ -641,6 +678,11 @@ void app_runtime_pm_set_time_participant(bool enabled)
     s_test.time_participant = enabled;
 }
 
+void app_runtime_pm_set_weather_participant(bool enabled)
+{
+    s_test.weather_participant = enabled;
+}
+
 void app_runtime_pm_detach_bsp(void)
 {
 }
@@ -679,6 +721,10 @@ esp_err_t app_manager_init(const struct app_manager_config *config)
     assert(app_config->app_forward_transition.duration_ms ==
            APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS);
     assert(app_config->control_task_priority == 5U);
+    assert(app_config->resource_file_count == 1U);
+    assert(app_config->resource_checksum == 0x4303U);
+    assert(app_config->image_resources == NULL);
+    assert(app_config->image_resource_count == 0U);
     return _test_result(TEST_EVENT_APP_MANAGER_INIT);
 }
 
@@ -1001,7 +1047,10 @@ static void _test_successful_lifecycle(void)
     assert(s_test.imu_participant);
     assert(s_test.audio_participant);
     assert(s_test.time_participant);
+    assert(s_test.weather_participant);
     assert(s_test.time_network_ready);
+    assert(s_test.weather_network_ready);
+    assert(s_test.weather_ipv4_address == UINT32_C(0x0102a8c0));
     assert(s_test.imu_sample_rate_hz == 100U);
     assert(s_test.connectivity_callback != NULL);
     connectivity_manager_status_snapshot_t status =
@@ -1013,6 +1062,7 @@ static void _test_successful_lifecycle(void)
         CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
         &status, sizeof(status), s_test.connectivity_callback_context);
     assert(!s_test.time_network_ready);
+    assert(!s_test.weather_network_ready);
     status.state = CONNECTIVITY_MANAGER_STATE_IP_READY;
     status.ipv4_address = UINT32_C(0x0102a8c0);
     s_test.connectivity_callback(
@@ -1020,6 +1070,7 @@ static void _test_successful_lifecycle(void)
         CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT,
         &status, sizeof(status), s_test.connectivity_callback_context);
     assert(s_test.time_network_ready);
+    assert(s_test.weather_network_ready);
     status.state = CONNECTIVITY_MANAGER_STATE_SCANNING;
     s_test.connectivity_callback(
         CONNECTIVITY_MANAGER_MSG,
@@ -1036,6 +1087,7 @@ static void _test_successful_lifecycle(void)
     assert(!s_test.imu_participant);
     assert(!s_test.audio_participant);
     assert(!s_test.time_participant);
+    assert(!s_test.weather_participant);
     assert(!s_test.time_network_ready);
     _test_expect_events(expected, sizeof(expected) / sizeof(expected[0]));
     event_count = s_test.event_count;

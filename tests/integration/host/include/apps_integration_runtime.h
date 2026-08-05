@@ -37,6 +37,12 @@ void host_runtime_reset(void);
  * @param available selects normal snapshots or unavailable responses.
  */
 void host_optional_services_set_available(bool available);
+/** @brief Return accepted weather refresh requests. */
+unsigned host_weather_refresh_count(void);
+/** @brief Select the result returned by weather manual refresh. */
+void host_weather_set_refresh_result(esp_err_t result);
+/** @brief Publish a new immutable weather snapshot with or without alerts. */
+esp_err_t host_weather_publish(bool with_alert);
 /** @brief Return whether the fake RTC alarm is currently enabled. */
 bool host_time_alarm_is_enabled(void);
 /** @brief Return whether the fake SNTP request is owned by the clock page. */

@@ -92,6 +92,7 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/middleware/components/sd_storage_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
+    ../../../layers/middleware/components/weather_service/include
 )
 
 configure_main_host_target(app_runtime_test)
@@ -120,6 +121,7 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/middleware/components/provisioning_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
+    ../../../layers/middleware/components/weather_service/include
 )
 target_link_libraries(app_runtime_pm_test PRIVATE Threads::Threads)
 configure_main_host_target(app_runtime_pm_test)
