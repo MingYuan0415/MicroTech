@@ -27,6 +27,20 @@ config MAIN_PROJECT_TASK_CORE_ID
     default 0x1 if MAIN_PROJECT_TASK_AFFINITY_CPU1
     default FREERTOS_NO_AFFINITY
 
+config MAIN_WEATHER_SERVER_BASE_URL
+    string "Weather server base URL"
+    default ""
+    help
+        HTTPS Origin of the mt-server instance. Do not include an API path,
+        query, or fragment. A trailing slash is accepted.
+
+config MAIN_WEATHER_DEVICE_TOKEN
+    string "Weather device token"
+    default ""
+    help
+        Device token issued by mt-server, without the Bearer prefix. This
+        value is stored as plaintext in sdkconfig and compiled into firmware.
+
 config MAIN_DISPLAY_BENCHMARK
     bool "Enable the display benchmark product profile"
     depends on APP_MANAGER_DISPLAY_DIAGNOSTICS

@@ -587,6 +587,9 @@ esp_err_t time_service_set_network_ready(bool ready)
 esp_err_t weather_service_init(const weather_service_config_t *config)
 {
     assert(config != NULL);
+    assert(strcmp(config->server_base_url,
+                  "https://weather.example.com") == 0);
+    assert(strcmp(config->device_token, "example-device-token") == 0);
     assert(strcmp(config->location_url, "https://api.ipapi.is/") == 0);
     assert(strcmp(config->cache_directory, "/data") == 0);
     assert(config->task_priority == 4U);

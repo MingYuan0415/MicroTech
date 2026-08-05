@@ -17,3 +17,4 @@ mmap_generate_*.h
 apps_local.cmake
 /main/weather_private_config.h
 /.omo/run-continuation/
+/output/imagegen/

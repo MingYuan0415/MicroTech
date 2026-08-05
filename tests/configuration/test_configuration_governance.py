@@ -104,7 +104,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.MULTILINE,
             ))
-        self.assertEqual(len(symbols), 40, sorted(symbols))
+        self.assertEqual(len(symbols), 42, sorted(symbols))
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
@@ -149,6 +149,9 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": "1",
             "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "6144",
             "CONFIG_PROVISIONING_SERVICE_TASK_STACK": "6144",
+            "CONFIG_MAIN_WEATHER_SERVER_BASE_URL":
+                '"https://weather.example.com"',
+            "CONFIG_MAIN_WEATHER_DEVICE_TOKEN": '"example-device-token"',
         }
         self.assertEqual(
             {key: assignments.get(key) for key in expected}, expected

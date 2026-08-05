@@ -14,8 +14,10 @@
 | 测试 profile | 仅用于一次 benchmark/campaign，生产固件不应携带自由调节项 | `tests/display/profiles/*.json` 生成的类型化头文件 |
 
 Kconfig 不承载音频格式/初始输出状态、SD 挂载策略、IMU ODR、电源轮询、时区、SNTP
-server、Wi-Fi worker 优先级或 benchmark 时长和网络参数。运行时配置由服务复制；服务活动
-时重复传入相同配置返回 `ESP_OK`，不同配置返回 `ESP_ERR_INVALID_STATE`。
+server、Wi-Fi worker 优先级或 benchmark 时长和网络参数。天气服务 Origin 和设备令牌是
+显式例外：它们由产品 Kconfig 注入固件，受控的 `sdkconfig.defaults` 只能保存 example
+占位值，真实值仅保存在已忽略的本机 `sdkconfig`。运行时配置由服务复制；服务活动时重复
+传入相同配置返回 `ESP_OK`，不同配置返回 `ESP_ERR_INVALID_STATE`。
 
 ## 产品基线
 

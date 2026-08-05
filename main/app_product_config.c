@@ -2,17 +2,6 @@
 
 #include "freertos/FreeRTOS.h"
 
-#if __has_include("weather_private_config.h")
-    #include "weather_private_config.h"
-#endif
-
-#ifndef APP_WEATHER_SERVER_BASE_URL
-    #define APP_WEATHER_SERVER_BASE_URL ""
-#endif
-#ifndef APP_WEATHER_DEVICE_TOKEN
-    #define APP_WEATHER_DEVICE_TOKEN ""
-#endif
-
 #define APP_PRODUCT_IMU_TASK_PRIORITY         6U
 #define APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY   5U
 #define APP_PRODUCT_APP_CONTROL_TASK_PRIORITY 5U
@@ -80,8 +69,8 @@ static const app_product_config_t s_product_config =
         .task_priority = APP_PRODUCT_TIME_TASK_PRIORITY,
     },
     .weather = {
-        .server_base_url = APP_WEATHER_SERVER_BASE_URL,
-        .device_token = APP_WEATHER_DEVICE_TOKEN,
+        .server_base_url = CONFIG_MAIN_WEATHER_SERVER_BASE_URL,
+        .device_token = CONFIG_MAIN_WEATHER_DEVICE_TOKEN,
         .location_url = "https://api.ipapi.is/",
         .cache_directory = "/data",
         .task_priority = APP_PRODUCT_WEATHER_TASK_PRIORITY,
