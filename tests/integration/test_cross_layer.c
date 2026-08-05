@@ -518,6 +518,7 @@ typedef struct label_layout_query
     const lv_font_t *font;
     bool found;
     int long_mode;
+    int32_t width;
     int32_t height;
     int32_t parent_height;
     int32_t grandparent_height;
@@ -617,6 +618,7 @@ static esp_err_t _query_label_layout_on_ui(void *arg)
         return ESP_OK;
     }
     query->long_mode = snapshot.label_long_mode;
+    query->width = snapshot.width;
     query->height = snapshot.height;
     lv_obj_t *parent = lv_obj_get_parent(snapshot.object);
     lv_obj_t *grandparent = parent == NULL ? NULL : lv_obj_get_parent(parent);
@@ -1330,7 +1332,7 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("Shenzhen"));
     assert(_ui_has_text("31°"));
     assert(_ui_has_text("多云"));
-    assert(_ui_has_text("体感 36°  ·  34° / 27°"));
+    assert(_ui_has_text("体感36°  高34°  低27°"));
     assert(_ui_has_text("08-05 08:00 更新"));
     assert(_ui_has_text("72%"));
     assert(_ui_has_text("1.8 mm"));
@@ -1354,6 +1356,8 @@ static void _test_real_app_navigation(void)
             "Shenzhen", &s_theme_fonts[APP_THEME_FONT_HEAD]);
     const label_layout_query_t hero_layout = _ui_label_layout(
             "31°", &s_theme_fonts[APP_THEME_FONT_TITLE]);
+    const label_layout_query_t range_layout = _ui_label_layout(
+            "体感36°  高34°  低27°", &s_theme_fonts[APP_THEME_FONT_BODY]);
     const label_layout_query_t status_layout =
         _ui_label_layout("08-05 08:00 更新",
                          &s_theme_fonts[APP_THEME_FONT_BODY]);
@@ -1366,18 +1370,22 @@ static void _test_real_app_navigation(void)
                          &s_theme_fonts[APP_THEME_FONT_SMALL]);
     assert(city_layout.long_mode == LV_LABEL_LONG_DOT);
     assert(city_layout.height == 32);
-    assert(hero_layout.parent_height == 112);
-    assert(hero_layout.grandparent_height == 112);
+    assert(hero_layout.parent_height == 120);
+    assert(hero_layout.grandparent_height == 120);
+    assert(range_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(range_layout.width == 216);
+    assert(range_layout.height == 21);
+    assert(range_layout.parent_height == 120);
     assert(status_layout.height == 22);
-    assert(metric_layout.parent_height == 52);
-    assert(metric_layout.grandparent_height == 52);
-    assert(hourly_layout.parent_height == 82);
-    assert(hourly_layout.grandparent_height == 82);
+    assert(metric_layout.parent_height == 58);
+    assert(metric_layout.grandparent_height == 58);
+    assert(hourly_layout.parent_height == 88);
+    assert(hourly_layout.grandparent_height == 88);
     assert(detail_layout.parent_height == 44);
     assert(hero_layout.grandparent_height + status_layout.height +
            metric_layout.grandparent_height +
            hourly_layout.grandparent_height + detail_layout.parent_height +
-           4 * 10 == 352);
+           4 * 6 == 356);
 
     host_weather_set_city("Shenzhen-Guangdong-Weather-Location");
     assert(host_weather_publish(false) == ESP_OK);
@@ -1423,12 +1431,36 @@ static void _test_real_app_navigation(void)
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
 
     _click_action("逐小时");
-    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
-    assert(_ui_text_has_font("降水 0%\n湿度 65% · 10 km/h",
+    assert(_ui_has_text("33°C"));
+    assert(_ui_has_text("30°C"));
+    assert(_ui_has_text("28°C"));
+    assert(_ui_text_has_font("33°C", &s_theme_fonts[APP_THEME_FONT_BODY]));
+    const label_layout_query_t chart_scale_layout =
+        _ui_label_layout("33°C", &s_theme_fonts[APP_THEME_FONT_BODY]);
+    assert(chart_scale_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(chart_scale_layout.width == 56);
+    assert(chart_scale_layout.height == 21);
+    assert(chart_scale_layout.parent_height == 116);
+    assert(_ui_has_text("降水 0%"));
+    assert(_ui_has_text("湿度 65% · 10 km/h"));
+    assert(_ui_text_has_font("湿度 65% · 10 km/h",
                              &s_theme_fonts[APP_THEME_FONT_BODY]));
+    const label_layout_query_t hourly_temperature_layout =
+        _ui_label_layout("32°", &s_theme_fonts[APP_THEME_FONT_SMALL]);
+    assert(hourly_temperature_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(hourly_temperature_layout.width == 54);
+    assert(hourly_temperature_layout.height == 26);
+    assert(hourly_temperature_layout.parent_height == 26);
+    assert(hourly_temperature_layout.grandparent_height == 50);
+    const label_layout_query_t hourly_details_layout =
+        _ui_label_layout("湿度 65% · 10 km/h",
+                         &s_theme_fonts[APP_THEME_FONT_BODY]);
+    assert(hourly_details_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(hourly_details_layout.height == 21);
+    assert(hourly_details_layout.parent_height == 50);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+    assert(_ui_has_text("湿度 65% · 10 km/h"));
 
     _click_action("7 天");
     assert(_ui_has_text("晴 / 晴"));
@@ -1454,14 +1486,14 @@ static void _test_real_app_navigation(void)
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     _click_action("逐小时");
-    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+    assert(_ui_has_text("湿度 65% · 10 km/h"));
     host_weather_set_available_mask(
         WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
         WEATHER_SERVICE_DATA_ALERTS | WEATHER_SERVICE_DATA_HOURLY |
         WEATHER_SERVICE_DATA_DAILY);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("降水 0%\n湿度 65% · 10 km/h"));
+    assert(_ui_has_text("湿度 65% · 10 km/h"));
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
 
@@ -1469,7 +1501,7 @@ static void _test_real_app_navigation(void)
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("--°"));
-    assert(_ui_has_text("暴雨红色预警 · severe · 共 2 条"));
+    assert(_ui_has_text("共 2 条气象预警"));
     assert(_ui_has_text("09:00"));
     host_weather_set_available_mask(
         WEATHER_SERVICE_DATA_LOCATION | WEATHER_SERVICE_DATA_CURRENT |
@@ -1507,7 +1539,12 @@ static void _test_real_app_navigation(void)
     host_weather_set_alert_freshness(true, false);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    _click_action("暴雨红色预警 · severe · 共 2 条 · 缓存");
+    const label_layout_query_t alert_banner_layout =
+        _ui_label_layout("共 2 条气象预警 · 缓存",
+                         &s_theme_fonts[APP_THEME_FONT_SMALL]);
+    assert(alert_banner_layout.long_mode == LV_LABEL_LONG_DOT);
+    assert(alert_banner_layout.parent_height == 56);
+    _click_action("共 2 条气象预警 · 缓存");
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alerts"));
     assert(_ui_has_text("共 2 条气象预警，使用缓存数据"));
     host_weather_set_alert_freshness(false, false);
@@ -1532,6 +1569,11 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("severe · active\n08-05 08:00 - 08-05 14:00"));
     assert(_ui_text_has_font("暴雨红色预警",
                              &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    const label_layout_query_t alert_title_layout =
+        _ui_label_layout("暴雨红色预警",
+                         &s_theme_fonts[APP_THEME_FONT_SMALL]);
+    assert(alert_title_layout.long_mode == LV_LABEL_LONG_WRAP);
+    assert(alert_title_layout.grandparent_height == LV_SIZE_CONTENT);
     assert(_ui_text_has_font(LV_SYMBOL_WARNING, LV_FONT_DEFAULT));
     _click_action("暴雨红色预警");
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "alert-detail"));
