@@ -1,0 +1,117 @@
+---
+name: lvgl-ui-layout
+description: Design, implement, review, and repair adaptive LVGL 9 user interfaces in MicroTech, with emphasis on Flex/Grid sizing, content-driven containers, text measurement and wrapping, clipping and overlap prevention, scroll ownership, touch propagation, and efficient label construction. Use when an LVGL page or widget clips text, overlaps controls, scrolls incorrectly, loses touch gestures over children, relies on absolute coordinates, uses truncating label modes, or needs responsive layout and host-test coverage.
+---
+
+# LVGL UI Layout
+
+Build layout contracts from the outside in. Treat every dynamic label, flex
+track, scrollable axis, and input target as an explicit constraint rather than
+fixing visible symptoms with additional coordinates.
+
+## Establish the Current Contract
+
+1. Read the nearest `AGENTS.md`, the locked LVGL version, project theme/fonts,
+   target display dimensions, parent page helper, and relevant host fakes.
+2. Inspect the complete object tree and all style padding, border, gap, width,
+   height, flex/grid, scroll, and event flags that affect it. Do not reason from
+   a cropped source fragment.
+3. Read [references/lvgl9-layout-patterns.md](references/lvgl9-layout-patterns.md)
+   when translating LVGL 7 container/FIT practices, selecting a label policy,
+   or changing event and scroll propagation.
+4. Optionally run `scripts/audit_lvgl_layout.py <paths>` to locate suspicious
+   absolute positioning, truncation, label setup order, and clickable labels.
+   Treat findings as review prompts, not proof of defects. Trace dynamic font,
+   symbol, and object-helper arguments manually when the script reports an
+   indirect role or cannot see the call site.
+
+## Design Outside In
+
+1. Define the page's usable content rectangle after header, safe area, border,
+   padding, and scrollbar reservation.
+2. Give each axis one owner. Use Flex for ordered rows/columns and Grid for
+   aligned two-dimensional data. Use alignment for overlays and anchors.
+3. Use percentages only against a parent with a resolved size. Do not put a
+   percentage-sized child on the same axis as an `LV_SIZE_CONTENT` parent;
+   that creates a circular size dependency.
+4. Use `LV_SIZE_CONTENT` for content-driven containers and unconstrained short
+   labels. Use `lv_obj_set_flex_grow()` or Grid fractional tracks for remaining
+   space. Budget fixed children, gaps, padding, and borders before assigning
+   flexible space.
+5. Keep fixed pixels only where the invariant is real: touch targets, bitmap
+   dimensions, chart/canvas geometry, bounded controls, or font-derived line
+   boxes. Document the invariant and test its worst case. Do not use guessed
+   coordinates to assemble ordinary page content.
+6. Choose one intentional scroll axis for a page. Disable accidental horizontal
+   scrolling and avoid nested scrollables unless their handoff is specified.
+
+## Give Every Label a Policy
+
+Configure a label before assigning its first real text:
+
+1. Create it and establish passive or interactive behavior.
+2. Set width/height or flex/grid participation and long mode.
+3. Set font, color, letter/line spacing, and alignment.
+4. Call `lv_label_set_text()` or `lv_label_set_text_fmt()` last.
+
+Bind project fonts explicitly rather than relying on inheritance or widget
+defaults. Bind every ordinary text label, including Chinese and dynamic text,
+to the appropriate `APP_THEME_FONT_*` role. Bind every `LV_SYMBOL_*` label to
+`LV_FONT_DEFAULT`. Do this before assigning text so layout uses the final font
+and available glyph set; treat a missing explicit binding as a defect even when
+the current theme happens to render correctly.
+
+Select sizing by semantics:
+
+- Keep short numeric values, symbols, and fixed units content-sized. Keep a
+  value and inseparable unit in one label, or in a non-wrapping content-sized
+  row whose worst-case width is proven.
+- Give prose and localized dynamic text a bounded width,
+  `LV_LABEL_LONG_MODE_WRAP`, and content-driven height.
+- Give frequently changing bounded values a stable width based on their
+  worst-case formatted text to prevent layout jitter.
+- Use scrolling text only where motion is acceptable and the user can wait to
+  read it. Do not use `LV_LABEL_LONG_MODE_DOTS` for required information.
+- Measure actual fonts and strings with current LVGL APIs when a tight bound is
+  unavoidable. Include Chinese glyphs, fallback fonts, negative values, units,
+  and line spacing; do not infer geometry from nominal font size.
+
+## Define Input Ownership
+
+- Let the nearest interactive ancestor own an ordinary tap whenever possible.
+  LVGL 9.5 generic objects start clickable, while labels remove `CLICKABLE` in
+  their constructor. Inspect each widget class rather than assuming v7
+  defaults.
+- Remove `LV_OBJ_FLAG_CLICKABLE` from passive generic containers and overlays.
+  Do not add it to decorative labels or symbols. Remember that
+  `lv_obj_remove_style_all()` changes styles only; a styleless generic wrapper
+  inside a button remains clickable and can intercept the button's center.
+- Add `LV_OBJ_FLAG_EVENT_BUBBLE`, `LV_OBJ_FLAG_GESTURE_BUBBLE`, or scroll-chain
+  flags only after naming the intended receiver and axis. They solve different
+  propagation problems and are not interchangeable.
+- Verify taps and vertical drags that begin over every child label, icon,
+  image, and nested control. Confirm that an interactive child neither triggers
+  its parent accidentally nor blocks the intended page scroll.
+
+## Validate Before Declaring the Layout Fixed
+
+1. Exercise the shortest, longest, missing, loading, error, stale, and
+   localized data states. Include large positive/negative numeric formats and
+   multi-line Chinese text.
+2. Force layout calculation with `lv_obj_update_layout()` in diagnostics or
+   tests before reading coordinates. Check child bounds against the parent's
+   content rectangle and verify that required text is not clipped.
+3. Extend the LVGL host fake to record explicit width, height, long mode, font,
+   flags, parentage, and events when the changed contract depends on them.
+4. Add tests for scroll direction and gestures beginning over child content,
+   not only direct taps on the parent.
+5. Run the narrow host tests and project-required formatting/diff checks. Use
+   the project's validation skill to select broader sanitizer, firmware-build,
+   and hardware scope when code changes are involved.
+6. Inspect the real display for glyph fallback, wrapping, clipping, overlap,
+   horizontal drift, touch dead zones, and scroll handoff. Host geometry cannot
+   validate actual rasterized fonts or touch behavior.
+
+Report the tested resolutions, data extremes, interaction paths, and any
+unexecuted hardware checks. Do not claim that a single nominal screenshot
+proves adaptive behavior.

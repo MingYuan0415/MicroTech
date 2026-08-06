@@ -206,8 +206,10 @@ extern const lv_font_t host_lv_default_font;
 #define LV_FLEX_ALIGN_SPACE_BETWEEN   2
 #define LV_FLEX_FLOW_COLUMN           0
 #define LV_FLEX_FLOW_ROW              1
+#define LV_FLEX_FLOW_ROW_WRAP         2
 #define LV_LABEL_LONG_DOT             0
 #define LV_LABEL_LONG_WRAP            1
+#define LV_LABEL_LONG_SCROLL_CIRCULAR 2
 #define LV_OBJ_FLAG_HIDDEN            (1U << 0)
 #define LV_OBJ_FLAG_CLICKABLE         (1U << 1)
 #define LV_OBJ_FLAG_CLICK_FOCUSABLE   (1U << 2)

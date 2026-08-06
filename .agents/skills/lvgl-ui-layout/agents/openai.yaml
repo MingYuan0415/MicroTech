@@ -1,0 +1,4 @@
+interface:
+  display_name: "LVGL UI Layout"
+  short_description: "Design and audit adaptive LVGL 9 layouts"
+  default_prompt: "Use $lvgl-ui-layout to design or review this LVGL UI for clipping, overlap, text sizing, scrolling, and touch propagation."

@@ -54,6 +54,8 @@ void host_weather_set_current_freshness(bool stale, bool expired);
 void host_weather_set_alert_freshness(bool stale, bool expired);
 /** @brief Replace the active weather snapshot's display city. */
 void host_weather_set_city(const char *city);
+/** @brief Toggle service-valid extreme values used by layout regression tests. */
+void host_weather_set_layout_extremes(bool enabled);
 /** @brief Select whether the active weather location is reused. */
 void host_weather_set_location_reused(bool reused);
 /** @brief Select the weather-service status and refresh retry delay. */

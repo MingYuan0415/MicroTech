@@ -49,13 +49,15 @@ cmake -S main/tests/host -B /tmp/mt-main -G Ninja && cmake --build /tmp/mt-main 
 
 ## Agent Skills
 
-仓库根 `.agents/skills/` 提供六个职责收窄的 skill：`app-development` 负责内置 App/Page
-的生命周期、路由、导航、参数与应用层资源所有权；`esp-idf` 负责组件、配置、构建与
+仓库根 `.agents/skills/` 提供七个职责收窄的 skill：`app-development` 负责内置 App/Page
+的生命周期、路由、导航、参数与应用层资源所有权；`lvgl-ui-layout` 负责 LVGL 9
+控件布局、Flex/Grid、文本测量与换行、裁切/遮挡及触摸传递；`esp-idf` 负责组件、配置、构建与
 设备工作流；`esp32` 只负责当前 ESP32-S3/Waveshare 板的 BSP 与硬件约束；
 `lvgl-integration` 只负责现有 `esp_lvgl_adapter` 显示管线、缓冲、flush、生命周期与性能；
 `debug-esp32s3` 负责串口、ELF、core dump、OpenOCD/JTAG/GDB、task/WDT/heap 及 USB
 环境的现场证据；`validate-firmware` 负责按变更风险编排宿主测试、sanitizer、构建、size、
-真机与长稳验证并限定验收结论。应用任务先用 `app-development` 确认页面契约；涉及工程
+真机与长稳验证并限定验收结论。应用任务先用 `app-development` 确认页面契约，涉及控件
+自适应布局、文本显示或事件/滚动传递时再用 `lvgl-ui-layout`；涉及工程
 结构或配置时再用 `esp-idf`，并按事实所有权加载
 `esp32` 或 `lvgl-integration`，需要现场诊断时加载 `debug-esp32s3`，需要验证范围或结论时
 加载 `validate-firmware`。优先级：本文件与 `doc/code-style.md` > 当前代码、锁文件及仓库

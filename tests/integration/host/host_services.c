@@ -299,6 +299,36 @@ void host_weather_set_city(const char *city)
                    "%s", city == NULL ? "" : city);
 }
 
+void host_weather_set_layout_extremes(bool enabled)
+{
+    for (size_t index = 0U; index < 2U; ++index)
+    {
+        weather_service_snapshot_t *snapshot = &s_weather_snapshots[index];
+        snapshot->current.feels_like_tenths_c = enabled ? -1000 : 356;
+        snapshot->current.precipitation_tenths_mm = enabled ? UINT16_MAX : 18U;
+        snapshot->current.wind_speed_tenths_kmh = enabled ? 10000U : 123U;
+        snapshot->current.visibility_tenths_km = enabled ? 10000U : 185U;
+        (void)snprintf(snapshot->current.condition_text,
+                       sizeof(snapshot->current.condition_text), "%s",
+                       enabled ? "雷阵雨伴有冰雹和大风" : "多云");
+
+        snapshot->hourly.items[11].temperature_tenths_c = enabled ? -1000 : 287;
+        weather_service_day_t *today = &snapshot->daily.items[0];
+        today->maximum_temperature_tenths_c = enabled ? 1000 : 340;
+        today->minimum_temperature_tenths_c = enabled ? -1000 : 270;
+
+        weather_service_day_t *long_day = &snapshot->daily.items[1];
+        (void)snprintf(long_day->day_condition_text,
+                       sizeof(long_day->day_condition_text), "%s",
+                       enabled ? "雷阵雨伴有冰雹" : "小雨");
+        (void)snprintf(long_day->night_condition_text,
+                       sizeof(long_day->night_condition_text), "%s",
+                       enabled ? "雷阵雨伴有冰雹" : "小雨");
+        long_day->precipitation_tenths_mm = enabled ? UINT16_MAX : 12U;
+        long_day->uv_index = enabled ? 100U : 6U;
+    }
+}
+
 void host_weather_set_location_reused(bool reused)
 {
     unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
