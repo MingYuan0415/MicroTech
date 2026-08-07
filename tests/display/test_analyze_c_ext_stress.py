@@ -55,9 +55,7 @@ class CExtStressAnalyzerTest(unittest.TestCase):
             )
         lines.extend([
             "I display_bench: c_ext_stress ble result=PASS "
-            "protected_success=900 protected_failure=0 snapshot_success=900 "
-            "disconnects=0 reconnects=0 max_success_interval_us=2100000 "
-            "max_success_idle_us=2200000",
+            "connected=1 disconnects=0 reconnects=0",
             "I display_bench: c_ext_stress audio result=PASS "
             "tx_bytes=345600000 rx_bytes=345600000 target_bytes=345600000 "
             "tx_short=0 rx_short=0 tx_timeout=0 rx_timeout=0 "

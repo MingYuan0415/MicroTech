@@ -1895,7 +1895,24 @@ static void _test_c_ext_stress_ble_wait_timeout_cleans_up(void)
     assert(display_benchmark_host_port_delete_count() == 4U);
 }
 
+static void _test_c_ext_stress_ble_flap_detected(void)
+{
+    _reset();
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _wait_for_counter(&s_navigation_count, 30U);
+    /* A disconnect/reconnect pair long enough to be sampled must fail the
+     * BLE acceptance gate (no-flap requirement). */
+    atomic_store(&s_device_link_connected, false);
+    (void)usleep(10000U);
+    atomic_store(&s_device_link_connected, true);
+    (void)usleep(10000U);
+    _c_ext_stress_finish(&server);
 
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
+}
 
 static void _test_c_ext_stress_missing_task_fails_closed(void)
 {
@@ -2165,6 +2182,7 @@ int main(void)
 #if TEST_C_EXT_STRESS
     _test_c_ext_stress_runs_and_restores_state();
     _test_c_ext_stress_ble_wait_timeout_cleans_up();
+    _test_c_ext_stress_ble_flap_detected();
     _test_c_ext_stress_missing_task_fails_closed();
     _test_c_ext_stress_heap_exhaustion_exits();
     _test_c_ext_stress_audio_soft_faults_continue();
