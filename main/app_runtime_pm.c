@@ -288,12 +288,18 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 
     if (sleep->device_link_participant)
     {
-        /* The resume requirement is armed before the suspend so a timed-out
-         * suspend (which may still apply later) is undone by the wake or
-         * rollback path; only a definite queue failure clears it. */
+        /* The resume requirement is armed before the suspend so a
+         * timed-out suspend (which may still apply later) is undone by the
+         * wake or rollback path. A timeout is not a confirmed suspension:
+         * standby preparation must fail, with the resume obligation kept
+         * armed; only a definite pre-enqueue failure clears it. */
         sleep->device_link_resume_required = true;
         result = device_link_service_suspend(timeout_ms);
-        if (result != ESP_OK && result != ESP_ERR_TIMEOUT)
+        if (result == ESP_ERR_TIMEOUT)
+        {
+            goto rollback;
+        }
+        if (result != ESP_OK)
         {
             sleep->device_link_resume_required = false;
             goto rollback;

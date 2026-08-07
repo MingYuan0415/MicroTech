@@ -1134,6 +1134,23 @@ static void _test_device_link_standby_participant(void)
     assert(_test_prepare(&config) == ESP_ERR_INVALID_STATE);
     const test_call_t blocked[] = {TEST_CALL_DEVICE_LINK_SUSPEND};
     _test_expect_trace(blocked, TEST_ARRAY_SIZE(blocked));
+
+    /* A timed-out suspend must fail standby preparation but keep the
+     * resume obligation armed, so the rollback undoes the late command. */
+    _test_fail_once(TEST_CALL_DEVICE_LINK_SUSPEND, ESP_ERR_TIMEOUT);
+    _test_clear_trace();
+    assert(_test_prepare(&config) == ESP_ERR_TIMEOUT);
+    const test_call_t timed_out[] = {TEST_CALL_DEVICE_LINK_SUSPEND};
+    _test_expect_trace(timed_out, TEST_ARRAY_SIZE(timed_out));
+    _test_clear_trace();
+    assert(_test_complete(&config) == ESP_OK);
+    const test_call_t timed_out_complete[] =
+    {
+        TEST_CALL_INPUT_COMPLETE,
+        TEST_CALL_POWER_RESUME,
+        TEST_CALL_DEVICE_LINK_RESUME,
+    };
+    _test_expect_trace(timed_out_complete, TEST_ARRAY_SIZE(timed_out_complete));
 }
 
 int main(void)
