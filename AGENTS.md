@@ -47,6 +47,8 @@ cmake -S main/tests/host -B /tmp/mt-main -G Ninja && cmake --build /tmp/mt-main 
 
 提交统一 **Header-Body-Footer**：Header 为 `<type>(<scope>): <subject>`，空一行写动机与影响，再空一行写 `Refs:` 或 `BREAKING CHANGE:`。PR 列出变更、测试与资源影响；界面附截图；配置说明迁移与回退。`layers/` 的改动提交到各自子模块仓库并推送，父仓库同步子模块指针。提交前运行 `git diff --check` 并过一遍宿主测试与 astyle 自检（见 doc/code-style.md）。
 
+**父仓库子模块指针纪律**：指针更新必须随内容提交一起（`git add <子模块>` 与本次变更同一提交），禁止单独的 pointer-only bump 提交；同一子模块的多次小步提交在父仓库只体现一次指针变化。历史整理重写历史后必须核对最终树与重写前一致（`git rev-parse HEAD^{tree}`）。
+
 ## Agent Skills
 
 仓库根 `.agents/skills/` 提供七个职责收窄的 skill：`app-development` 负责内置 App/Page
