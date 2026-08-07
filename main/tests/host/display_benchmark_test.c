@@ -103,7 +103,7 @@ static const display_benchmark_config_t s_c_ext_stress_config =
     .stress_duration_sec = 1800U,
     .effect_duration_sec = 30U,
     .load = DISPLAY_BENCHMARK_LOAD_FULL,
-    .ble_mode = DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED,
+    .ble_mode = DISPLAY_BENCHMARK_BLE_CONNECTED,
     .app_workload = DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES,
     .audio_volume_percent = 5U,
     .ipv4_host = "127.0.0.1",
@@ -1455,7 +1455,7 @@ static void _test_invalid_config(void)
     config.audio_volume_percent = 101U;
     assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
     config = s_benchmark_config;
-    config.ble_mode = DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED;
+    config.ble_mode = DISPLAY_BENCHMARK_BLE_CONNECTED;
     assert((display_benchmark_start)(&config) == ESP_ERR_INVALID_ARG);
     config = s_benchmark_config;
     config.ipv4_host = NULL;

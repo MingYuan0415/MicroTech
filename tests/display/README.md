@@ -107,16 +107,17 @@ python3 tests/display/lvgl_ram_profiles.py validate \
   --profiles C_EXT C_EXT_STRESS
 ```
 
-`C_EXT_STRESS` 仅比 C_EXT 增加 provisioning diagnostics，保留用于后续稳定性复现，不修改
-生产 `sdkconfig.defaults`。设备端执行 BLE Security 2、Wi-Fi/TCP、Audio、Microphone、
-显示转场和 App Manager 路由负载；手机侧按
-`contracts/provisioning/docs/stress-session.md` 串行发送 `GetSnapshot`。日志分析命令：
+`C_EXT_STRESS` 在 `C_EXT` 基础上加载 Device Link ACL 连接负载（`ble_connected`
+模式，验证绑定窗口打开、手机连接、断连重连无抖动），保留用于后续稳定性复现，
+不修改生产 `sdkconfig.defaults`。设备端执行 Device Link ACL、Wi-Fi/TCP、Audio、
+Microphone、显示转场和 App Manager 路由负载；Security 2 受保护流量验收在
+P3.4 落地后回归。日志分析命令：
 
 ```sh
 python3 tests/display/analyze_c_ext_stress.py /path/to/c_ext_stress.log
 ```
 
-分析器检查阶段顺序、heap/DMA、任务 HWM/栈位置和核心、BLE cadence、TCP、Audio TX/RX、
+分析器检查阶段顺序、heap/DMA、任务 HWM/栈位置和核心、BLE 连接保持、TCP、Audio TX/RX、
 13 种动画、页面覆盖及 cleanup 恢复。一次 1800 秒结果不能替代 10 分钟预检、BLE 开关、
 TCP 中断恢复、冷启动、休眠恢复或 8 小时 soak。
 

@@ -3,7 +3,7 @@
   "stress_duration_sec": 1800,
   "effect_duration_sec": 30,
   "load": "full",
-  "ble_mode": "security2_connected",
+  "ble_mode": "ble_connected",
   "app_workload": "system_routes",
   "audio_volume_percent": 5,
   "ipv4_host": "192.168.0.205",

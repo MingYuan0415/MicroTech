@@ -97,7 +97,6 @@
 #endif
 #define DISPLAY_BENCHMARK_STRESS_TASK_MINIMUM_HWM        1024U
 #define DISPLAY_BENCHMARK_STRESS_RENDER_MINIMUM_HWM      4096U
-#define DISPLAY_BENCHMARK_STRESS_BLE_INTERVAL_US     10000000LL
 #define DISPLAY_BENCHMARK_STRESS_PSRAM_WINDOW_US    300000000LL
 #define DISPLAY_BENCHMARK_STRESS_TREND_EDGE_US       30000000LL
 #define DISPLAY_BENCHMARK_STRESS_PSRAM_TREND_BYTES      65536U
@@ -311,9 +310,6 @@ typedef struct display_benchmark_stress_context
     size_t warm_psram_free;
     size_t cleanup_internal_free;
     size_t cleanup_psram_free;
-    uint64_t maximum_ble_success_interval_us;
-    uint64_t maximum_ble_success_idle_us;
-    int64_t last_observed_snapshot_success_us;
     uint32_t ble_disconnect_count;
     uint32_t ble_reconnect_count;
     uint32_t route_visit_mask;
@@ -429,7 +425,7 @@ static bool _display_benchmark_config_valid(
                  config->port != 0U && config->rate_kbit_s >= 64U &&
                  config->rate_kbit_s <= 20000U &&
                  config->ble_mode >= DISPLAY_BENCHMARK_BLE_OFF &&
-                 config->ble_mode <= DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED &&
+                 config->ble_mode <= DISPLAY_BENCHMARK_BLE_CONNECTED &&
                  config->app_workload >=
                  DISPLAY_BENCHMARK_APP_WORKLOAD_DISPLAY_ROUTES &&
                  config->app_workload <=
@@ -439,7 +435,7 @@ static bool _display_benchmark_config_valid(
     {
         return false;
     }
-    if (config->ble_mode == DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED)
+    if (config->ble_mode == DISPLAY_BENCHMARK_BLE_CONNECTED)
     {
         valid = config->mode == DISPLAY_BENCHMARK_MODE_STRESS &&
                 config->load == DISPLAY_BENCHMARK_LOAD_FULL &&
@@ -1004,7 +1000,7 @@ static void _display_benchmark_worker_stop(display_benchmark_worker_t *worker)
 
 static bool _display_benchmark_is_c_ext_stress(void)
 {
-    return s_config.ble_mode == DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED &&
+    return s_config.ble_mode == DISPLAY_BENCHMARK_BLE_CONNECTED &&
            s_config.app_workload ==
            DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES;
 }
@@ -3103,12 +3099,9 @@ cleanup:
                                       &context->microphone_nonzero,
                                       memory_order_relaxed);
 
-        const bool ble_passed = context->ble_disconnect_count == 0U &&
-                                context->ble_reconnect_count == 0U &&
-                                context->maximum_ble_success_interval_us <=
-                                DISPLAY_BENCHMARK_STRESS_BLE_INTERVAL_US &&
-                                context->maximum_ble_success_idle_us <=
-                                DISPLAY_BENCHMARK_STRESS_BLE_INTERVAL_US;
+        const bool ble_passed = context->ble_was_connected &&
+                                context->ble_disconnect_count == 0U &&
+                                context->ble_reconnect_count == 0U;
 
         const bool heap_passed = context->heap_sampled &&
                                  context->minimum_internal_free > 0U &&
@@ -3158,12 +3151,11 @@ cleanup:
                                    tasks_passed && navigation_passed;
         summary.diagnostics_passed = summary.diagnostics_passed &&
                                      stress_passed;
-        LOG_I("c_ext_stress ble result=%s disconnects=%u reconnects=%u max_success_interval_us=%llu max_success_idle_us=%llu",
+        LOG_I("c_ext_stress ble result=%s connected=%u disconnects=%u reconnects=%u",
               ble_passed ? "PASS" : "FAIL",
+              context->ble_was_connected ? 1U : 0U,
               (unsigned)context->ble_disconnect_count,
-              (unsigned)context->ble_reconnect_count,
-              (unsigned long long)context->maximum_ble_success_interval_us,
-              (unsigned long long)context->maximum_ble_success_idle_us);
+              (unsigned)context->ble_reconnect_count);
         LOG_I("c_ext_stress audio result=%s tx_bytes=%llu rx_bytes=%llu target_bytes=%llu tx_short=%u rx_short=%u tx_timeout=%u rx_timeout=%u tx_error=%u rx_error=%u tx_deadline_miss=%u rx_deadline_miss=%u faults=%u mic_nonzero=%u",
               audio_passed ? "PASS" : "FAIL",
               (unsigned long long)audio_transmit_bytes,

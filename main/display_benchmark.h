@@ -32,7 +32,7 @@ typedef enum display_benchmark_load
 typedef enum display_benchmark_ble_mode
 {
     DISPLAY_BENCHMARK_BLE_OFF = 0,
-    DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED,
+    DISPLAY_BENCHMARK_BLE_CONNECTED,
 } display_benchmark_ble_mode_t;
 
 /** @brief Navigation workload selected for the measured stage. */

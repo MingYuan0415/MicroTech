@@ -104,9 +104,9 @@ def load_benchmark_profile(path: Path) -> dict[str, object]:
         raise ProfileError("benchmark mode must be stress or characterization")
     if value["load"] not in ("full", "audio_only", "tcp_only"):
         raise ProfileError("benchmark load must be full, audio_only, or tcp_only")
-    if value["ble_mode"] not in ("off", "security2_connected"):
+    if value["ble_mode"] not in ("off", "ble_connected"):
         raise ProfileError(
-            "benchmark ble_mode must be off or security2_connected"
+            "benchmark ble_mode must be off or ble_connected"
         )
     if value["app_workload"] not in ("display_routes", "system_routes"):
         raise ProfileError(
@@ -149,7 +149,7 @@ def render_profile_header(value: dict[str, object]) -> str:
     }[str(value["load"])]
     ble_mode = {
         "off": "DISPLAY_BENCHMARK_BLE_OFF",
-        "security2_connected": "DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED",
+        "ble_connected": "DISPLAY_BENCHMARK_BLE_CONNECTED",
     }[str(value["ble_mode"])]
     app_workload = {
         "display_routes": "DISPLAY_BENCHMARK_APP_WORKLOAD_DISPLAY_ROUTES",

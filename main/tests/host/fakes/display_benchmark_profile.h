@@ -8,7 +8,7 @@ static const display_benchmark_config_t g_display_benchmark_profile =
     .effect_duration_sec = 30U,
     .load = DISPLAY_BENCHMARK_LOAD_FULL,
 #if APP_RUNTIME_TEST_SECURITY2
-    .ble_mode = DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED,
+    .ble_mode = DISPLAY_BENCHMARK_BLE_CONNECTED,
     .app_workload = DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES,
     .audio_volume_percent = 5U,
 #else

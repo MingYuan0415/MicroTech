@@ -1037,7 +1037,6 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
-        TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_CONNECTIVITY_DEINIT,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE,
@@ -1047,6 +1046,7 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_POWER_DEINIT,
         TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
         TEST_EVENT_APP_MANAGER_DEINIT,
+        TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_DEINIT,
         TEST_EVENT_TIME_DEINIT,
@@ -1161,7 +1161,6 @@ static void _test_cleanup_retry_before_restart(void)
     {
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
-        TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_CONNECTIVITY_DEINIT,
     };
 
@@ -1179,7 +1178,10 @@ static void _test_cleanup_retry_before_restart(void)
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
     assert(s_test.events[0] == TEST_EVENT_CONNECTIVITY_DEINIT);
-    assert(!_test_event_seen(TEST_EVENT_BLE_DEINIT));
+    /* The first attempt failed before the App Manager stage, so the retry
+     * completes it, including the Device Link teardown that now runs after
+     * app_manager_deinit. */
+    assert(_test_event_seen(TEST_EVENT_BLE_DEINIT));
     assert(_test_event_seen(TEST_EVENT_LOG_INIT));
     assert(app_runtime_stop() == ESP_OK);
 }
@@ -1190,7 +1192,6 @@ static void _test_every_cleanup_failure_is_retryable(void)
     {
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_SYSTEM_PM_CANCEL,
-        TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_CONNECTIVITY_DEINIT,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE,
@@ -1200,6 +1201,7 @@ static void _test_every_cleanup_failure_is_retryable(void)
         TEST_EVENT_POWER_DEINIT,
         TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
         TEST_EVENT_APP_MANAGER_DEINIT,
+        TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_DEINIT,
         TEST_EVENT_TIME_DEINIT,

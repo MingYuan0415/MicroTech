@@ -3,13 +3,13 @@
 ## 1. 定位与消费方约定
 
 本文面向 Android 伴生 App 侧 Device Link v1 客户端开发。权威来源是契约子模块
-`contracts/provisioning`（当前钉住 `80ce7ec`，P0 draft freeze + P3.0 绑定契约）；
+`contracts/provisioning`（当前钉住 `dfdb7c0`，P0 draft freeze + P3.0 绑定契约）；
 本仓库固件 `ble_runtime` 是参考实现，不替代契约。wire 尚未冻结，README 明确
 draft 产物 "not evidence of Android interoperability"。
 
 消费方必须：
 
-- 以 Git submodule 钉住契约 commit（当前 `80ce7ec`），不引用浮动的分支指针；
+- 以 Git submodule 钉住契约 commit（当前 `dfdb7c0`），不引用浮动的分支指针；
 - 自带 buf/protoc 生成管线，生成物不提交到契约仓库；
 - 按 `docs/conformance.md` 的 consumer checks 自测：解码每个 golden vector 并
   复现规范字节、无强转地拒绝 malformed/非法 QR、执行全部 semantic 用例
@@ -48,11 +48,14 @@ draft 产物 "not evidence of Android interoperability"。
 
 ## 3. 联调前的现状确认（重要）
 
-1. **固件尚未装配 Device Link 整机链路**：P3.0 冻结了绑定契约（QR、session
-   transport、配对窗口准入），但生产固件仍启动旧 `provisioning_service +
-   protocomm_ble`，`ble_runtime` 未接入启动路径，也不广播 Device Link
-   Service Data。App 侧可以先完成契约消费与自测；真机联调须等固件装配
-   （P3.1–P3.4，见实施记录遗留项）后开始。
+1. **固件已装配 Device Link 整机链路，但安全会话未落地**：生产固件已由
+   `device_link_service` 启动 NimBLE 并持有常驻可连接广播（Device Link
+   Service Data + `MT` 短名），绑定窗口由设备页面显式打开。SMP bond-store
+   identity/SC/LTK 校验（P3.3）与 Security 2 会话（P3.4）尚未实现，
+   session/control 通道的 authorized 会话仍不可达。App 侧可以先完成契约
+   消费与自测，并可与固件联调：广播发现、连接、GATT 特征读写、MTU 协商、
+   `link_state` 读取与错误码路径；安全会话联调须等 P3.3/P3.4 落地
+   （见实施记录遗留项）。
 2. **安全 admission 为 fail-closed**：生产路径不设置 `SC_BOND_VERIFIED` 与
    `identity_known`（SMP bond-store identity/SC/LTK 校验未实现），session/control
    通道的 authorized 会话实际不可达。App 端可先实现并验证：QR 解析、广播发现、

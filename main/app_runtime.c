@@ -503,17 +503,6 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.system_pm_cancelable = false;
     }
-    if (s_ownership.device_link_attempted)
-    {
-        result = device_link_service_deinit(
-                     DEVICE_LINK_SERVICE_WAIT_FOREVER);
-        if (result != ESP_OK)
-        {
-            return result;
-        }
-        s_ownership.device_link_attempted = false;
-        app_runtime_pm_set_device_link_participant(false);
-    }
     if (s_ownership.weather_attempted)
     {
         result = weather_service_set_network_ready(false, 0U);
@@ -620,6 +609,19 @@ static esp_err_t _app_runtime_stop_app_services(void)
             return result;
         }
         s_ownership.app_manager_attempted = false;
+    }
+    /* Device Link is stopped after the App Manager so pages that own a
+     * Device Link session can still close their windows during teardown. */
+    if (s_ownership.device_link_attempted)
+    {
+        result = device_link_service_deinit(
+                     DEVICE_LINK_SERVICE_WAIT_FOREVER);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.device_link_attempted = false;
+        app_runtime_pm_set_device_link_participant(false);
     }
     if (s_ownership.ui_dispatch_registered)
     {

@@ -25,7 +25,7 @@ TASKS = {
     "lvgl",
     "connectivity",
     "wifi_service",
-    "provisioning",
+    "device_link",
     "nimble_host",
     "display_bench",
     "display_tcp",
@@ -270,13 +270,13 @@ def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:
     ):
         _require_result(record, context, analysis)
     if ble is not None:
-        for name in ("protected_failure", "disconnects", "reconnects"):
+        for name in ("connected",):
+            value = _integer(ble, name, "BLE summary", analysis)
+            if value not in (None, 1):
+                analysis.gate_failures.append(f"BLE summary: {name}={value}")
+        for name in ("disconnects", "reconnects"):
             value = _integer(ble, name, "BLE summary", analysis)
             if value not in (None, 0):
-                analysis.gate_failures.append(f"BLE summary: {name}={value}")
-        for name in ("max_success_interval_us", "max_success_idle_us"):
-            value = _integer(ble, name, "BLE summary", analysis)
-            if value is not None and value > 10_000_000:
                 analysis.gate_failures.append(f"BLE summary: {name}={value}")
     if audio is not None:
         for name in (
