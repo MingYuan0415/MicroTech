@@ -288,12 +288,16 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 
     if (sleep->device_link_participant)
     {
+        /* The resume requirement is armed before the suspend so a timed-out
+         * suspend (which may still apply later) is undone by the wake or
+         * rollback path; only a definite queue failure clears it. */
+        sleep->device_link_resume_required = true;
         result = device_link_service_suspend(timeout_ms);
-        if (result != ESP_OK)
+        if (result != ESP_OK && result != ESP_ERR_TIMEOUT)
         {
+            sleep->device_link_resume_required = false;
             goto rollback;
         }
-        sleep->device_link_resume_required = true;
     }
 
     if (sleep->weather_participant)
