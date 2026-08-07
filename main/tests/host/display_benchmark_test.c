@@ -203,6 +203,9 @@ static atomic_bool s_log_load_valid;
 static atomic_uint s_log_second_profile_effect_count;
 static atomic_uint s_log_tcp_required;
 static atomic_uint s_log_control_error;
+static atomic_uint s_log_ble_result;
+static atomic_uint s_log_ble_disconnects;
+static atomic_uint s_log_ble_reconnects;
 static atomic_uint s_log_audio_error;
 static atomic_uint s_log_tcp_error;
 static atomic_uint_fast64_t s_log_tcp_transmit_bytes;
@@ -619,6 +622,23 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
         atomic_store(&s_log_control_error, control_error);
         atomic_store(&s_log_audio_error, audio_error);
         atomic_store(&s_log_tcp_error, tcp_error);
+    }
+    const char *ble = strstr(message, " ble result=");
+    if (ble != NULL)
+    {
+        char result[8];
+        unsigned connected = 0U;
+        unsigned disconnects = 0U;
+        unsigned reconnects = 0U;
+
+        assert(sscanf(ble,
+                      " ble result=%7s connected=%u disconnects=%u reconnects=%u",
+                      result, &connected, &disconnects, &reconnects) == 4);
+        assert(connected == 1U);
+        atomic_store(&s_log_ble_result,
+                     strcmp(result, "PASS") == 0 ? 1U : 2U);
+        atomic_store(&s_log_ble_disconnects, disconnects);
+        atomic_store(&s_log_ble_reconnects, reconnects);
     }
     const char *wifi = strstr(message, " wifi_disconnects=");
     if (wifi != NULL)
@@ -1399,6 +1419,9 @@ static void _reset(void)
     atomic_store(&s_log_tcp_reconnect_count, UINT32_MAX);
     atomic_store(&s_log_tcp_pacing_late_count, UINT32_MAX);
     atomic_store(&s_log_wifi_disconnect_count, UINT32_MAX);
+    atomic_store(&s_log_ble_result, UINT32_MAX);
+    atomic_store(&s_log_ble_disconnects, UINT32_MAX);
+    atomic_store(&s_log_ble_reconnects, UINT32_MAX);
     atomic_store(&s_heap_allocate_count, 0U);
     atomic_store(&s_heap_free_count, 0U);
     atomic_store(&s_heap_maximum_allocation, 0U);
@@ -1911,6 +1934,9 @@ static void _test_c_ext_stress_ble_flap_detected(void)
 
     assert(atomic_load(&s_c_ext_summary_result) == 2U);
     assert(atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_log_ble_result) == 2U);
+    assert(atomic_load(&s_log_ble_disconnects) >= 1U);
+    assert(atomic_load(&s_log_ble_reconnects) >= 1U);
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
 }
 
