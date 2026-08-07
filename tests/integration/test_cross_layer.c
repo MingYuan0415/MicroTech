@@ -1843,14 +1843,14 @@ static void _test_real_app_navigation(void)
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETUP, "root"));
     assert(host_connectivity_manager_current_operation() == 0U);
-    assert(_wait_for_text("手机配网"));
+    assert(_wait_for_text("手机绑定"));
     assert(!_ui_has_text("扫描网络"));
     assert(!_ui_has_text("选择网络"));
     assert(!_ui_has_text("输入密码"));
 
     const unsigned opens = host_device_link_service_open_count();
     const unsigned closes = host_device_link_service_close_count();
-    _click_action("手机配网");
+    _click_action("手机绑定");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
     assert(_wait_for_text("MT"));
     assert(_wait_for_text("等待手机连接"));
@@ -2659,8 +2659,8 @@ static void _test_setup_screen_lifecycle(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    assert(_wait_for_text("手机配网"));
-    _click_action("手机配网");
+    assert(_wait_for_text("手机绑定"));
+    _click_action("手机绑定");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
     assert(host_lv_live_qrcode_count() == 1U);
     const unsigned scrubbed_before =
@@ -3035,7 +3035,7 @@ static void _test_system_edge_back_gesture(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    _click_action("手机配网");
+    _click_action("手机绑定");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
     assert(device_link_service_is_active());
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
