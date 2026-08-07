@@ -9,7 +9,7 @@
 #include "connectivity_manager.h"
 #include "imu_service.h"
 #include "power_service.h"
-#include "provisioning_service.h"
+#include "device_link_service.h"
 #include "time_service.h"
 #include "weather_service.h"
 
@@ -26,13 +26,13 @@ typedef struct app_runtime_sleep_context
 {
     const bsp_input_ops_t *input;
     bool connectivity_participant;
-    bool provisioning_participant;
+    bool device_link_participant;
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
     bool weather_participant;
     bool connectivity_resume_required;
-    bool provisioning_resume_required;
+    bool device_link_resume_required;
     bool imu_resume_required;
     bool audio_resume_required;
     bool time_resume_required;
@@ -56,8 +56,8 @@ static bool _app_runtime_pm_is_standby_allowed(void)
     {
         return false;
     }
-    if (s_sleep_context.provisioning_participant &&
-            provisioning_service_is_active())
+    if (s_sleep_context.device_link_participant &&
+            device_link_service_is_busy())
     {
         return false;
     }
@@ -81,8 +81,8 @@ static bool _app_runtime_pm_commit_guard(uint32_t generation, void *context)
     (void)context;
     return !atomic_load_explicit(&s_benchmark_inhibited,
                                  memory_order_acquire) &&
-           (!s_sleep_context.provisioning_participant ||
-            !provisioning_service_is_active()) &&
+           (!s_sleep_context.device_link_participant ||
+            !device_link_service_is_busy()) &&
            app_manager_pm_standby_commit_guard(generation, NULL);
 }
 
@@ -273,7 +273,7 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 {
     app_runtime_sleep_context_t *sleep = context;
     esp_err_t result = ESP_OK;
-    if (sleep->provisioning_resume_required ||
+    if (sleep->device_link_resume_required ||
             sleep->connectivity_resume_required || sleep->imu_resume_required ||
             sleep->audio_resume_required || sleep->time_resume_required ||
             sleep->weather_resume_required ||
@@ -286,14 +286,14 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         }
     }
 
-    if (sleep->provisioning_participant)
+    if (sleep->device_link_participant)
     {
-        result = provisioning_service_suspend(timeout_ms);
+        result = device_link_service_suspend(timeout_ms);
         if (result != ESP_OK)
         {
             goto rollback;
         }
-        sleep->provisioning_resume_required = true;
+        sleep->device_link_resume_required = true;
     }
 
     if (sleep->weather_participant)
@@ -440,13 +440,13 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
             sleep->weather_resume_required = false;
         }
     }
-    if (sleep->provisioning_resume_required)
+    if (sleep->device_link_resume_required)
     {
-        const esp_err_t result = provisioning_service_resume(timeout_ms);
+        const esp_err_t result = device_link_service_resume(timeout_ms);
         _app_runtime_pm_record_first_error(&first_error, result);
         if (result == ESP_OK)
         {
-            sleep->provisioning_resume_required = false;
+            sleep->device_link_resume_required = false;
         }
     }
     return first_error;
@@ -602,9 +602,9 @@ void app_runtime_pm_set_connectivity_participant(bool enabled)
     s_sleep_context.connectivity_participant = enabled;
 }
 
-void app_runtime_pm_set_provisioning_participant(bool enabled)
+void app_runtime_pm_set_device_link_participant(bool enabled)
 {
-    s_sleep_context.provisioning_participant = enabled;
+    s_sleep_context.device_link_participant = enabled;
 }
 
 void app_runtime_pm_set_imu_participant(bool enabled)

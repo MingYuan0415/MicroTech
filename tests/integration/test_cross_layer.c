@@ -11,7 +11,7 @@
 #include "event_bus.h"
 #include "host_freertos.h"
 #include "host_connectivity_manager.h"
-#include "host_provisioning_service.h"
+#include "host_device_link_service.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
 #include "weather_service.h"
@@ -1848,21 +1848,21 @@ static void _test_real_app_navigation(void)
     assert(!_ui_has_text("选择网络"));
     assert(!_ui_has_text("输入密码"));
 
-    const unsigned opens = host_provisioning_service_open_count();
-    const unsigned closes = host_provisioning_service_close_count();
+    const unsigned opens = host_device_link_service_open_count();
+    const unsigned closes = host_device_link_service_close_count();
     _click_action("手机配网");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
-    assert(_wait_for_text("MT-A1B2C3"));
+    assert(_wait_for_text("MT"));
     assert(_wait_for_text("等待手机连接"));
-    assert(host_provisioning_service_open_count() >= opens + 1U);
+    assert(host_device_link_service_open_count() >= opens + 1U);
     assert(host_lv_live_qrcode_count() == 1U);
     assert(host_lv_qrcode_update_count() == 1U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "root"));
     assert(host_lv_live_qrcode_count() == 0U);
     assert(host_lv_qrcode_scrubbed_delete_count() == 1U);
-    assert(host_provisioning_service_close_count() >= closes + 1U);
-    assert(!provisioning_service_is_active());
+    assert(host_device_link_service_close_count() >= closes + 1U);
+    assert(!device_link_service_is_active());
 
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
@@ -2666,7 +2666,7 @@ static void _test_setup_screen_lifecycle(void)
     const unsigned scrubbed_before =
         host_lv_qrcode_scrubbed_delete_count();
     const unsigned closes_before =
-        host_provisioning_service_close_count();
+        host_device_link_service_close_count();
     const size_t starts_before = _lifecycle_observed(
                                      APP_MANAGER_ID_SETUP, "provisioning",
                                      APP_MANAGER_MSG_ONSTART,
@@ -2710,10 +2710,10 @@ static void _test_setup_screen_lifecycle(void)
                APP_MANAGER_ID_SETUP, "provisioning", APP_MANAGER_MSG_ONRESUME,
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == resumes_before + 1U);
 
-    provisioning_service_status_t connected =
+    device_link_service_status_t connected =
     {
         .generation = UINT64_C(300000),
-        .state = PROVISIONING_SERVICE_STATE_CONNECTED,
+        .state = DEVICE_LINK_SERVICE_STATE_CONNECTED,
         .last_error = ESP_OK,
         .window_remaining_ms = 590000U,
         .available = true,
@@ -2721,18 +2721,17 @@ static void _test_setup_screen_lifecycle(void)
         .client_connected = true,
         .qr_ready = true,
     };
-    memcpy(connected.device_name, "MT-A1B2C3", sizeof("MT-A1B2C3"));
-    assert(host_provisioning_service_publish_status(&connected) == ESP_OK);
+    assert(host_device_link_service_publish_status(&connected) == ESP_OK);
     assert(_wait_for_text("手机已连接"));
 
-    provisioning_service_status_t fault = connected;
+    device_link_service_status_t fault = connected;
     ++fault.generation;
-    fault.state = PROVISIONING_SERVICE_STATE_ERROR;
+    fault.state = DEVICE_LINK_SERVICE_STATE_ERROR;
     fault.last_error = ESP_FAIL;
     fault.window_remaining_ms = 0U;
     fault.client_connected = false;
     fault.qr_ready = false;
-    assert(host_provisioning_service_publish_status(&fault) == ESP_OK);
+    assert(host_device_link_service_publish_status(&fault) == ESP_OK);
     assert(_wait_for_text("蓝牙关闭失败，需要重启"));
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
@@ -2740,8 +2739,8 @@ static void _test_setup_screen_lifecycle(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(host_lv_live_qrcode_count() == 0U);
     assert(host_lv_qrcode_scrubbed_delete_count() >= scrubbed_before + 2U);
-    assert(host_provisioning_service_close_count() >= closes_before + 1U);
-    assert(!provisioning_service_is_active());
+    assert(host_device_link_service_close_count() >= closes_before + 1U);
+    assert(!device_link_service_is_active());
     _assert_event_slot_headroom(2);
 }
 
@@ -3038,19 +3037,19 @@ static void _test_system_edge_back_gesture(void)
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     _click_action("手机配网");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
-    assert(provisioning_service_is_active());
+    assert(device_link_service_is_active());
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 40, 300));
     assert(_touch(TOUCH_ACTION_RELEASE, 40, 300));
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
-    assert(provisioning_service_is_active());
+    assert(device_link_service_is_active());
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 56, 300));
     assert(_system_gesture_snapshot().arrow_visible);
     assert(_touch(TOUCH_ACTION_RELEASE, 56, 300));
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "root"));
-    assert(!provisioning_service_is_active());
+    assert(!device_link_service_is_active());
     assert(host_lv_live_qrcode_count() == 0U);
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));

@@ -12,14 +12,10 @@
 #include "audio_service.h"
 #include "bsp_hal.h"
 #include "connectivity_manager.h"
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
-    #include "provisioning_service.h"
-#endif
+#include "device_link_service.h"
 
 #include "esp_heap_caps.h"
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
-    #include "esp_memory_utils.h"
-#endif
+#include "esp_memory_utils.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
@@ -74,7 +70,6 @@
 #define DISPLAY_BENCHMARK_CHARACTERIZATION_EFFECT_COUNT 5U
 #define DISPLAY_BENCHMARK_CHARACTERIZATION_LOAD_COUNT   2U
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
 #define DISPLAY_BENCHMARK_STRESS_AUDIO_STACK             4096U
 #define DISPLAY_BENCHMARK_STRESS_SAMPLER_STACK           4096U
 #ifndef DISPLAY_BENCHMARK_STRESS_SAMPLE_MS
@@ -118,7 +113,6 @@
         (MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
 #define DISPLAY_BENCHMARK_STRESS_PSRAM_CAPS \
         (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
-#endif
 
 #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565"
 
@@ -240,7 +234,6 @@ typedef struct display_benchmark_stability_summary
     bool diagnostics_passed;
 } display_benchmark_stability_summary_t;
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
 typedef enum display_benchmark_stress_phase
 {
     DISPLAY_BENCHMARK_STRESS_PHASE_NONE = 0,
@@ -366,7 +359,7 @@ static const char *const s_stress_task_names[
     "lvgl",
     "connectivity",
     "wifi_service",
-    "provisioning",
+    "device_link",
     "nimble_host",
     "display_bench",
     "display_tcp",
@@ -376,7 +369,6 @@ static const char *const s_stress_task_names[
 };
 
 static display_benchmark_stress_context_t *s_stress_context;
-#endif
 
 static const app_manager_transition_effect_t s_characterization_effects[
     DISPLAY_BENCHMARK_CHARACTERIZATION_EFFECT_COUNT] =
@@ -449,14 +441,10 @@ static bool _display_benchmark_config_valid(
     }
     if (config->ble_mode == DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED)
     {
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
         valid = config->mode == DISPLAY_BENCHMARK_MODE_STRESS &&
                 config->load == DISPLAY_BENCHMARK_LOAD_FULL &&
                 config->app_workload ==
                 DISPLAY_BENCHMARK_APP_WORKLOAD_SYSTEM_ROUTES;
-#else
-        valid = false;
-#endif
     }
     return valid;
 }
@@ -553,14 +541,12 @@ static bool _display_benchmark_should_stop(void)
     {
         return true;
     }
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
     if (s_stress_context != NULL &&
             atomic_load_explicit(&s_workload_error,
                                  memory_order_relaxed) != ESP_OK)
     {
         return true;
     }
-#endif
     return false;
 }
 
@@ -1016,7 +1002,6 @@ static void _display_benchmark_worker_stop(display_benchmark_worker_t *worker)
     memset(worker, 0, sizeof(*worker));
 }
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
 static bool _display_benchmark_is_c_ext_stress(void)
 {
     return s_config.ble_mode == DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED &&
@@ -1292,13 +1277,10 @@ static void _display_benchmark_stress_sample_task(
 static void _display_benchmark_stress_observe_ble(
     display_benchmark_stress_context_t *context, int64_t now_us)
 {
-    provisioning_service_status_t status = {0};
-    provisioning_service_diagnostics_t diagnostics = {0};
-    const bool connected = provisioning_service_get_status(&status) == ESP_OK &&
-                           status.state == PROVISIONING_SERVICE_STATE_CONNECTED &&
-                           status.client_connected &&
-                           provisioning_service_get_diagnostics(&diagnostics) ==
-                           ESP_OK;
+    (void)now_us;
+    device_link_service_status_t status = {0};
+    const bool connected = device_link_service_get_status(&status) == ESP_OK &&
+                           status.client_connected;
     if (!connected && context->ble_was_connected)
     {
         ++context->ble_disconnect_count;
@@ -1308,37 +1290,6 @@ static void _display_benchmark_stress_observe_ble(
         ++context->ble_reconnect_count;
     }
     context->ble_was_connected = connected;
-    if (!connected || diagnostics.last_snapshot_success_us <= 0)
-    {
-        return;
-    }
-    if (context->last_observed_snapshot_success_us > 0 &&
-            diagnostics.last_snapshot_success_us >
-            context->last_observed_snapshot_success_us)
-    {
-        const uint64_t interval_us =
-            (uint64_t)(diagnostics.last_snapshot_success_us -
-                       context->last_observed_snapshot_success_us);
-        if (interval_us > context->maximum_ble_success_interval_us)
-        {
-            context->maximum_ble_success_interval_us = interval_us;
-        }
-    }
-    if (diagnostics.last_snapshot_success_us >
-            context->last_observed_snapshot_success_us)
-    {
-        context->last_observed_snapshot_success_us =
-            diagnostics.last_snapshot_success_us;
-    }
-    if (now_us > diagnostics.last_snapshot_success_us)
-    {
-        const uint64_t idle_us =
-            (uint64_t)(now_us - diagnostics.last_snapshot_success_us);
-        if (idle_us > context->maximum_ble_success_idle_us)
-        {
-            context->maximum_ble_success_idle_us = idle_us;
-        }
-    }
 }
 
 static void _display_benchmark_stress_sampler_task(void *arg)
@@ -1410,7 +1361,7 @@ static void _display_benchmark_stress_sampler_task(void *arg)
             sample->elapsed_us = now_us - measure_start_us;
             sample->psram_free = psram_free;
         }
-        LOG_I("c_ext_stress sample=%u phase=%s internal_free=%u internal_largest=%u dma_free=%u dma_largest=%u psram_free=%u psram_largest=%u task_missing=0x%x task_internal=0x%x task_core_mismatch=0x%x hwm_lvgl=%u hwm_connectivity=%u hwm_wifi=%u hwm_provisioning=%u hwm_nimble=%u hwm_supervisor=%u hwm_tcp=%u hwm_audio_tx=%u hwm_audio_rx=%u hwm_sampler=%u",
+        LOG_I("c_ext_stress sample=%u phase=%s internal_free=%u internal_largest=%u dma_free=%u dma_largest=%u psram_free=%u psram_largest=%u task_missing=0x%x task_internal=0x%x task_core_mismatch=0x%x hwm_lvgl=%u hwm_connectivity=%u hwm_wifi=%u hwm_device_link=%u hwm_nimble=%u hwm_supervisor=%u hwm_tcp=%u hwm_audio_tx=%u hwm_audio_rx=%u hwm_sampler=%u",
               (unsigned)context->tasks[0].sample_count,
               _display_benchmark_stress_phase_name(sample_phase),
               (unsigned)internal_free, (unsigned)internal_largest,
@@ -1440,7 +1391,6 @@ static void _display_benchmark_stress_sampler_task(void *arg)
     (void)xSemaphoreGive(worker->stopped);
     vTaskSuspend(NULL);
 }
-#endif
 
 static esp_err_t _display_benchmark_submit_navigation(
     const app_manager_nav_request_t *request)
@@ -1539,7 +1489,6 @@ static esp_err_t _display_benchmark_navigate_stress(
     return _display_benchmark_submit_navigation(&request);
 }
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
 static esp_err_t _display_benchmark_stress_navigate(
     const char *app_id, const char *page_id,
     app_manager_transition_effect_t effect)
@@ -1595,21 +1544,14 @@ static esp_err_t _display_benchmark_stress_wait_for_provisioning(
     while (!_display_benchmark_should_stop() &&
             esp_timer_get_time() < deadline_us)
     {
-        provisioning_service_status_t status = {0};
-        provisioning_service_diagnostics_t diagnostics = {0};
-        const esp_err_t status_result = provisioning_service_get_status(&status);
-        const esp_err_t diagnostics_result =
-            provisioning_service_get_diagnostics(&diagnostics);
-        if (status_result == ESP_OK && diagnostics_result == ESP_OK &&
-                status.state == PROVISIONING_SERVICE_STATE_CONNECTED &&
-                status.client_connected &&
-                diagnostics.snapshot_success_count > 0U &&
-                diagnostics.last_snapshot_request_id != 0U &&
-                diagnostics.last_snapshot_success_us > 0)
+        device_link_service_status_t status = {0};
+        const esp_err_t status_result =
+            device_link_service_get_status(&status);
+
+        if (status_result == ESP_OK && status.client_connected &&
+                status.state == DEVICE_LINK_SERVICE_STATE_WINDOW)
         {
             context->ble_was_connected = true;
-            context->last_observed_snapshot_success_us =
-                diagnostics.last_snapshot_success_us;
             return ESP_OK;
         }
         vTaskDelay(pdMS_TO_TICKS(DISPLAY_BENCHMARK_STRESS_SAMPLE_MS));
@@ -1686,7 +1628,6 @@ static esp_err_t _display_benchmark_stress_run_routes(
                  esp_timer_get_time() - started_us >= duration_us;
     return result;
 }
-#endif
 
 static bool _display_benchmark_wifi_ready(void)
 {
@@ -2320,7 +2261,6 @@ static void _display_benchmark_check_wifi(void)
     }
 }
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
 static esp_err_t _display_benchmark_stress_wait_for_tcp(void)
 {
     const int64_t deadline_us = esp_timer_get_time() +
@@ -2493,7 +2433,7 @@ static esp_err_t _display_benchmark_stress_start_sampler(
 
 static esp_err_t _display_benchmark_stress_close_provisioning(void)
 {
-    esp_err_t result = provisioning_service_close_window();
+    esp_err_t result = device_link_service_close_window();
     if (result != ESP_OK)
     {
         return result;
@@ -2503,11 +2443,10 @@ static esp_err_t _display_benchmark_stress_close_provisioning(void)
                                 1000LL;
     while (esp_timer_get_time() < deadline_us)
     {
-        provisioning_service_status_t status = {0};
-        result = provisioning_service_get_status(&status);
+        device_link_service_status_t status = {0};
+        result = device_link_service_get_status(&status);
         if (result == ESP_OK && !status.active &&
-                (status.state == PROVISIONING_SERVICE_STATE_IDLE ||
-                 status.state == PROVISIONING_SERVICE_STATE_DISABLED))
+                status.state == DEVICE_LINK_SERVICE_STATE_ADVERTISING)
         {
             return ESP_OK;
         }
@@ -2646,7 +2585,6 @@ static bool _display_benchmark_stress_effects_passed(
     }
     return true;
 }
-#endif
 
 static esp_err_t _display_benchmark_start_load(display_benchmark_load_t load,
         bool *audio_started, int64_t *tcp_started_us)
@@ -2809,7 +2747,6 @@ static esp_err_t _display_benchmark_run_profile(
            _display_benchmark_run_stress_profile(page, report, completed);
 }
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
 static void _display_benchmark_c_ext_stress_supervisor(void)
 {
     display_benchmark_stability_summary_t summary =
@@ -2820,8 +2757,6 @@ static void _display_benchmark_c_ext_stress_supervisor(void)
         DISPLAY_BENCHMARK_PERFORMANCE_FAIL;
     display_benchmark_stress_context_t *context = NULL;
     app_manager_display_benchmark_report_t *report = NULL;
-    provisioning_service_diagnostics_t provisioning_start = {0};
-    provisioning_service_diagnostics_t provisioning_end = {0};
     bool diagnostics_started = false;
     bool report_available = false;
     bool completed = false;
@@ -2942,12 +2877,6 @@ static void _display_benchmark_c_ext_stress_supervisor(void)
                                       DISPLAY_BENCHMARK_STRESS_INTERNAL_CAPS);
     context->warm_psram_free = heap_caps_get_free_size(
                                    DISPLAY_BENCHMARK_STRESS_PSRAM_CAPS);
-    result = provisioning_service_get_diagnostics(&provisioning_start);
-    if (result != ESP_OK)
-    {
-        _display_benchmark_record_error(&s_control_error, result);
-        goto cleanup;
-    }
 
     atomic_store_explicit(&s_tcp_transmit_bytes, 0U, memory_order_relaxed);
     atomic_store_explicit(&s_tcp_receive_bytes, 0U, memory_order_relaxed);
@@ -3023,13 +2952,6 @@ static void _display_benchmark_c_ext_stress_supervisor(void)
         _display_benchmark_accumulate_stability(&summary, report);
         performance = _display_benchmark_grade_profile(report);
     }
-    const esp_err_t provisioning_result =
-        provisioning_service_get_diagnostics(&provisioning_end);
-    if (provisioning_result != ESP_OK)
-    {
-        _display_benchmark_record_error(&s_control_error,
-                                        provisioning_result);
-    }
 
 cleanup:
     if (diagnostics_started)
@@ -3058,7 +2980,7 @@ cleanup:
         _display_benchmark_worker_stop(&context->audio_tx_worker);
     }
     _display_benchmark_worker_stop(&s_tcp_worker);
-    if (provisioning_service_is_active())
+    if (device_link_service_is_active())
     {
         const esp_err_t provisioning_close_result =
             _display_benchmark_stress_close_provisioning();
@@ -3181,40 +3103,12 @@ cleanup:
                                       &context->microphone_nonzero,
                                       memory_order_relaxed);
 
-        const uint64_t protected_success_count =
-            provisioning_end.protected_success_count >=
-            provisioning_start.protected_success_count ?
-            provisioning_end.protected_success_count -
-            provisioning_start.protected_success_count : 0U;
-        const uint64_t protected_failure_count =
-            provisioning_end.protected_failure_count >=
-            provisioning_start.protected_failure_count ?
-            provisioning_end.protected_failure_count -
-            provisioning_start.protected_failure_count : UINT64_MAX;
-        const uint64_t snapshot_success_count =
-            provisioning_end.snapshot_success_count >=
-            provisioning_start.snapshot_success_count ?
-            provisioning_end.snapshot_success_count -
-            provisioning_start.snapshot_success_count : 0U;
-        const uint64_t theoretical_snapshots = measurement_duration_us /
-                                               2000000U;
-        const uint64_t minimum_snapshots =
-            (theoretical_snapshots *
-             DISPLAY_BENCHMARK_STRESS_MINIMUM_PERCENT + 99U) / 100U;
         const bool ble_passed = context->ble_disconnect_count == 0U &&
                                 context->ble_reconnect_count == 0U &&
-                                protected_failure_count == 0U &&
-                                protected_success_count >= minimum_snapshots &&
-                                snapshot_success_count >= minimum_snapshots &&
-                                provisioning_end.last_snapshot_request_id !=
-                                0U &&
                                 context->maximum_ble_success_interval_us <=
                                 DISPLAY_BENCHMARK_STRESS_BLE_INTERVAL_US &&
                                 context->maximum_ble_success_idle_us <=
-                                DISPLAY_BENCHMARK_STRESS_BLE_INTERVAL_US &&
-                                provisioning_end.worker_found &&
-                                provisioning_end.worker_stack_high_water >=
-                                DISPLAY_BENCHMARK_STRESS_TASK_MINIMUM_HWM;
+                                DISPLAY_BENCHMARK_STRESS_BLE_INTERVAL_US;
 
         const bool heap_passed = context->heap_sampled &&
                                  context->minimum_internal_free > 0U &&
@@ -3264,19 +3158,12 @@ cleanup:
                                    tasks_passed && navigation_passed;
         summary.diagnostics_passed = summary.diagnostics_passed &&
                                      stress_passed;
-        LOG_I("c_ext_stress ble result=%s protected_success=%llu protected_failure=%llu snapshot_success=%llu theoretical=%llu disconnects=%u reconnects=%u max_success_interval_us=%llu max_success_idle_us=%llu last_request_id=%llu worker_found=%u worker_hwm=%u",
+        LOG_I("c_ext_stress ble result=%s disconnects=%u reconnects=%u max_success_interval_us=%llu max_success_idle_us=%llu",
               ble_passed ? "PASS" : "FAIL",
-              (unsigned long long)protected_success_count,
-              (unsigned long long)protected_failure_count,
-              (unsigned long long)snapshot_success_count,
-              (unsigned long long)theoretical_snapshots,
               (unsigned)context->ble_disconnect_count,
               (unsigned)context->ble_reconnect_count,
               (unsigned long long)context->maximum_ble_success_interval_us,
-              (unsigned long long)context->maximum_ble_success_idle_us,
-              (unsigned long long)provisioning_end.last_snapshot_request_id,
-              provisioning_end.worker_found ? 1U : 0U,
-              (unsigned)provisioning_end.worker_stack_high_water);
+              (unsigned long long)context->maximum_ble_success_idle_us);
         LOG_I("c_ext_stress audio result=%s tx_bytes=%llu rx_bytes=%llu target_bytes=%llu tx_short=%u rx_short=%u tx_timeout=%u rx_timeout=%u tx_error=%u rx_error=%u tx_deadline_miss=%u rx_deadline_miss=%u faults=%u mic_nonzero=%u",
               audio_passed ? "PASS" : "FAIL",
               (unsigned long long)audio_transmit_bytes,
@@ -3327,7 +3214,6 @@ cleanup:
     heap_caps_free(context);
     s_stress_context = NULL;
 }
-#endif
 
 static void _display_benchmark_release_pm_inhibitor(void)
 {
@@ -3341,7 +3227,6 @@ static void _display_benchmark_release_pm_inhibitor(void)
 static void _display_benchmark_supervisor_task(void *arg)
 {
     (void)arg;
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
     if (_display_benchmark_is_c_ext_stress())
     {
         _display_benchmark_c_ext_stress_supervisor();
@@ -3350,7 +3235,6 @@ static void _display_benchmark_supervisor_task(void *arg)
         vTaskSuspend(NULL);
         return;
     }
-#endif
     const display_benchmark_load_t load = s_config.load;
     const bool tcp_required = _display_benchmark_load_requires_tcp(load);
     bool audio_started = false;
@@ -3650,17 +3534,5 @@ esp_err_t display_benchmark_stop(void)
     return result;
 }
 
-#else
-
-esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
-{
-    (void)config;
-    return ESP_OK;
-}
-
-esp_err_t display_benchmark_stop(void)
-{
-    return ESP_OK;
-}
 
 #endif

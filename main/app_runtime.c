@@ -22,7 +22,8 @@
 #include "network_runtime.h"
 #include "nv_storage.h"
 #include "power_service.h"
-#include "provisioning_service.h"
+#include "ble_nimble_port.h"
+#include "device_link_service.h"
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
@@ -67,7 +68,7 @@ typedef struct app_runtime_ownership
     bool sd_attempted;
     bool connectivity_owned;
     event_bus_sub_handle_t connectivity_subscription;
-    bool provisioning_attempted;
+    bool device_link_attempted;
 #if CONFIG_MAIN_DISPLAY_BENCHMARK
     bool display_benchmark_attempted;
 #endif
@@ -407,7 +408,7 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.connectivity_owned ||
                  s_ownership.connectivity_subscription !=
                  EVENT_BUS_SUB_HANDLE_INVALID ||
-                 s_ownership.provisioning_attempted;
+                 s_ownership.device_link_attempted;
 #if CONFIG_MAIN_DISPLAY_BENCHMARK
     owned = owned || s_ownership.display_benchmark_attempted;
 #endif
@@ -502,16 +503,16 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.system_pm_cancelable = false;
     }
-    if (s_ownership.provisioning_attempted)
+    if (s_ownership.device_link_attempted)
     {
-        result = provisioning_service_deinit(
-                     PROVISIONING_SERVICE_WAIT_FOREVER);
+        result = device_link_service_deinit(
+                     DEVICE_LINK_SERVICE_WAIT_FOREVER);
         if (result != ESP_OK)
         {
             return result;
         }
-        s_ownership.provisioning_attempted = false;
-        app_runtime_pm_set_provisioning_participant(false);
+        s_ownership.device_link_attempted = false;
+        app_runtime_pm_set_device_link_participant(false);
     }
     if (s_ownership.weather_attempted)
     {
@@ -1099,26 +1100,14 @@ static esp_err_t _app_runtime_start_connectivity(
         }
     }
 
-    provisioning_service_config_t provisioning = product->provisioning;
-#if CONFIG_MAIN_DISPLAY_BENCHMARK
-    if (g_display_benchmark_profile.ble_mode ==
-            DISPLAY_BENCHMARK_BLE_SECURITY2_CONNECTED)
-    {
-        const uint64_t window_ms =
-            ((uint64_t)g_display_benchmark_profile.stress_duration_sec +
-             300U + 60U) * 1000U;
-        if (window_ms > UINT32_MAX)
-        {
-            return ESP_ERR_INVALID_SIZE;
-        }
-        provisioning.window_ms = (uint32_t)window_ms;
-    }
-#endif
-    s_ownership.provisioning_attempted = true;
-    result = provisioning_service_init(&provisioning);
+    device_link_service_config_t device_link = product->device_link;
+
+    device_link.runtime_port = ble_nimble_port_get();
+    s_ownership.device_link_attempted = true;
+    result = device_link_service_init(&device_link);
     if (result == ESP_OK)
     {
-        app_runtime_pm_set_provisioning_participant(true);
+        app_runtime_pm_set_device_link_participant(true);
     }
     return result;
 }

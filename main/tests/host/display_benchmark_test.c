@@ -4,9 +4,7 @@
 #include "app_manager_display_diagnostics.h"
 #include "audio_service.h"
 #include "connectivity_manager.h"
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
-    #include "provisioning_service.h"
-#endif
+#include "device_link_service.h"
 #include "display_benchmark_host_port.h"
 #include "esp_heap_caps.h"
 
@@ -223,17 +221,11 @@ static atomic_size_t s_heap_maximum_allocation;
 static atomic_bool s_stress_heap_exhausted;
 static uint32_t s_minimum_fps;
 static size_t s_minimum_dma_largest;
+static atomic_bool s_device_link_active;
+static atomic_bool s_device_link_connected;
+static atomic_int s_device_link_close_result;
 #if TEST_C_EXT_STRESS
     static atomic_bool s_c_ext_active;
-    static atomic_bool s_provisioning_active;
-    static atomic_bool s_provisioning_connected;
-    static atomic_bool s_protected_fail;
-    static atomic_int s_provisioning_close_result;
-    static atomic_uint_fast64_t s_protected_success_count;
-    static atomic_uint_fast64_t s_protected_failure_count;
-    static atomic_uint_fast64_t s_snapshot_success_count;
-    static atomic_uint_fast64_t s_snapshot_request_id;
-    static atomic_int_fast64_t s_snapshot_success_us;
     static atomic_uint s_c_ext_phase_mask;
     static atomic_uint s_c_ext_summary_result;
     static atomic_bool s_c_ext_summary_completed;
@@ -712,71 +704,32 @@ esp_err_t connectivity_manager_get_status(
     return ESP_OK;
 }
 
-#if CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS
-esp_err_t provisioning_service_get_status(
-    provisioning_service_status_t *status)
+esp_err_t device_link_service_get_status(
+    device_link_service_status_t *status)
 {
     assert(status != NULL);
     memset(status, 0, sizeof(*status));
-    const bool active = atomic_load(&s_provisioning_active);
-    const bool connected = active && atomic_load(&s_provisioning_connected);
+    const bool active = atomic_load(&s_device_link_active);
+    const bool connected = active && atomic_load(&s_device_link_connected);
     status->available = true;
     status->active = active;
     status->client_connected = connected;
-    status->state = connected ? PROVISIONING_SERVICE_STATE_CONNECTED :
-                    (active ? PROVISIONING_SERVICE_STATE_ADVERTISING :
-                     PROVISIONING_SERVICE_STATE_IDLE);
+    status->state = connected ? DEVICE_LINK_SERVICE_STATE_WINDOW :
+                    (active ? DEVICE_LINK_SERVICE_STATE_WINDOW :
+                     DEVICE_LINK_SERVICE_STATE_ADVERTISING);
     return ESP_OK;
 }
 
-esp_err_t provisioning_service_get_diagnostics(
-    provisioning_service_diagnostics_t *diagnostics)
+esp_err_t device_link_service_close_window(void)
 {
-    assert(diagnostics != NULL);
-    if (atomic_load(&s_provisioning_active) &&
-            atomic_load(&s_provisioning_connected))
-    {
-        if (atomic_load(&s_protected_fail))
-        {
-            atomic_fetch_add(&s_protected_failure_count, 1U);
-        }
-        else
-        {
-            atomic_fetch_add(&s_snapshot_request_id, 1U);
-            atomic_fetch_add(&s_protected_success_count, 1U);
-            atomic_fetch_add(&s_snapshot_success_count, 1U);
-            atomic_store(&s_snapshot_success_us, esp_timer_get_time());
-        }
-    }
-    *diagnostics = (provisioning_service_diagnostics_t)
-    {
-        .protected_request_count =
-            atomic_load(&s_protected_success_count),
-            .protected_success_count =
-                atomic_load(&s_protected_success_count),
-                .protected_failure_count =
-                    atomic_load(&s_protected_failure_count),
-                    .snapshot_success_count =
-                        atomic_load(&s_snapshot_success_count),
-                        .last_snapshot_request_id = atomic_load(&s_snapshot_request_id),
-                        .last_snapshot_success_us = atomic_load(&s_snapshot_success_us),
-                        .worker_stack_high_water = 8192U,
-                        .worker_found = true,
-    };
-    return ESP_OK;
+    atomic_store(&s_device_link_active, false);
+    return atomic_load(&s_device_link_close_result);
 }
 
-esp_err_t provisioning_service_close_window(void)
+bool device_link_service_is_active(void)
 {
-    atomic_store(&s_provisioning_active, false);
-    return atomic_load(&s_provisioning_close_result);
+    return atomic_load(&s_device_link_active);
 }
-
-bool provisioning_service_is_active(void)
-{
-    return atomic_load(&s_provisioning_active);
-}
-#endif
 
 esp_err_t audio_service_start(void)
 {
@@ -1205,7 +1158,7 @@ esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
                     request->page_id != NULL &&
                     strcmp(request->page_id, "provisioning") == 0)
             {
-                atomic_store(&s_provisioning_active, true);
+                atomic_store(&s_device_link_active, true);
             }
             atomic_fetch_or(&s_profile_effect_mask,
                             1U << (unsigned)request->transition.effect);
@@ -1454,15 +1407,15 @@ static void _reset(void)
     s_minimum_dma_largest = 0U;
 #if TEST_C_EXT_STRESS
     atomic_store(&s_c_ext_active, false);
-    atomic_store(&s_provisioning_active, false);
-    atomic_store(&s_provisioning_connected, true);
-    atomic_store(&s_protected_fail, false);
-    atomic_store(&s_provisioning_close_result, ESP_OK);
-    atomic_store(&s_protected_success_count, 0U);
-    atomic_store(&s_protected_failure_count, 0U);
-    atomic_store(&s_snapshot_success_count, 0U);
-    atomic_store(&s_snapshot_request_id, 0U);
-    atomic_store(&s_snapshot_success_us, 0);
+    atomic_store(&s_device_link_active, false);
+    atomic_store(&s_device_link_connected, true);
+
+    atomic_store(&s_device_link_close_result, ESP_OK);
+
+
+
+
+
     atomic_store(&s_c_ext_phase_mask, 0U);
     atomic_store(&s_c_ext_summary_result, 0U);
     atomic_store(&s_c_ext_summary_completed, false);
@@ -1905,7 +1858,7 @@ static void _test_c_ext_stress_runs_and_restores_state(void)
     assert(atomic_load(&s_c_ext_phase_mask) == 0x7FU);
     assert(atomic_load(&s_log_result) == 1U);
     assert(atomic_load(&s_log_performance) == 1U);
-    assert(!atomic_load(&s_provisioning_active));
+    assert(!atomic_load(&s_device_link_active));
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
     assert(atomic_load(&s_audio_volume) == 37U);
     assert(atomic_load(&s_audio_muted));
@@ -1914,7 +1867,6 @@ static void _test_c_ext_stress_runs_and_restores_state(void)
     assert(atomic_load(&s_audio_stop_count) == 1U);
     assert(atomic_load(&s_audio_write_count) > 0U);
     assert(atomic_load(&s_audio_read_count) > 0U);
-    assert(atomic_load(&s_snapshot_success_count) > 0U);
     assert(atomic_load(&s_navigation_count) > 26U);
     assert(display_benchmark_host_port_create_count() == 5U);
     assert(display_benchmark_host_port_delete_count() == 5U);
@@ -1928,7 +1880,7 @@ static void _test_c_ext_stress_runs_and_restores_state(void)
 static void _test_c_ext_stress_ble_wait_timeout_cleans_up(void)
 {
     _reset();
-    atomic_store(&s_provisioning_connected, false);
+    atomic_store(&s_device_link_connected, false);
     echo_server_t server;
     _c_ext_stress_start(&server);
     _c_ext_stress_finish(&server);
@@ -1937,27 +1889,13 @@ static void _test_c_ext_stress_ble_wait_timeout_cleans_up(void)
     assert(!atomic_load(&s_c_ext_summary_completed));
     assert(atomic_load(&s_c_ext_phase_mask) == 0x67U);
     assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
-    assert(!atomic_load(&s_provisioning_active));
+    assert(!atomic_load(&s_device_link_active));
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
     assert(display_benchmark_host_port_create_count() == 4U);
     assert(display_benchmark_host_port_delete_count() == 4U);
 }
 
-static void _test_c_ext_stress_protected_failure_is_soft(void)
-{
-    _reset();
-    echo_server_t server;
-    _c_ext_stress_start(&server);
-    _wait_for_counter(&s_navigation_count, 30U);
-    atomic_store(&s_protected_fail, true);
-    _c_ext_stress_finish(&server);
 
-    assert(atomic_load(&s_protected_failure_count) > 0U);
-    assert(atomic_load(&s_c_ext_summary_result) == 2U);
-    assert(atomic_load(&s_c_ext_summary_completed));
-    assert(atomic_load(&s_navigation_count) > 30U);
-    assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
-}
 
 static void _test_c_ext_stress_missing_task_fails_closed(void)
 {
@@ -1965,7 +1903,7 @@ static void _test_c_ext_stress_missing_task_fails_closed(void)
     echo_server_t server;
     _c_ext_stress_start(&server);
     _wait_for_counter(&s_navigation_count, 30U);
-    display_benchmark_host_port_hide_external_task("provisioning");
+    display_benchmark_host_port_hide_external_task("device_link");
     _c_ext_stress_finish(&server);
 
     assert(atomic_load(&s_c_ext_summary_result) == 2U);
@@ -2087,7 +2025,7 @@ static void _test_c_ext_stress_partial_worker_start_rolls_back(void)
 static void _test_c_ext_stress_cleanup_preserves_first_error(void)
 {
     _reset();
-    atomic_store(&s_provisioning_close_result, ESP_ERR_TIMEOUT);
+    atomic_store(&s_device_link_close_result, ESP_ERR_TIMEOUT);
     atomic_store(&s_audio_restore_volume_fail, true);
     echo_server_t server;
     _c_ext_stress_start(&server);
@@ -2096,7 +2034,7 @@ static void _test_c_ext_stress_cleanup_preserves_first_error(void)
     assert(atomic_load(&s_c_ext_summary_result) == 2U);
     assert(atomic_load(&s_c_ext_summary_completed));
     assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
-    assert(!atomic_load(&s_provisioning_active));
+    assert(!atomic_load(&s_device_link_active));
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
     assert(atomic_load(&s_audio_volume) == 5U);
     assert(atomic_load(&s_audio_muted));
@@ -2227,7 +2165,6 @@ int main(void)
 #if TEST_C_EXT_STRESS
     _test_c_ext_stress_runs_and_restores_state();
     _test_c_ext_stress_ble_wait_timeout_cleans_up();
-    _test_c_ext_stress_protected_failure_is_soft();
     _test_c_ext_stress_missing_task_fails_closed();
     _test_c_ext_stress_heap_exhaustion_exits();
     _test_c_ext_stress_audio_soft_faults_continue();

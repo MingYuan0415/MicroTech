@@ -9,7 +9,7 @@
 #define APP_PRODUCT_POWER_TASK_PRIORITY       4U
 #define APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY 4U
 #define APP_PRODUCT_WIFI_TASK_PRIORITY        4U
-#define APP_PRODUCT_PROVISIONING_TASK_PRIORITY 4U
+#define APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY 4U
 #define APP_PRODUCT_WEATHER_TASK_PRIORITY      4U
 
 #define APP_PRODUCT_PRIORITY_VALID(priority) \
@@ -31,8 +31,8 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WIFI_TASK_PRIORITY),
                "invalid product Wi-Fi task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(
-                   APP_PRODUCT_PROVISIONING_TASK_PRIORITY),
-               "invalid product provisioning task priority");
+                   APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY),
+               "invalid product device-link task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WEATHER_TASK_PRIORITY),
                "invalid product weather task priority");
 
@@ -85,11 +85,10 @@ static const app_product_config_t s_product_config =
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,
         .wifi_task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,
     },
-    .provisioning = {
-        .task_priority = APP_PRODUCT_PROVISIONING_TASK_PRIORITY,
+    .device_link = {
+        .runtime_port = NULL,
+        .task_priority = APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY,
         .window_ms = 10U * 60U * 1000U,
-        .success_grace_ms = 30U * 1000U,
-        .finish_close_delay_ms = 1000U,
     },
     .system_pm_task_priority = APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY,
     .app_control_task_priority = APP_PRODUCT_APP_CONTROL_TASK_PRIORITY,

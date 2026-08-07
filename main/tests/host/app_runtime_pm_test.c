@@ -6,7 +6,7 @@
 #include "bsp_hal.h"
 #include "imu_service.h"
 #include "power_service.h"
-#include "provisioning_service.h"
+#include "device_link_service.h"
 #include "system_pm.h"
 #include "time_service.h"
 #include "weather_service.h"
@@ -38,8 +38,8 @@ typedef enum
     TEST_CALL_SYSTEM_CANCEL,
     TEST_CALL_WIFI_SUSPEND,
     TEST_CALL_WIFI_RESUME,
-    TEST_CALL_PROVISIONING_SUSPEND,
-    TEST_CALL_PROVISIONING_RESUME,
+    TEST_CALL_DEVICE_LINK_SUSPEND,
+    TEST_CALL_DEVICE_LINK_RESUME,
     TEST_CALL_AUDIO_SUSPEND,
     TEST_CALL_AUDIO_RESUME,
     TEST_CALL_IMU_SUSPEND,
@@ -83,7 +83,7 @@ typedef struct test_context
     bool expose_power;
     bool power_ops_registered;
     audio_service_state_t audio_state;
-    bool provisioning_active;
+    bool device_link_active;
     bool prepare_guard;
     bool commit_guard;
     uint32_t commit_generation;
@@ -396,21 +396,21 @@ esp_err_t connectivity_manager_resume(uint32_t timeout_ms)
     return _test_scripted_call(TEST_CALL_WIFI_RESUME);
 }
 
-esp_err_t provisioning_service_suspend(uint32_t timeout_ms)
+esp_err_t device_link_service_suspend(uint32_t timeout_ms)
 {
     assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
-    return _test_scripted_call(TEST_CALL_PROVISIONING_SUSPEND);
+    return _test_scripted_call(TEST_CALL_DEVICE_LINK_SUSPEND);
 }
 
-esp_err_t provisioning_service_resume(uint32_t timeout_ms)
+esp_err_t device_link_service_resume(uint32_t timeout_ms)
 {
     assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
-    return _test_scripted_call(TEST_CALL_PROVISIONING_RESUME);
+    return _test_scripted_call(TEST_CALL_DEVICE_LINK_RESUME);
 }
 
-bool provisioning_service_is_active(void)
+bool device_link_service_is_busy(void)
 {
-    return s_test.provisioning_active;
+    return s_test.device_link_active;
 }
 
 esp_err_t audio_service_suspend(uint32_t timeout_ms, bool *resume_required)
@@ -592,11 +592,11 @@ static void _test_standby_admission(void)
     app_manager_standby_ops_t ops = app_runtime_pm_get_standby_ops();
     assert(ops.is_standby_allowed != NULL);
     assert(ops.is_standby_allowed());
-    app_runtime_pm_set_provisioning_participant(true);
-    s_test.provisioning_active = true;
+    app_runtime_pm_set_device_link_participant(true);
+    s_test.device_link_active = true;
     assert(!ops.is_standby_allowed());
     assert(ops.request_standby() == ESP_ERR_INVALID_STATE);
-    s_test.provisioning_active = false;
+    s_test.device_link_active = false;
     assert(ops.is_standby_allowed());
     assert(ops.request_standby() == ESP_ERR_INVALID_STATE);
     assert(ops.cancel_standby() == ESP_OK);
@@ -1097,22 +1097,22 @@ static void _test_pending_recovery_before_prepare(void)
     _test_expect_trace(retry, TEST_ARRAY_SIZE(retry));
 }
 
-static void _test_provisioning_standby_participant(void)
+static void _test_device_link_standby_participant(void)
 {
     _test_reset();
     system_pm_config_t config = _test_build_config(false, false, false, false);
-    app_runtime_pm_set_provisioning_participant(true);
-    s_test.provisioning_active = true;
+    app_runtime_pm_set_device_link_participant(true);
+    s_test.device_link_active = true;
     assert(!config.commit_guard(57U, config.commit_context));
     assert(s_test.commit_generation == 0U);
-    s_test.provisioning_active = false;
+    s_test.device_link_active = false;
     assert(config.commit_guard(58U, config.commit_context));
     assert(s_test.commit_generation == 58U);
     _test_clear_trace();
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t prepare[] =
     {
-        TEST_CALL_PROVISIONING_SUSPEND,
+        TEST_CALL_DEVICE_LINK_SUSPEND,
         TEST_CALL_POWER_SUSPEND,
         TEST_CALL_INPUT_PREPARE,
         TEST_CALL_PREPARE_GUARD,
@@ -1125,14 +1125,14 @@ static void _test_provisioning_standby_participant(void)
     {
         TEST_CALL_INPUT_COMPLETE,
         TEST_CALL_POWER_RESUME,
-        TEST_CALL_PROVISIONING_RESUME,
+        TEST_CALL_DEVICE_LINK_RESUME,
     };
     _test_expect_trace(complete, TEST_ARRAY_SIZE(complete));
 
-    _test_fail_once(TEST_CALL_PROVISIONING_SUSPEND, ESP_ERR_INVALID_STATE);
+    _test_fail_once(TEST_CALL_DEVICE_LINK_SUSPEND, ESP_ERR_INVALID_STATE);
     _test_clear_trace();
     assert(_test_prepare(&config) == ESP_ERR_INVALID_STATE);
-    const test_call_t blocked[] = {TEST_CALL_PROVISIONING_SUSPEND};
+    const test_call_t blocked[] = {TEST_CALL_DEVICE_LINK_SUSPEND};
     _test_expect_trace(blocked, TEST_ARRAY_SIZE(blocked));
 }
 
@@ -1148,7 +1148,7 @@ int main(void)
     _test_sleep_prepare_failures();
     _test_sleep_recovery_matrix();
     _test_pending_recovery_before_prepare();
-    _test_provisioning_standby_participant();
+    _test_device_link_standby_participant();
     app_runtime_pm_close_admission();
     app_runtime_pm_reset();
     return 0;

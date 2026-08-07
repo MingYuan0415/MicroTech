@@ -50,7 +50,7 @@ static const char *const s_external_task_names[HOST_EXTERNAL_TASK_COUNT] =
     "lvgl",
     "connectivity",
     "wifi_service",
-    "provisioning",
+    "device_link",
     "nimble_host",
 };
 static atomic_size_t s_fail_create_index;

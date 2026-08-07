@@ -6,7 +6,8 @@
 #include "connectivity_manager.h"
 #include "display_benchmark.h"
 #include "audio_service.h"
-#include "provisioning_service.h"
+#include "ble_nimble_port.h"
+#include "device_link_service.h"
 #include "bsp_hal.h"
 #include "event_bus.h"
 #include "fs_storage/fs_storage.h"
@@ -95,7 +96,7 @@ typedef struct test_runtime
     bool time_network_ready;
     bool required_apps_present;
     bool connectivity_participant;
-    bool provisioning_participant;
+    bool device_link_participant;
     bool imu_participant;
     bool audio_participant;
     bool time_participant;
@@ -961,26 +962,38 @@ esp_err_t connectivity_manager_get_status(
     return result;
 }
 
-esp_err_t provisioning_service_init(
-    const provisioning_service_config_t *config)
+static const ble_runtime_host_port_t s_test_runtime_port =
+{
+    .init = NULL,
+    .start = NULL,
+    .stop = NULL,
+    .deinit = NULL,
+};
+
+const ble_runtime_host_port_t *ble_nimble_port_get(void)
+{
+    return &s_test_runtime_port;
+}
+
+esp_err_t device_link_service_init(
+    const device_link_service_config_t *config)
 {
     assert(config != NULL);
+    assert(config->runtime_port == &s_test_runtime_port);
     assert(config->task_priority == 4U);
-    assert(config->window_ms == 2160000U);
-    assert(config->success_grace_ms == 30000U);
-    assert(config->finish_close_delay_ms == 1000U);
+    assert(config->window_ms == 600000U);
     return _test_result(TEST_EVENT_BLE_INIT);
 }
 
-esp_err_t provisioning_service_deinit(uint32_t timeout_ms)
+esp_err_t device_link_service_deinit(uint32_t timeout_ms)
 {
-    assert(timeout_ms == PROVISIONING_SERVICE_WAIT_FOREVER);
+    assert(timeout_ms == DEVICE_LINK_SERVICE_WAIT_FOREVER);
     return _test_result(TEST_EVENT_BLE_DEINIT);
 }
 
-void app_runtime_pm_set_provisioning_participant(bool enabled)
+void app_runtime_pm_set_device_link_participant(bool enabled)
 {
-    s_test.provisioning_participant = enabled;
+    s_test.device_link_participant = enabled;
 }
 
 static void _test_successful_lifecycle(void)
@@ -1046,7 +1059,7 @@ static void _test_successful_lifecycle(void)
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
     assert(s_test.connectivity_participant);
-    assert(s_test.provisioning_participant);
+    assert(s_test.device_link_participant);
     assert(s_test.imu_participant);
     assert(s_test.audio_participant);
     assert(s_test.time_participant);
@@ -1086,7 +1099,7 @@ static void _test_successful_lifecycle(void)
     assert(app_runtime_stop() == ESP_OK);
     assert(!app_runtime_is_running());
     assert(!s_test.connectivity_participant);
-    assert(!s_test.provisioning_participant);
+    assert(!s_test.device_link_participant);
     assert(!s_test.imu_participant);
     assert(!s_test.audio_participant);
     assert(!s_test.time_participant);

@@ -83,8 +83,8 @@ void app_runtime_pm_clear_power(void);
  */
 void app_runtime_pm_set_connectivity_participant(bool enabled);
 
-/** @brief Set whether BLE provisioning admission participates in standby. */
-void app_runtime_pm_set_provisioning_participant(bool enabled);
+/** @brief Set whether the Device Link BLE service participates in standby. */
+void app_runtime_pm_set_device_link_participant(bool enabled);
 
 /** @brief Set whether the IMU worker participates in sleep transactions. */
 void app_runtime_pm_set_imu_participant(bool enabled);

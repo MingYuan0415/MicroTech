@@ -81,7 +81,8 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/app_manager/app_core/include
     ../../../layers/app_manager/app_theme/include
     ../../../layers/bsp/include
-    ../../../layers/middleware/components/provisioning_service/include
+    ../../../layers/middleware/components/device_link_service/include
+    ../../../layers/middleware/components/ble_runtime/include
     ../../../layers/middleware/components/audio_service/include
     ../../../layers/middleware/components/connectivity_manager/include
     ../../../layers/middleware/components/event_bus/include
@@ -118,7 +119,8 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/middleware/components/imu_service/include
     ../../../layers/middleware/components/mt_log/include
     ../../../layers/middleware/components/power_service/include
-    ../../../layers/middleware/components/provisioning_service/include
+    ../../../layers/middleware/components/device_link_service/include
+    ../../../layers/middleware/components/ble_runtime/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
     ../../../layers/middleware/components/weather_service/include
@@ -154,6 +156,8 @@ function(add_display_benchmark_test target port stress characterization
         ../../../layers/middleware/components/event_bus/include
         ../../../layers/middleware/components/mt_log/include
         ../../../layers/middleware/components/system_pm/include
+        ../../../layers/middleware/components/device_link_service/include
+        ../../../layers/middleware/components/ble_runtime/include
     )
     target_compile_definitions(${target} PRIVATE
         CONFIG_MAIN_DISPLAY_BENCHMARK=1
@@ -194,9 +198,6 @@ function(add_display_benchmark_test target port stress characterization
             DISPLAY_BENCHMARK_STRESS_CLEANUP_MS=100U
             DISPLAY_BENCHMARK_STRESS_NORMAL_DWELL_MS=1U
             DISPLAY_BENCHMARK_STRESS_HEAVY_DWELL_MS=1U
-        )
-        target_include_directories(${target} PRIVATE
-            ../../../layers/middleware/components/provisioning_service/include
         )
     endif()
     if(os_none)

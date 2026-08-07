@@ -5,9 +5,9 @@
 
 #include "audio_service.h"
 #include "connectivity_manager.h"
+#include "device_link_service.h"
 #include "imu_service.h"
 #include "power_service.h"
-#include "provisioning_service.h"
 #include "sd_storage_service.h"
 #include "time_service.h"
 #include "weather_service.h"
@@ -26,7 +26,7 @@ typedef struct app_product_config
     time_service_config_t time;        /**< Timezone, SNTP, and worker policy. */
     weather_service_config_t weather;  /**< Weather acquisition and cache policy. */
     connectivity_manager_config_t connectivity; /**< Wi-Fi policy workers. */
-    provisioning_service_config_t provisioning; /**< Manual BLE provisioning. */
+    device_link_service_config_t device_link; /**< Device Link BLE policy. */
     uint32_t system_pm_task_priority;  /**< System standby worker priority. */
     uint32_t app_control_task_priority; /**< App-control worker priority. */
 } app_product_config_t;

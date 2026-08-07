@@ -54,7 +54,8 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 if not path.is_file():
                     continue
                 relative = path.relative_to(self.root)
-                if any(part in {"tests", "managed_components", "XPowersLib", "build"}
+                if any(part in {"tests", "managed_components", "XPowersLib",
+                                "build", "probe"}
                        for part in relative.parts):
                     continue
                 if path.name in {"Kconfig", "Kconfig.projbuild", "CMakeLists.txt"} or \
@@ -104,7 +105,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.MULTILINE,
             ))
-        self.assertEqual(len(symbols), 43, sorted(symbols))
+        self.assertEqual(len(symbols), 54, sorted(symbols))
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
@@ -142,13 +143,11 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_FREERTOS_TIMER_TASK_AFFINITY_CPU0": "y",
             "CONFIG_PTHREAD_DEFAULT_CORE_0": "y",
             "CONFIG_ESP_WIFI_NVS_ENABLED": "y",
-            "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2": "y",
-            "CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_PATCH_VERSION": "y",
             "CONFIG_LV_USE_QRCODE": "y",
             "CONFIG_LV_OS_NONE": "y",
             "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": "1",
             "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "6144",
-            "CONFIG_PROVISIONING_SERVICE_TASK_STACK": "6144",
+            "CONFIG_DEVICE_LINK_SERVICE_TASK_STACK": "6144",
             "CONFIG_MAIN_WEATHER_SERVER_BASE_URL":
                 '"https://weather.example.com"',
             "CONFIG_MAIN_WEATHER_DEVICE_TOKEN": '"example-device-token"',
