@@ -880,8 +880,8 @@ static esp_err_t _app_runtime_start_app_services(
         },
         .input_ops = app_runtime_pm_get_input_ops(),
         .standby_ops = app_runtime_pm_get_standby_ops(),
-        .max_resident_apps = APP_MANAGER_MAX_RESIDENT_APPS,
-        .resident_policy = APP_MANAGER_RESIDENT_REJECT,
+        .max_resident_apps = context->product->app_max_resident_apps,
+        .resident_policy = context->product->app_resident_policy,
         .app_forward_transition = {
             .effect = APP_MANAGER_TRANSITION_FADE,
             .duration_ms = APP_MANAGER_TRANSITION_DEFAULT_DURATION_MS,

@@ -88,6 +88,88 @@ lv_indev_t *host_lv_pointer_indev(void);
  * @return true when an action was clicked; false when not found.
  */
 bool host_lv_click_action(const char *title);
+/**
+ * @brief Swipe up on the visible action containing an exact title.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_up_action(const char *title);
+/**
+ * @brief Swipe up with a horizontal wobble on the matching action.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_up_wobble_action(const char *title);
+/**
+ * @brief Swipe upward on the matching action with a horizontal-first arc.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_up_arc_action(const char *title);
+/**
+ * @brief Emit one coarse upward sample on the matching action.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_coarse_action(const char *title);
+/**
+ * @brief Swipe up briefly (below the close threshold) on the matching action.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_up_short_action(const char *title);
+/**
+ * @brief Swipe horizontally left on the matching action (page flip).
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_left_action(const char *title);
+/**
+ * @brief Swipe horizontally right on the matching action (page flip).
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_right_action(const char *title);
+/**
+ * @brief Two horizontal-dominant samples then a short upward endpoint.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_horiz_then_up_short_action(const char *title);
+/**
+ * @brief Two horizontal-dominant samples then an upward close endpoint.
+ * @param title is the action label to match.
+ * @return true when the swipe sequence was emitted; false when not found.
+ */
+bool host_lv_swipe_horiz_then_up_action(const char *title);
+/** @brief Return how many times the fake pointer activated a scroll object. */
+unsigned host_lv_scroll_takeover_count(void);
+/** @brief Finish every pending fake scroll animation at its target. */
+void host_lv_complete_scroll_animations(void);
+/**
+ * @brief Snapshot a fake object's scroll state.
+ * @param object is the live fake object to snapshot.
+ * @param scroll_x receives the current horizontal scroll offset.
+ * @param target_x receives the pending animation target offset.
+ * @param animating receives whether a scroll animation is pending.
+ * @return true when the object is live and every pointer is valid.
+ */
+bool host_lv_object_scroll_snapshot(const lv_obj_t *object,
+                                    int32_t *scroll_x,
+                                    int32_t *target_x,
+                                    bool *animating);
+/**
+ * @brief Snapshot the scroll state of the card container matching a title.
+ * @param title is the button label prefix used to find the container.
+ * @param scroll_x receives the current horizontal scroll offset.
+ * @param target_x receives the pending animation target offset.
+ * @param animating receives whether a scroll animation is pending.
+ * @return true when a button with the title prefix exists; false otherwise.
+ */
+bool host_lv_scroll_snapshot_by_title(const char *title,
+                                      int32_t *scroll_x,
+                                      int32_t *target_x,
+                                      bool *animating);
 /** @brief Toggle the unique visible, enabled Switch and emit its change. */
 bool host_lv_toggle_visible_switch(bool checked);
 /** @brief Click the visible back action, if present. */

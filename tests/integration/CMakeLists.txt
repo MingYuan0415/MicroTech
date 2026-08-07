@@ -29,6 +29,8 @@ add_executable(test_cross_layer
     "${APP_CORE}/src/app_manager_nav_model.c"
     "${APP_CORE}/src/app_manager_navigation.c"
     "${APP_CORE}/src/app_manager_presentation.c"
+    "${APP_CORE}/src/app_manager_recents.c"
+    "${APP_CORE}/src/app_manager_task_switcher.c"
     "${APP_THEME}/src/app_theme.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
     "${APPS}/common/src/app_ui.c"

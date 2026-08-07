@@ -175,14 +175,19 @@ extern const lv_font_t host_lv_default_font;
     } while (0)
 
 #define LV_ALIGN_TOP_LEFT             0
+#define LV_ALIGN_TOP_RIGHT            2
 #define LV_ALIGN_CENTER               1
 #define LV_ANIM_OFF                   0
 #define LV_ANIM_ON                    1
 #define LV_BAR_MODE_RANGE             1
 #define LV_CHART_AXIS_PRIMARY_Y       0
 #define LV_CHART_TYPE_LINE            0
-#define LV_DIR_VER                    1
-#define LV_DIR_HOR                    2
+#define LV_DIR_LEFT                   4
+#define LV_DIR_RIGHT                  8
+#define LV_DIR_TOP                    16
+#define LV_DIR_BOTTOM                 32
+#define LV_DIR_HOR                    (LV_DIR_LEFT | LV_DIR_RIGHT)
+#define LV_DIR_VER                    (LV_DIR_TOP | LV_DIR_BOTTOM)
 #define LV_EVENT_ALL                  0
 #define LV_EVENT_CLICKED              1
 #define LV_EVENT_VALUE_CHANGED        2
@@ -236,6 +241,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SCROLLBAR_MODE_AUTO        0
 #define LV_SCROLLBAR_MODE_OFF         1
 #define LV_SIZE_CONTENT               (-1)
+
 #define LV_RADIUS_CIRCLE              32767
 #define LV_STATE_PRESSED              1
 #define LV_STATE_CHECKED              (1U << 5)
@@ -657,9 +663,25 @@ static inline lv_color_t lv_color_white(void)
 
 HOST_LV_NOOP_2(lv_obj_set_flex_flow, lv_obj_t *, int)
 HOST_LV_NOOP_2(lv_obj_set_flex_grow, lv_obj_t *, int)
-HOST_LV_NOOP_2(lv_obj_set_scroll_dir, lv_obj_t *, int)
+void lv_obj_set_scroll_dir(lv_obj_t *object, int dir);
+/** @brief Return the fake object's scroll direction. */
+int lv_obj_get_scroll_dir(const lv_obj_t *object);
+/** @brief Return the fake object's horizontal scroll offset. */
+int32_t lv_obj_get_scroll_x(const lv_obj_t *object);
+/** @brief Return the fake object's vertical scroll offset (always zero). */
+int32_t lv_obj_get_scroll_y(const lv_obj_t *object);
+/** @brief Scroll the fake object; anim == 0 applies instantly. */
+void lv_obj_scroll_to_x(lv_obj_t *object, int32_t x, int anim);
+/** @brief Return the fake scroll animation target and current offset. */
+void lv_obj_get_scroll_end(lv_obj_t *object, lv_point_t *end);
+/** @brief Stop any pending fake scroll animation. */
+void lv_obj_stop_scroll_anim(const lv_obj_t *object);
+/** @brief Return whether the fake object has a pending scroll animation. */
+bool lv_obj_is_scrolling(const lv_obj_t *object);
 HOST_LV_NOOP_2(lv_obj_set_scrollbar_mode, lv_obj_t *, int)
 HOST_LV_NOOP_3(lv_obj_set_style_bg_color, lv_obj_t *, lv_color_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_border_color, lv_obj_t *, lv_color_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_border_post, lv_obj_t *, bool, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_all, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_bottom, lv_obj_t *, int32_t, int)
@@ -671,6 +693,8 @@ HOST_LV_NOOP_3(lv_obj_set_style_pad_row, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_top, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_radius, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_shadow_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_transform_height, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_transform_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_align, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)

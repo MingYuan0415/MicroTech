@@ -12,6 +12,10 @@
 #define APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY 4U
 #define APP_PRODUCT_WEATHER_TASK_PRIORITY      4U
 
+/* Recent-tasks keeps at most one pinned home task plus three business tasks
+ * so the fixed three-slot PSRAM preview cache bounds retained thumbnails. */
+#define APP_PRODUCT_MAX_RESIDENT_APPS          4U
+
 #define APP_PRODUCT_PRIORITY_VALID(priority) \
     ((priority) > 0U && (priority) < configMAX_PRIORITIES)
 
@@ -92,6 +96,8 @@ static const app_product_config_t s_product_config =
     },
     .system_pm_task_priority = APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY,
     .app_control_task_priority = APP_PRODUCT_APP_CONTROL_TASK_PRIORITY,
+    .app_max_resident_apps = APP_PRODUCT_MAX_RESIDENT_APPS,
+    .app_resident_policy = APP_MANAGER_RESIDENT_EVICT_OLDEST_BACKGROUND,
 };
 
 const app_product_config_t *app_product_config_get(void)

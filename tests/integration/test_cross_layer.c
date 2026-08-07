@@ -7,6 +7,7 @@
 #include "app_manager_mailbox.h"
 #include "app_manager_navigation.h"
 #include "app_manager_presentation.h"
+#include "app_manager_task_switcher.h"
 #include "app_theme.h"
 #include "event_bus.h"
 #include "host_freertos.h"
@@ -795,10 +796,20 @@ static esp_err_t _back_gesture_init_on_ui(void *arg)
                                          host_lv_pointer_indev());
 }
 
+static esp_err_t _switcher_init_on_ui(void *arg)
+{
+    (void)arg;
+    return app_manager_task_switcher_init(lv_display_get_default());
+}
+
 static esp_err_t _runtime_deinit_on_ui(void *arg)
 {
     (void)arg;
-    esp_err_t result = app_manager_lifecycle_deinit();
+    esp_err_t result = app_manager_task_switcher_deinit();
+    if (result == ESP_OK)
+    {
+        result = app_manager_lifecycle_deinit();
+    }
     if (result == ESP_OK)
     {
         result = app_manager_back_gesture_deinit();
@@ -1336,6 +1347,8 @@ static void _initialize_stack(void)
     assert(app_manager_lifecycle_init() == ESP_OK);
     assert(app_manager_navigation_init() == ESP_OK);
     assert(app_manager_ui_call(_back_gesture_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_switcher_init_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     memset(s_lifecycle_observations, 0,
            sizeof(s_lifecycle_observations));
@@ -2750,7 +2763,12 @@ static void _test_system_edge_back_gesture(void)
            ESP_OK);
     assert(app_manager_back_gesture_is_enabled());
     system_gesture_snapshot_t system = _system_gesture_snapshot();
-    assert(system.object_count == 5U);
+    /* Sys Layer owns the two gesture strips, the indicator, its arrow and
+     * the permanent task-switcher root. */
+    /* Sys Layer holds the two gesture strips, the indicator, its arrow and
+     * the permanent task-switcher tree (root, content, clear button and its
+     * label, empty-state label). */
+    assert(system.object_count == 10U);
     assert(system.left_edge_found && system.right_edge_found);
     assert(system.indicator_found && system.arrow_found);
     assert(system.indicator.canvas);
@@ -3061,6 +3079,570 @@ static void _test_system_edge_back_gesture(void)
     assert(_system_gesture_snapshot().visible_edge_count == 0U);
 }
 
+static esp_err_t _switcher_visible_on_ui(void *arg)
+{
+    bool *visible = arg;
+    *visible = app_manager_task_switcher_is_visible();
+    return ESP_OK;
+}
+
+static bool _switcher_visible(void)
+{
+    bool visible = false;
+    assert(app_manager_ui_call(_switcher_visible_on_ui, &visible,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return visible;
+}
+
+static void _wait_for_switcher(bool expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (_switcher_visible() == expected)
+        {
+            return;
+        }
+        _sleep_one_ms();
+    }
+    assert(_switcher_visible() == expected);
+}
+
+static esp_err_t _swipe_up_action_on_ui(void *arg)
+{
+    return host_lv_swipe_up_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_up_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_up_action_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _open_task_switcher(void)
+{
+    assert(app_manager_navigation_submit_system_op(
+               APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW, NULL, NULL) ==
+           ESP_OK);
+    _wait_for_switcher(true);
+}
+
+static esp_err_t _swipe_up_wobble_on_ui(void *arg)
+{
+    return host_lv_swipe_up_wobble_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_up_wobble_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_up_wobble_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_left_on_ui(void *arg)
+{
+    return host_lv_swipe_left_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_left_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_left_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_up_short_on_ui(void *arg)
+{
+    return host_lv_swipe_up_short_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_up_short_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_up_short_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_up_arc_on_ui(void *arg)
+{
+    return host_lv_swipe_up_arc_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_up_arc_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_up_arc_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_coarse_on_ui(void *arg)
+{
+    return host_lv_swipe_coarse_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_coarse_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_coarse_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_right_on_ui(void *arg)
+{
+    return host_lv_swipe_right_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_right_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_right_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_horiz_then_up_short_on_ui(void *arg)
+{
+    return host_lv_swipe_horiz_then_up_short_action(arg) ? ESP_OK :
+           ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_horiz_then_up_short_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_horiz_then_up_short_on_ui,
+                               (void *)title, UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _swipe_horiz_then_up_on_ui(void *arg)
+{
+    return host_lv_swipe_horiz_then_up_action(arg) ? ESP_OK :
+           ESP_ERR_NOT_FOUND;
+}
+
+static void _swipe_horiz_then_up_action(const char *title)
+{
+    assert(app_manager_ui_call(_swipe_horiz_then_up_on_ui, (void *)title,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static esp_err_t _complete_scroll_animations_on_ui(void *arg)
+{
+    (void)arg;
+    host_lv_complete_scroll_animations();
+    return ESP_OK;
+}
+
+static void _complete_scroll_animations(void)
+{
+    assert(app_manager_ui_call(_complete_scroll_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+typedef struct switcher_scroll_snapshot
+{
+    const char *card_title;
+    int32_t scroll_x;
+    int32_t target_x;
+    bool animating;
+} switcher_scroll_snapshot_t;
+
+static esp_err_t _scroll_snapshot_on_ui(void *arg)
+{
+    switcher_scroll_snapshot_t *snapshot = arg;
+    return host_lv_scroll_snapshot_by_title(snapshot->card_title,
+                                            &snapshot->scroll_x,
+                                            &snapshot->target_x,
+                                            &snapshot->animating) ?
+           ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static switcher_scroll_snapshot_t _scroll_snapshot(const char *card_title)
+{
+    switcher_scroll_snapshot_t snapshot =
+    {
+        .card_title = card_title,
+    };
+    assert(app_manager_ui_call(_scroll_snapshot_on_ui, &snapshot,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return snapshot;
+}
+
+static esp_err_t _scroll_takeover_on_ui(void *arg)
+{
+    *(unsigned *)arg = host_lv_scroll_takeover_count();
+    return ESP_OK;
+}
+
+static unsigned _scroll_takeover_count(void)
+{
+    unsigned count = 0U;
+    assert(app_manager_ui_call(_scroll_takeover_on_ui, &count,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return count;
+}
+
+static void _wait_for_text_gone(const char *text)
+{
+    for (int i = 0; i < 2000 && _ui_has_text(text); i++)
+    {
+        usleep(1000);
+    }
+    assert(!_ui_has_text(text));
+}
+
+static void _test_system_task_switcher(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    /* Opening the switcher keeps the foreground task running and lists every
+     * eligible resident task, most recently used first. */
+    _open_task_switcher();
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    assert(_ui_has_text("演示中心 · 当前"));
+    assert(_ui_has_text("天气"));
+    assert(_ui_has_text("清除"));
+    {
+        app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+        size_t task_count = 0U;
+        assert(app_manager_get_recent_tasks(tasks,
+                                            APP_MANAGER_MAX_RECENT_TASKS,
+                                            &task_count) == ESP_OK);
+        assert(task_count == 2U);
+        assert(strcmp(tasks[0].app_id, APP_MANAGER_ID_MENU) == 0);
+        assert(tasks[0].active);
+        assert(tasks[0].preview_valid);
+        assert(strcmp(tasks[1].app_id, APP_MANAGER_ID_WEATHER) == 0);
+        assert(!tasks[1].active);
+        assert(tasks[1].preview_valid);
+        assert(tasks[1].preview != NULL);
+        assert(tasks[1].preview->header.w == APP_MANAGER_RECENT_PREVIEW_WIDTH);
+        assert(tasks[1].preview->header.h == APP_MANAGER_RECENT_PREVIEW_HEIGHT);
+    }
+
+    /* Tapping a background card restores that task and closes the switcher. */
+    _click_action("天气");
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _wait_for_switcher(false);
+
+    /* Swiping a card upward closes that task while the switcher stays open
+     * and refreshes the list. */
+    _open_task_switcher();
+    assert(_ui_has_text("天气 · 当前"));
+    _swipe_up_action("演示中心");
+    _wait_for_text_gone("演示中心");
+    assert(_switcher_visible());
+    assert(_ui_has_text("天气 · 当前"));
+
+    /* An upward swipe with a horizontal wobble still closes the card: the
+     * cumulative final displacement is vertical, so the gesture closes
+     * regardless of the wobble. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _open_task_switcher();
+    assert(_ui_has_text("演示中心 · 当前"));
+    _swipe_up_wobble_action("演示中心");
+    _wait_for_text_gone("演示中心");
+    assert(_switcher_visible());
+    assert(_wait_for_text_with_timers("天气 · 当前"));
+
+    /* The device reproducer: a horizontal-first arc that used to activate
+     * the container scroll before the upward intent was known still closes
+     * the card without any takeover. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _open_task_switcher();
+    assert(_ui_has_text("演示中心 · 当前"));
+    const unsigned takeovers_before_arc = _scroll_takeover_count();
+    _swipe_up_arc_action("演示中心");
+    _wait_for_text_gone("演示中心");
+    assert(_scroll_takeover_count() == takeovers_before_arc);
+    assert(_switcher_visible());
+    assert(_wait_for_text_with_timers("天气 · 当前"));
+
+    /* A single coarse sample neither closes the task nor clicks the card. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _open_task_switcher();
+    assert(_ui_has_text("演示中心 · 当前"));
+    _swipe_coarse_action("演示中心");
+    assert(_wait_for_text_with_timers("演示中心 · 当前"));
+    assert(_ui_has_text("天气"));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    /* Two horizontal-dominant samples followed by an upward endpoint below
+     * both thresholds: nothing closes, nothing pages, no native scroll
+     * takeover ever activates and the container offset stays untouched. */
+    _swipe_horiz_then_up_short_action("演示中心");
+    assert(_wait_for_text_with_timers("演示中心 · 当前"));
+    assert(_ui_has_text("天气"));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    assert(_switcher_visible());
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 0);
+        assert(snapshot.target_x == 0);
+        assert(!snapshot.animating);
+    }
+
+    /* The same horizontal-first arc extended past the close threshold still
+     * closes the task, again without any scroll takeover. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _open_task_switcher();
+    assert(_ui_has_text("演示中心 · 当前"));
+    _swipe_horiz_then_up_action("演示中心");
+    _wait_for_text_gone("演示中心");
+    assert(_scroll_takeover_count() == takeovers_before_arc);
+    assert(_switcher_visible());
+    assert(_wait_for_text_with_timers("天气 · 当前"));
+
+    /* A qualifying left swipe pages one card programmatically: no native
+     * scroll object, an animated target of one card pitch, no close. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _open_task_switcher();
+    assert(_ui_has_text("演示中心 · 当前"));
+    const unsigned takeovers_before_page = _scroll_takeover_count();
+    _swipe_left_action("演示中心");
+    assert(_scroll_takeover_count() == takeovers_before_page);
+    assert(_wait_for_text_with_timers("演示中心 · 当前"));
+    assert(_ui_has_text("天气"));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        /* Card width plus gap: 230 + 12. */
+        assert(snapshot.target_x == 242);
+        assert(snapshot.animating);
+    }
+    _complete_scroll_animations();
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 242);
+        assert(!snapshot.animating);
+    }
+
+    /* A right swipe returns to the first card. */
+    _swipe_right_action("演示中心");
+    _complete_scroll_animations();
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 0);
+        assert(!snapshot.animating);
+    }
+    assert(_switcher_visible());
+
+    /* Swiping beyond the last card is a no-op: neither a new animation nor a
+     * page-index drift. */
+    _swipe_left_action("演示中心");
+    _complete_scroll_animations();
+    _swipe_left_action("演示中心");
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 242);
+        assert(snapshot.target_x == 242);
+        assert(!snapshot.animating);
+    }
+
+    /* Paging must not poison the following tap: the card click still runs
+     * the selected task. */
+    _click_action("天气");
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _wait_for_switcher(false);
+
+    /* A three-card layout reaches every logical page target without clamping
+     * mid-page: the start-aligned row plus half-viewport side padding makes
+     * every index * pitch offset exactly reachable. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+    _open_task_switcher();
+    assert(_ui_has_text("网络设置 · 当前"));
+    _swipe_left_action("网络设置");
+    assert(_scroll_snapshot("网络设置").target_x == 242);
+    _complete_scroll_animations();
+    _swipe_left_action("网络设置");
+    assert(_scroll_snapshot("网络设置").target_x == 484);
+    _complete_scroll_animations();
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("网络设置");
+        assert(snapshot.scroll_x == 484);
+        assert(!snapshot.animating);
+    }
+    _swipe_right_action("网络设置");
+    _complete_scroll_animations();
+    _swipe_right_action("网络设置");
+    _complete_scroll_animations();
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("网络设置");
+        assert(snapshot.scroll_x == 0);
+        assert(!snapshot.animating);
+    }
+    assert(_switcher_visible());
+
+    /* A press during an in-flight page animation settles the recorded
+     * target, but the whole sequence is ignored: LVGL picked the pointer
+     * target before the settle, so acting on it would hit the wrong card.
+     * The switcher stays open and a later tap works normally. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _open_task_switcher();
+    assert(_ui_has_text("演示中心 · 当前"));
+    _swipe_left_action("演示中心");
+    assert(_scroll_snapshot("演示中心").animating);
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 242);
+        assert(!snapshot.animating);
+    }
+    assert(_touch(TOUCH_ACTION_RELEASE, 100, 224));
+    assert(_switcher_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _click_action("天气");
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _wait_for_switcher(false);
+
+    /* Drag away and return to the origin: nothing is triggered and the
+     * suppressed click does not leak into the next tap. */
+    _open_task_switcher();
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
+    assert(_touch(TOUCH_ACTION_MOVE, 160, 190));
+    assert(_touch(TOUCH_ACTION_MOVE, 100, 224));
+    assert(_touch(TOUCH_ACTION_RELEASE, 100, 224));
+    assert(_switcher_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _click_action("天气 · 当前");
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+
+    /* Sub-slop jitter still counts as a tap; the topmost card (setup) runs. */
+    _open_task_switcher();
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
+    assert(_touch(TOUCH_ACTION_MOVE, 103, 226));
+    assert(_touch(TOUCH_ACTION_RELEASE, 103, 226));
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+
+    /* Displacement that appears only in the release sample (no PRESSING
+     * event) still suppresses the click: 15 px cannot dismiss the
+     * switcher, and the next tap works normally. */
+    _open_task_switcher();
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
+    assert(_touch(TOUCH_ACTION_RELEASE, 115, 210));
+    assert(_switcher_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+    _click_action("网络设置 · 当前");
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+
+    /* An input reset while tracking cancels the gesture without residue. */
+    _open_task_switcher();
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
+    assert(_touch(TOUCH_ACTION_MOVE, 140, 200));
+    assert(_touch(TOUCH_ACTION_RESET, 0, 0));
+    assert(_switcher_visible());
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 0);
+        assert(!snapshot.animating);
+    }
+    _click_action("网络设置 · 当前");
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+
+    /* A short vertical drag below the close threshold neither closes, pages
+     * nor clicks; no native takeover and no residual offset. */
+    _open_task_switcher();
+    _swipe_up_short_action("演示中心");
+    assert(_wait_for_text_with_timers("演示中心"));
+    assert(_ui_has_text("天气"));
+    assert(_scroll_takeover_count() == takeovers_before_page);
+    assert(_switcher_visible());
+    {
+        const switcher_scroll_snapshot_t snapshot =
+            _scroll_snapshot("演示中心");
+        assert(snapshot.scroll_x == 0);
+        assert(!snapshot.animating);
+    }
+
+    /* A drag that begins on the clickable background below the cards does
+     * not dismiss the switcher, and the suppression does not leak into the
+     * following tap. */
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 420));
+    assert(_touch(TOUCH_ACTION_MOVE, 160, 380));
+    assert(_touch(TOUCH_ACTION_MOVE, 100, 420));
+    assert(_touch(TOUCH_ACTION_RELEASE, 100, 420));
+    assert(_switcher_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
+    _click_action("天气");
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _wait_for_switcher(false);
+    _open_task_switcher();
+
+    /* A background press that survives a hide/reopen cycle must not dismiss
+     * the new session with its late CLICKED. */
+    assert(_touch(TOUCH_ACTION_PRESS, 100, 420));
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    _wait_for_switcher(false);
+    _open_task_switcher();
+    assert(_touch(TOUCH_ACTION_RELEASE, 100, 420));
+    assert(_switcher_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    /* Clearing all tasks returns to Home and closes the switcher. */
+    _click_action("清除");
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    _wait_for_switcher(false);
+
+    /* The empty state shows; a background drag does not dismiss, a plain
+     * background tap still does. */
+    _open_task_switcher();
+    assert(_ui_has_text("暂无任务"));
+    assert(_touch(TOUCH_ACTION_PRESS, 184, 420));
+    assert(_touch(TOUCH_ACTION_MOVE, 220, 380));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 420));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 420));
+    assert(_switcher_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(_touch(TOUCH_ACTION_PRESS, 184, 420));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 420));
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    /* Tapping the current task card only dismisses the switcher. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _open_task_switcher();
+    _click_action("天气 · 当前");
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+
+    /* A repeated open while visible dismisses back to the previous task. */
+    _open_task_switcher();
+    assert(app_manager_navigation_submit_system_op(
+               APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW, NULL, NULL) ==
+           ESP_OK);
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+}
+
 int main(void)
 {
     _initialize_stack();
@@ -3076,6 +3658,7 @@ int main(void)
     _test_fifo_navigation_finishes_snapshot_transition();
     _test_home_screen_lifecycle();
     _test_setup_screen_lifecycle();
+    _test_system_task_switcher();
     _test_system_edge_back_gesture();
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);

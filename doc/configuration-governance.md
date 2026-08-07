@@ -23,7 +23,9 @@ server、Wi-Fi worker 优先级或 benchmark 时长和网络参数。天气服�
 
 根应用单点拥有以下生产策略：音频 16 kHz、16-bit、stereo、384x MCLK、音量 60、
 unmuted、PA 开启；SD `/sdcard`、最多 5 个文件、16 KiB allocation unit；IMU 100 Hz；
-Power 5000/100 ms；时区 `CST-8`、SNTP `pool.ntp.org`。本轮不将这些值持久化到 NVS。
+Power 5000/100 ms；时区 `CST-8`、SNTP `pool.ntp.org`；App Manager 驻留上限 4
+（Home + 3 个业务 App）、满容量时淘汰最旧后台 App（对应最近任务三槽 PSRAM 预览缓存）。
+本轮不将这些值持久化到 NVS。
 
 BSP 固定 I2S0、GPIO16/9/45/8/10、PA GPIO46 和 30 dB 麦克风校准。BSP 音频初始化后
 保持 PA 关闭，必须先 `bsp_audio_configure()` 才能 start。普通 SD init/start 永不格式化；

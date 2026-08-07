@@ -712,8 +712,9 @@ esp_err_t app_manager_init(const struct app_manager_config *config)
 {
     assert(config != NULL);
     const app_manager_config_t *app_config = config;
-    assert(app_config->max_resident_apps == APP_MANAGER_MAX_RESIDENT_APPS);
-    assert(app_config->resident_policy == APP_MANAGER_RESIDENT_REJECT);
+    assert(app_config->max_resident_apps == 4U);
+    assert(app_config->resident_policy ==
+           APP_MANAGER_RESIDENT_EVICT_OLDEST_BACKGROUND);
     assert(app_config->app_forward_transition.effect ==
            APP_MANAGER_TRANSITION_FADE);
     assert(app_config->app_back_transition.effect ==

@@ -12,7 +12,7 @@
 #define HOST_LV_GENERIC_ANIM_CAPACITY 16U
 #define HOST_LV_GENERIC_ANIM_COMPLETION_CAPACITY 64U
 #define HOST_LV_SNAPSHOT_CAPTURE_CAPACITY 64U
-#define HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY 4U
+#define HOST_LV_SNAPSHOT_ALLOCATION_CAPACITY 8U
 #define HOST_LV_SNAPSHOT_ALLOCATION_CALL_CAPACITY 16U
 #define HOST_LV_TEXT_BYTES      160U
 #define HOST_LV_HOR_RES         368
@@ -74,6 +74,10 @@ struct lv_obj_t
     bool qrcode_scrubbed;
     lv_obj_flag_t flags;
     lv_state_t state;
+    int scroll_dir;
+    int32_t scroll_x;
+    int32_t scroll_target_x;
+    bool scroll_animating;
     const lv_font_t *text_font;
     int label_long_mode;
     void *user_data;
@@ -95,6 +99,10 @@ struct lv_indev_t
     lv_obj_t *active_object;
     bool sequence_active;
     bool wait_release;
+    bool moved;
+    lv_obj_t *scroll_object;
+    lv_point_t scroll_sum;
+    lv_point_t last_point;
 };
 
 struct lv_timer_t
@@ -287,6 +295,7 @@ static lv_obj_t *_host_lv_allocate_object(host_lv_object_kind_t kind,
                 object->flags = LV_OBJ_FLAG_CLICKABLE;
             }
             object->flags |= LV_OBJ_FLAG_SCROLLABLE;
+            object->scroll_dir = LV_DIR_HOR | LV_DIR_VER;
             if (kind == HOST_LV_OBJECT_SCREEN)
             {
                 object->width = HOST_LV_HOR_RES;
@@ -366,6 +375,27 @@ static bool _host_lv_has_descendant_text(const lv_obj_t *object,
         if (candidate->live && candidate->kind == HOST_LV_OBJECT_LABEL &&
                 _host_lv_is_descendant(candidate, object) &&
                 strcmp(candidate->text, text) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool _host_lv_has_direct_label_text(const lv_obj_t *object,
+        const char *text)
+{
+    if (object == NULL || text == NULL)
+    {
+        return false;
+    }
+    const uint32_t child_count = lv_obj_get_child_count(object);
+    for (uint32_t index = 0U; index < child_count; ++index)
+    {
+        const lv_obj_t *child = lv_obj_get_child(object, (int32_t)index);
+        if (child != NULL && child->live &&
+                child->kind == HOST_LV_OBJECT_LABEL &&
+                strcmp(child->text, text) == 0)
         {
             return true;
         }
@@ -464,6 +494,7 @@ static bool _host_lv_input_is_blocked(void)
         const lv_obj_t *object = &s_objects[index];
         if (object->live &&
                 (object->flags & LV_OBJ_FLAG_CLICKABLE) != 0U &&
+                (object->flags & LV_OBJ_FLAG_PRESS_LOCK) != 0U &&
                 _host_lv_is_visible(object) &&
                 (_host_lv_is_descendant(object, &s_top_layer) ||
                  (_host_lv_is_descendant(object, &s_sys_layer) &&
@@ -1250,13 +1281,15 @@ void lv_obj_clean(lv_obj_t *object)
     {
         return;
     }
-    _host_lv_reset_pointer_target(object);
-    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    /* Match real LVGL: cleaning only deletes the children; a pointer
+     * sequence targeting the cleaned container itself survives, while a
+     * sequence targeting a deleted child is reset by its deletion. */
+    for (size_t index = 0U; index < HOST_LV_OBJECT_CAPACITY; ++index)
     {
-        if (s_objects[index].live &&
-                _host_lv_is_descendant(&s_objects[index], object))
+        lv_obj_t *child = &s_objects[index];
+        if (child->live && child->parent == object)
         {
-            s_objects[index].live = false;
+            _host_lv_delete_object(child);
         }
     }
 }
@@ -1706,8 +1739,114 @@ lv_indev_state_t lv_indev_get_state(const lv_indev_t *indev)
            LV_INDEV_STATE_RELEASED;
 }
 
+void lv_obj_set_scroll_dir(lv_obj_t *object, int dir)
+{
+    if (object != NULL)
+    {
+        object->scroll_dir = dir;
+    }
+}
+
+int lv_obj_get_scroll_dir(const lv_obj_t *object)
+{
+    return object != NULL ? object->scroll_dir : 0;
+}
+
+int32_t lv_obj_get_scroll_x(const lv_obj_t *object)
+{
+    return lv_obj_is_valid(object) ? object->scroll_x : 0;
+}
+
+int32_t lv_obj_get_scroll_y(const lv_obj_t *object)
+{
+    (void)object;
+    return 0;
+}
+
+void lv_obj_scroll_to_x(lv_obj_t *object, int32_t x, int anim)
+{
+    if (!lv_obj_is_valid(object))
+    {
+        return;
+    }
+    if (anim)
+    {
+        object->scroll_target_x = x;
+        object->scroll_animating = true;
+    }
+    else
+    {
+        object->scroll_x = x;
+        object->scroll_target_x = x;
+        object->scroll_animating = false;
+    }
+}
+
+void lv_obj_get_scroll_end(lv_obj_t *object, lv_point_t *end)
+{
+    if (!lv_obj_is_valid(object) || end == NULL)
+    {
+        return;
+    }
+    end->x = object->scroll_animating ? object->scroll_target_x :
+             object->scroll_x;
+    end->y = 0;
+}
+
+void lv_obj_stop_scroll_anim(const lv_obj_t *object)
+{
+    if (lv_obj_is_valid(object))
+    {
+        lv_obj_t *mutable_object = (lv_obj_t *)object;
+        mutable_object->scroll_animating = false;
+    }
+}
+
+bool lv_obj_is_scrolling(const lv_obj_t *object)
+{
+    return lv_obj_is_valid(object) && object->scroll_animating;
+}
+
+void host_lv_complete_scroll_animations(void)
+{
+    for (size_t index = 0U; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        lv_obj_t *object = &s_objects[index];
+        if (object->live && object->scroll_animating)
+        {
+            object->scroll_x = object->scroll_target_x;
+            object->scroll_animating = false;
+        }
+    }
+}
+
+bool host_lv_object_scroll_snapshot(const lv_obj_t *object,
+                                    int32_t *scroll_x,
+                                    int32_t *target_x,
+                                    bool *animating)
+{
+    if (!lv_obj_is_valid(object) || scroll_x == NULL || target_x == NULL ||
+            animating == NULL)
+    {
+        return false;
+    }
+    *scroll_x = object->scroll_x;
+    *target_x = object->scroll_target_x;
+    *animating = object->scroll_animating;
+    return true;
+}
+
 void lv_indev_reset(lv_indev_t *indev, lv_obj_t *object)
 {
+    if (indev == &s_pointer_indev)
+    {
+        indev->scroll_object = NULL;
+        indev->scroll_sum = (lv_point_t)
+        {
+            .x = 0,
+            .y = 0,
+        };
+    }
     if (indev != NULL && indev != &s_pointer_indev)
     {
         return;
@@ -2576,9 +2715,68 @@ bool host_lv_touch_press(int32_t x, int32_t y)
     s_pointer_indev.active_object = target;
     s_pointer_indev.sequence_active = true;
     s_pointer_indev.wait_release = false;
+    s_pointer_indev.moved = false;
+    s_pointer_indev.scroll_object = NULL;
+    s_pointer_indev.scroll_sum = (lv_point_t)
+    {
+        .x = 0,
+        .y = 0,
+    };
+    s_pointer_indev.last_point = s_pointer_indev.point;
     (void)_host_lv_emit_with_input(target, LV_EVENT_PRESSED,
                                    &s_pointer_indev, NULL);
     return true;
+}
+
+static unsigned s_scroll_takeover_count;
+
+unsigned host_lv_scroll_takeover_count(void)
+{
+    return s_scroll_takeover_count;
+}
+
+static void _host_lv_scroll_takeover(lv_indev_t *indev)
+{
+    if (indev->scroll_object != NULL || !indev->sequence_active ||
+            indev->active_object == NULL)
+    {
+        return;
+    }
+    indev->scroll_sum.x += indev->point.x - indev->last_point.x;
+    indev->scroll_sum.y += indev->point.y - indev->last_point.y;
+    indev->last_point = indev->point;
+    if (indev->scroll_sum.x == 0)
+    {
+        return;
+    }
+    const bool horizontal =
+        abs(indev->scroll_sum.x) > abs(indev->scroll_sum.y);
+    lv_obj_t *object = indev->active_object;
+    while (object != NULL)
+    {
+        if ((object->flags & LV_OBJ_FLAG_SCROLLABLE) != 0U)
+        {
+            if (horizontal ?
+                    (object->scroll_dir & LV_DIR_HOR) != 0 :
+                    (object->scroll_dir & LV_DIR_VER) != 0)
+            {
+                indev->scroll_object = object;
+                s_scroll_takeover_count++;
+                return;
+            }
+        }
+        else if (horizontal &&
+                 (object->flags & LV_OBJ_FLAG_SCROLL_CHAIN_HOR) == 0U)
+        {
+            break;
+        }
+        else if (!horizontal &&
+                 (object->flags & LV_OBJ_FLAG_SCROLL_CHAIN_VER) == 0U)
+        {
+            break;
+        }
+        object = lv_obj_get_parent(object);
+    }
 }
 
 bool host_lv_touch_move(int32_t x, int32_t y)
@@ -2588,6 +2786,7 @@ bool host_lv_touch_move(int32_t x, int32_t y)
         return false;
     }
 
+    s_pointer_indev.last_point = s_pointer_indev.point;
     s_pointer_indev.point = (lv_point_t)
     {
         .x = x,
@@ -2598,12 +2797,14 @@ bool host_lv_touch_move(int32_t x, int32_t y)
     {
         return false;
     }
+    s_pointer_indev.moved = true;
 
     if ((target->flags & LV_OBJ_FLAG_PRESS_LOCK) != 0U ||
             _host_lv_contains_point(target, &s_pointer_indev.point))
     {
         (void)_host_lv_emit_with_input(target, LV_EVENT_PRESSING,
                                        &s_pointer_indev, NULL);
+        _host_lv_scroll_takeover(&s_pointer_indev);
     }
     else
     {
@@ -2637,11 +2838,26 @@ bool host_lv_touch_release(int32_t x, int32_t y)
         return true;
     }
 
+    const bool was_scrolling = s_pointer_indev.scroll_object != NULL;
     if ((target->flags & LV_OBJ_FLAG_PRESS_LOCK) != 0U ||
             _host_lv_contains_point(target, &s_pointer_indev.point))
     {
+        /* Match real LVGL ordering: the scroll object is still reported while
+         * LV_EVENT_RELEASED is delivered, and is only dropped afterwards. */
         (void)_host_lv_emit_with_input(target, LV_EVENT_RELEASED,
                                        &s_pointer_indev, NULL);
+        s_pointer_indev.scroll_object = NULL;
+        s_pointer_indev.scroll_sum = (lv_point_t)
+        {
+            .x = 0,
+            .y = 0,
+        };
+        if (!was_scrolling &&
+                _host_lv_contains_point(target, &s_pointer_indev.point))
+        {
+            (void)_host_lv_emit_with_input(target, LV_EVENT_CLICKED,
+                                           &s_pointer_indev, NULL);
+        }
     }
     else
     {
@@ -2743,19 +2959,266 @@ bool host_lv_click_action(const char *title)
     {
         return false;
     }
+    /* Prefer a direct child label match so a nested control (for example a
+     * card close button) wins over its interactive parent container. */
+    for (size_t pass = 0U; pass < 2U; ++pass)
+    {
+        const bool direct_only = pass == 0U;
+        for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+        {
+            lv_obj_t *object = &s_objects[index];
+            if (object->live && _host_lv_is_visible(object) &&
+                    object->kind == HOST_LV_OBJECT_BUTTON &&
+                    (object->state & LV_STATE_DISABLED) == 0U &&
+                    (direct_only ?
+                     _host_lv_has_direct_label_text(object, title) :
+                     _host_lv_has_descendant_text(object, title)) &&
+                    _host_lv_emit(object, LV_EVENT_CLICKED))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool _host_lv_has_descendant_text_prefix(const lv_obj_t *object,
+        const char *text)
+{
+    if (object == NULL || text == NULL)
+    {
+        return false;
+    }
+    const size_t length = strnlen(text, 64);
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        const lv_obj_t *candidate = &s_objects[index];
+        if (candidate->live && candidate->kind == HOST_LV_OBJECT_LABEL &&
+                _host_lv_is_descendant(candidate, object) &&
+                strncmp(candidate->text, text, length) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool host_lv_scroll_snapshot_by_title(const char *title,
+                                      int32_t *scroll_x,
+                                      int32_t *target_x,
+                                      bool *animating)
+{
+    if (title == NULL || scroll_x == NULL || target_x == NULL ||
+            animating == NULL)
+    {
+        return false;
+    }
+    for (size_t index = 0U; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        const lv_obj_t *object = &s_objects[index];
+        if (object->live && _host_lv_is_visible(object) &&
+                object->kind == HOST_LV_OBJECT_BUTTON &&
+                _host_lv_has_descendant_text_prefix(object, title))
+        {
+            return host_lv_object_scroll_snapshot(object->parent, scroll_x,
+                                                  target_x, animating);
+        }
+    }
+    return false;
+}
+
+static bool _host_lv_swipe_sequence(const char *title,
+                                    const lv_point_t *points, size_t count)
+{
+    if (_host_lv_input_is_blocked() || points == NULL || count < 2U)
+    {
+        return false;
+    }
     for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
     {
         lv_obj_t *object = &s_objects[index];
         if (object->live && _host_lv_is_visible(object) &&
                 object->kind == HOST_LV_OBJECT_BUTTON &&
                 (object->state & LV_STATE_DISABLED) == 0U &&
-                _host_lv_has_descendant_text(object, title) &&
-                _host_lv_emit(object, LV_EVENT_CLICKED))
+                _host_lv_has_descendant_text_prefix(object, title))
         {
+            s_pointer_indev.point = points[0];
+            s_pointer_indev.state = LV_INDEV_STATE_PRESSED;
+            s_pointer_indev.active_object = object;
+            s_pointer_indev.sequence_active = true;
+            s_pointer_indev.wait_release = false;
+            s_pointer_indev.moved = false;
+            s_pointer_indev.scroll_object = NULL;
+            s_pointer_indev.scroll_sum = (lv_point_t)
+            {
+                .x = 0,
+                .y = 0,
+            };
+            s_pointer_indev.last_point = points[0];
+            (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED,
+                                           &s_pointer_indev, NULL);
+            for (size_t step = 1U; step < count; step++)
+            {
+                s_pointer_indev.last_point = s_pointer_indev.point;
+                s_pointer_indev.point = points[step];
+                s_pointer_indev.moved = true;
+                (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSING,
+                                               &s_pointer_indev, NULL);
+                _host_lv_scroll_takeover(&s_pointer_indev);
+                if (!s_pointer_indev.sequence_active)
+                {
+                    return true;
+                }
+            }
+            const bool was_scrolling =
+                s_pointer_indev.scroll_object != NULL;
+            s_pointer_indev.active_object = NULL;
+            s_pointer_indev.sequence_active = false;
+            s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
+            (void)_host_lv_emit_with_input(object, LV_EVENT_RELEASED,
+                                           &s_pointer_indev, NULL);
+            if (!was_scrolling)
+            {
+                (void)_host_lv_emit_with_input(object, LV_EVENT_CLICKED,
+                                               &s_pointer_indev, NULL);
+            }
             return true;
         }
     }
     return false;
+}
+
+bool host_lv_swipe_up_action(const char *title)
+{
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {100, 214},
+        {100, 204},
+        {100, 194},
+        {100, 184},
+        {100, 164},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_up_wobble_action(const char *title)
+{
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {103, 214},
+        {106, 204},
+        {104, 184},
+        {103, 164},
+        {103, 154},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_up_arc_action(const char *title)
+{
+    /* Horizontal-first then upward: reproduces the device arc that used to
+     * activate the horizontal scroll before the vertical intent was known. */
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {112, 216},
+        {120, 194},
+        {120, 164},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_coarse_action(const char *title)
+{
+    /* One coarse sample: 20 px horizontal and 30 px upward, below both the
+     * 40 px close and page thresholds but well past the 10 px tap slop. */
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {120, 194},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_horiz_then_up_short_action(const char *title)
+{
+    /* Two horizontal-dominant samples, then an upward endpoint below both
+     * the close and the page thresholds. */
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {112, 222},
+        {124, 218},
+        {126, 200},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_horiz_then_up_action(const char *title)
+{
+    /* Two horizontal-dominant samples, then an upward endpoint past the
+     * close threshold. */
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {112, 222},
+        {124, 218},
+        {126, 190},
+        {126, 168},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_up_short_action(const char *title)
+{
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {103, 216},
+        {106, 208},
+        {104, 200},
+        {103, 194},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_left_action(const char *title)
+{
+    static const lv_point_t points[] =
+    {
+        {200, 224},
+        {185, 224},
+        {160, 220},
+        {140, 214},
+        {120, 208},
+        {100, 200},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
+}
+
+bool host_lv_swipe_right_action(const char *title)
+{
+    static const lv_point_t points[] =
+    {
+        {100, 224},
+        {115, 224},
+        {140, 220},
+        {160, 214},
+        {180, 208},
+        {200, 200},
+    };
+    return _host_lv_swipe_sequence(title, points,
+                                   sizeof(points) / sizeof(points[0]));
 }
 
 bool host_lv_toggle_visible_switch(bool checked)
@@ -3115,4 +3578,16 @@ bool host_lv_active_screen_snapshot(
 
     _host_lv_snapshot_object(s_active_screen, snapshot);
     return true;
+}
+
+void host_lv_dump_labels(void)
+{
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        if (s_objects[index].live &&
+                s_objects[index].kind == HOST_LV_OBJECT_LABEL)
+        {
+            fprintf(stderr, "[dbg-label] %s\\n", s_objects[index].text);
+        }
+    }
 }

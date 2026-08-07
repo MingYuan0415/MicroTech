@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "app_manager_types.h"
 #include "audio_service.h"
 #include "connectivity_manager.h"
 #include "device_link_service.h"
@@ -29,6 +30,8 @@ typedef struct app_product_config
     device_link_service_config_t device_link; /**< Device Link BLE policy. */
     uint32_t system_pm_task_priority;  /**< System standby worker priority. */
     uint32_t app_control_task_priority; /**< App-control worker priority. */
+    size_t app_max_resident_apps;      /**< Running applications retained at once. */
+    app_manager_resident_policy_t app_resident_policy; /**< Full-capacity behavior. */
 } app_product_config_t;
 
 /** @brief Return the immutable product policy for this firmware image. */
