@@ -18,3 +18,4 @@ apps_local.cmake
 /main/weather_private_config.h
 /.omo/run-continuation/
 /output/imagegen/
+node_modules/
