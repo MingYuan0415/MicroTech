@@ -1449,6 +1449,19 @@ static void _test_real_app_navigation(void)
     assert(_ui_text_has_font("Shenzhen-Guangdong-Weather-Location",
                              &s_theme_fonts[APP_THEME_FONT_HEAD]));
 
+    host_weather_set_city("Shenzhen");
+    host_weather_set_district("Nanshan");
+    assert(host_weather_publish(false) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("Shenzhen·Nanshan"));
+    assert(_ui_text_has_font("Shenzhen·Nanshan",
+                             &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    host_weather_set_district(NULL);
+    assert(host_weather_publish(false) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("Shenzhen"));
+    assert(!_ui_has_text("Shenzhen·"));
+
     host_weather_set_layout_extremes(true);
     assert(host_weather_publish(false) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);

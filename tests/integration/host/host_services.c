@@ -299,6 +299,16 @@ void host_weather_set_city(const char *city)
                    "%s", city == NULL ? "" : city);
 }
 
+void host_weather_set_district(const char *district)
+{
+    unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
+                                          memory_order_acquire);
+    weather_service_snapshot_t *snapshot = &s_weather_snapshots[index];
+    (void)snprintf(snapshot->location.district,
+                   sizeof(snapshot->location.district), "%s",
+                   district == NULL ? "" : district);
+}
+
 void host_weather_set_layout_extremes(bool enabled)
 {
     for (size_t index = 0U; index < 2U; ++index)
