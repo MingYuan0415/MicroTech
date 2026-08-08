@@ -204,6 +204,7 @@ static atomic_uint s_log_second_profile_effect_count;
 static atomic_uint s_log_tcp_required;
 static atomic_uint s_log_control_error;
 static atomic_uint s_log_ble_result;
+static atomic_uint s_log_ble_connected;
 static atomic_uint s_log_ble_disconnects;
 static atomic_uint s_log_ble_reconnects;
 static atomic_uint s_log_audio_error;
@@ -634,7 +635,7 @@ void test_log_write(const char *level, const char *tag, const char *format, ...)
         assert(sscanf(ble,
                       " ble result=%7s connected=%u disconnects=%u reconnects=%u",
                       result, &connected, &disconnects, &reconnects) == 4);
-        assert(connected == 1U);
+        atomic_store(&s_log_ble_connected, connected);
         atomic_store(&s_log_ble_result,
                      strcmp(result, "PASS") == 0 ? 1U : 2U);
         atomic_store(&s_log_ble_disconnects, disconnects);
@@ -1420,6 +1421,7 @@ static void _reset(void)
     atomic_store(&s_log_tcp_pacing_late_count, UINT32_MAX);
     atomic_store(&s_log_wifi_disconnect_count, UINT32_MAX);
     atomic_store(&s_log_ble_result, UINT32_MAX);
+    atomic_store(&s_log_ble_connected, UINT32_MAX);
     atomic_store(&s_log_ble_disconnects, UINT32_MAX);
     atomic_store(&s_log_ble_reconnects, UINT32_MAX);
     atomic_store(&s_heap_allocate_count, 0U);
@@ -1912,6 +1914,9 @@ static void _test_c_ext_stress_ble_wait_timeout_cleans_up(void)
     assert(!atomic_load(&s_c_ext_summary_completed));
     assert(atomic_load(&s_c_ext_phase_mask) == 0x67U);
     assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
+    /* The device never connected: the BLE gate fails with connected=0. */
+    assert(atomic_load(&s_log_ble_result) == 2U);
+    assert(atomic_load(&s_log_ble_connected) == 0U);
     assert(!atomic_load(&s_device_link_active));
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
     assert(display_benchmark_host_port_create_count() == 4U);
@@ -1935,6 +1940,7 @@ static void _test_c_ext_stress_ble_flap_detected(void)
     assert(atomic_load(&s_c_ext_summary_result) == 2U);
     assert(atomic_load(&s_c_ext_summary_completed));
     assert(atomic_load(&s_log_ble_result) == 2U);
+    assert(atomic_load(&s_log_ble_connected) == 1U);
     assert(atomic_load(&s_log_ble_disconnects) >= 1U);
     assert(atomic_load(&s_log_ble_reconnects) >= 1U);
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
