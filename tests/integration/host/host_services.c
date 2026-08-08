@@ -110,7 +110,7 @@ void host_runtime_reset(void)
         memcpy(snapshot->location.country, "CN", sizeof("CN"));
         memcpy(snapshot->location.timezone, "Asia/Shanghai",
                sizeof("Asia/Shanghai"));
-        memcpy(snapshot->location.provider, "ipapi.is", sizeof("ipapi.is"));
+        memcpy(snapshot->location.provider, "maxmind", sizeof("maxmind"));
         snapshot->location.available = true;
         snapshot->current.meta.available = true;
         snapshot->current.temperature_tenths_c = 312;

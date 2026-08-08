@@ -75,7 +75,6 @@ static const app_product_config_t s_product_config =
     .weather = {
         .server_base_url = CONFIG_MAIN_WEATHER_SERVER_BASE_URL,
         .device_token = CONFIG_MAIN_WEATHER_DEVICE_TOKEN,
-        .location_url = "https://api.ipapi.is/",
         .cache_directory = "/data",
         .task_priority = APP_PRODUCT_WEATHER_TASK_PRIORITY,
         .current_refresh_seconds = 20U * 60U,

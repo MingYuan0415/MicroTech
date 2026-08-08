@@ -61,9 +61,13 @@ idf.py menuconfig
 进入 `MicroTech product integration`，设置 `Weather server base URL` 和
 `Weather device token`。URL 填写 mt-server HTTPS Origin，令牌不包含 `Bearer ` 前缀。
 真实值只保存在已忽略的 `sdkconfig` 中；提交的 `sdkconfig.defaults` 始终使用
-`weather.example.com` 和示例令牌。任一配置为空时天气页显示“服务未配置”。定位地址固定为
-`https://api.ipapi.is/`，服务只保留城市级字段和 0.1 度网格坐标，不记录定位响应中的 IP、
-ASN 或运营商信息。
+`weather.example.com` 和示例令牌。任一配置为空时天气页显示“服务未配置”。定位由同一
+mt-server 的 `GET /api/v1/location` 提供：部署须启用 GeoLite2 IP 推断
+（`MT_GEOIP_DB`），反向代理场景按需配置可信客户端 IP 头与网段；设备不上传坐标，
+仅保留服务端返回的城市级显示字段，IP 推断结果代表公网出口附近的粗略天气区域。服务端
+按 0.1° 网格返回不透明的 `location_key`（16 位小写十六进制，同一网格恒定、不暴露
+坐标），固件以其作为位置作用域身份：key 变化即清空旧数据并按“实时天气优先”全量刷新，
+每次新 IPv4 会话也会重新定位并刷新，避免跨网格的陈旧或混合快照。
 
 天气图片采用 1 个 64x64 应用图标，以及 20 类条件各自的 112x112 与 40x40 透明 PNG。
 41 个文件必须全部放入 `main/res_fs/`，否则 CMake 在配置阶段拒绝不完整集合。首次构建

@@ -591,7 +591,6 @@ esp_err_t weather_service_init(const weather_service_config_t *config)
     assert(strcmp(config->server_base_url,
                   "https://weather.example.com") == 0);
     assert(strcmp(config->device_token, "example-device-token") == 0);
-    assert(strcmp(config->location_url, "https://api.ipapi.is/") == 0);
     assert(strcmp(config->cache_directory, "/data") == 0);
     assert(config->task_priority == 4U);
     assert(config->current_refresh_seconds == 1200U);
