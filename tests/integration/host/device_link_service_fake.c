@@ -112,6 +112,12 @@ esp_err_t device_link_service_close_window(void)
                &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
+esp_err_t device_link_service_confirm_binding(bool accept)
+{
+    (void)accept;
+    return ESP_OK;
+}
+
 esp_err_t device_link_service_get_status(
     device_link_service_status_t *status)
 {

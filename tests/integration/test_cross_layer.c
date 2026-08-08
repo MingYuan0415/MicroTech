@@ -2722,7 +2722,7 @@ static void _test_setup_screen_lifecycle(void)
         .qr_ready = true,
     };
     assert(host_device_link_service_publish_status(&connected) == ESP_OK);
-    assert(_wait_for_text("手机已连接"));
+    assert(_wait_for_text("手机已连接，等待绑定"));
 
     device_link_service_status_t fault = connected;
     ++fault.generation;

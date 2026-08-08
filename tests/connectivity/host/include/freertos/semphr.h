@@ -10,6 +10,9 @@ SemaphoreHandle_t xSemaphoreCreateMutex(void);
 SemaphoreHandle_t xSemaphoreCreateBinary(void);
 /** @brief Create a mutex in caller-provided storage. */
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage);
+
+SemaphoreHandle_t xSemaphoreCreateRecursiveMutexStatic(
+    StaticSemaphore_t *storage);
 /** @brief Create a binary semaphore in caller-provided storage. */
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *storage);
 /** @brief Take a host semaphore. */
@@ -17,6 +20,11 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t semaphore,
                           TickType_t timeout_ticks);
 /** @brief Give a host semaphore. */
 BaseType_t xSemaphoreGive(SemaphoreHandle_t semaphore);
+
+BaseType_t xSemaphoreTakeRecursive(SemaphoreHandle_t semaphore,
+                                   TickType_t timeout_ticks);
+
+BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t semaphore);
 /** @brief Delete a host semaphore. */
 void vSemaphoreDelete(SemaphoreHandle_t semaphore);
 

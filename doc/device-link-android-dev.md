@@ -78,16 +78,23 @@ draft 产物 "not evidence of Android interoperability"。
 
 1. 集成契约 submodule + buf 生成管线；跑通 conformance golden/semantic 向量。
 2. 消费端 QR：按 `device-link-qr-v1.md` 严格解析/校验 `link-v1` 载荷并复现
-   fixtures 下 valid/invalid 向量（含 discriminator↔广播交叉校验）。
-3. BLE 基础：扫描发现（device-link-discovery）、连接、MTU 协商、CCCD 订阅。
-4. `link_state` 读取与事件订阅（先做无安全要求的公开通道）。
+   fixtures 下 valid/invalid 向量（含 discriminator↔广播交叉校验）；`pop`
+   必须解码为 16 个原始字节后作为 SRP 口令，不得把 Base64URL 文本当口令。
+3. BLE 基础：扫描发现（device-link-discovery）、连接、MTU 协商（请求不超过
+   498；设备会把更高请求压回 498）、CCCD 订阅。
+4. `link_state` 读取与轮询。v1 不广告 encrypted events：`SubscribeEvents`
+   一律返回 `UNSUPPORTED_OPERATION`，首版只轮询 `GetLinkSnapshot`。
 5. 帧收发：envelope 编码、分片提交、重组解码（以 MTU 23 为基线，对照 fixtures/
-   framing 向量）；session transport type 字节与握手/密文状态机。
+   framing 向量）；session transport type 字节与握手/密文状态机。设备端响应
+   按 indication 确认逐片下发，客户端必须逐片确认。
 6. 会话状态机与事务串行化（lifecycle + BUSY 处理）。
-7. 绑定流：窗口内 SMP 配对（SC-only）→ Security 2 握手（QR `pop`）→ 加密
-   GetCapabilities/AuthorizePrepare → 本机确认轮询 → AuthorizeCommit → 持久化
-   应用口令与 device authorization id；重连用应用口令重新握手。
-8. 错误码映射与超时/断连恢复（errors.md、framing 超时、ambiguous Commit 恢复）。
+7. 绑定流：窗口内 SMP 配对（SC-only）→ Security 2 握手（QR `pop` 原始字节）
+   → 加密 GetCapabilities/AuthorizePrepare → 本机确认轮询 → AuthorizeCommit
+   → 持久化应用口令与 device authorization id；重连用应用口令重新握手。
+8. 错误码映射与超时/断连恢复（errors.md、framing 超时、ambiguous Commit
+   恢复）：Commit 响应丢失时用保留的应用口令重连，带 `RECOVERY_QUERY` 旗标
+   发送 `GetAuthorization` 取回同一 `device_authorization_id`，并比对返回的
+   credential id。
 9. 待固件 SMP/SC 校验与 Security 2 落地后，真机联调完整绑定与重连流程。
 
 ## 5. 验收门槛

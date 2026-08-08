@@ -67,9 +67,38 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
         message(FATAL_ERROR
             "Wi-Fi, I2S, and LCD DMA staging require a 128 KiB internal reserve")
     endif()
+    if(NOT CONFIG_BT_NIMBLE_SECURITY_ENABLE OR
+            CONFIG_BT_NIMBLE_SM_LEGACY OR
+            NOT CONFIG_BT_NIMBLE_SM_SC OR
+            NOT CONFIG_BT_NIMBLE_SM_SC_ONLY EQUAL 1 OR
+            NOT CONFIG_BT_NIMBLE_NVS_PERSIST OR
+            NOT CONFIG_BT_NIMBLE_MAX_BONDS EQUAL 1 OR
+            NOT CONFIG_BT_NIMBLE_MAX_CONNECTIONS EQUAL 1)
+        message(FATAL_ERROR
+            "Device Link requires SC-only NimBLE security, one bond, and one connection")
+    endif()
+    if(NOT CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC OR
+            CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC OR
+            NOT CONFIG_MBEDTLS_DYNAMIC_BUFFER)
+        message(FATAL_ERROR
+            "The production TLS profile requires default allocation and dynamic buffers")
+    endif()
+    if(NOT CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL OR
+            CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL OR
+            CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_DEFAULT)
+        message(FATAL_ERROR
+            "The production NimBLE profile requires external allocation")
+    endif()
     if(NOT CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY)
         message(FATAL_ERROR
             "The Waveshare ESP32-S3 profile requires external BSS in PSRAM")
+    endif()
+    if(CONFIG_BT_NIMBLE_MAX_BONDS EQUAL 1)
+        # NimBLE's one-bond NVS ordering loop is unreachable but GCC 15 still
+        # diagnoses its guarded i + 1 expressions as out of bounds. Keep this
+        # ESP-IDF 6.0.2 workaround inside the upstream BT component.
+        idf_component_get_property(_bt_component bt COMPONENT_LIB)
+        target_compile_options(${_bt_component} PRIVATE -Wno-array-bounds)
     endif()
 else()
     message(FATAL_ERROR "The selected MicroTech board has no root build profile")

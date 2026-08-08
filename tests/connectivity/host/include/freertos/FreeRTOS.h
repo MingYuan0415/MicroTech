@@ -34,6 +34,9 @@ typedef struct host_static_semaphore
     bool available;
     bool initialized;
     bool is_binary;
+    bool recursive;
+    pthread_t owner;
+    unsigned int depth;
 } StaticSemaphore_t;
 
 /** @brief Pthread-backed static task storage. */

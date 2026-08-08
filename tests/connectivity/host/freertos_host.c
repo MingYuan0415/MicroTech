@@ -128,6 +128,8 @@ static SemaphoreHandle_t _host_create_semaphore(StaticSemaphore_t *storage,
     storage->available = available;
     storage->initialized = true;
     storage->is_binary = is_binary;
+    storage->recursive = false;
+    storage->depth = 0U;
     (void)pthread_mutex_lock(&s_control_lock);
     ++s_live_semaphores;
     ++s_total_semaphore_creates;
@@ -138,6 +140,66 @@ static SemaphoreHandle_t _host_create_semaphore(StaticSemaphore_t *storage,
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage)
 {
     return _host_create_semaphore(storage, true, false);
+}
+
+SemaphoreHandle_t xSemaphoreCreateRecursiveMutexStatic(
+    StaticSemaphore_t *storage)
+{
+    SemaphoreHandle_t semaphore = _host_create_semaphore(storage, true, false);
+
+    if (semaphore != NULL)
+    {
+        semaphore->recursive = true;
+    }
+    return semaphore;
+}
+
+BaseType_t xSemaphoreTakeRecursive(SemaphoreHandle_t semaphore,
+                                   TickType_t timeout_ticks)
+{
+    if (semaphore == NULL || !semaphore->initialized || !semaphore->recursive)
+    {
+        return pdFALSE;
+    }
+    const pthread_t current = pthread_self();
+
+    (void)pthread_mutex_lock(&semaphore->lock);
+    if (semaphore->depth > 0U && pthread_equal(semaphore->owner, current))
+    {
+        semaphore->depth++;
+        (void)pthread_mutex_unlock(&semaphore->lock);
+        return pdTRUE;
+    }
+    (void)pthread_mutex_unlock(&semaphore->lock);
+    if (xSemaphoreTake(semaphore, timeout_ticks) != pdTRUE)
+    {
+        return pdFALSE;
+    }
+    (void)pthread_mutex_lock(&semaphore->lock);
+    semaphore->owner = current;
+    semaphore->depth = 1U;
+    (void)pthread_mutex_unlock(&semaphore->lock);
+    return pdTRUE;
+}
+
+BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t semaphore)
+{
+    if (semaphore == NULL || !semaphore->initialized || !semaphore->recursive)
+    {
+        return pdFALSE;
+    }
+    (void)pthread_mutex_lock(&semaphore->lock);
+    if (semaphore->depth == 0U ||
+            !pthread_equal(semaphore->owner, pthread_self()))
+    {
+        (void)pthread_mutex_unlock(&semaphore->lock);
+        return pdFALSE;
+    }
+    semaphore->depth--;
+    const bool release = semaphore->depth == 0U;
+
+    (void)pthread_mutex_unlock(&semaphore->lock);
+    return release ? xSemaphoreGive(semaphore) : pdTRUE;
 }
 
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *storage)
@@ -229,6 +291,8 @@ void vSemaphoreDelete(SemaphoreHandle_t semaphore)
     semaphore->available = false;
     semaphore->initialized = false;
     semaphore->is_binary = false;
+    semaphore->recursive = false;
+    semaphore->depth = 0U;
     (void)pthread_mutex_lock(&s_control_lock);
     --s_live_semaphores;
     (void)pthread_cond_broadcast(&s_control_changed);
