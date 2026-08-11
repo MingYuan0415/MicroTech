@@ -6,5 +6,7 @@
 typedef struct lv_font_t lv_font_t;
 /** @brief Opaque fake LVGL object. */
 typedef struct lv_obj_t lv_obj_t;
+/** @brief Opaque fake LVGL draw buffer. */
+typedef struct lv_draw_buf_t lv_draw_buf_t;
 
 #endif /* __CONNECTIVITY_HOST_LVGL_H__ */

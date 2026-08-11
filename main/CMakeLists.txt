@@ -24,6 +24,7 @@ idf_component_register(
         sd_storage_service
         connectivity_manager
         device_link_service
+        factory_reset_service
         app_core
         app_theme
         esp_timer

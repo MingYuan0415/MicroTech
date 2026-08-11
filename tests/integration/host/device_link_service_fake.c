@@ -13,6 +13,9 @@ typedef struct host_device_link_context
     device_link_service_status_t status;
     unsigned open_count;
     unsigned close_count;
+    esp_err_t confirm_result;
+    unsigned confirm_count;
+    device_link_confirmation_token_t last_confirmation_token;
 } host_device_link_context_t;
 
 static host_device_link_context_t s_device_link =
@@ -38,6 +41,9 @@ void host_device_link_service_reset(void)
     s_device_link.status.available = true;
     s_device_link.open_count = 0U;
     s_device_link.close_count = 0U;
+    s_device_link.confirm_result = ESP_OK;
+    s_device_link.confirm_count = 0U;
+    s_device_link.last_confirmation_token = 0U;
     (void)pthread_mutex_unlock(&s_device_link.lock);
 }
 
@@ -55,6 +61,33 @@ unsigned host_device_link_service_close_count(void)
     const unsigned count = s_device_link.close_count;
     (void)pthread_mutex_unlock(&s_device_link.lock);
     return count;
+}
+
+void host_device_link_service_set_confirm_result(esp_err_t result)
+{
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    s_device_link.confirm_result = result;
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+}
+
+unsigned host_device_link_service_confirm_count(void)
+{
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    const unsigned count = s_device_link.confirm_count;
+
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return count;
+}
+
+device_link_confirmation_token_t
+host_device_link_service_last_confirmation_token(void)
+{
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    const device_link_confirmation_token_t token =
+        s_device_link.last_confirmation_token;
+
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return token;
 }
 
 esp_err_t host_device_link_service_publish_status(
@@ -112,10 +145,17 @@ esp_err_t device_link_service_close_window(void)
                &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
-esp_err_t device_link_service_confirm_binding(bool accept)
+esp_err_t device_link_service_confirm_binding(
+    device_link_confirmation_token_t token, bool accept)
 {
     (void)accept;
-    return ESP_OK;
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    ++s_device_link.confirm_count;
+    s_device_link.last_confirmation_token = token;
+    const esp_err_t result = s_device_link.confirm_result;
+
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return result;
 }
 
 esp_err_t device_link_service_get_status(

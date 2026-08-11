@@ -21,6 +21,7 @@ add_executable(test_cross_layer
     host/host_services.c
     host/connectivity_manager_fake.c
     host/device_link_service_fake.c
+    host/factory_reset_service_fake.c
     "${APP_CORE}/src/app_manager_mailbox.c"
     "${APP_CORE}/src/app_manager_back_gesture.c"
     "${APP_CORE}/src/app_manager_builtin.c"
@@ -49,6 +50,7 @@ add_executable(test_cross_layer
     "${APPS}/menu_app/src/storage_demo.c"
     "${APPS}/menu_app/src/storage_demo_adapter.c"
     "${APPS}/settings_app/src/settings_app.c"
+    "${APPS}/settings_app/src/settings_factory_reset_page.c"
     "${APPS}/setup_app/src/setup_app.c"
     "${APPS}/setup_app/src/setup_wifi_adapter.c"
 )
@@ -102,6 +104,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${APPS}/common/include"
     "${APPS}/weather_app/src"
     "${APPS}/menu_app/src"
+    "${APPS}/settings_app/src"
     "${APPS}/setup_app/src"
     "${MIDDLEWARE}/event_bus/include"
     "${MIDDLEWARE}/power_service/include"
@@ -112,6 +115,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/weather_service/include"
     "${MIDDLEWARE}/connectivity_manager/include"
     "${MIDDLEWARE}/device_link_service/include"
+    "${MIDDLEWARE}/factory_reset_service/include"
     "${MIDDLEWARE}/ble_runtime/include"
 )
 target_include_directories(test_presentation PRIVATE

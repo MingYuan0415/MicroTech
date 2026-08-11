@@ -1484,6 +1484,53 @@ static bool _test_manager_init_resource_failures(void)
     return true;
 }
 
+static bool _test_clear_persisted_profile_lifecycle(void)
+{
+    static const uint8_t stored_profile[] =
+    {
+        0x57U, 0x46U, 0x50U, 0x31U,
+    };
+    uint8_t retained[sizeof(stored_profile)];
+    size_t retained_size = 0U;
+
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_clear_persisted_profile() == ESP_OK);
+    CHECK(connectivity_manager_clear_persisted_profile() == ESP_OK);
+    CHECK(host_nv_storage_erase_count() == 0U);
+
+    host_nv_storage_seed(stored_profile, sizeof(stored_profile));
+    CHECK(connectivity_manager_clear_persisted_profile() == ESP_OK);
+    CHECK(host_nv_storage_erase_count() == 1U);
+    CHECK(!host_nv_storage_copy(NULL, 0U, NULL));
+    CHECK(connectivity_manager_clear_persisted_profile() == ESP_OK);
+    CHECK(host_nv_storage_erase_count() == 1U);
+
+    host_nv_storage_seed(stored_profile, sizeof(stored_profile));
+    host_nv_storage_fail_next_erase(ESP_FAIL);
+    CHECK(connectivity_manager_clear_persisted_profile() == ESP_FAIL);
+    CHECK(host_nv_storage_erase_count() == 1U);
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == sizeof(stored_profile));
+    CHECK(memcmp(retained, stored_profile, sizeof(stored_profile)) == 0);
+    CHECK(connectivity_manager_clear_persisted_profile() == ESP_OK);
+    CHECK(host_nv_storage_erase_count() == 2U);
+
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    host_nv_storage_seed(stored_profile, sizeof(stored_profile));
+    CHECK(connectivity_manager_clear_persisted_profile() ==
+          ESP_ERR_INVALID_STATE);
+    CHECK(host_nv_storage_erase_count() == 2U);
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == sizeof(stored_profile));
+    CHECK(memcmp(retained, stored_profile, sizeof(stored_profile)) == 0);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
 static bool _test_queue_overflow(void)
 {
     host_nv_storage_reset();
@@ -1612,6 +1659,7 @@ static bool _run_pipeline(void)
               &scan_ui_subscription) == ESP_OK);
     CHECK(_run_on_ui(_ui_capture_worker, NULL));
 
+    CHECK(_test_clear_persisted_profile_lifecycle());
     CHECK(_test_manager_init_resource_failures());
     CHECK(_test_operation_arbitration());
     CHECK(_test_candidate_terminal_cleanup());

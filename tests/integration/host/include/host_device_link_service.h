@@ -18,6 +18,16 @@ unsigned host_device_link_service_open_count(void);
 /** @brief Return how often the binding window was closed. */
 unsigned host_device_link_service_close_count(void);
 
+/** @brief Configure binding-confirmation command admission. */
+void host_device_link_service_set_confirm_result(esp_err_t result);
+
+/** @brief Return how often a binding-confirmation command was submitted. */
+unsigned host_device_link_service_confirm_count(void);
+
+/** @brief Return the most recently submitted confirmation token. */
+device_link_confirmation_token_t
+host_device_link_service_last_confirmation_token(void);
+
 /** @brief Cache and publish one Device Link status snapshot. */
 esp_err_t host_device_link_service_publish_status(
     const device_link_service_status_t *status);

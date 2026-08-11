@@ -8,6 +8,7 @@
 #include "audio_service.h"
 #include "ble_nimble_port.h"
 #include "device_link_service.h"
+#include "factory_reset_service.h"
 #include "bsp_hal.h"
 #include "event_bus.h"
 #include "fs_storage/fs_storage.h"
@@ -34,6 +35,9 @@ typedef enum
     TEST_EVENT_NONE = 0,
     TEST_EVENT_LOG_INIT,
     TEST_EVENT_NV_INIT,
+    TEST_EVENT_FACTORY_RESET_INIT,
+    TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
+    TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE,
     TEST_EVENT_FS_INIT,
     TEST_EVENT_EVENT_BUS_INIT,
     TEST_EVENT_BSP_INIT,
@@ -58,6 +62,8 @@ typedef enum
     TEST_EVENT_CONNECTIVITY_GET_STATUS,
     TEST_EVENT_TIME_NETWORK_READY,
     TEST_EVENT_BLE_INIT,
+    TEST_EVENT_FACTORY_RESET_COMPLETE,
+    TEST_EVENT_DEVICE_LINK_RELEASE_GATE,
     TEST_EVENT_BUILTIN_DISCOVER,
     TEST_EVENT_APP_NAVIGATE,
     TEST_EVENT_DISPLAY_COMMIT,
@@ -80,6 +86,7 @@ typedef enum
     TEST_EVENT_TIME_DEINIT,
     TEST_EVENT_BSP_DEINIT,
     TEST_EVENT_FS_DEINIT,
+    TEST_EVENT_FACTORY_RESET_DEINIT,
     TEST_EVENT_NV_DEINIT,
 } test_event_t;
 
@@ -102,6 +109,8 @@ typedef struct test_runtime
     bool time_participant;
     bool weather_participant;
     bool weather_network_ready;
+    bool factory_reset_marker_durable;
+    bool device_link_started_gated;
     uint32_t weather_ipv4_address;
     bool sd_mounted;
     uint32_t imu_sample_rate_hz;
@@ -188,6 +197,18 @@ static bool _test_event_seen(test_event_t event)
         }
     }
     return seen;
+}
+
+static size_t _test_event_index(test_event_t event)
+{
+    for (size_t index = 0; index < s_test.event_count; ++index)
+    {
+        if (s_test.events[index] == event)
+        {
+            return index;
+        }
+    }
+    return SIZE_MAX;
 }
 
 static void _test_expect_events(const test_event_t *expected, size_t count)
@@ -937,6 +958,11 @@ esp_err_t connectivity_manager_init(
     return _test_result(TEST_EVENT_CONNECTIVITY_INIT);
 }
 
+esp_err_t connectivity_manager_clear_persisted_profile(void)
+{
+    return _test_result(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE);
+}
+
 esp_err_t connectivity_manager_deinit(uint32_t timeout_ms)
 {
     assert(timeout_ms == CONNECTIVITY_MANAGER_WAIT_FOREVER);
@@ -982,7 +1008,21 @@ esp_err_t device_link_service_init(
     assert(config->runtime_port == &s_test_runtime_port);
     assert(config->task_priority == 4U);
     assert(config->window_ms == 600000U);
+    assert(config->startup_mode ==
+           (s_test.factory_reset_marker_durable ?
+            DEVICE_LINK_SERVICE_STARTUP_FACTORY_RESET_GATED :
+            DEVICE_LINK_SERVICE_STARTUP_NORMAL));
+    s_test.device_link_started_gated = config->startup_mode ==
+                                       DEVICE_LINK_SERVICE_STARTUP_FACTORY_RESET_GATED;
     return _test_result(TEST_EVENT_BLE_INIT);
+}
+
+esp_err_t device_link_service_release_startup_gate(void)
+{
+    assert(s_test.device_link_started_gated);
+    assert(!s_test.factory_reset_marker_durable);
+    _test_record(TEST_EVENT_DEVICE_LINK_RELEASE_GATE);
+    return ESP_OK;
 }
 
 esp_err_t device_link_service_deinit(uint32_t timeout_ms)
@@ -996,14 +1036,55 @@ void app_runtime_pm_set_device_link_participant(bool enabled)
     s_test.device_link_participant = enabled;
 }
 
+esp_err_t factory_reset_service_init(
+    const factory_reset_service_config_t *config)
+{
+    assert(config != NULL);
+    assert(config->restart != NULL);
+    return _test_result(TEST_EVENT_FACTORY_RESET_INIT);
+}
+
+esp_err_t factory_reset_service_deinit(void)
+{
+    return _test_result(TEST_EVENT_FACTORY_RESET_DEINIT);
+}
+
+esp_err_t factory_reset_service_recovery_pending(bool *pending)
+{
+    assert(pending != NULL);
+    const esp_err_t result = _test_result(
+                                 TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING);
+
+    if (result == ESP_OK)
+    {
+        *pending = s_test.factory_reset_marker_durable;
+    }
+    return result;
+}
+
+esp_err_t factory_reset_service_complete_recovery(void)
+{
+    assert(s_test.factory_reset_marker_durable);
+    const esp_err_t result = _test_result(TEST_EVENT_FACTORY_RESET_COMPLETE);
+
+    if (result == ESP_OK)
+    {
+        s_test.factory_reset_marker_durable = false;
+    }
+    return result;
+}
+
 static void _test_successful_lifecycle(void)
 {
     static const test_event_t expected[] =
     {
         TEST_EVENT_LOG_INIT,
         TEST_EVENT_NV_INIT,
+        TEST_EVENT_FACTORY_RESET_INIT,
+        TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
         TEST_EVENT_FS_INIT,
         TEST_EVENT_EVENT_BUS_INIT,
+        TEST_EVENT_BLE_INIT,
         TEST_EVENT_BSP_INIT,
         TEST_EVENT_TIME_REGISTER_RTC,
         TEST_EVENT_TIME_INIT,
@@ -1029,7 +1110,6 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_CONNECTIVITY_SUBSCRIBE,
         TEST_EVENT_CONNECTIVITY_GET_STATUS,
         TEST_EVENT_TIME_NETWORK_READY,
-        TEST_EVENT_BLE_INIT,
         TEST_EVENT_STARTUP_COMMIT,
         TEST_EVENT_DISPLAY_BENCHMARK_START,
         TEST_EVENT_TIME_NETWORK_READY,
@@ -1052,6 +1132,7 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_TIME_DEINIT,
         TEST_EVENT_BSP_DEINIT,
         TEST_EVENT_FS_DEINIT,
+        TEST_EVENT_FACTORY_RESET_DEINIT,
         TEST_EVENT_NV_DEINIT,
     };
 
@@ -1117,6 +1198,8 @@ static void _test_fatal_start_failures(void)
     {
         TEST_EVENT_LOG_INIT,
         TEST_EVENT_NV_INIT,
+        TEST_EVENT_FACTORY_RESET_INIT,
+        TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
         TEST_EVENT_FS_INIT,
         TEST_EVENT_EVENT_BUS_INIT,
         TEST_EVENT_BSP_INIT,
@@ -1153,6 +1236,77 @@ static void _test_fatal_start_failures(void)
         assert(app_runtime_stop() == ESP_OK);
         assert(s_test.event_count == event_count);
     }
+}
+
+static void _test_factory_reset_recovery_order(void)
+{
+    _test_reset();
+    s_test.factory_reset_marker_durable = true;
+    assert(app_runtime_start() == ESP_OK);
+    assert(app_runtime_is_running());
+    assert(_test_event_seen(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE));
+    assert(_test_event_seen(TEST_EVENT_FACTORY_RESET_COMPLETE));
+    assert(_test_event_seen(TEST_EVENT_DEVICE_LINK_RELEASE_GATE));
+    assert(_test_event_index(TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING) <
+           _test_event_index(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE));
+    assert(_test_event_index(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE) <
+           _test_event_index(TEST_EVENT_BLE_INIT));
+    assert(_test_event_index(TEST_EVENT_BLE_INIT) <
+           _test_event_index(TEST_EVENT_FACTORY_RESET_COMPLETE));
+    assert(_test_event_index(TEST_EVENT_FACTORY_RESET_COMPLETE) <
+           _test_event_index(TEST_EVENT_DEVICE_LINK_RELEASE_GATE));
+    assert(_test_event_index(TEST_EVENT_DEVICE_LINK_RELEASE_GATE) <
+           _test_event_index(TEST_EVENT_BSP_INIT));
+    assert(_test_event_index(TEST_EVENT_BSP_INIT) <
+           _test_event_index(TEST_EVENT_NETWORK_INIT));
+    assert(!s_test.factory_reset_marker_durable);
+    assert(app_runtime_stop() == ESP_OK);
+
+    static const test_event_t fail_closed_boundaries[] =
+    {
+        TEST_EVENT_FACTORY_RESET_INIT,
+        TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
+        TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE,
+        TEST_EVENT_BLE_INIT,
+        TEST_EVENT_FACTORY_RESET_COMPLETE,
+    };
+
+    for (size_t index = 0;
+            index < sizeof(fail_closed_boundaries) /
+            sizeof(fail_closed_boundaries[0]); ++index)
+    {
+        _test_reset();
+        s_test.factory_reset_marker_durable = true;
+        s_test.failure_event = fail_closed_boundaries[index];
+        assert(app_runtime_start() == ESP_FAIL);
+        assert(!app_runtime_is_running());
+        assert(!_test_event_seen(TEST_EVENT_BSP_INIT));
+        assert(!_test_event_seen(TEST_EVENT_NETWORK_INIT));
+        assert(!_test_event_seen(TEST_EVENT_CONNECTIVITY_INIT));
+        if (fail_closed_boundaries[index] ==
+                TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE)
+        {
+            assert(!_test_event_seen(TEST_EVENT_BLE_INIT));
+        }
+        if (fail_closed_boundaries[index] ==
+                TEST_EVENT_FACTORY_RESET_COMPLETE)
+        {
+            assert(!_test_event_seen(TEST_EVENT_DEVICE_LINK_RELEASE_GATE));
+        }
+        assert(s_test.factory_reset_marker_durable);
+        assert(app_runtime_stop() == ESP_OK);
+
+        _test_clear_events();
+        s_test.failure_event = TEST_EVENT_NONE;
+        s_test.device_link_started_gated = false;
+        assert(app_runtime_start() == ESP_OK);
+        assert(_test_event_seen(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE));
+        assert(_test_event_seen(TEST_EVENT_FACTORY_RESET_COMPLETE));
+        assert(_test_event_seen(TEST_EVENT_DEVICE_LINK_RELEASE_GATE));
+        assert(!s_test.factory_reset_marker_durable);
+        assert(app_runtime_stop() == ESP_OK);
+    }
+
 }
 
 static void _test_cleanup_retry_before_restart(void)
@@ -1207,6 +1361,7 @@ static void _test_every_cleanup_failure_is_retryable(void)
         TEST_EVENT_TIME_DEINIT,
         TEST_EVENT_BSP_DEINIT,
         TEST_EVENT_FS_DEINIT,
+        TEST_EVENT_FACTORY_RESET_DEINIT,
         TEST_EVENT_NV_DEINIT,
     };
 
@@ -1331,6 +1486,7 @@ int main(void)
 {
     _test_successful_lifecycle();
     _test_fatal_start_failures();
+    _test_factory_reset_recovery_order();
     _test_cleanup_retry_before_restart();
     _test_every_cleanup_failure_is_retryable();
     _test_degradable_connectivity_failures();

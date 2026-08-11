@@ -24,12 +24,14 @@
 #include "power_service.h"
 #include "ble_nimble_port.h"
 #include "device_link_service.h"
+#include "factory_reset_service.h"
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
 #include "weather_service.h"
 
 #ifdef ESP_PLATFORM
+    #include "esp_system.h"
     #include "mmap_generate_res.h"
 #else
     #define MMAP_RES_FILES    1U
@@ -53,6 +55,7 @@ typedef enum
 typedef struct app_runtime_ownership
 {
     bool nv_attempted;
+    bool factory_reset_attempted;
     bool fs_attempted;
     bool bsp_attempted;
     bool time_attempted;
@@ -88,6 +91,15 @@ static app_runtime_ownership_t s_ownership;
 static const bsp_rtc_ops_t *s_runtime_rtc;
 static const bsp_imu_ops_t *s_runtime_imu;
 static const bsp_sd_ops_t *s_runtime_sd;
+static bool s_factory_reset_pending;
+
+static void _app_runtime_restart(void *context)
+{
+    (void)context;
+#ifdef ESP_PLATFORM
+    esp_restart();
+#endif
+}
 
 #if APP_WEATHER_IMAGES_ENABLED
 #define APP_RUNTIME_WEATHER_IMAGE(id, asset, width_value, height_value) \
@@ -396,7 +408,9 @@ static bool _app_runtime_sd_is_mounted(void *context, void *handle)
 
 static bool _app_runtime_has_owned_resources(void)
 {
-    bool owned = s_ownership.nv_attempted || s_ownership.fs_attempted ||
+    bool owned = s_ownership.nv_attempted ||
+                 s_ownership.factory_reset_attempted ||
+                 s_ownership.fs_attempted ||
                  s_ownership.bsp_attempted || s_ownership.time_attempted ||
                  s_ownership.weather_attempted ||
                  s_ownership.system_pm_attempted ||
@@ -683,7 +697,18 @@ static esp_err_t _app_runtime_stop_foundations(void)
             s_ownership.fs_attempted = false;
         }
     }
-    if (s_ownership.nv_attempted)
+    if (s_ownership.factory_reset_attempted)
+    {
+        esp_err_t result = factory_reset_service_deinit();
+
+        _app_runtime_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            s_ownership.factory_reset_attempted = false;
+        }
+    }
+    if (s_ownership.nv_attempted &&
+            !s_ownership.factory_reset_attempted)
     {
         esp_err_t result = nv_storage_deinit();
         _app_runtime_record_first_error(&first_error, result);
@@ -756,6 +781,33 @@ static esp_err_t _app_runtime_start_foundations(void)
     if (result != ESP_OK)
     {
         return result;
+    }
+
+    const factory_reset_service_config_t reset_config =
+    {
+        .restart = _app_runtime_restart,
+        .restart_context = NULL,
+    };
+
+    s_ownership.factory_reset_attempted = true;
+    result = factory_reset_service_init(&reset_config);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    result = factory_reset_service_recovery_pending(
+                 &s_factory_reset_pending);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    if (s_factory_reset_pending)
+    {
+        result = connectivity_manager_clear_persisted_profile();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
     }
 
     s_ownership.fs_attempted = true;
@@ -1102,16 +1154,45 @@ static esp_err_t _app_runtime_start_connectivity(
         }
     }
 
+    return result;
+}
+
+static esp_err_t _app_runtime_start_device_link(
+    const app_product_config_t *product)
+{
     device_link_service_config_t device_link = product->device_link;
 
     device_link.runtime_port = ble_nimble_port_get();
+    device_link.startup_mode = s_factory_reset_pending ?
+                               DEVICE_LINK_SERVICE_STARTUP_FACTORY_RESET_GATED :
+                               DEVICE_LINK_SERVICE_STARTUP_NORMAL;
     s_ownership.device_link_attempted = true;
-    result = device_link_service_init(&device_link);
-    if (result == ESP_OK)
+    esp_err_t result = device_link_service_init(&device_link);
+
+    if (result != ESP_OK)
     {
-        app_runtime_pm_set_device_link_participant(true);
+        return result;
     }
-    return result;
+    app_runtime_pm_set_device_link_participant(true);
+    if (!s_factory_reset_pending)
+    {
+        return ESP_OK;
+    }
+    result = factory_reset_service_complete_recovery();
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    result = device_link_service_release_startup_gate();
+    if (result != ESP_OK)
+    {
+        /* Gated init installed every fallible advertising prerequisite while
+         * the marker was durable. A failure here is a lifecycle invariant,
+         * not a recoverable storage boundary. */
+        return result;
+    }
+    s_factory_reset_pending = false;
+    return ESP_OK;
 }
 
 static esp_err_t _app_runtime_start_initial_app(void)
@@ -1184,6 +1265,7 @@ esp_err_t app_runtime_start(void)
     s_runtime_rtc = NULL;
     s_runtime_imu = NULL;
     s_runtime_sd = NULL;
+    s_factory_reset_pending = false;
     app_runtime_pm_reset();
 
     app_runtime_start_context_t context =
@@ -1191,6 +1273,12 @@ esp_err_t app_runtime_start(void)
         .product = app_product_config_get(),
     };
     result = _app_runtime_start_foundations();
+    if (result != ESP_OK)
+    {
+        goto failed;
+    }
+
+    result = _app_runtime_start_device_link(context.product);
     if (result != ESP_OK)
     {
         goto failed;

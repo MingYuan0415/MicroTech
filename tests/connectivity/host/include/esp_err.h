@@ -19,6 +19,7 @@ typedef int esp_err_t;
 #define ESP_ERR_NOT_SUPPORTED    0x107
 #define ESP_ERR_INVALID_RESPONSE 0x108
 #define ESP_ERR_NOT_FINISHED     0x10C
+#define ESP_ERR_NOT_ALLOWED      0x10D
 #define ESP_ERR_NVS_NOT_FOUND    0x1102
 
 #endif /* __CONNECTIVITY_HOST_ESP_ERR_H__ */

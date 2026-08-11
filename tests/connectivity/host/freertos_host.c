@@ -19,7 +19,9 @@ static _Thread_local unsigned char s_external_task_token;
 static pthread_mutex_t s_control_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t s_control_changed = PTHREAD_COND_INITIALIZER;
 #define HOST_MAX_QUEUES 4U
+#define HOST_MAX_TASKS 16U
 static QueueHandle_t s_queues[HOST_MAX_QUEUES];
+static TaskHandle_t s_tasks[HOST_MAX_TASKS];
 static bool s_queue_receive_paused;
 static bool s_queue_receive_waiting;
 static bool s_queue_delivery_deferred;
@@ -526,6 +528,18 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(
     {
         return NULL;
     }
+    if (pthread_mutex_init(&task_storage->notification_lock, NULL) != 0)
+    {
+        return NULL;
+    }
+    if (pthread_cond_init(&task_storage->notification_changed, NULL) != 0)
+    {
+        (void)pthread_mutex_destroy(&task_storage->notification_lock);
+        return NULL;
+    }
+    task_storage->notification_count = 0U;
+    task_storage->notification_initialized = true;
+    task_storage->notification_shutdown = false;
     task_storage->entry = entry;
     task_storage->context = context;
     task_storage->priority = priority;
@@ -536,6 +550,26 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(
     task_storage->suspended = false;
     task_storage->delete_requested = false;
     (void)pthread_mutex_lock(&s_control_lock);
+    size_t task_slot = HOST_MAX_TASKS;
+
+    for (size_t i = 0U; i < HOST_MAX_TASKS; ++i)
+    {
+        if (s_tasks[i] == NULL)
+        {
+            task_slot = i;
+            s_tasks[i] = task_storage;
+            break;
+        }
+    }
+    if (task_slot == HOST_MAX_TASKS)
+    {
+        (void)pthread_mutex_unlock(&s_control_lock);
+        task_storage->created = false;
+        task_storage->notification_initialized = false;
+        (void)pthread_cond_destroy(&task_storage->notification_changed);
+        (void)pthread_mutex_destroy(&task_storage->notification_lock);
+        return NULL;
+    }
     ++s_live_tasks;
     ++s_total_task_creates;
     (void)pthread_mutex_unlock(&s_control_lock);
@@ -544,8 +578,12 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(
     {
         task_storage->created = false;
         (void)pthread_mutex_lock(&s_control_lock);
+        s_tasks[task_slot] = NULL;
         --s_live_tasks;
         (void)pthread_mutex_unlock(&s_control_lock);
+        task_storage->notification_initialized = false;
+        (void)pthread_cond_destroy(&task_storage->notification_changed);
+        (void)pthread_mutex_destroy(&task_storage->notification_lock);
         return NULL;
     }
     task_storage->joinable = true;
@@ -589,6 +627,87 @@ TickType_t xTaskGetTickCount(void)
     uint64_t real_ticks =
         (nanoseconds * configTICK_RATE_HZ) / UINT64_C(1000000000);
     return (TickType_t)(real_ticks + atomic_load(&s_virtual_ticks));
+}
+
+BaseType_t xTaskNotifyGive(TaskHandle_t task)
+{
+    if (task == NULL || !task->notification_initialized)
+    {
+        return pdFAIL;
+    }
+    (void)pthread_mutex_lock(&task->notification_lock);
+    if (task->notification_shutdown)
+    {
+        (void)pthread_mutex_unlock(&task->notification_lock);
+        return pdFAIL;
+    }
+    if (task->notification_count != UINT32_MAX)
+    {
+        task->notification_count++;
+    }
+    (void)pthread_cond_signal(&task->notification_changed);
+    (void)pthread_mutex_unlock(&task->notification_lock);
+    return pdPASS;
+}
+
+uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit, TickType_t timeout)
+{
+    TaskHandle_t task = s_current_task;
+
+    if (task == NULL || !task->notification_initialized)
+    {
+        return 0U;
+    }
+    (void)pthread_mutex_lock(&task->notification_lock);
+    const TickType_t started = xTaskGetTickCount();
+    const struct timespec deadline = timeout != 0U && timeout != portMAX_DELAY ?
+                                     _host_deadline_after_ticks(timeout) :
+                                     (struct timespec)
+    {
+        0
+    };
+
+    while (task->notification_count == 0U &&
+            !task->notification_shutdown)
+    {
+        if (timeout == 0U ||
+                (timeout != portMAX_DELAY &&
+                 xTaskGetTickCount() - started >= timeout))
+        {
+            (void)pthread_mutex_unlock(&task->notification_lock);
+            return 0U;
+        }
+        const int wait_result = timeout == portMAX_DELAY ?
+                                pthread_cond_wait(
+                                    &task->notification_changed,
+                                    &task->notification_lock) :
+                                pthread_cond_timedwait(
+                                    &task->notification_changed,
+                                    &task->notification_lock, &deadline);
+
+        if (wait_result == ETIMEDOUT)
+        {
+            (void)pthread_mutex_unlock(&task->notification_lock);
+            return 0U;
+        }
+    }
+    if (task->notification_shutdown)
+    {
+        (void)pthread_mutex_unlock(&task->notification_lock);
+        pthread_exit(NULL);
+    }
+    const uint32_t result = task->notification_count;
+
+    if (clear_on_exit == pdTRUE)
+    {
+        task->notification_count = 0U;
+    }
+    else
+    {
+        task->notification_count--;
+    }
+    (void)pthread_mutex_unlock(&task->notification_lock);
+    return result;
 }
 
 void vTaskDelay(TickType_t ticks)
@@ -671,8 +790,23 @@ void vTaskDelete(TaskHandle_t task)
             --s_live_tasks;
         }
         join = task != NULL && deleted->joinable;
+        for (size_t i = 0U; i < HOST_MAX_TASKS; ++i)
+        {
+            if (s_tasks[i] == deleted)
+            {
+                s_tasks[i] = NULL;
+                break;
+            }
+        }
         (void)pthread_cond_broadcast(&s_control_changed);
         (void)pthread_mutex_unlock(&s_control_lock);
+        if (deleted->notification_initialized)
+        {
+            (void)pthread_mutex_lock(&deleted->notification_lock);
+            deleted->notification_shutdown = true;
+            (void)pthread_cond_broadcast(&deleted->notification_changed);
+            (void)pthread_mutex_unlock(&deleted->notification_lock);
+        }
     }
     if (task == NULL)
     {
@@ -685,6 +819,13 @@ void vTaskDelete(TaskHandle_t task)
         (void)pthread_mutex_lock(&s_control_lock);
         deleted->joinable = false;
         (void)pthread_mutex_unlock(&s_control_lock);
+    }
+    if (task != NULL && deleted != NULL &&
+            deleted->notification_initialized)
+    {
+        deleted->notification_initialized = false;
+        (void)pthread_cond_destroy(&deleted->notification_changed);
+        (void)pthread_mutex_destroy(&deleted->notification_lock);
     }
 }
 
@@ -880,6 +1021,17 @@ void host_freertos_advance_ticks(TickType_t ticks)
     atomic_fetch_add(&s_virtual_ticks, ticks);
     (void)pthread_mutex_lock(&s_control_lock);
     memcpy(queues, s_queues, sizeof(queues));
+    for (size_t index = 0U; index < HOST_MAX_TASKS; ++index)
+    {
+        TaskHandle_t task = s_tasks[index];
+
+        if (task != NULL && task->notification_initialized)
+        {
+            (void)pthread_mutex_lock(&task->notification_lock);
+            (void)pthread_cond_broadcast(&task->notification_changed);
+            (void)pthread_mutex_unlock(&task->notification_lock);
+        }
+    }
     (void)pthread_mutex_unlock(&s_control_lock);
     for (size_t index = 0; index < HOST_MAX_QUEUES; ++index)
     {

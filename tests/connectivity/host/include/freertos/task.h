@@ -17,6 +17,11 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void);
 UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task);
 /** @brief Return the host tick count. */
 TickType_t xTaskGetTickCount(void);
+/** @brief Increment a host task's notification count. */
+BaseType_t xTaskNotifyGive(TaskHandle_t task);
+/** @brief Wait for and consume the current task's notification count. */
+uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit,
+                          TickType_t timeout_ticks);
 /** @brief Delay the current host task. */
 void vTaskDelay(TickType_t ticks);
 /** @brief Update a host task's modeled priority. */

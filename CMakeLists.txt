@@ -99,6 +99,11 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
         # ESP-IDF 6.0.2 workaround inside the upstream BT component.
         idf_component_get_property(_bt_component bt COMPONENT_LIB)
         target_compile_options(${_bt_component} PRIVATE -Wno-array-bounds)
+        # ESP-IDF 6.0.2 otherwise starts a fresh SMP procedure when an LTK
+        # lookup fails. Device Link admits pairing only inside its local
+        # window, so keep the project-owned build fail-closed outside it.
+        target_compile_definitions(${_bt_component} PRIVATE
+            MYNEWT_VAL_BLE_RESTART_PAIR=0)
     endif()
 else()
     message(FATAL_ERROR "The selected MicroTech board has no root build profile")

@@ -13,6 +13,7 @@
 #include "host_freertos.h"
 #include "host_connectivity_manager.h"
 #include "host_device_link_service.h"
+#include "host_factory_reset_service.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
 #include "weather_service.h"
@@ -2484,6 +2485,23 @@ static void _test_other_real_app_screen_lifecycles(void)
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
+    assert(host_factory_reset_service_request_count() == 0U);
+    _click_action("恢复出厂设置");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "factory-reset"));
+    assert(host_factory_reset_service_request_count() == 0U);
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_SETTINGS, "factory-reset",
+        "确认恢复出厂设置", 0U, 0U, 0U, 0U);
+    _click_action("确认恢复出厂设置");
+    assert(host_factory_reset_service_request_count() == 1U);
+    assert(_ui_has_text("恢复请求已受理，正在重启"));
+    assert(app_manager_ui_call(
+               _click_action_on_ui, (void *)"确认恢复出厂设置",
+               UI_TIMEOUT_MS) == ESP_ERR_NOT_FOUND);
+    assert(host_factory_reset_service_request_count() == 1U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
@@ -2750,13 +2768,39 @@ static void _test_setup_screen_lifecycle(void)
     assert(host_device_link_service_publish_status(&connected) == ESP_OK);
     assert(_wait_for_text("手机已连接，等待绑定"));
 
-    device_link_service_status_t fault = connected;
+    device_link_service_status_t confirmation = connected;
+    ++confirmation.generation;
+    confirmation.pending_confirmation = true;
+    confirmation.confirmation_token = UINT64_C(0x1020304050607080);
+    assert(host_device_link_service_publish_status(&confirmation) == ESP_OK);
+    assert(_wait_for_text("手机请求绑定"));
+    const unsigned confirmations_before =
+        host_device_link_service_confirm_count();
+
+    host_device_link_service_set_confirm_result(ESP_FAIL);
+    _click_action("确认绑定");
+    assert(_wait_for_text("确认提交失败，请重试"));
+    assert(host_device_link_service_confirm_count() ==
+           confirmations_before + 1U);
+    assert(host_device_link_service_last_confirmation_token() ==
+           confirmation.confirmation_token);
+
+    host_device_link_service_set_confirm_result(ESP_OK);
+    _click_action("确认绑定");
+    assert(host_device_link_service_confirm_count() ==
+           confirmations_before + 2U);
+    assert(host_device_link_service_last_confirmation_token() ==
+           confirmation.confirmation_token);
+
+    device_link_service_status_t fault = confirmation;
     ++fault.generation;
     fault.state = DEVICE_LINK_SERVICE_STATE_ERROR;
     fault.last_error = ESP_FAIL;
     fault.window_remaining_ms = 0U;
     fault.client_connected = false;
     fault.qr_ready = false;
+    fault.pending_confirmation = false;
+    fault.confirmation_token = 0U;
     assert(host_device_link_service_publish_status(&fault) == ESP_OK);
     assert(_wait_for_text("蓝牙关闭失败，需要重启"));
 

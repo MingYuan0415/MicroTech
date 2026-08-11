@@ -43,6 +43,9 @@ typedef struct host_static_semaphore
 typedef struct host_static_task
 {
     pthread_t thread;
+    pthread_mutex_t notification_lock;
+    pthread_cond_t notification_changed;
+    uint32_t notification_count;
     void (*entry)(void *);
     void *context;
     UBaseType_t priority;
@@ -52,6 +55,8 @@ typedef struct host_static_task
     bool joinable;
     bool suspended;
     bool delete_requested;
+    bool notification_initialized;
+    bool notification_shutdown;
 } StaticTask_t;
 
 typedef StaticQueue_t *QueueHandle_t;
