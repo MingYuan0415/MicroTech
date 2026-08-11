@@ -72,10 +72,13 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
             NOT CONFIG_BT_NIMBLE_SM_SC OR
             NOT CONFIG_BT_NIMBLE_SM_SC_ONLY EQUAL 1 OR
             NOT CONFIG_BT_NIMBLE_NVS_PERSIST OR
+            NOT CONFIG_BT_NIMBLE_HS_PVCY OR
+            CONFIG_BT_NIMBLE_HOST_BASED_PRIVACY OR
+            CONFIG_BT_NIMBLE_ENC_ADV_DATA OR
             NOT CONFIG_BT_NIMBLE_MAX_BONDS EQUAL 1 OR
             NOT CONFIG_BT_NIMBLE_MAX_CONNECTIONS EQUAL 1)
         message(FATAL_ERROR
-            "Device Link requires SC-only NimBLE security, one bond, and one connection")
+            "Device Link requires SC-only NimBLE security, controller privacy, the audited peer-store schema, one bond, and one connection")
     endif()
     if(NOT CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC OR
             CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC OR
