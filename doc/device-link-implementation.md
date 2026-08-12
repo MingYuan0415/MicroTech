@@ -84,11 +84,13 @@ sync 和 reset resync 前恢复 IDF writer。cold boot callback 为 NULL 时只 
 host run fail closed。
 
 ESP-IDF v6.0.2 的 NVS loader 会记录却吞掉 store restore 错误。非 journaled revoke 的每次
-sync 都在同一 storage lock 下、destructive reconciliation 前，对当前构建可加载的 OUR_SEC、
-PEER_SEC、CCCD、CSFC、LOCAL_IRK 和 RPA_REC 六族比较 durable key presence count 与 public
-RAM-store count。NVS 访问、RAM count 或计数不一致都会粘滞 storage error，不发布 SYNC，
-也不开放 SMP/ADV；该审计不声称验证 blob 内容。只有完整 host reload 从 durable NVS 重建
-状态后才允许 reconciliation 重试。clean deinit 先取得 shutdown pause，以 host
+sync 都在同一 storage lock 下、destructive reconciliation 前审计当前构建可加载的六个
+store family：OUR_SEC、PEER_SEC、CCCD、CSFC 和 LOCAL_IRK 比较 durable key presence count
+与 public RAM-store count；RPA_REC 因固定 IDF 的 PEER_ADDR iterator 不支持 wildcard，改为
+逐个读取 `rpa_rec_N` 并与 RAM 中完整 `{peer_rpa_addr, peer_addr}` 精确匹配。NVS 访问、RAM
+count、blob 尺寸/identity 或匹配不一致都会粘滞 storage error，不发布 SYNC，也不开放
+SMP/ADV。只有完整 host reload 从 durable NVS 重建状态后才允许 reconciliation 重试。clean
+deinit 先取得 shutdown pause，以 host
 barrier 关闭 SMP gate，并将 revoke、cleanup、terminal fence 和 ACL terminate 收敛到两次
 host barrier 之间的 double-empty fixed point。
 
@@ -213,7 +215,9 @@ Settings 的“恢复出厂设置”进入独立确认页；第二次明确点�
 1. 完成 NVS/reset preflight；损坏或不可读 marker 均 fail closed；
 2. 在 Connectivity Manager init 前幂等擦除其私有 Wi-Fi profile；
 3. 以 `FACTORY_RESET_GATED` 初始化 Device Link，清授权/verifier、revoke marker、完整
-   `nimble_bond` peer-store namespace 与 RAM mirror，以及易失 transfer/session 状态；
+   `nimble_bond` peer-store namespace 与 RAM mirror；RPA_REC 在首次 namespace erase 前捕获
+   exact key，并在 controller/RAM cleanup 中精确删除和 readback，随后再次擦除 namespace；
+   同时清理易失 transfer/session 状态；
 4. 在全局 marker 仍 durable 时暂停 ADV，并预取得 persistent slow non-bindable lease；
 5. 所有 reset domain 和广告前置条件确认成功后清全局 marker；
 6. 释放 startup gate，仅执行 visibility commit/unpause，然后才初始化平台与网络连接。
