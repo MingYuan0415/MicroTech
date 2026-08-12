@@ -3,6 +3,7 @@
 #include "app_manager.h"
 #include "app_manager_config.h"
 #include "app_runtime_pm.h"
+#include "chore_service.h"
 #include "connectivity_manager.h"
 #include "display_benchmark.h"
 #include "audio_service.h"
@@ -43,6 +44,7 @@ typedef enum
     TEST_EVENT_BSP_INIT,
     TEST_EVENT_TIME_REGISTER_RTC,
     TEST_EVENT_TIME_INIT,
+    TEST_EVENT_CHORE_INIT,
     TEST_EVENT_PM_BUILD_CONFIG,
     TEST_EVENT_SYSTEM_PM_INIT,
     TEST_EVENT_APP_MANAGER_INIT,
@@ -83,6 +85,7 @@ typedef enum
     TEST_EVENT_APP_MANAGER_DEINIT,
     TEST_EVENT_UNREGISTER_UI_DISPATCH,
     TEST_EVENT_SYSTEM_PM_DEINIT,
+    TEST_EVENT_CHORE_DEINIT,
     TEST_EVENT_TIME_DEINIT,
     TEST_EVENT_BSP_DEINIT,
     TEST_EVENT_FS_DEINIT,
@@ -606,6 +609,20 @@ esp_err_t time_service_set_network_ready(bool ready)
     return _test_result(TEST_EVENT_TIME_NETWORK_READY);
 }
 
+esp_err_t chore_service_init(const chore_service_config_t *config)
+{
+    assert(config != NULL);
+    assert(config->task_priority == 4U);
+    assert(config->warning_duration_ms == 500U);
+    return _test_result(TEST_EVENT_CHORE_INIT);
+}
+
+esp_err_t chore_service_deinit(uint32_t timeout_ms)
+{
+    assert(timeout_ms == CHORE_SERVICE_WAIT_FOREVER);
+    return _test_result(TEST_EVENT_CHORE_DEINIT);
+}
+
 esp_err_t weather_service_init(const weather_service_config_t *config)
 {
     assert(config != NULL);
@@ -1088,6 +1105,7 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_BSP_INIT,
         TEST_EVENT_TIME_REGISTER_RTC,
         TEST_EVENT_TIME_INIT,
+        TEST_EVENT_CHORE_INIT,
         TEST_EVENT_PM_BUILD_CONFIG,
         TEST_EVENT_SYSTEM_PM_INIT,
         TEST_EVENT_APP_MANAGER_INIT,
@@ -1129,6 +1147,7 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_DEINIT,
+        TEST_EVENT_CHORE_DEINIT,
         TEST_EVENT_TIME_DEINIT,
         TEST_EVENT_BSP_DEINIT,
         TEST_EVENT_FS_DEINIT,
@@ -1205,6 +1224,7 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_BSP_INIT,
         TEST_EVENT_TIME_REGISTER_RTC,
         TEST_EVENT_TIME_INIT,
+        TEST_EVENT_CHORE_INIT,
         TEST_EVENT_PM_BUILD_CONFIG,
         TEST_EVENT_SYSTEM_PM_INIT,
         TEST_EVENT_APP_MANAGER_INIT,
@@ -1358,6 +1378,7 @@ static void _test_every_cleanup_failure_is_retryable(void)
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_DEINIT,
+        TEST_EVENT_CHORE_DEINIT,
         TEST_EVENT_TIME_DEINIT,
         TEST_EVENT_BSP_DEINIT,
         TEST_EVENT_FS_DEINIT,

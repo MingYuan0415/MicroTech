@@ -48,6 +48,8 @@ typedef enum
     TEST_CALL_TIME_RESUME,
     TEST_CALL_WEATHER_SUSPEND,
     TEST_CALL_WEATHER_RESUME,
+    TEST_CALL_CHORE_SUSPEND,
+    TEST_CALL_CHORE_RESUME,
     TEST_CALL_POWER_SUSPEND,
     TEST_CALL_POWER_RESUME,
     TEST_CALL_INPUT_PREPARE,
@@ -473,6 +475,18 @@ esp_err_t weather_service_resume(uint32_t timeout_ms)
     return _test_scripted_call(TEST_CALL_WEATHER_RESUME);
 }
 
+esp_err_t chore_service_suspend(uint32_t timeout_ms)
+{
+    assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
+    return _test_scripted_call(TEST_CALL_CHORE_SUSPEND);
+}
+
+esp_err_t chore_service_resume(uint32_t timeout_ms)
+{
+    assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
+    return _test_scripted_call(TEST_CALL_CHORE_RESUME);
+}
+
 esp_err_t power_service_suspend(uint32_t timeout_ms)
 {
     assert(timeout_ms == TEST_SLEEP_TIMEOUT_MS);
@@ -694,6 +708,7 @@ static void _test_sleep_order(void)
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t prepare[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_AUDIO_SUSPEND,
         TEST_CALL_IMU_SUSPEND,
@@ -714,6 +729,7 @@ static void _test_sleep_order(void)
         TEST_CALL_IMU_RESUME,
         TEST_CALL_AUDIO_RESUME,
         TEST_CALL_WIFI_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(complete, TEST_ARRAY_SIZE(complete));
     _test_clear_trace();
@@ -726,6 +742,7 @@ static void _test_sleep_order(void)
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t offline_prepare[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_POWER_SUSPEND,
         TEST_CALL_INPUT_PREPARE,
         TEST_CALL_PREPARE_GUARD,
@@ -737,6 +754,7 @@ static void _test_sleep_order(void)
     {
         TEST_CALL_INPUT_COMPLETE,
         TEST_CALL_POWER_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(offline_complete, TEST_ARRAY_SIZE(offline_complete));
 
@@ -747,6 +765,7 @@ static void _test_sleep_order(void)
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t weather_prepare[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WEATHER_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_POWER_SUSPEND,
@@ -762,6 +781,7 @@ static void _test_sleep_order(void)
         TEST_CALL_POWER_RESUME,
         TEST_CALL_WIFI_RESUME,
         TEST_CALL_WEATHER_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(weather_complete, TEST_ARRAY_SIZE(weather_complete));
 }
@@ -775,6 +795,7 @@ static void _test_ready_audio_is_not_resumed(void)
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t prepare[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_AUDIO_SUSPEND,
         TEST_CALL_IMU_SUSPEND,
@@ -794,6 +815,7 @@ static void _test_ready_audio_is_not_resumed(void)
         TEST_CALL_TIME_RESUME,
         TEST_CALL_IMU_RESUME,
         TEST_CALL_WIFI_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(complete, TEST_ARRAY_SIZE(complete));
     assert(s_test.audio_state == AUDIO_SERVICE_STATE_READY);
@@ -808,6 +830,7 @@ static void _test_error_audio_must_be_stopped(void)
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t prepare[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_AUDIO_SUSPEND,
         TEST_CALL_IMU_SUSPEND,
@@ -827,6 +850,7 @@ static void _test_error_audio_must_be_stopped(void)
         TEST_CALL_TIME_RESUME,
         TEST_CALL_IMU_RESUME,
         TEST_CALL_WIFI_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(complete, TEST_ARRAY_SIZE(complete));
     assert(s_test.audio_state == AUDIO_SERVICE_STATE_READY);
@@ -839,9 +863,11 @@ static void _test_error_audio_must_be_stopped(void)
     assert(_test_prepare(&config) == ESP_ERR_TIMEOUT);
     const test_call_t failed[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_AUDIO_SUSPEND,
         TEST_CALL_WIFI_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(failed, TEST_ARRAY_SIZE(failed));
     assert(s_test.audio_state == AUDIO_SERVICE_STATE_ERROR);
@@ -866,7 +892,7 @@ static void _test_sleep_prepare_failures(void)
     {
         test_call_t failure_call;
         esp_err_t expected_result;
-        test_call_t expected[13];
+        test_call_t expected[16];
         size_t expected_count;
         bool reject_guard;
     } cases[] =
@@ -874,78 +900,88 @@ static void _test_sleep_prepare_failures(void)
         {
             TEST_CALL_WIFI_SUSPEND,
             ESP_ERR_TIMEOUT,
-            {TEST_CALL_WIFI_SUSPEND, TEST_CALL_WIFI_RESUME},
-            2U,
+            {
+                TEST_CALL_CHORE_SUSPEND, TEST_CALL_WIFI_SUSPEND,
+                TEST_CALL_WIFI_RESUME, TEST_CALL_CHORE_RESUME
+            },
+            4U,
             false,
         },
         {
             TEST_CALL_AUDIO_SUSPEND,
             ESP_ERR_TIMEOUT,
             {
+                TEST_CALL_CHORE_SUSPEND,
                 TEST_CALL_WIFI_SUSPEND, TEST_CALL_AUDIO_SUSPEND,
                 TEST_CALL_AUDIO_RESUME,
-                TEST_CALL_WIFI_RESUME
+                TEST_CALL_WIFI_RESUME, TEST_CALL_CHORE_RESUME
             },
-            4U,
+            6U,
             false,
         },
         {
             TEST_CALL_IMU_SUSPEND,
             ESP_ERR_TIMEOUT,
             {
+                TEST_CALL_CHORE_SUSPEND,
                 TEST_CALL_WIFI_SUSPEND, TEST_CALL_AUDIO_SUSPEND,
                 TEST_CALL_IMU_SUSPEND, TEST_CALL_IMU_RESUME,
                 TEST_CALL_AUDIO_RESUME,
-                TEST_CALL_WIFI_RESUME
+                TEST_CALL_WIFI_RESUME, TEST_CALL_CHORE_RESUME
             },
-            6U,
+            8U,
             false,
         },
         {
             TEST_CALL_TIME_SUSPEND,
             ESP_ERR_TIMEOUT,
             {
+                TEST_CALL_CHORE_SUSPEND,
                 TEST_CALL_WIFI_SUSPEND, TEST_CALL_AUDIO_SUSPEND,
                 TEST_CALL_IMU_SUSPEND, TEST_CALL_TIME_SUSPEND,
                 TEST_CALL_TIME_RESUME, TEST_CALL_IMU_RESUME,
-                TEST_CALL_AUDIO_RESUME, TEST_CALL_WIFI_RESUME
+                TEST_CALL_AUDIO_RESUME, TEST_CALL_WIFI_RESUME,
+                TEST_CALL_CHORE_RESUME
             },
-            8U,
+            10U,
             false,
         },
         {
             TEST_CALL_POWER_SUSPEND,
             ESP_ERR_TIMEOUT,
             {
+                TEST_CALL_CHORE_SUSPEND,
                 TEST_CALL_WIFI_SUSPEND, TEST_CALL_AUDIO_SUSPEND,
                 TEST_CALL_IMU_SUSPEND,
                 TEST_CALL_TIME_SUSPEND, TEST_CALL_POWER_SUSPEND,
                 TEST_CALL_POWER_RESUME, TEST_CALL_TIME_RESUME,
                 TEST_CALL_IMU_RESUME, TEST_CALL_AUDIO_RESUME,
-                TEST_CALL_WIFI_RESUME
+                TEST_CALL_WIFI_RESUME, TEST_CALL_CHORE_RESUME
             },
-            10U,
+            12U,
             false,
         },
         {
             TEST_CALL_INPUT_PREPARE,
             ESP_ERR_TIMEOUT,
             {
+                TEST_CALL_CHORE_SUSPEND,
                 TEST_CALL_WIFI_SUSPEND, TEST_CALL_AUDIO_SUSPEND,
                 TEST_CALL_IMU_SUSPEND,
                 TEST_CALL_TIME_SUSPEND, TEST_CALL_POWER_SUSPEND,
                 TEST_CALL_INPUT_PREPARE, TEST_CALL_INPUT_COMPLETE,
                 TEST_CALL_POWER_RESUME, TEST_CALL_TIME_RESUME,
                 TEST_CALL_IMU_RESUME, TEST_CALL_AUDIO_RESUME,
-                TEST_CALL_WIFI_RESUME
+                TEST_CALL_WIFI_RESUME, TEST_CALL_CHORE_RESUME
             },
-            12U,
+            14U,
             false,
         },
         {
             TEST_CALL_PREPARE_GUARD,
             ESP_ERR_INVALID_STATE,
             {
+                TEST_CALL_CHORE_SUSPEND,
                 TEST_CALL_WIFI_SUSPEND, TEST_CALL_AUDIO_SUSPEND,
                 TEST_CALL_IMU_SUSPEND,
                 TEST_CALL_TIME_SUSPEND, TEST_CALL_POWER_SUSPEND,
@@ -953,9 +989,10 @@ static void _test_sleep_prepare_failures(void)
                 TEST_CALL_PREPARE_GUARD, TEST_CALL_INPUT_COMPLETE,
                 TEST_CALL_POWER_RESUME, TEST_CALL_TIME_RESUME,
                 TEST_CALL_IMU_RESUME,
-                TEST_CALL_AUDIO_RESUME, TEST_CALL_WIFI_RESUME
+                TEST_CALL_AUDIO_RESUME, TEST_CALL_WIFI_RESUME,
+                TEST_CALL_CHORE_RESUME
             },
-            13U,
+            15U,
             true,
         },
     };
@@ -992,6 +1029,7 @@ static void _test_sleep_recovery_matrix(void)
         TEST_CALL_IMU_RESUME,
         TEST_CALL_AUDIO_RESUME,
         TEST_CALL_WIFI_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     static const esp_err_t errors[] =
     {
@@ -1001,6 +1039,7 @@ static void _test_sleep_recovery_matrix(void)
         ESP_ERR_NO_MEM,
         ESP_ERR_INVALID_ARG,
         ESP_ERR_INVALID_SIZE,
+        ESP_ERR_INVALID_RESPONSE,
     };
 
     for (unsigned mask = 0U;
@@ -1068,6 +1107,7 @@ static void _test_pending_recovery_before_prepare(void)
     const test_call_t recovered[] =
     {
         TEST_CALL_INPUT_COMPLETE,
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_AUDIO_SUSPEND,
         TEST_CALL_IMU_SUSPEND,
@@ -1087,8 +1127,10 @@ static void _test_pending_recovery_before_prepare(void)
     assert(_test_prepare(&config) == ESP_FAIL);
     const test_call_t initial[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_WIFI_SUSPEND,
         TEST_CALL_WIFI_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(initial, TEST_ARRAY_SIZE(initial));
     _test_clear_trace();
@@ -1112,6 +1154,7 @@ static void _test_device_link_standby_participant(void)
     assert(_test_prepare(&config) == ESP_OK);
     const test_call_t prepare[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_DEVICE_LINK_SUSPEND,
         TEST_CALL_POWER_SUSPEND,
         TEST_CALL_INPUT_PREPARE,
@@ -1126,13 +1169,19 @@ static void _test_device_link_standby_participant(void)
         TEST_CALL_INPUT_COMPLETE,
         TEST_CALL_POWER_RESUME,
         TEST_CALL_DEVICE_LINK_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(complete, TEST_ARRAY_SIZE(complete));
 
     _test_fail_once(TEST_CALL_DEVICE_LINK_SUSPEND, ESP_ERR_INVALID_STATE);
     _test_clear_trace();
     assert(_test_prepare(&config) == ESP_ERR_INVALID_STATE);
-    const test_call_t blocked[] = {TEST_CALL_DEVICE_LINK_SUSPEND};
+    const test_call_t blocked[] =
+    {
+        TEST_CALL_CHORE_SUSPEND,
+        TEST_CALL_DEVICE_LINK_SUSPEND,
+        TEST_CALL_CHORE_RESUME,
+    };
     _test_expect_trace(blocked, TEST_ARRAY_SIZE(blocked));
 
     /* A timed-out suspend must fail standby preparation but keep the
@@ -1144,8 +1193,10 @@ static void _test_device_link_standby_participant(void)
     assert(_test_prepare(&config) == ESP_ERR_TIMEOUT);
     const test_call_t timed_out[] =
     {
+        TEST_CALL_CHORE_SUSPEND,
         TEST_CALL_DEVICE_LINK_SUSPEND,
         TEST_CALL_DEVICE_LINK_RESUME,
+        TEST_CALL_CHORE_RESUME,
     };
     _test_expect_trace(timed_out, TEST_ARRAY_SIZE(timed_out));
     _test_clear_trace();

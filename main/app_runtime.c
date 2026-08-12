@@ -15,6 +15,7 @@
 #include "app_manager_image_ids.h"
 #include "audio_service.h"
 #include "bsp_hal.h"
+#include "chore_service.h"
 #include "connectivity_manager.h"
 #include "event_bus.h"
 #include "fs_storage/fs_storage.h"
@@ -60,6 +61,7 @@ typedef struct app_runtime_ownership
     bool bsp_attempted;
     bool time_attempted;
     bool weather_attempted;
+    bool chore_attempted;
     bool system_pm_attempted;
     bool system_pm_cancelable;
     bool app_manager_attempted;
@@ -413,6 +415,7 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.fs_attempted ||
                  s_ownership.bsp_attempted || s_ownership.time_attempted ||
                  s_ownership.weather_attempted ||
+                 s_ownership.chore_attempted ||
                  s_ownership.system_pm_attempted ||
                  s_ownership.app_manager_attempted ||
                  s_ownership.ui_dispatch_registered ||
@@ -661,6 +664,15 @@ static esp_err_t _app_runtime_stop_platform_services(void)
         }
         s_ownership.system_pm_attempted = false;
     }
+    if (s_ownership.chore_attempted)
+    {
+        result = chore_service_deinit(CHORE_SERVICE_WAIT_FOREVER);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.chore_attempted = false;
+    }
     if (s_ownership.time_attempted)
     {
         result = time_service_deinit();
@@ -880,6 +892,13 @@ static esp_err_t _app_runtime_start_platform(
         return result;
     }
     app_runtime_pm_set_time_participant(true);
+
+    s_ownership.chore_attempted = true;
+    result = chore_service_init(&context->product->chore);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
 
     context->screen = bsp_hal_get_screen();
     context->display = bsp_display_get_port();

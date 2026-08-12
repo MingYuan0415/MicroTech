@@ -6,6 +6,7 @@
 
 #include "app_manager.h"
 #include "audio_service.h"
+#include "chore_service.h"
 #include "connectivity_manager.h"
 #include "imu_service.h"
 #include "power_service.h"
@@ -31,6 +32,7 @@ typedef struct app_runtime_sleep_context
     bool audio_participant;
     bool time_participant;
     bool weather_participant;
+    bool chore_resume_required;
     bool connectivity_resume_required;
     bool device_link_resume_required;
     bool imu_resume_required;
@@ -273,7 +275,8 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
 {
     app_runtime_sleep_context_t *sleep = context;
     esp_err_t result = ESP_OK;
-    if (sleep->device_link_resume_required ||
+    if (sleep->chore_resume_required ||
+            sleep->device_link_resume_required ||
             sleep->connectivity_resume_required || sleep->imu_resume_required ||
             sleep->audio_resume_required || sleep->time_resume_required ||
             sleep->weather_resume_required ||
@@ -284,6 +287,15 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         {
             return result;
         }
+    }
+
+    /* The chore worker is the first service to suspend and the last to
+     * resume so its queued jobs never run while other services sleep. */
+    sleep->chore_resume_required = true;
+    result = chore_service_suspend(timeout_ms);
+    if (result != ESP_OK)
+    {
+        goto rollback;
     }
 
     if (sleep->device_link_participant)
@@ -457,6 +469,15 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
         if (result == ESP_OK)
         {
             sleep->device_link_resume_required = false;
+        }
+    }
+    if (sleep->chore_resume_required)
+    {
+        const esp_err_t result = chore_service_resume(timeout_ms);
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->chore_resume_required = false;
         }
     }
     return first_error;

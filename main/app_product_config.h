@@ -5,6 +5,7 @@
 
 #include "app_manager_types.h"
 #include "audio_service.h"
+#include "chore_service.h"
 #include "connectivity_manager.h"
 #include "device_link_service.h"
 #include "imu_service.h"
@@ -26,6 +27,7 @@ typedef struct app_product_config
     power_service_config_t power;      /**< PMU sampling and scheduling policy. */
     time_service_config_t time;        /**< Timezone, SNTP, and worker policy. */
     weather_service_config_t weather;  /**< Weather acquisition and cache policy. */
+    chore_service_config_t chore;      /**< Background chore worker policy. */
     connectivity_manager_config_t connectivity; /**< Wi-Fi policy workers. */
     device_link_service_config_t device_link; /**< Device Link BLE policy. */
     uint32_t system_pm_task_priority;  /**< System standby worker priority. */

@@ -11,6 +11,7 @@
 #define APP_PRODUCT_WIFI_TASK_PRIORITY        4U
 #define APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY 4U
 #define APP_PRODUCT_WEATHER_TASK_PRIORITY      4U
+#define APP_PRODUCT_CHORE_TASK_PRIORITY        4U
 
 /* Recent-tasks keeps at most one pinned home task plus three business tasks
  * so the fixed three-slot PSRAM preview cache bounds retained thumbnails. */
@@ -39,6 +40,8 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(
                "invalid product device-link task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WEATHER_TASK_PRIORITY),
                "invalid product weather task priority");
+_Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_CHORE_TASK_PRIORITY),
+               "invalid product chore task priority");
 
 static const app_product_config_t s_product_config =
 {
@@ -83,6 +86,10 @@ static const app_product_config_t s_product_config =
         .daily_refresh_seconds = 4U * 60U * 60U,
         .manual_refresh_min_seconds = 60U,
         .allow_private_http = false,
+    },
+    .chore = {
+        .task_priority = APP_PRODUCT_CHORE_TASK_PRIORITY,
+        .warning_duration_ms = 500U,
     },
     .connectivity = {
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,

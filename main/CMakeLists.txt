@@ -7,6 +7,7 @@ idf_component_register(
     PRIV_REQUIRES
         apps
         bsp
+        chore_service
         mt_log
         fatfs
         littlefs
