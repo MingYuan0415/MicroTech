@@ -4,7 +4,7 @@
 
 Device Link v1 的权威语义来自 `contracts/provisioning` 中的 GATT、framing、
 lifecycle、security、session transport 和 discovery 文档，以及对应 profile、protobuf
-和 semantic fixtures。当前修订钉住 `contracts/provisioning@02827e7`，不改变 v1
+和 semantic fixtures。当前修订钉住 `contracts/provisioning@9ccd554`，不改变 v1
 UUID、广告 service data 布局或 protobuf wire schema。
 
 固件实现分为四个 owner：
@@ -104,6 +104,12 @@ Link worker 独占。只有授权后的 transport submit 成功才更新投递 s
 标记 dirty 并通过 task notification 要求 fresh `PublicLinkState`。同步或异步 notification
 失败只保留 dirty obligation，在 100 ms `retry_not_before` 到达后由同一 worker 重试；无当前
 授权、订阅或 ACL 时不轮询，等待对应状态事件重新唤醒。
+
+`GetLinkSnapshot` 的 `event_sequence` 是当前 boot 状态的原子 baseline。新 `boot_id` 建立时
+固定为 `1`，第一个增量事件使用 `2`；同一 boot 内的 NimBLE/GATT runtime restart、连接终态
+和 Security 2 teardown 都保留当前序号，只有新 boot 才重置。`0` 仅作为内部未初始化/耗尽
+哨兵，不得进入 wire；共享 snapshot encoder 会拒绝零值，service 将内部不变量失败映射为
+`LINK_ERROR_INTERNAL`，不会返回成功但不合规的快照。
 
 ### 3.1 TX 调度
 
@@ -246,7 +252,7 @@ AStyle、`git diff --check`、`idf.py reconfigure && idf.py build` 和 size 检�
 1. GATT profile 中的 `[write]` 要求合规客户端使用 ATT Write Request。ESP-IDF v6.0.2
    callback 不暴露 Write Command 或 Prepare/Execute Write 的原始 opcode，因此服务端不声明
    opcode 级拒绝；其他 admission、长度和 framing 校验仍执行。
-2. 契约修订已冻结为 `02827e7`，`device_link/proto.lock` 钉住该 clean commit；
+2. 契约修订已冻结为 `9ccd554`，`device_link/proto.lock` 钉住该 clean commit；
    `device_link_generated_contract` 会重新生成并核对全部 protobuf-c 文件。wire schema、生成
    C 字节和非注释 header 声明均未变化。
 3. ESP32-S3/Android 真机测试、reset/cold-cycle、NVS 断电故障注入、MTU
