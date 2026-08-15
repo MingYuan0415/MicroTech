@@ -105,7 +105,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.MULTILINE,
             ))
-        self.assertEqual(len(symbols), 56, sorted(symbols))
+        self.assertEqual(len(symbols), 54, sorted(symbols))
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
@@ -161,10 +161,6 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         self.assertEqual(
             {key: assignments.get(key) for key in expected}, expected
         )
-
-        provisioning_kconfig = (
-            self.root / "layers/middleware/components/provisioning_service/Kconfig"
-        ).read_text(encoding="utf-8")
         self.assertRegex(
             (
                 self.root /
@@ -172,16 +168,6 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             ).read_text(encoding="utf-8"),
             r"config CONNECTIVITY_MANAGER_TASK_STACK\s+"
             r"int[^\n]*\s+default 6144\b\s+range 4096 8192\b",
-        )
-        self.assertRegex(
-            provisioning_kconfig,
-            r"config PROVISIONING_SERVICE_TASK_STACK\s+"
-            r"int[^\n]*\s+default 6144\b",
-        )
-        self.assertRegex(
-            provisioning_kconfig,
-            r"config PROVISIONING_SERVICE_QUEUE_DEPTH\s+"
-            r"int[^\n]*\s+default 8\b",
         )
 
 

@@ -837,6 +837,59 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(*saved_size > 0U);
     CHECK(_run_on_ui(_ui_barrier, NULL));
 
+    const connectivity_manager_credentials_t sync_credentials =
+    {
+        .ssid = "Current AP",
+        .ssid_length = sizeof("Current AP") - 1U,
+        .password = "password1",
+        .password_length = sizeof("password1") - 1U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    const unsigned sync_connect_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    connectivity_manager_operation_id_t sync_operation = 0U;
+    CHECK(connectivity_manager_request_sync_profile(
+              &sync_credentials, UINT64_C(0x1234), true,
+              &sync_operation) == ESP_OK);
+    CHECK(sync_operation != 0U);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          sync_connect_before + 1U);
+    CHECK(_complete_connection(UINT32_C(0x0120a8c0)));
+    CHECK(_wait_terminal(sync_operation, ESP_OK, false));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, &status));
+    CHECK(status.profile_revision == 2U);
+    CHECK(status.applied_client_sync_id == UINT64_C(0x1234));
+    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
+
+    const unsigned idempotent_connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    connectivity_manager_operation_id_t repeat_sync_operation = 0U;
+    CHECK(connectivity_manager_request_sync_profile(
+              &sync_credentials, UINT64_C(0x1234), true,
+              &repeat_sync_operation) == ESP_OK);
+    CHECK(_wait_terminal(repeat_sync_operation, ESP_OK, false));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          idempotent_connects);
+
+    const connectivity_manager_credentials_t conflicting_sync =
+    {
+        .ssid = "Current AP",
+        .ssid_length = sizeof("Current AP") - 1U,
+        .password = "different1",
+        .password_length = sizeof("different1") - 1U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t conflict_operation = 0U;
+    CHECK(connectivity_manager_request_sync_profile(
+              &conflicting_sync, UINT64_C(0x1234), true,
+              &conflict_operation) == ESP_OK);
+    CHECK(_wait_terminal(conflict_operation, ESP_ERR_INVALID_STATE, false));
+    CHECK(_terminal_observer_count(
+              conflict_operation, ESP_ERR_INVALID_STATE, false) == 1U);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          idempotent_connects);
+
     CHECK(_run_on_ui(_ui_disconnect, &adapter));
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
     CHECK(status.manual_hold);
@@ -1306,9 +1359,10 @@ static bool _test_invalid_profile(const uint8_t saved_record[],
         PROFILE_SSID_OFFSET = 12U,
         PROFILE_PASSWORD_OFFSET = 44U,
         PROFILE_TRAILING_RESERVED_OFFSET = 108U,
+        PROFILE_REVISION_OFFSET = 112U,
     };
     uint8_t corrupted[256];
-    CHECK(saved_size == 112U);
+    CHECK(saved_size == 128U);
     CHECK(saved_size <= sizeof(corrupted));
 
     memcpy(corrupted, saved_record, saved_size);
@@ -1330,6 +1384,12 @@ static bool _test_invalid_profile(const uint8_t saved_record[],
     memcpy(corrupted, saved_record, saved_size);
     corrupted[PROFILE_TRAILING_RESERVED_OFFSET] = 1U;
     CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    memset(corrupted + PROFILE_REVISION_OFFSET, 0,
+           sizeof(uint64_t));
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
 
     host_nv_storage_seed(saved_record, saved_size - 1U);
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);

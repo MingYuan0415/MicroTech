@@ -98,7 +98,7 @@ static const app_product_config_t s_product_config =
     .device_link = {
         .runtime_port = NULL,
         .task_priority = APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY,
-        .window_ms = 10U * 60U * 1000U,
+        .window_ms = 120U * 1000U,
     },
     .system_pm_task_priority = APP_PRODUCT_SYSTEM_PM_TASK_PRIORITY,
     .app_control_task_priority = APP_PRODUCT_APP_CONTROL_TASK_PRIORITY,

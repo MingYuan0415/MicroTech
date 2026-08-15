@@ -1024,7 +1024,7 @@ esp_err_t device_link_service_init(
     assert(config != NULL);
     assert(config->runtime_port == &s_test_runtime_port);
     assert(config->task_priority == 4U);
-    assert(config->window_ms == 600000U);
+    assert(config->window_ms == 120000U);
     assert(config->startup_mode ==
            (s_test.factory_reset_marker_durable ?
             DEVICE_LINK_SERVICE_STARTUP_FACTORY_RESET_GATED :

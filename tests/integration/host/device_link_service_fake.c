@@ -175,10 +175,10 @@ esp_err_t device_link_service_copy_qr(char *output, size_t capacity,
                                       size_t *out_length)
 {
     static const char qr[] =
-        "{\"ver\":\"link-v1\",\"name\":\"MT\","
-        "\"service\":\"3e203192-b4bb-4e59-a28a-3d1157854ea3\","
-        "\"discriminator\":\"782r\",\"pop\":\"AAECAwQFBgcICQoLDA0ODw\","
-        "\"expires_in_ms\":600000}";
+        "{\"ver\":\"link-v2\",\"name\":\"MT\","
+        "\"service\":\"2c77e48c-c510-4230-8d05-63d036dc038b\","
+        "\"discriminator\":\"qrvM\",\"pop\":\"AAECAwQFBgcICQoLDA0ODw\","
+        "\"expires_in_ms\":120000}";
     if (output == NULL || out_length == NULL)
     {
         return ESP_ERR_INVALID_ARG;
