@@ -21,7 +21,10 @@ stack or downgrade an unknown request.
   request and response schemas, permission, limits and an owner handler.
 
 Core uses domain ID `0`. Wi-Fi, Cloud and Location reserve IDs `1`, `2` and
-`3`, but their adapters are not registered and their capabilities are not
+`3`. The Wi-Fi domain is registered at startup only when the explicit
+capability gate (DEVICE_LINK_SERVICE_WIFI_ADVERTISED) is enabled AND the
+connectivity adapter is ready; Cloud and Location are not implemented and their
+capabilities are not
 published until their persistence and recovery contracts are complete. The
 manifest therefore advertises Core only. There is no runtime registration,
 reflection, `google.protobuf.Any`, application protobuf schema or generated C.
