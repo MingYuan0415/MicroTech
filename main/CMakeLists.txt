@@ -39,7 +39,7 @@ idf_component_register(
 # against (see contracts/provisioning and tooling.contractcheck.pin). The
 # configuration governance test verifies this value against contract.lock.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    EXPECTED_CONTRACT_COMMIT="3d6ff36fa80e68c6bc12ad02f7afdc9e24687cd0")
+    EXPECTED_CONTRACT_COMMIT="fc651f9ebf313e7a1d7602012eec99c0b27af3e4")
 
 include("${CMAKE_CURRENT_LIST_DIR}/display_benchmark_profile.cmake")
 if(CONFIG_MAIN_DISPLAY_BENCHMARK)
