@@ -42,6 +42,8 @@ static wifi_ap_record_t s_scan_records[HOST_SCAN_RECORD_CAPACITY];
 static size_t s_scan_record_count;
 static size_t s_scan_record_index;
 static unsigned s_scan_clear_count;
+static bool s_last_config_valid;
+static wifi_config_t s_last_config;
 
 esp_event_base_t WIFI_EVENT = "WIFI_EVENT";
 esp_event_base_t IP_EVENT = "IP_EVENT";
@@ -66,6 +68,8 @@ void host_wifi_idf_reset(void)
     s_scan_record_count = 0U;
     s_scan_record_index = 0U;
     s_scan_clear_count = 0U;
+    s_last_config_valid = false;
+    memset(&s_last_config, 0, sizeof(s_last_config));
 }
 
 bool host_wifi_idf_init_nvs_enabled(void)
@@ -134,6 +138,16 @@ void host_wifi_idf_set_scan_records(const wifi_ap_record_t *records,
 unsigned host_wifi_idf_scan_clear_count(void)
 {
     return s_scan_clear_count;
+}
+
+bool host_wifi_idf_last_config(wifi_config_t *config)
+{
+    if (config == NULL || !s_last_config_valid)
+    {
+        return false;
+    }
+    *config = s_last_config;
+    return true;
 }
 
 esp_err_t esp_event_handler_instance_register(
@@ -353,8 +367,13 @@ esp_err_t esp_wifi_scan_get_ap_records(uint16_t *number,
 esp_err_t esp_wifi_set_config(wifi_interface_t interface,
                               const wifi_config_t *config)
 {
-    return s_wifi_initialized && interface == WIFI_IF_STA && config != NULL ?
-               ESP_OK : ESP_ERR_INVALID_STATE;
+    if (!s_wifi_initialized || interface != WIFI_IF_STA || config == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_last_config = *config;
+    s_last_config_valid = true;
+    return ESP_OK;
 }
 
 esp_err_t esp_wifi_connect(void)

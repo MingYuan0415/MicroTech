@@ -25,6 +25,7 @@ add_executable(test_connectivity_pipeline
     host/wifi_service_port_fake.c
     "${CONNECTIVITY_MANAGER}/src/connectivity_manager.c"
     "${WIFI_SERVICE}/src/wifi_service.c"
+    "${WIFI_SERVICE}/src/wifi_service_credentials.c"
     "${WIFI_SERVICE}/src/wifi_service_worker.c"
     "${WIFI_SERVICE}/src/wifi_service_worker_ops.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
@@ -72,6 +73,7 @@ add_executable(test_wifi_service_idf_port
     test_wifi_service_idf_port.c
     host/wifi_service_idf_fake.c
     "${WIFI_SERVICE}/src/wifi_service_idf_port.c"
+    "${WIFI_SERVICE}/src/wifi_service_credentials.c"
 )
 target_compile_features(test_wifi_service_idf_port PRIVATE c_std_11)
 target_include_directories(test_wifi_service_idf_port PRIVATE

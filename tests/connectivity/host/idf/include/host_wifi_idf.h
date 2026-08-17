@@ -28,5 +28,7 @@ void host_wifi_idf_set_scan_records(const wifi_ap_record_t *records,
                                     size_t count);
 /** @brief Return the number of AP-list clear calls. */
 unsigned host_wifi_idf_scan_clear_count(void);
+/** @brief Copy the most recent station configuration. */
+bool host_wifi_idf_last_config(wifi_config_t *config);
 
 #endif /* __CONNECTIVITY_HOST_WIFI_IDF_H__ */

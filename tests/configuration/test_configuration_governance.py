@@ -170,6 +170,75 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             r"int[^\n]*\s+default 6144\b\s+range 4096 8192\b",
         )
 
+    def test_device_link_wifi_gate_matches_contract_registry(self) -> None:
+        registry_text = (
+            self.root / "contracts/provisioning/registry/domains.yaml"
+        ).read_text(encoding="utf-8")
+        wifi_entry = re.search(
+            r"(?ms)^\s*- id:\s*1\s*$.*?(?=^\s*- id:|^tombstones:)",
+            registry_text,
+        )
+        self.assertIsNotNone(wifi_entry)
+        advertised = re.search(
+            r"(?m)^\s*advertised:\s*(true|false)\s*$",
+            wifi_entry.group(0),
+        )
+        self.assertIsNotNone(advertised)
+        registry_advertised = advertised.group(1) == "true"
+
+        kconfig_text = (
+            self.root /
+            "layers/middleware/components/device_link_service/Kconfig"
+        ).read_text(encoding="utf-8")
+        gate = re.search(
+            r"(?ms)^config DEVICE_LINK_SERVICE_WIFI_ADVERTISED\b.*?(?=^config |^endmenu)",
+            kconfig_text,
+        )
+        self.assertIsNotNone(gate)
+        default = re.search(r"(?m)^\s*default\s+(y|n)\s*$",
+                            gate.group(0))
+        self.assertIsNotNone(default)
+        self.assertEqual(registry_advertised, default.group(1) == "y")
+
+        production_defaults = (self.root / "sdkconfig.defaults").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotRegex(
+            production_defaults,
+            r"(?m)^CONFIG_DEVICE_LINK_SERVICE_WIFI_ADVERTISED=y$",
+        )
+        overlay = (
+            self.root / "sdkconfig.defaults.device-link-wifi"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(
+            overlay,
+            r"(?m)^CONFIG_DEVICE_LINK_SERVICE_WIFI_ADVERTISED=y$",
+        )
+
+    def test_device_link_contract_lock_name_and_commit_marker(self) -> None:
+        component = self.root / "layers/middleware/components/device_link"
+        lock = component / "device-link-contract.lock"
+        self.assertTrue(lock.is_file())
+        self.assertFalse((component / "contract.lock").exists())
+        lock_values = dict(
+            line.split("=", 1)
+            for line in lock.read_text(encoding="utf-8").splitlines()
+        )
+        cmake = (self.root / "main/CMakeLists.txt").read_text(
+            encoding="utf-8"
+        )
+        expected = re.search(
+            r'EXPECTED_CONTRACT_COMMIT="([0-9a-f]{40})"', cmake
+        )
+        self.assertIsNotNone(expected)
+        self.assertEqual(lock_values.get("contract_commit"),
+                         expected.group(1))
+        readme = (component / "README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "expectedContractCommit=" + expected.group(1),
+            readme.splitlines(),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

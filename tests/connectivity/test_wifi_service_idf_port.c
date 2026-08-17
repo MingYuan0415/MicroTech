@@ -58,6 +58,86 @@ static void _test_scan_normalization(void)
     assert(!wifi_service_port_scan_is_owned());
 }
 
+static void _test_credentials_policy_and_ascii_psk(void)
+{
+    char ssid32[WIFI_SERVICE_SSID_MAX_BYTES];
+    char ssid33[WIFI_SERVICE_SSID_MAX_BYTES + 1U];
+    char passphrase63[63];
+    char psk64[WIFI_SERVICE_PASSWORD_MAX_BYTES];
+    char invalid_psk64[WIFI_SERVICE_PASSWORD_MAX_BYTES];
+    char password65[WIFI_SERVICE_PASSWORD_MAX_BYTES + 1U];
+
+    memset(ssid32, 's', sizeof(ssid32));
+    memset(ssid33, 's', sizeof(ssid33));
+    memset(passphrase63, 'p', sizeof(passphrase63));
+    memset(psk64, 'a', sizeof(psk64));
+    memset(invalid_psk64, 'g', sizeof(invalid_psk64));
+    memset(password65, 'a', sizeof(password65));
+
+    wifi_service_credentials_t credentials =
+    {
+        .ssid = "s",
+        .ssid_length = 1U,
+        .password = NULL,
+        .password_length = 0U,
+        .security = WIFI_SERVICE_SECURITY_OPEN,
+    };
+
+    assert(wifi_service_credentials_valid(&credentials));
+    credentials.ssid = ssid32;
+    credentials.ssid_length = sizeof(ssid32);
+    assert(wifi_service_credentials_valid(&credentials));
+    credentials.ssid = ssid33;
+    credentials.ssid_length = sizeof(ssid33);
+    assert(!wifi_service_credentials_valid(&credentials));
+
+    static const char nul_ssid[] = {'s', '\0'};
+    credentials.ssid = nul_ssid;
+    credentials.ssid_length = sizeof(nul_ssid);
+    assert(!wifi_service_credentials_valid(&credentials));
+
+    credentials.ssid = "ssid";
+    credentials.ssid_length = 4U;
+    credentials.security = WIFI_SERVICE_SECURITY_PERSONAL;
+    credentials.password = "1234567";
+    credentials.password_length = 7U;
+    assert(!wifi_service_credentials_valid(&credentials));
+    credentials.password = "12345678";
+    credentials.password_length = 8U;
+    assert(wifi_service_credentials_valid(&credentials));
+    credentials.password = passphrase63;
+    credentials.password_length = sizeof(passphrase63);
+    assert(wifi_service_credentials_valid(&credentials));
+    credentials.password = psk64;
+    credentials.password_length = sizeof(psk64);
+    assert(wifi_service_credentials_valid(&credentials));
+    credentials.password = invalid_psk64;
+    assert(!wifi_service_credentials_valid(&credentials));
+    credentials.password = password65;
+    credentials.password_length = sizeof(password65);
+    assert(!wifi_service_credentials_valid(&credentials));
+
+    static const char nul_password[] =
+    {'1', '2', '3', '4', '\0', '6', '7', '8'};
+    credentials.password = nul_password;
+    credentials.password_length = sizeof(nul_password);
+    assert(!wifi_service_credentials_valid(&credentials));
+
+    wifi_service_port_credentials_t port_credentials;
+
+    memset(&port_credentials, 0, sizeof(port_credentials));
+    memcpy(port_credentials.ssid, "ssid", 4U);
+    port_credentials.ssid_length = 4U;
+    memcpy(port_credentials.password, psk64, sizeof(psk64));
+    port_credentials.password_length = sizeof(psk64);
+    port_credentials.security = WIFI_SERVICE_SECURITY_PERSONAL;
+    assert(wifi_service_port_set_credentials(&port_credentials) == ESP_OK);
+    wifi_config_t config;
+
+    assert(host_wifi_idf_last_config(&config));
+    assert(memcmp(config.sta.password, psk64, sizeof(psk64)) == 0);
+}
+
 int main(void)
 {
     host_wifi_idf_reset();
@@ -81,6 +161,7 @@ int main(void)
     assert(event.failure == WIFI_SERVICE_FAILURE_AUTHENTICATION);
 
     _test_scan_normalization();
+    _test_credentials_policy_and_ascii_psk();
 
     assert(wifi_service_port_deinit() == ESP_OK);
     assert(wifi_service_port_is_clean());
