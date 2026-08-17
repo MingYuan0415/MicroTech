@@ -40,7 +40,7 @@ idf_component_register(
 # configuration governance test verifies this value against
 # layers/middleware/components/device_link/device-link-contract.lock.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    EXPECTED_CONTRACT_COMMIT="fa8b314c47df84d2cbfa257813086004e3db0d58")
+    EXPECTED_CONTRACT_COMMIT="b909e1444ba7f50a0697de51fe47ac0a82766466")
 
 include("${CMAKE_CURRENT_LIST_DIR}/display_benchmark_profile.cmake")
 if(CONFIG_MAIN_DISPLAY_BENCHMARK)

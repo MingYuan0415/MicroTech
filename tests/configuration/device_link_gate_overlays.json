@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+      "overlay": "sdkconfig.defaults.device-link-wifi",
+      "domain": "wifi",
+      "kconfig": "CONFIG_DEVICE_LINK_SERVICE_WIFI_ADVERTISED",
+      "advertised": true,
+      "purpose": "gate-open hardware validation only"
+    }
+  ]
+}

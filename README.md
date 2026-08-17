@@ -98,6 +98,11 @@ ctest --test-dir /tmp/mt-main --output-on-failure
 
 宿主测试覆盖生命周期、并发和失败回滚，但不替代 ESP32-S3 上的驱动时序、射频、DMA、功耗及资源占用验证。
 
+Device Link 生产安全 release gate 由
+`sh tests/device_link_security_release.sh` 调用。当前固定的 ESP-IDF v6.0.2 未满足
+Security2 失败输出清零要求，因此该脚本应明确失败；普通宿主测试通过不代表 Core 安全已获
+生产放行。
+
 ## 显示压力基准
 
 App Manager 的显示诊断和自动压力基准默认关闭，仅在开发固件中启用：menuconfig

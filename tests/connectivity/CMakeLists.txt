@@ -16,14 +16,18 @@ set(APPS "${PROJECT_ROOT}/layers/apps")
 set(MIDDLEWARE "${PROJECT_ROOT}/layers/middleware/components")
 set(WIFI_SERVICE "${MIDDLEWARE}/wifi_service")
 set(CONNECTIVITY_MANAGER "${MIDDLEWARE}/connectivity_manager")
+set(IDF_BT "$ENV{IDF_PATH}/components/bt")
 
 add_executable(test_connectivity_pipeline
     test_connectivity_pipeline.c
     host/freertos_host.c
     host/host_mailbox_port.c
+    host/connectivity_manager_digest_fake.c
     host/nv_storage_fake.c
     host/wifi_service_port_fake.c
     "${CONNECTIVITY_MANAGER}/src/connectivity_manager.c"
+    "${IDF_BT}/common/tinycrypt/src/sha256.c"
+    "${IDF_BT}/common/tinycrypt/src/utils.c"
     "${WIFI_SERVICE}/src/wifi_service.c"
     "${WIFI_SERVICE}/src/wifi_service_credentials.c"
     "${WIFI_SERVICE}/src/wifi_service_worker.c"
@@ -50,6 +54,8 @@ target_compile_definitions(test_connectivity_pipeline PRIVATE
 target_include_directories(test_connectivity_pipeline PRIVATE
     host/include
     "${CONNECTIVITY_MANAGER}/include"
+    "${CONNECTIVITY_MANAGER}/src"
+    "${IDF_BT}/common/tinycrypt/include"
     "${WIFI_SERVICE}/include"
     "${WIFI_SERVICE}/src"
     "${MIDDLEWARE}/event_bus/include"

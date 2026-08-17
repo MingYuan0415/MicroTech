@@ -6,6 +6,7 @@
 #include "host_nv_storage.h"
 #include "host_wifi_port.h"
 #include "setup_wifi_adapter.h"
+#include "wifi_service.h"
 #include "wifi_service_port.h"
 
 #include <pthread.h>
@@ -612,6 +613,93 @@ static bool _request_personal_connect(
                &credentials, operation_id) == ESP_OK;
 }
 
+static bool _test_wifi_cancel_dispositions(void)
+{
+    const wifi_service_config_t config =
+    {
+        .task_priority = 4U,
+    };
+    wifi_service_session_id_t session_id = 0U;
+    wifi_service_operation_id_t disconnect_id = 0U;
+    wifi_service_operation_id_t scan_id = 0U;
+    wifi_service_cancel_disposition_t disposition =
+        WIFI_SERVICE_CANCEL_FAILURE;
+
+    host_wifi_port_reset();
+    disposition = WIFI_SERVICE_CANCEL_ACCEPTED;
+    CHECK(wifi_service_cancel(1U, 1U, &disposition) ==
+          ESP_ERR_INVALID_STATE);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_FAILURE);
+    disposition = WIFI_SERVICE_CANCEL_ACCEPTED;
+    CHECK(wifi_service_cancel(0U, 1U, &disposition) ==
+          ESP_ERR_INVALID_ARG);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_FAILURE);
+    CHECK(wifi_service_init(&config) == ESP_OK);
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_IDLE));
+    CHECK(wifi_service_session_open(&session_id) == ESP_OK);
+    CHECK(wifi_service_cancel(session_id, UINT64_MAX, &disposition) ==
+          ESP_OK);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_NOT_FOUND);
+
+    host_wifi_port_gate(HOST_WIFI_PORT_DISCONNECT, true);
+    CHECK(wifi_service_request_disconnect(session_id, &disconnect_id) ==
+          ESP_OK);
+    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_DISCONNECT,
+                                   TEST_TIMEOUT_MS));
+    CHECK(wifi_service_cancel(session_id, disconnect_id, &disposition) ==
+          ESP_OK);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_TERMINAL_ALREADY_CLAIMED);
+    host_wifi_port_release_gate(HOST_WIFI_PORT_DISCONNECT);
+
+    bool disconnect_complete = false;
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_status_snapshot_t snapshot;
+
+        if (wifi_service_get_status(&snapshot) == ESP_OK &&
+                snapshot.operation_id == disconnect_id &&
+                snapshot.state == WIFI_SERVICE_STATE_IDLE &&
+                snapshot.last_error == ESP_OK)
+        {
+            CHECK(!snapshot.operation_canceled);
+            disconnect_complete = true;
+            break;
+        }
+        _sleep_one_ms();
+    }
+    CHECK(disconnect_complete);
+    CHECK(wifi_service_cancel(session_id, disconnect_id, &disposition) ==
+          ESP_OK);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_NOT_FOUND);
+
+    CHECK(wifi_service_request_scan(session_id, &scan_id) == ESP_OK);
+    CHECK(wifi_service_cancel(session_id, scan_id, &disposition) == ESP_OK);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_ACCEPTED);
+    bool scan_canceled = false;
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_scan_snapshot_t snapshot;
+
+        if (wifi_service_get_scan_snapshot(&snapshot) == ESP_OK &&
+                snapshot.operation_id == scan_id &&
+                snapshot.state == WIFI_SERVICE_SCAN_CANCELED)
+        {
+            CHECK(snapshot.operation_canceled);
+            scan_canceled = true;
+            break;
+        }
+        _sleep_one_ms();
+    }
+    CHECK(scan_canceled);
+    CHECK(wifi_service_session_close(session_id) == ESP_OK);
+    CHECK(wifi_service_deinit(WIFI_SERVICE_WAIT_FOREVER) == ESP_OK);
+    disposition = WIFI_SERVICE_CANCEL_ACCEPTED;
+    CHECK(wifi_service_cancel(session_id, scan_id, &disposition) == ESP_OK);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_NOT_FOUND);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
 static bool _wait_driver_ssid(const char *ssid)
 {
     for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
@@ -1034,8 +1122,9 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
               &sync_operation) == ESP_OK);
     CHECK(sync_operation != 0U);
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
-    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
-          sync_connect_before + 1U);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    sync_connect_before + 1U,
+                                    TEST_TIMEOUT_MS));
     CHECK(_complete_connection(UINT32_C(0x0120a8c0)));
     CHECK(_wait_terminal(sync_operation, ESP_OK, false));
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, &status));
@@ -1052,6 +1141,41 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(_wait_terminal(repeat_sync_operation, ESP_OK, false));
     CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
           idempotent_connects);
+
+    connectivity_manager_operation_id_t window_auto_off = 0U;
+    CHECK(connectivity_manager_set_auto_connect(
+              false, &window_auto_off) == ESP_OK);
+    CHECK(_wait_terminal(window_auto_off, ESP_OK, false));
+    CHECK(_wait_auto_connect(false));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.profile_revision == 3U);
+    connectivity_manager_operation_id_t repeat_after_auto = 0U;
+    CHECK(connectivity_manager_request_sync_profile(
+              &sync_credentials, UINT64_C(0x1234), true,
+              &repeat_after_auto) == ESP_OK);
+    CHECK(_wait_terminal(repeat_after_auto, ESP_OK, false));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(!status.auto_connect);
+    CHECK(status.profile_revision == 3U);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
+          idempotent_connects);
+    connectivity_manager_operation_id_t window_auto_on = 0U;
+    CHECK(connectivity_manager_set_auto_connect(
+              true, &window_auto_on) == ESP_OK);
+    CHECK(_wait_terminal(window_auto_on, ESP_OK, false));
+    CHECK(_wait_auto_connect(true));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.profile_revision == 4U);
+    const unsigned policy_writes = host_nv_storage_set_count();
+    connectivity_manager_operation_id_t unchanged_auto = 0U;
+
+    CHECK(connectivity_manager_set_auto_connect(
+              true, &unchanged_auto) == ESP_OK);
+    CHECK(_wait_terminal(unchanged_auto, ESP_OK, false));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.profile_revision == 4U);
+    CHECK(host_nv_storage_set_count() == policy_writes);
+    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
 
     const connectivity_manager_credentials_t conflicting_sync =
     {
@@ -1155,6 +1279,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
     CHECK(_complete_connection(UINT32_C(0x0302a8c0)));
     CHECK(_run_on_ui(_ui_barrier, NULL));
+    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
 
     host_nv_storage_fail_next_set(ESP_FAIL);
     CHECK(_request_personal_connect("Candidate AP", "candidate1",
@@ -1207,9 +1332,9 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(connectivity_manager_request_forget(
               &failed_forget_operation_id) == ESP_OK);
     CHECK(_wait_operation_result(failed_forget_operation_id, ESP_FAIL));
-    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, &status));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
     CHECK(status.saved_profile);
-    CHECK(!status.manual_hold);
+    CHECK(status.manual_hold);
     CHECK(host_nv_storage_erase_count() == 0U);
 
     connectivity_manager_operation_id_t foreground_scan_operation_id = 0U;
@@ -1527,7 +1652,7 @@ static bool _test_invalid_profile_record(const uint8_t record[], size_t size)
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     connectivity_manager_status_snapshot_t status;
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
-                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               CONNECTIVITY_MANAGER_FAILURE_INTERNAL,
                                &status));
     CHECK(!status.saved_profile);
     CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connect_before);
@@ -1539,6 +1664,24 @@ static bool _test_invalid_profile_record(const uint8_t record[], size_t size)
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == size);
     CHECK(memcmp(retained, record, size) == 0);
+    return true;
+}
+
+static bool _test_profile_read_failure_classification(void)
+{
+    host_nv_storage_reset();
+    host_nv_storage_fail_next_get(ESP_FAIL);
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_status_snapshot_t status;
+
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               &status));
+    CHECK(status.last_error == ESP_FAIL);
+    CHECK(!status.saved_profile);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
     return true;
 }
 
@@ -1554,9 +1697,12 @@ static bool _test_invalid_profile(const uint8_t saved_record[],
         PROFILE_PASSWORD_OFFSET = 44U,
         PROFILE_TRAILING_RESERVED_OFFSET = 108U,
         PROFILE_REVISION_OFFSET = 112U,
+        PROFILE_SYNC_DIGEST_OFFSET = 128U,
+        PROFILE_SYNC_VALID_OFFSET = 160U,
+        PROFILE_SYNC_RESERVED_OFFSET = 161U,
     };
     uint8_t corrupted[256];
-    CHECK(saved_size == 128U);
+    CHECK(saved_size == 168U);
     CHECK(saved_size <= sizeof(corrupted));
 
     memcpy(corrupted, saved_record, saved_size);
@@ -1584,17 +1730,98 @@ static bool _test_invalid_profile(const uint8_t saved_record[],
            sizeof(uint64_t));
     CHECK(_test_invalid_profile_record(corrupted, saved_size));
 
+    memcpy(corrupted, saved_record, saved_size);
+    memset(corrupted + PROFILE_SYNC_DIGEST_OFFSET, 0, 32U);
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_SYNC_VALID_OFFSET] = 2U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_SYNC_RESERVED_OFFSET] = 1U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
 
     host_nv_storage_seed(saved_record, saved_size - 1U);
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
-                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               CONNECTIVITY_MANAGER_FAILURE_INTERNAL,
                                &status));
     CHECK(!status.saved_profile);
     size_t retained_size = 0U;
     CHECK(host_nv_storage_copy(NULL, 0U, &retained_size));
     CHECK(retained_size == saved_size - 1U);
     CHECK(host_nv_storage_erase_count() == 0U);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[saved_size] = 0U;
+    host_nv_storage_seed(corrupted, saved_size + 1U);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
+                               CONNECTIVITY_MANAGER_FAILURE_INTERNAL,
+                               &status));
+    CHECK(!status.saved_profile);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
+static bool _test_sync_window_restart(const uint8_t saved_record[],
+                                      size_t saved_size)
+{
+    enum
+    {
+        PROFILE_AUTO_CONNECT_OFFSET = 7U,
+        PROFILE_REVISION_OFFSET = 112U,
+    };
+    uint8_t profile[256];
+
+    CHECK(saved_size == 168U);
+    memcpy(profile, saved_record, saved_size);
+    /* This is the persisted state after SetAutoConnect(false): policy
+     * changes while the last SetCredentials identity remains intact. */
+    profile[PROFILE_AUTO_CONNECT_OFFSET] = 0U;
+    memset(&profile[PROFILE_REVISION_OFFSET], 0, sizeof(uint64_t));
+    profile[PROFILE_REVISION_OFFSET] = 7U;
+    host_nv_storage_reset();
+    host_nv_storage_seed(profile, saved_size);
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_status_snapshot_t status;
+
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(!status.auto_connect);
+    CHECK(status.applied_client_sync_id == UINT64_C(0x1234));
+    const unsigned connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = "Current AP",
+        .ssid_length = sizeof("Current AP") - 1U,
+        .password = "password1",
+        .password_length = sizeof("password1") - 1U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t repeat = 0U;
+
+    CHECK(connectivity_manager_request_sync_profile(
+              &credentials, UINT64_C(0x1234), true, &repeat) == ESP_OK);
+    CHECK(_wait_terminal(repeat, ESP_OK, false));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(!status.auto_connect);
+
+    connectivity_manager_operation_id_t conflict = 0U;
+    CHECK(connectivity_manager_request_sync_profile(
+              &credentials, UINT64_C(0x1234), false, &conflict) == ESP_OK);
+    CHECK(_wait_terminal(conflict, ESP_ERR_INVALID_STATE, false));
+    terminal_record_t terminal;
+    CHECK(_terminal_observer_copy(conflict, false, &terminal));
+    CHECK(terminal.operation_conflict);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
     return true;
@@ -1609,13 +1836,17 @@ static bool _test_legacy_profile_migration(const uint8_t saved_record[],
         PROFILE_PASSWORD_LENGTH_OFFSET = 9U,
         PROFILE_PASSWORD_OFFSET = 44U,
         LEGACY_PROFILE_SIZE = 112U,
+        V2_PROFILE_SIZE = 128U,
+        PROFILE_SYNC_ID_OFFSET = 120U,
+        PROFILE_SYNC_VALID_OFFSET = 160U,
     };
     uint8_t legacy[LEGACY_PROFILE_SIZE];
+    uint8_t v2[V2_PROFILE_SIZE];
     uint8_t retained[256];
     size_t retained_size = 0U;
     connectivity_manager_status_snapshot_t status;
 
-    CHECK(saved_size == 128U);
+    CHECK(saved_size == 168U);
     memcpy(legacy, saved_record, sizeof(legacy));
     legacy[PROFILE_VERSION_OFFSET] = 1U;
     legacy[PROFILE_VERSION_OFFSET + 1U] = 0U;
@@ -1629,6 +1860,7 @@ static bool _test_legacy_profile_migration(const uint8_t saved_record[],
     CHECK(host_nv_storage_set_count() == 1U);
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == saved_size);
+    CHECK(retained[PROFILE_SYNC_VALID_OFFSET] == 0U);
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
 
@@ -1657,13 +1889,34 @@ static bool _test_legacy_profile_migration(const uint8_t saved_record[],
     host_wifi_port_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
-                               CONNECTIVITY_MANAGER_FAILURE_STORAGE,
+                               CONNECTIVITY_MANAGER_FAILURE_INTERNAL,
                                &status));
     CHECK(!status.saved_profile);
     CHECK(host_nv_storage_set_count() == 0U);
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == sizeof(invalid));
     CHECK(memcmp(retained, invalid, sizeof(invalid)) == 0);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+
+    memcpy(v2, saved_record, sizeof(v2));
+    v2[PROFILE_VERSION_OFFSET] = 2U;
+    v2[PROFILE_VERSION_OFFSET + 1U] = 0U;
+    host_nv_storage_reset();
+    host_nv_storage_seed(v2, sizeof(v2));
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, &status));
+    CHECK(status.saved_profile);
+    CHECK(status.applied_client_sync_id == 0U);
+    CHECK(host_nv_storage_set_count() == 1U);
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == saved_size);
+    CHECK(retained[PROFILE_SYNC_VALID_OFFSET] == 0U);
+    for (size_t index = 0U; index < sizeof(uint64_t); ++index)
+    {
+        CHECK(retained[PROFILE_SYNC_ID_OFFSET + index] == 0U);
+    }
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
     return true;
@@ -1982,16 +2235,19 @@ static bool _run_pipeline(void)
               &scan_ui_subscription) == ESP_OK);
     CHECK(_run_on_ui(_ui_capture_worker, NULL));
 
+    CHECK(_test_wifi_cancel_dispositions());
     CHECK(_test_clear_persisted_profile_lifecycle());
     CHECK(_test_manager_init_resource_failures());
     CHECK(_test_operation_arbitration());
     CHECK(_test_candidate_terminal_cleanup());
     CHECK(_test_cancel_failure_terminal());
     CHECK(_test_missing_profile_terminals());
+    CHECK(_test_profile_read_failure_classification());
     CHECK(_test_hex_psk_recovery());
     uint8_t saved_record[256];
     size_t saved_size = 0U;
     CHECK(_test_foreground_and_persistence(saved_record, &saved_size));
+    CHECK(_test_sync_window_restart(saved_record, saved_size));
     CHECK(_test_scan_resume_guards(saved_record, saved_size));
     CHECK(_test_scan_suspend_resume(saved_record, saved_size));
     CHECK(_test_boot_retry_timeouts(saved_record, saved_size));
