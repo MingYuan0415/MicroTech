@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import unittest
@@ -174,194 +173,169 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             r"int[^\n]*\s+default 6144\b\s+range 4096 8192\b",
         )
 
-    def test_device_link_wifi_gate_matches_contract_registry(self) -> None:
-        registry = yaml.safe_load((
-            self.root / "contracts/provisioning/registry/domains.yaml"
-        ).read_text(encoding="utf-8"))
-        wifi = next(domain for domain in registry["domains"]
-                    if domain["name"] == "wifi")
-        registry_advertised = wifi["advertised"]
-
-        kconfig_text = (
-            self.root /
-            "layers/middleware/components/device_link_service/Kconfig"
-        ).read_text(encoding="utf-8")
-        gate = re.search(
-            r"(?ms)^config DEVICE_LINK_SERVICE_WIFI_ADVERTISED\b.*?(?=^config |^endmenu)",
-            kconfig_text,
-        )
-        self.assertIsNotNone(gate)
-        default = re.search(r"(?m)^\s*default\s+(y|n)\s*$",
-                            gate.group(0))
-        self.assertIsNotNone(default)
-        kconfig_advertised = default.group(1) == "y"
-
-        production_defaults = (self.root / "sdkconfig.defaults").read_text(
-            encoding="utf-8"
-        )
-        symbol = "CONFIG_DEVICE_LINK_SERVICE_WIFI_ADVERTISED"
-        production_advertised = bool(re.search(
-            rf"(?m)^{symbol}=y$", production_defaults
-        ))
-        self.assertRegex(production_defaults,
-                         rf"(?m)^# {symbol} is not set$")
-        self.assertEqual(
-            [registry_advertised, kconfig_advertised,
-             production_advertised],
-            [False, False, False],
-        )
-
-        exceptions = json.loads((
-            self.root / "tests/configuration/device_link_gate_overlays.json"
-        ).read_text(encoding="utf-8"))
-        self.assertEqual(set(exceptions), {"schema_version", "exceptions"})
-        self.assertEqual(exceptions["schema_version"], 1)
-        self.assertEqual(len(exceptions["exceptions"]), 1)
-        exception = exceptions["exceptions"][0]
-        self.assertEqual(
-            set(exception),
-            {"overlay", "domain", "kconfig", "advertised", "purpose"},
-        )
-        self.assertEqual(exception["domain"], "wifi")
-        self.assertEqual(exception["kconfig"], symbol)
-        self.assertTrue(exception["advertised"])
-        overlay = (self.root / exception["overlay"]).read_text(
-            encoding="utf-8"
-        )
-        self.assertRegex(overlay, rf"(?m)^{symbol}=y$")
-
-    def test_device_link_security_profile_consistency(self) -> None:
-        profile = yaml.safe_load((
-            self.root /
-            "contracts/provisioning/profiles/device-link/v2/profile.yaml"
-        ).read_text(encoding="utf-8"))
-        methods = json.loads((
-            self.root / "contracts/provisioning/fixtures/core/v2/methods.json"
-        ).read_text(encoding="utf-8"))
-        manifest = next(case for case in methods
-                        if case["id"] == "get-manifest")
-        fixture = manifest["response"]["value"]
-        profile_security = profile["security"]
-        security_mapping = {
-            "secure_connections_only": "le_secure_connections_only",
-            "encryption_key_bytes": "encryption_key_bytes",
-            "maximum_bonds": "maximum_bonds",
-            "protocomm_security_version": "protocomm_security_version",
-            "protocomm_security_patch_version":
-                "protocomm_security_patch_version",
-            "local_confirmation_for_grants":
-                "local_confirmation_for_grants",
-            "qr_bootstrap_uses_pop": "qr_bootstrap_uses_pop",
-            "public_bootstrap_uses_sc_local_confirmation":
-                "public_bootstrap_uses_sc_local_confirmation",
-        }
-        for profile_key, manifest_key in security_mapping.items():
-            self.assertEqual(profile_security[profile_key],
-                             fixture["security"][manifest_key])
-
-        header = (
-            self.root /
-            "layers/middleware/components/device_link/include/device_link_protocol.h"
-        ).read_text(encoding="utf-8")
-
-        def macro_value(name: str):
-            match = re.search(rf"(?m)^#define {name}\s+(\S+)$", header)
-            self.assertIsNotNone(match, name)
-            value = match.group(1)
-            if value in {"true", "false"}:
-                return value == "true"
-            return int(value.removesuffix("U"))
-
-        firmware_mapping = {
-            "secure_connections_only":
-                "DEVICE_LINK_SECURITY_SECURE_CONNECTIONS_ONLY",
-            "encryption_key_bytes":
-                "DEVICE_LINK_SECURITY_ENCRYPTION_KEY_BYTES",
-            "maximum_bonds": "DEVICE_LINK_SECURITY_MAXIMUM_BONDS",
-            "protocomm_security_version":
-                "DEVICE_LINK_SECURITY_PROTOCOMM_VERSION",
-            "protocomm_security_patch_version":
-                "DEVICE_LINK_SECURITY_PROTOCOMM_PATCH_VERSION",
-            "local_confirmation_for_grants":
-                "DEVICE_LINK_SECURITY_LOCAL_CONFIRMATION_FOR_GRANTS",
-            "qr_bootstrap_uses_pop":
-                "DEVICE_LINK_SECURITY_QR_BOOTSTRAP_USES_POP",
-            "public_bootstrap_uses_sc_local_confirmation":
-                "DEVICE_LINK_SECURITY_PUBLIC_BOOTSTRAP_USES_SC_CONFIRMATION",
-        }
-        for profile_key, macro in firmware_mapping.items():
-            self.assertEqual(profile_security[profile_key],
-                             macro_value(macro))
-        self.assertEqual(
-            fixture["protocol_version"],
-            {"major": macro_value("DEVICE_LINK_CORE_MAJOR"),
-             "minor": macro_value("DEVICE_LINK_CORE_MINOR")},
+    def test_device_link_contract_source_is_authoritative(self) -> None:
+        contract = self.root / "contracts/device_link"
+        protocol = yaml.safe_load(
+            (contract / "protocol.yaml").read_text(encoding="utf-8")
         )
         self.assertEqual(
-            fixture["profile_version"],
-            {"major": macro_value("DEVICE_LINK_PROFILE_MAJOR"),
-             "minor": macro_value("DEVICE_LINK_PROFILE_MINOR")},
+            (contract / "VERSION").read_text(encoding="utf-8").strip(),
+            "1.0.0",
+        )
+        self.assertEqual(protocol["profile"], {
+            "name": "device-link/v1",
+            "schema_format": "fixed-binary/1",
+            "version": "1.0.0",
+            "release_state": "freeze_candidate",
+        })
+        self.assertEqual(
+            protocol["protocol"]["transport"]["preferred_att_mtu"], 498
+        )
+        self.assertEqual(
+            protocol["protocol"]["transport"]["maximum_att_value_bytes"], 495
+        )
+        security = protocol["protocol"]["security"]
+        self.assertEqual(security["transport"], "ble_le_secure_connections")
+        self.assertTrue(security["sc_only"])
+        self.assertTrue(security["mitm"])
+        self.assertTrue(security["bonding"])
+        self.assertEqual(security["max_bonds"], 1)
+        self.assertEqual(security["io_capability"], "display_yes_no")
+        self.assertEqual(security["association_model"], "numeric_comparison")
+        self.assertEqual(security["encryption_key_bytes"], 16)
+        self.assertEqual(security["bond_replacement_candidate"], "temporary")
+        self.assertEqual(security["bond_replacement_commit_requires"], [
+            "numeric_comparison_completed",
+            "encryption_key_available",
+            "candidate_persisted",
+        ])
+        self.assertFalse(
+            security[
+                "bond_replacement_candidate_counts_toward_persistent_limit"
+            ]
+        )
+        self.assertTrue(security["bond_replacement_failure_retains_old"])
+        self.assertTrue(
+            security["bond_replacement_precommit_power_loss_retains_old"]
+        )
+        characteristics = protocol["protocol"]["gatt"]["characteristics"]
+        self.assertEqual(characteristics["command_rx"]["properties"], ["write"])
+        self.assertEqual(characteristics["server_tx"]["properties"], ["indicate"])
+        for characteristic in characteristics.values():
+            self.assertTrue(characteristic["encrypted"])
+            self.assertTrue(characteristic["authenticated"])
+        self.assertTrue(characteristics["server_tx"]["cccd_write_encrypted"])
+        self.assertTrue(
+            characteristics["server_tx"]["cccd_write_authenticated"]
+        )
+        self.assertEqual(
+            protocol["protocol"]["att_errors"][
+                "insufficient_authentication"
+            ],
+            0x05,
+        )
+        self.assertEqual(
+            protocol["protocol"]["transport"]["operation_id_wire"], "u32"
+        )
+        transport = protocol["protocol"]["transport"]
+        self.assertEqual(transport["application_error_opcode"], 0x80)
+        self.assertEqual(transport["l2cap_pdu_bytes"], 502)
+        self.assertEqual(transport["link_layer_payload_bytes"], 251)
+        self.assertEqual(transport["link_layer_payloads_for_full_l2cap_pdu"], 2)
+        self.assertFalse(transport["operation_id_reuse_within_boot"])
+        self.assertEqual(transport["operation_id_exhausted_status"], "INTERNAL")
+        self.assertTrue(transport["low_mtu"]["recovery_requires_full_mtu"])
+        self.assertEqual(
+            {command["name"]: command["id"] for command in protocol["commands"]}
+            ["GET_OPERATION"],
+            8,
+        )
+        self.assertEqual(
+            {command["name"]: command["id"] for command in protocol["commands"]}
+            ["ACK_OPERATION"],
+            9,
+        )
+        self.assertNotIn("admission", protocol["wire_rules"])
+        self.assertNotIn("scan", protocol["wire_rules"])
+        self.assertIn(
+            "SCAN",
+            protocol["wire_rules"]["operation_result"]["failure_matrix"],
+        )
+        vectors = yaml.safe_load(
+            (contract / "vectors/golden.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(vectors["format_version"], 4)
+
+        gitmodules = (self.root / ".gitmodules").read_text(encoding="utf-8")
+        self.assertIn("path = contracts/device_link", gitmodules)
+        self.assertIn(
+            "url = https://github.com/MingYuan0415/mt-device-link-contract.git",
+            gitmodules,
         )
 
-        defaults = (self.root / "sdkconfig.defaults").read_text(
-            encoding="utf-8"
-        )
-        assignments = dict(re.findall(
-            r"^(CONFIG_[A-Z0-9_]+)=(.+)$", defaults, re.MULTILINE
-        ))
-        self.assertEqual(assignments["CONFIG_BT_NIMBLE_SM_SC"], "y")
-        self.assertEqual(assignments["CONFIG_BT_NIMBLE_SM_LEGACY"], "n")
-        self.assertEqual(assignments["CONFIG_BT_NIMBLE_SM_SC_ONLY"], "1")
-        self.assertEqual(int(assignments["CONFIG_BT_NIMBLE_MAX_BONDS"]),
-                         profile_security["maximum_bonds"])
-
-    def test_device_link_security_release_target_is_wired(self) -> None:
-        cmake = (
-            self.root /
-            "layers/middleware/components/ble_runtime/tests/host/CMakeLists.txt"
-        ).read_text(encoding="utf-8")
-        self.assertIn("add_custom_target(device_link_security_release", cmake)
-        self.assertIn("DEVICE_LINK_REQUIRE_SECURITY_RELEASE=1", cmake)
-        release = (self.root /
-                   "tests/device_link_security_release.sh").read_text(
-                       encoding="utf-8")
-        self.assertIn("--target device_link_security_release", release)
-
-    def test_device_link_contract_lock_name_and_commit_marker(self) -> None:
-        component = self.root / "layers/middleware/components/device_link"
-        lock = component / "device-link-contract.lock"
+    def test_device_link_contract_lock_matches_worktree(self) -> None:
+        lock = self.root / "contracts/device_link.lock"
         self.assertTrue(lock.is_file())
-        self.assertFalse((component / "contract.lock").exists())
-        lock_values = dict(
-            line.split("=", 1)
-            for line in lock.read_text(encoding="utf-8").splitlines()
-        )
-        cmake = (self.root / "main/CMakeLists.txt").read_text(
-            encoding="utf-8"
-        )
-        expected = re.search(
-            r'EXPECTED_CONTRACT_COMMIT="([0-9a-f]{40})"', cmake
-        )
-        self.assertIsNotNone(expected)
-        self.assertEqual(lock_values.get("contract_commit"),
-                         expected.group(1))
-        contract = self.root / "contracts/provisioning"
+        lines = lock.read_text(encoding="utf-8").splitlines()
+        self.assertEqual([line.split("=", 1)[0] for line in lines], [
+            "lock_format", "contract_commit", "profile", "schema_format",
+            "schema_digest", "release_state", "release_tag", "pin_state",
+        ])
+        lock_values = dict(line.split("=", 1) for line in lines)
+        contract = self.root / "contracts/device_link"
         contract_head = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=contract, check=True,
             capture_output=True, text=True,
         ).stdout.strip()
         digest = subprocess.run(
-            ["python3", "-m", "tooling.contractcheck.cli",
-             "--print-digest"], cwd=contract, check=True,
-            capture_output=True, text=True,
+            ["python3", "-m", "tooling.check", "--print-digest"],
+            cwd=contract, check=True, capture_output=True, text=True,
         ).stdout.strip()
-        self.assertEqual(lock_values.get("contract_commit"), contract_head)
-        self.assertEqual(lock_values.get("schema_digest"), digest)
-        readme = (component / "README.md").read_text(encoding="utf-8")
-        self.assertIn(
-            "expectedContractCommit=" + expected.group(1),
-            readme.splitlines(),
-        )
+        optimized_digest = subprocess.run(
+            ["python3", "-O", "-m", "tooling.check", "--print-digest"],
+            cwd=contract, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        self.assertEqual(digest, optimized_digest)
+        self.assertEqual(lock_values, {
+            "lock_format": "2",
+            "contract_commit": contract_head,
+            "profile": "device-link/v1",
+            "schema_format": "fixed-binary/1",
+            "schema_digest": digest,
+            "release_state": "freeze_candidate",
+            "release_tag": "none",
+            "pin_state": "working_tree_candidate",
+        })
+
+    def test_device_link_contract_checks_and_current_status_are_declared(
+            self) -> None:
+        contract = self.root / "contracts/device_link"
+        workflow = (
+            contract / ".github/workflows/contract.yml"
+        ).read_text(encoding="utf-8")
+        status = (
+            self.root / "doc/device-link-implementation.md"
+        ).read_text(encoding="utf-8")
+        wifi_policy = (
+            self.root /
+            "layers/middleware/components/wifi_service/README.md"
+        ).read_text(encoding="utf-8")
+        normalized_policy = " ".join(wifi_policy.split())
+        self.assertIn("tooling.check", workflow)
+        self.assertIn("unittest discover", workflow)
+        self.assertIn("contracts/device_link", status)
+        self.assertIn("freeze candidate", status)
+        self.assertIn("non-normative", wifi_policy)
+        self.assertIn("Pending policy target", wifi_policy)
+        self.assertIn("does not claim Device Link v1 policy conformance",
+                      normalized_policy)
+        root_readme = (self.root / "README.md").read_text(encoding="utf-8")
+        legacy_client = (
+            self.root / "tests/connectivity/device_link_client/README.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("Security2", root_readme)
+        self.assertNotIn("contracts/provisioning", legacy_client)
+        self.assertIn("not a `device-link/v1` conformance client", legacy_client)
 
 
 if __name__ == "__main__":

@@ -98,10 +98,10 @@ ctest --test-dir /tmp/mt-main --output-on-failure
 
 宿主测试覆盖生命周期、并发和失败回滚，但不替代 ESP32-S3 上的驱动时序、射频、DMA、功耗及资源占用验证。
 
-Device Link 生产安全 release gate 由
-`sh tests/device_link_security_release.sh` 调用。当前固定的 ESP-IDF v6.0.2 未满足
-Security2 失败输出清零要求，因此该脚本应明确失败；普通宿主测试通过不代表 Core 安全已获
-生产放行。
+Device Link 当前以 [`contracts/device_link`](contracts/device_link/) 中的
+`device-link/v1` freeze candidate 为规范源，采用 LE Secure Connections Numeric
+Comparison、MITM、单 bond、ATT MTU 498 和可查询确认的异步操作记录。契约 checker 与
+金标通过只说明规范数据自洽；配对、bond 替换、MTU/DLE、断连恢复及空中互操作仍需真机验证。
 
 ## 显示压力基准
 
