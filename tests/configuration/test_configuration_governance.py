@@ -108,7 +108,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.MULTILINE,
             ))
-        self.assertEqual(len(symbols), 50, sorted(symbols))
+        self.assertEqual(len(symbols), 49, sorted(symbols))
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")

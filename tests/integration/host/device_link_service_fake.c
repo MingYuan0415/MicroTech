@@ -113,7 +113,7 @@ esp_err_t device_link_service_open_window(void)
     ++s_device_link.open_count;
     s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_WINDOW;
     s_device_link.status.last_error = ESP_OK;
-    s_device_link.status.window_remaining_ms = 600000U;
+    s_device_link.status.window_remaining_ms = 120000U;
     s_device_link.status.active = true;
     _host_device_link_next_generation_locked();
     status = s_device_link.status;

@@ -18,7 +18,10 @@ the BLE contract. Retry, automatic connection, scan selection, rollback, and
 internal failure recovery are not normative there. Their pending target is
 documented in `layers/middleware/components/wifi_service/README.md`.
 `SET_CREDENTIALS` now persists without starting a connection;
-`wifi_service` is still not declared fully policy-conformant.
+`wifi_service` is still not declared fully policy-conformant. Firmware
+always installs the v1 Wi-Fi owner ops. Bond replacement while the pairing
+window is open deletes the conflicting bond and returns
+`BLE_GAP_REPEAT_PAIRING_RETRY`.
 
 The root `contracts/device_link.lock` records the checked-out candidate and
 the normalized worktree contract digest. Numeric Comparison, local bond

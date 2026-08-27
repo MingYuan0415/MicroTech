@@ -1,9 +1,0 @@
-# Device Link Wi-Fi gate-open validation overlay.
-#
-# Builds the firmware with the Wi-Fi domain advertised (gate open) without
-# touching the production sdkconfig.defaults. Use with:
-#   SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.device-link-wifi" idf.py build
-# Production builds keep the gate closed until the hardware matrix passes and
-# the contract registry flips domains.yaml.wifi.advertised together with the
-# production sdkconfig.defaults.
-CONFIG_DEVICE_LINK_SERVICE_WIFI_ADVERTISED=y

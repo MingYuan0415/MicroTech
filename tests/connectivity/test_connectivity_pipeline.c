@@ -892,6 +892,38 @@ static bool _test_cancel_failure_terminal(void)
     return true;
 }
 
+static bool _test_save_profile_does_not_connect(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    const unsigned connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = "Saved AP",
+        .ssid_length = sizeof("Saved AP") - 1U,
+        .password = "password1",
+        .password_length = sizeof("password1") - 1U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t operation_id = 0U;
+    connectivity_manager_status_snapshot_t status;
+
+    CHECK(connectivity_manager_request_save_profile(
+              &credentials, &operation_id) == ESP_OK);
+    CHECK(_wait_terminal(operation_id, ESP_OK, false));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.saved_profile);
+    CHECK(status.failure == CONNECTIVITY_MANAGER_FAILURE_NONE);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    return true;
+}
+
 static bool _test_missing_profile_terminals(void)
 {
     host_nv_storage_reset();
@@ -2241,6 +2273,7 @@ static bool _run_pipeline(void)
     CHECK(_test_operation_arbitration());
     CHECK(_test_candidate_terminal_cleanup());
     CHECK(_test_cancel_failure_terminal());
+    CHECK(_test_save_profile_does_not_connect());
     CHECK(_test_missing_profile_terminals());
     CHECK(_test_profile_read_failure_classification());
     CHECK(_test_hex_psk_recovery());

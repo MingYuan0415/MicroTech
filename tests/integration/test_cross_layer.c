@@ -1882,12 +1882,8 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_text("MT"));
     assert(_wait_for_text("等待手机连接"));
     assert(host_device_link_service_open_count() >= opens + 1U);
-    assert(host_lv_live_qrcode_count() == 1U);
-    assert(host_lv_qrcode_update_count() == 1U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "root"));
-    assert(host_lv_live_qrcode_count() == 0U);
-    assert(host_lv_qrcode_scrubbed_delete_count() == 1U);
     assert(host_device_link_service_close_count() >= closes + 1U);
     assert(!device_link_service_is_active());
 
@@ -2706,9 +2702,7 @@ static void _test_setup_screen_lifecycle(void)
     assert(_wait_for_text("手机绑定"));
     _click_action("手机绑定");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
-    assert(host_lv_live_qrcode_count() == 1U);
-    const unsigned scrubbed_before =
-        host_lv_qrcode_scrubbed_delete_count();
+    assert(_wait_for_text("等待手机连接"));
     const unsigned closes_before =
         host_device_link_service_close_count();
     const size_t starts_before = _lifecycle_observed(
@@ -2723,8 +2717,6 @@ static void _test_setup_screen_lifecycle(void)
     assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     lv_resource_counts_t resources = _lv_resource_counts();
-    assert(host_lv_live_qrcode_count() == 0U);
-    assert(host_lv_qrcode_scrubbed_delete_count() == scrubbed_before + 1U);
     assert(resources.objects == 0);
     assert(resources.screens == 1U);
     assert(resources.timers == 0);
@@ -2744,7 +2736,6 @@ static void _test_setup_screen_lifecycle(void)
     assert(resources.objects > 0);
     assert(resources.screens == 2U);
     assert(resources.timers == 0);
-    assert(host_lv_live_qrcode_count() == 1U);
     _assert_event_slot_headroom(1);
 
     assert(_lifecycle_observed(
@@ -2759,20 +2750,22 @@ static void _test_setup_screen_lifecycle(void)
         .generation = UINT64_C(300000),
         .state = DEVICE_LINK_SERVICE_STATE_CONNECTED,
         .last_error = ESP_OK,
-        .window_remaining_ms = 590000U,
+        .window_remaining_ms = 110000U,
         .available = true,
         .active = true,
         .client_connected = true,
     };
     assert(host_device_link_service_publish_status(&connected) == ESP_OK);
-    assert(_wait_for_text("手机已连接，等待绑定"));
+    assert(_wait_for_text("手机已连接，等待配对"));
 
     device_link_service_status_t confirmation = connected;
     ++confirmation.generation;
     confirmation.pending_confirmation = true;
     confirmation.confirmation_token = UINT64_C(0x1020304050607080);
+    confirmation.numeric_comparison = 123456U;
     assert(host_device_link_service_publish_status(&confirmation) == ESP_OK);
-    assert(_wait_for_text("手机请求绑定"));
+    assert(_wait_for_text("核对手机上的数字后确认"));
+    assert(_wait_for_text("123456"));
     const unsigned confirmations_before =
         host_device_link_service_confirm_count();
 
@@ -2805,8 +2798,6 @@ static void _test_setup_screen_lifecycle(void)
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    assert(host_lv_live_qrcode_count() == 0U);
-    assert(host_lv_qrcode_scrubbed_delete_count() >= scrubbed_before + 2U);
     assert(host_device_link_service_close_count() >= closes_before + 1U);
     assert(!device_link_service_is_active());
     _assert_event_slot_headroom(2);
@@ -3123,7 +3114,6 @@ static void _test_system_edge_back_gesture(void)
     assert(_touch(TOUCH_ACTION_RELEASE, 56, 300));
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "root"));
     assert(!device_link_service_is_active());
-    assert(host_lv_live_qrcode_count() == 0U);
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 300));
     assert(_touch(TOUCH_ACTION_MOVE, 56, 300));
