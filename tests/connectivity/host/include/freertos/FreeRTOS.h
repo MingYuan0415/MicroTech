@@ -83,6 +83,7 @@ typedef enum eTaskState
 #define configMAX_PRIORITIES 25U
 
 #define portMAX_DELAY UINT32_MAX
+#define portTICK_PERIOD_MS 1U
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 
 #endif /* __CONNECTIVITY_HOST_FREERTOS_H__ */

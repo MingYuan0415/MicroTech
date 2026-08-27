@@ -143,6 +143,22 @@ esp_err_t device_link_service_close_window(void)
                &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
+esp_err_t device_link_service_revoke_binding(void)
+{
+    device_link_service_status_t status;
+
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    s_device_link.status.bound = false;
+    s_device_link.status.last_error = ESP_OK;
+    _host_device_link_next_generation_locked();
+    status = s_device_link.status;
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return event_bus_publish(
+               DEVICE_LINK_SERVICE_MSG,
+               DEVICE_LINK_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+               &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
+}
+
 esp_err_t device_link_service_confirm_binding(
     device_link_confirmation_token_t token, bool accept)
 {
