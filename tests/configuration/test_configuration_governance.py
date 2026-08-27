@@ -108,7 +108,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.MULTILINE,
             ))
-        self.assertEqual(len(symbols), 53, sorted(symbols))
+        self.assertEqual(len(symbols), 50, sorted(symbols))
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
@@ -203,21 +203,8 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         self.assertEqual(security["io_capability"], "display_yes_no")
         self.assertEqual(security["association_model"], "numeric_comparison")
         self.assertEqual(security["encryption_key_bytes"], 16)
-        self.assertEqual(security["bond_replacement_candidate"], "temporary")
-        self.assertEqual(security["bond_replacement_commit_requires"], [
-            "numeric_comparison_completed",
-            "encryption_key_available",
-            "candidate_persisted",
-        ])
-        self.assertFalse(
-            security[
-                "bond_replacement_candidate_counts_toward_persistent_limit"
-            ]
-        )
-        self.assertTrue(security["bond_replacement_failure_retains_old"])
-        self.assertTrue(
-            security["bond_replacement_precommit_power_loss_retains_old"]
-        )
+        self.assertEqual(security["bond_replacement"], "local_clear_then_pair")
+        self.assertNotIn("bond_replacement_candidate", security)
         characteristics = protocol["protocol"]["gatt"]["characteristics"]
         self.assertEqual(characteristics["command_rx"]["properties"], ["write"])
         self.assertEqual(characteristics["server_tx"]["properties"], ["indicate"])
@@ -239,12 +226,10 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         )
         transport = protocol["protocol"]["transport"]
         self.assertEqual(transport["application_error_opcode"], 0x80)
-        self.assertEqual(transport["l2cap_pdu_bytes"], 502)
-        self.assertEqual(transport["link_layer_payload_bytes"], 251)
-        self.assertEqual(transport["link_layer_payloads_for_full_l2cap_pdu"], 2)
+        self.assertNotIn("l2cap_pdu_bytes", transport)
         self.assertFalse(transport["operation_id_reuse_within_boot"])
         self.assertEqual(transport["operation_id_exhausted_status"], "INTERNAL")
-        self.assertTrue(transport["low_mtu"]["recovery_requires_full_mtu"])
+        self.assertNotIn("recovery_requires_full_mtu", transport["low_mtu"])
         self.assertEqual(
             {command["name"]: command["id"] for command in protocol["commands"]}
             ["GET_OPERATION"],

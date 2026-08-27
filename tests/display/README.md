@@ -110,8 +110,8 @@ python3 tests/display/lvgl_ram_profiles.py validate \
 `C_EXT_STRESS` 在 `C_EXT` 基础上加载 Device Link ACL 连接负载（`ble_connected`
 模式，验证绑定窗口打开、手机连接、断连重连无抖动），保留用于后续稳定性复现，
 不修改生产 `sdkconfig.defaults`。设备端执行 Device Link ACL、Wi-Fi/TCP、Audio、
-Microphone、显示转场和 App Manager 路由负载；Security 2 受保护流量验收在
-P3.4 落地后回归。日志分析命令：
+Microphone、显示转场和 App Manager 路由负载；Device Link v1 加密流量验收在
+硬件 Numeric Comparison 验证后回归。日志分析命令：
 
 ```sh
 python3 tests/display/analyze_c_ext_stress.py /path/to/c_ext_stress.log

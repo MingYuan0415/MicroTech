@@ -35,12 +35,8 @@ idf_component_register(
         lwip
 )
 
-# Contract pin: the Device Link contract commit this firmware is built
-# against (see contracts/provisioning and tooling.contractcheck.pin). The
-# configuration governance test verifies this value against
-# layers/middleware/components/device_link/device-link-contract.lock.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    EXPECTED_CONTRACT_COMMIT="b909e1444ba7f50a0697de51fe47ac0a82766466")
+    EXPECTED_CONTRACT_COMMIT="ec245e4e1bbf85ef73b003132679227d6ef4591b")
 
 include("${CMAKE_CURRENT_LIST_DIR}/display_benchmark_profile.cmake")
 if(CONFIG_MAIN_DISPLAY_BENCHMARK)

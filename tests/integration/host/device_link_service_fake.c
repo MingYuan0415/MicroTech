@@ -115,7 +115,6 @@ esp_err_t device_link_service_open_window(void)
     s_device_link.status.last_error = ESP_OK;
     s_device_link.status.window_remaining_ms = 600000U;
     s_device_link.status.active = true;
-    s_device_link.status.qr_ready = true;
     _host_device_link_next_generation_locked();
     status = s_device_link.status;
     (void)pthread_mutex_unlock(&s_device_link.lock);
@@ -135,7 +134,6 @@ esp_err_t device_link_service_close_window(void)
     s_device_link.status.window_remaining_ms = 0U;
     s_device_link.status.active = false;
     s_device_link.status.client_connected = false;
-    s_device_link.status.qr_ready = false;
     _host_device_link_next_generation_locked();
     status = s_device_link.status;
     (void)pthread_mutex_unlock(&s_device_link.lock);
@@ -168,34 +166,6 @@ esp_err_t device_link_service_get_status(
     (void)pthread_mutex_lock(&s_device_link.lock);
     *status = s_device_link.status;
     (void)pthread_mutex_unlock(&s_device_link.lock);
-    return ESP_OK;
-}
-
-esp_err_t device_link_service_copy_qr(char *output, size_t capacity,
-                                      size_t *out_length)
-{
-    static const char qr[] =
-        "{\"ver\":\"link-v2\",\"name\":\"MT\","
-        "\"service\":\"2c77e48c-c510-4230-8d05-63d036dc038b\","
-        "\"discriminator\":\"qrvM\",\"pop\":\"AAECAwQFBgcICQoLDA0ODw\","
-        "\"expires_in_ms\":120000}";
-    if (output == NULL || out_length == NULL)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    (void)pthread_mutex_lock(&s_device_link.lock);
-    const bool ready = s_device_link.status.qr_ready;
-    (void)pthread_mutex_unlock(&s_device_link.lock);
-    if (!ready)
-    {
-        return ESP_ERR_NOT_FOUND;
-    }
-    if (sizeof(qr) > capacity)
-    {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    memcpy(output, qr, sizeof(qr));
-    *out_length = sizeof(qr) - 1U;
     return ESP_OK;
 }
 

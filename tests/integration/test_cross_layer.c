@@ -2763,7 +2763,6 @@ static void _test_setup_screen_lifecycle(void)
         .available = true,
         .active = true,
         .client_connected = true,
-        .qr_ready = true,
     };
     assert(host_device_link_service_publish_status(&connected) == ESP_OK);
     assert(_wait_for_text("手机已连接，等待绑定"));
@@ -2798,7 +2797,6 @@ static void _test_setup_screen_lifecycle(void)
     fault.last_error = ESP_FAIL;
     fault.window_remaining_ms = 0U;
     fault.client_connected = false;
-    fault.qr_ready = false;
     fault.pending_confirmation = false;
     fault.confirmation_token = 0U;
     assert(host_device_link_service_publish_status(&fault) == ESP_OK);
