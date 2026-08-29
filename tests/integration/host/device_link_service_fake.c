@@ -1,5 +1,6 @@
 #include "host_device_link_service.h"
 
+#include "device_link_confirmation.h"
 #include "event_bus.h"
 
 #include <pthread.h>
@@ -104,6 +105,37 @@ esp_err_t host_device_link_service_publish_status(
                DEVICE_LINK_SERVICE_MSG,
                DEVICE_LINK_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
                status, sizeof(*status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
+}
+
+esp_err_t host_device_link_service_offer_numeric_comparison(
+    device_link_confirmation_token_t token, uint32_t numeric_comparison)
+{
+    if (token == 0U || numeric_comparison > 999999U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const ble_link_confirmation_snapshot_t confirmation =
+    {
+        .pending = true,
+        .token = token,
+        .numeric_comparison = numeric_comparison,
+    };
+    device_link_service_status_t status;
+
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    if (!device_link_confirmation_sync(
+                &s_device_link.status, &confirmation))
+    {
+        (void)pthread_mutex_unlock(&s_device_link.lock);
+        return ESP_OK;
+    }
+    _host_device_link_next_generation_locked();
+    status = s_device_link.status;
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return event_bus_publish(
+               DEVICE_LINK_SERVICE_MSG,
+               DEVICE_LINK_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+               &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
 esp_err_t device_link_service_open_window(void)

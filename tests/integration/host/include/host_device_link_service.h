@@ -32,6 +32,10 @@ host_device_link_service_last_confirmation_token(void);
 esp_err_t host_device_link_service_publish_status(
     const device_link_service_status_t *status);
 
+/** @brief Offer one Numeric Comparison through the production reducer. */
+esp_err_t host_device_link_service_offer_numeric_comparison(
+    device_link_confirmation_token_t token, uint32_t numeric_comparison);
+
 #ifdef __cplusplus
 }
 #endif

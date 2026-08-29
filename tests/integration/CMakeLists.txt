@@ -34,6 +34,7 @@ add_executable(test_cross_layer
     "${APP_CORE}/src/app_manager_task_switcher.c"
     "${APP_THEME}/src/app_theme.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
+    "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"
     "${APPS}/common/src/app_ui.c"
     "${APPS}/home_app/src/home_app.c"
     "${APPS}/weather_app/src/weather_app.c"
@@ -114,7 +115,9 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/time_service/include"
     "${MIDDLEWARE}/weather_service/include"
     "${MIDDLEWARE}/connectivity_manager/include"
+    "${MIDDLEWARE}/device_link/include"
     "${MIDDLEWARE}/device_link_service/include"
+    "${MIDDLEWARE}/device_link_service/src"
     "${MIDDLEWARE}/factory_reset_service/include"
     "${MIDDLEWARE}/ble_runtime/include"
 )

@@ -2778,12 +2778,11 @@ static void _test_setup_screen_lifecycle(void)
                "手机已连接，等待配对",
                &s_theme_fonts[APP_THEME_FONT_BODY]));
 
-    device_link_service_status_t confirmation = connected;
-    ++confirmation.generation;
-    confirmation.pending_confirmation = true;
-    confirmation.confirmation_token = UINT64_C(0x1020304050607080);
-    confirmation.numeric_comparison = 123456U;
-    assert(host_device_link_service_publish_status(&confirmation) == ESP_OK);
+    assert(host_device_link_service_offer_numeric_comparison(
+               UINT64_C(0x1020304050607080), 123456U) == ESP_OK);
+    device_link_service_status_t confirmation;
+
+    assert(device_link_service_get_status(&confirmation) == ESP_OK);
     assert(_wait_for_text("核对手机上的数字后确认"));
     assert(_wait_for_text("123456"));
     assert(_ui_text_has_font(
