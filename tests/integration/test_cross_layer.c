@@ -2013,6 +2013,15 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("已连接"));
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_text_has_font(
+               "已连接", &s_theme_fonts[APP_THEME_FONT_BIGL]));
+    assert(_ui_text_has_font(
+               "Saved WiFi", &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font(
+               "自动连接", &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font(
+               "开启 2 分钟绑定窗口",
+               &s_theme_fonts[APP_THEME_FONT_SMALL]));
 
     _click_action("断开连接");
     connectivity_manager_operation_id_t operation =
@@ -2703,6 +2712,14 @@ static void _test_setup_screen_lifecycle(void)
     _click_action("手机绑定");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
     assert(_wait_for_text("等待手机连接"));
+    assert(_ui_text_has_font(
+               "手机绑定", &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    assert(_ui_text_has_font(
+               "MT", &s_theme_fonts[APP_THEME_FONT_BIGL]));
+    assert(_ui_text_has_font(
+               "等待手机连接", &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font(
+               "剩余 2:00", &s_theme_fonts[APP_THEME_FONT_SMALL]));
     const unsigned closes_before =
         host_device_link_service_close_count();
     const size_t starts_before = _lifecycle_observed(
@@ -2757,6 +2774,9 @@ static void _test_setup_screen_lifecycle(void)
     };
     assert(host_device_link_service_publish_status(&connected) == ESP_OK);
     assert(_wait_for_text("手机已连接，等待配对"));
+    assert(_ui_text_has_font(
+               "手机已连接，等待配对",
+               &s_theme_fonts[APP_THEME_FONT_BODY]));
 
     device_link_service_status_t confirmation = connected;
     ++confirmation.generation;
@@ -2766,6 +2786,15 @@ static void _test_setup_screen_lifecycle(void)
     assert(host_device_link_service_publish_status(&confirmation) == ESP_OK);
     assert(_wait_for_text("核对手机上的数字后确认"));
     assert(_wait_for_text("123456"));
+    assert(_ui_text_has_font(
+               "核对手机上的数字后确认",
+               &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font(
+               "123456", &s_theme_fonts[APP_THEME_FONT_BIGL]));
+    assert(_ui_text_has_font(
+               "确认绑定", &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    assert(_ui_text_has_font(
+               "拒绝", &s_theme_fonts[APP_THEME_FONT_SMALL]));
     const unsigned confirmations_before =
         host_device_link_service_confirm_count();
 
