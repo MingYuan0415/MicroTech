@@ -2,7 +2,8 @@
 
 ## 项目结构
 
-- `main/`：入口、运行时、存储/网络装配与显示基准；`main/res_fs/` 打包写入 `res` 分区的只读资源。
+- `main/`：入口、运行时、存储/网络装配与显示基准；资源由 `layers/apps/*/assets/` 和
+  `layers/app_manager/app_theme/assets/` manifest 聚合后打包写入 `res` 分区。
 - `layers/`：`bsp`、`middleware`（`components/` 下按服务拆分）、`app_manager`、`apps`。四个目录均为独立 Git 子模块仓库（远程均属 MingYuan0415），层内改动须在子模块内提交并推送，父仓库再提交指针更新。
 - `tests/`：`connectivity`、`integration` 为跨层宿主测试；`display` 为真机基准的主机工具与 Python unittest。`managed_components/` 由 Component Manager 生成，只读。
 

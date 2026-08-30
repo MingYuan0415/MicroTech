@@ -11,7 +11,7 @@ MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 的 ESP-IDF 固件工程
 | `layers/middleware/` | 日志、事件、存储、网络、时间及系统电源服务 |
 | `layers/app_manager/` | 应用注册、生命周期、UI mailbox、主题和显示电源适配 |
 | `layers/apps/` | Home、Menu、Settings、Setup 等内置 LVGL 应用 |
-| `main/res_fs/` | 构建时写入 `res` 分区的字体及其他只读资源 |
+| `layers/apps/*/assets/`、`layers/app_manager/app_theme/assets/` | App 与全局主题的资源源文件；由 main 聚合写入 `res` 分区 |
 | `tests/` | 连接链路和跨层宿主集成测试 |
 
 四个 `layers/` 目录是独立 Git 子模块。`managed_components/` 由 ESP-IDF Component Manager 管理，不应直接修改。
@@ -71,8 +71,11 @@ mt-server 的 `GET /api/v1/location` 提供：部署须启用 GeoLite2 IP 推断
 还会下发可选的 `district` 区县名（纯显示、不参与身份判定），Weather 首页标题按
 “市·区”组合展示。
 
-天气图片采用 1 个 64x64 应用图标，以及 20 类条件各自的 112x112 与 40x40 透明 PNG。
-41 个文件必须全部放入 `main/res_fs/`，否则 CMake 在配置阶段拒绝不完整集合。首次构建
+天气图片采用 1 个 64x64 应用图标，以及 20 类条件各自的 112x112 与 40x40 透明 PNG，
+源文件归属 `layers/apps/weather_app/assets/`。全局字体归属
+`layers/app_manager/app_theme/assets/font.ttf`；各 App 图标放在对应 App 的 `assets/`
+目录。显式 manifest 在配置阶段检查文件、尺寸、输出名和语义 ID，main 只聚合这些清单，
+不再维护资源文件列表。首次构建
 图片资源前，在当前 ESP-IDF Python 环境安装固定转换依赖：
 
 ```sh

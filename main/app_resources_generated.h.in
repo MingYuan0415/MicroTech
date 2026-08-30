@@ -1,0 +1,28 @@
+#ifndef __APP_RESOURCES_GENERATED_H__
+#define __APP_RESOURCES_GENERATED_H__
+
+#include "app_manager_config.h"
+#include "app_image_ids.h"
+
+#if APP_RESOURCES_ENABLED
+    #ifdef ESP_PLATFORM
+        #include "mmap_generate_res.h"
+    #endif
+#endif
+
+#define APP_RESOURCES_FILE_COUNT @APP_RESOURCE_FILE_COUNT_VALUE@
+#define APP_RESOURCES_CHECKSUM @APP_RESOURCE_CHECKSUM_VALUE@
+
+#if APP_RESOURCES_ENABLED
+static const app_manager_image_resource_config_t s_app_resource_images[] =
+{
+@APP_RESOURCE_IMAGE_ENTRIES@};
+#define APP_RESOURCES_IMAGE_TABLE s_app_resource_images
+#define APP_RESOURCES_IMAGE_COUNT \
+    (sizeof(s_app_resource_images) / sizeof(s_app_resource_images[0]))
+#else
+#define APP_RESOURCES_IMAGE_TABLE NULL
+#define APP_RESOURCES_IMAGE_COUNT 0U
+#endif
+
+#endif /* __APP_RESOURCES_GENERATED_H__ */

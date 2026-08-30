@@ -80,6 +80,7 @@ target_include_directories(app_runtime_test PRIVATE
     ../..
     ../../../layers/app_manager/app_core/include
     ../../../layers/app_manager/app_theme/include
+    ../../../layers/apps/common/include
     ../../../layers/bsp/include
     ../../../layers/middleware/components/chore_service/include
     ../../../layers/middleware/components/device_link_service/include

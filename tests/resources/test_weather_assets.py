@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the fixed weather image contract packaged in res_fs."""
+"""Validate the fixed weather image contract owned by weather_app."""
 
 from pathlib import Path
 import struct
@@ -7,7 +7,7 @@ import unittest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RESOURCE_DIR = PROJECT_ROOT / "main" / "res_fs"
+RESOURCE_DIR = PROJECT_ROOT / "layers" / "apps" / "weather_app" / "assets"
 CONDITIONS = (
     "clear_day",
     "clear_night",

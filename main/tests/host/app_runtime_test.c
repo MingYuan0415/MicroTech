@@ -767,6 +767,7 @@ esp_err_t app_manager_init(const struct app_manager_config *config)
     assert(app_config->resource_checksum == 0x4303U);
     assert(app_config->image_resources == NULL);
     assert(app_config->image_resource_count == 0U);
+    assert(app_config->image_resource_count == 0U);
     return _test_result(TEST_EVENT_APP_MANAGER_INIT);
 }
 

@@ -44,113 +44,160 @@ if(CONFIG_MAIN_DISPLAY_BENCHMARK)
         "${DISPLAY_BENCHMARK_PROFILE_DIR}")
 endif()
 
-# 资源分区打包规则
-if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS)
-    set(APP_WEATHER_IMAGE_FILES
-        weather_app.png
-        weather_clear_day_112.png weather_clear_day_40.png
-        weather_clear_night_112.png weather_clear_night_40.png
-        weather_partly_day_112.png weather_partly_day_40.png
-        weather_partly_night_112.png weather_partly_night_40.png
-        weather_cloudy_112.png weather_cloudy_40.png
-        weather_overcast_112.png weather_overcast_40.png
-        weather_drizzle_112.png weather_drizzle_40.png
-        weather_rain_112.png weather_rain_40.png
-        weather_heavy_rain_112.png weather_heavy_rain_40.png
-        weather_thunder_112.png weather_thunder_40.png
-        weather_hail_112.png weather_hail_40.png
-        weather_freezing_rain_112.png weather_freezing_rain_40.png
-        weather_snow_112.png weather_snow_40.png
-        weather_heavy_snow_112.png weather_heavy_snow_40.png
-        weather_sleet_112.png weather_sleet_40.png
-        weather_fog_112.png weather_fog_40.png
-        weather_haze_112.png weather_haze_40.png
-        weather_hot_112.png weather_hot_40.png
-        weather_cold_112.png weather_cold_40.png
-        weather_unknown_112.png weather_unknown_40.png)
-    set(APP_WEATHER_IMAGE_COUNT 0)
-    foreach(APP_WEATHER_IMAGE_FILE IN LISTS APP_WEATHER_IMAGE_FILES)
-        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/res_fs/${APP_WEATHER_IMAGE_FILE}")
-            math(EXPR APP_WEATHER_IMAGE_COUNT "${APP_WEATHER_IMAGE_COUNT} + 1")
-        endif()
-    endforeach()
-    list(LENGTH APP_WEATHER_IMAGE_FILES APP_WEATHER_IMAGE_EXPECTED_COUNT)
-    if(APP_WEATHER_IMAGE_COUNT GREATER 0 AND
-            NOT APP_WEATHER_IMAGE_COUNT EQUAL APP_WEATHER_IMAGE_EXPECTED_COUNT)
-        message(FATAL_ERROR
-            "Weather image set is incomplete: found ${APP_WEATHER_IMAGE_COUNT} of ${APP_WEATHER_IMAGE_EXPECTED_COUNT}")
+# 统一资源清单和分区打包规则。资源由 Apps/App Theme 所有，main 只负责聚合。
+include("${CMAKE_CURRENT_LIST_DIR}/../layers/apps/resource_manifest.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../layers/app_manager/app_theme/resource_manifest.cmake")
+set(APP_RESOURCE_RECORDS ${MICROTECH_APP_RESOURCE_RECORDS}
+    ${MICROTECH_THEME_RESOURCE_RECORDS})
+set(APP_RESOURCE_OUTPUTS "")
+set(APP_RESOURCE_SEMANTICS "")
+set(APP_RESOURCE_STAGED_OUTPUTS "")
+set(APP_RESOURCE_IMAGE_ENTRIES "")
+set(APP_RESOURCE_STAGED_FILES "")
+set(APP_RESOURCE_SORTED_NAMES "")
+set(APP_RESOURCE_ENABLED 0)
+
+foreach(APP_RESOURCE_RECORD IN LISTS APP_RESOURCE_RECORDS)
+    string(REPLACE "|" ";" APP_RESOURCE_FIELDS "${APP_RESOURCE_RECORD}")
+    list(LENGTH APP_RESOURCE_FIELDS APP_RESOURCE_FIELD_COUNT)
+    if(NOT APP_RESOURCE_FIELD_COUNT EQUAL 6)
+        message(FATAL_ERROR "Invalid resource manifest record: ${APP_RESOURCE_RECORD}")
     endif()
-
-    if(APP_WEATHER_IMAGE_COUNT EQUAL APP_WEATHER_IMAGE_EXPECTED_COUNT)
-        idf_build_get_property(APP_WEATHER_PYTHON PYTHON)
-        idf_component_get_property(APP_WEATHER_LVGL_DIR lvgl__lvgl COMPONENT_DIR)
-        set(APP_WEATHER_CONVERTER
-            "${APP_WEATHER_LVGL_DIR}/scripts/LVGLImage.py")
-        if(NOT EXISTS "${APP_WEATHER_CONVERTER}")
-            message(FATAL_ERROR
-                "The locked LVGL component does not provide scripts/LVGLImage.py")
+    list(GET APP_RESOURCE_FIELDS 0 APP_RESOURCE_SOURCE)
+    list(GET APP_RESOURCE_FIELDS 1 APP_RESOURCE_OUTPUT)
+    list(GET APP_RESOURCE_FIELDS 2 APP_RESOURCE_SEMANTIC)
+    list(GET APP_RESOURCE_FIELDS 3 APP_RESOURCE_WIDTH)
+    list(GET APP_RESOURCE_FIELDS 4 APP_RESOURCE_HEIGHT)
+    list(GET APP_RESOURCE_FIELDS 5 APP_RESOURCE_KIND)
+    if(NOT EXISTS "${APP_RESOURCE_SOURCE}")
+        message(FATAL_ERROR "Resource source does not exist: ${APP_RESOURCE_SOURCE}")
+    endif()
+    list(FIND APP_RESOURCE_OUTPUTS "${APP_RESOURCE_OUTPUT}" APP_RESOURCE_OUTPUT_INDEX)
+    if(NOT APP_RESOURCE_OUTPUT_INDEX EQUAL -1)
+        message(FATAL_ERROR "Duplicate resource output name: ${APP_RESOURCE_OUTPUT}")
+    endif()
+    list(APPEND APP_RESOURCE_OUTPUTS "${APP_RESOURCE_OUTPUT}")
+    if(APP_RESOURCE_KIND STREQUAL "PNG")
+        if(APP_RESOURCE_WIDTH LESS 1 OR APP_RESOURCE_HEIGHT LESS 1)
+            message(FATAL_ERROR "Invalid PNG dimensions: ${APP_RESOURCE_SOURCE}")
         endif()
-
-        set(APP_WEATHER_GENERATED_DIR
-            "${CMAKE_CURRENT_BINARY_DIR}/weather_res_fs")
-        set(APP_WEATHER_GENERATED_FILES "")
-        foreach(APP_WEATHER_IMAGE_FILE IN LISTS APP_WEATHER_IMAGE_FILES)
-            get_filename_component(APP_WEATHER_IMAGE_STEM
-                "${APP_WEATHER_IMAGE_FILE}" NAME_WE)
-            set(APP_WEATHER_IMAGE_SOURCE
-                "${CMAKE_CURRENT_LIST_DIR}/res_fs/${APP_WEATHER_IMAGE_FILE}")
-            set(APP_WEATHER_IMAGE_BIN
-                "${APP_WEATHER_GENERATED_DIR}/${APP_WEATHER_IMAGE_STEM}.bin")
-            add_custom_command(
-                OUTPUT "${APP_WEATHER_IMAGE_BIN}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory
-                    "${APP_WEATHER_GENERATED_DIR}"
-                COMMAND "${APP_WEATHER_PYTHON}" "${APP_WEATHER_CONVERTER}"
-                    --ofmt BIN
-                    --cf RGB565A8
-                    --compress NONE
-                    --output "${APP_WEATHER_GENERATED_DIR}"
-                    "${APP_WEATHER_IMAGE_SOURCE}"
-                DEPENDS
-                    "${APP_WEATHER_IMAGE_SOURCE}"
-                    "${APP_WEATHER_CONVERTER}"
-                VERBATIM)
-            list(APPEND APP_WEATHER_GENERATED_FILES
-                "${APP_WEATHER_IMAGE_BIN}")
-        endforeach()
-
-        set(APP_WEATHER_FONT_SOURCE
-            "${CMAKE_CURRENT_LIST_DIR}/res_fs/font.ttf")
-        set(APP_WEATHER_FONT_OUTPUT
-            "${APP_WEATHER_GENERATED_DIR}/font.ttf")
-        add_custom_command(
-            OUTPUT "${APP_WEATHER_FONT_OUTPUT}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                "${APP_WEATHER_GENERATED_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${APP_WEATHER_FONT_SOURCE}"
-                "${APP_WEATHER_FONT_OUTPUT}"
-            DEPENDS "${APP_WEATHER_FONT_SOURCE}"
-            VERBATIM)
-        list(APPEND APP_WEATHER_GENERATED_FILES
-            "${APP_WEATHER_FONT_OUTPUT}")
-
-        spiffs_create_partition_assets(
-            res "${APP_WEATHER_GENERATED_DIR}"
-            FLASH_IN_PROJECT
-            MMAP_FILE_SUPPORT_FORMAT ".ttf,.bin"
-            DEPENDS ${APP_WEATHER_GENERATED_FILES})
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE
-            APP_WEATHER_IMAGES_ENABLED=1)
+        list(FIND APP_RESOURCE_SEMANTICS "${APP_RESOURCE_SEMANTIC}" APP_RESOURCE_SEMANTIC_INDEX)
+        if(NOT APP_RESOURCE_SEMANTIC_INDEX EQUAL -1)
+            message(FATAL_ERROR "Duplicate resource semantic ID: ${APP_RESOURCE_SEMANTIC}")
+        endif()
+        list(APPEND APP_RESOURCE_SEMANTICS "${APP_RESOURCE_SEMANTIC}")
+    elseif(NOT APP_RESOURCE_KIND STREQUAL "FONT")
+        message(FATAL_ERROR "Unsupported resource kind ${APP_RESOURCE_KIND}: ${APP_RESOURCE_SOURCE}")
+    endif()
+    if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS AND APP_RESOURCE_KIND STREQUAL "PNG")
+        string(REGEX REPLACE "\\.[^.]+$" ".bin" APP_RESOURCE_STAGED_NAME "${APP_RESOURCE_OUTPUT}")
     else()
-        spiffs_create_partition_assets(
-            res res_fs
-            FLASH_IN_PROJECT
-            MMAP_FILE_SUPPORT_FORMAT ".ttf")
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE
-            APP_WEATHER_IMAGES_ENABLED=0)
+        set(APP_RESOURCE_STAGED_NAME "${APP_RESOURCE_OUTPUT}")
     endif()
+    get_filename_component(APP_RESOURCE_STAGED_EXT
+        "${APP_RESOURCE_STAGED_NAME}" EXT)
+    get_filename_component(APP_RESOURCE_STAGED_BASE
+        "${APP_RESOURCE_STAGED_NAME}" NAME_WE)
+    list(FIND APP_RESOURCE_STAGED_OUTPUTS "${APP_RESOURCE_STAGED_NAME}"
+        APP_RESOURCE_STAGED_INDEX)
+    if(NOT APP_RESOURCE_STAGED_INDEX EQUAL -1)
+        message(FATAL_ERROR "Duplicate staged resource name: ${APP_RESOURCE_STAGED_NAME}")
+    endif()
+    list(APPEND APP_RESOURCE_STAGED_OUTPUTS "${APP_RESOURCE_STAGED_NAME}")
+    list(APPEND APP_RESOURCE_SORTED_NAMES
+        "${APP_RESOURCE_STAGED_EXT}|${APP_RESOURCE_STAGED_BASE}")
+endforeach()
+
+list(SORT APP_RESOURCE_SORTED_NAMES)
+list(LENGTH APP_RESOURCE_RECORDS APP_RESOURCE_RECORD_COUNT)
+if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS AND APP_RESOURCE_RECORD_COUNT GREATER 0)
+    set(APP_RESOURCE_ENABLED 1)
+endif()
+
+if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS)
+    idf_build_get_property(APP_RESOURCE_PYTHON PYTHON)
+    idf_component_get_property(APP_RESOURCE_LVGL_DIR lvgl__lvgl COMPONENT_DIR)
+    set(APP_RESOURCE_CONVERTER "${APP_RESOURCE_LVGL_DIR}/scripts/LVGLImage.py")
+    if(NOT EXISTS "${APP_RESOURCE_CONVERTER}")
+        message(FATAL_ERROR "The locked LVGL component does not provide scripts/LVGLImage.py")
+    endif()
+    set(APP_RESOURCE_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app_res_fs")
+else()
+    set(APP_RESOURCE_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app_res_raw")
+endif()
+
+set(APP_RESOURCE_INDEX 0)
+foreach(APP_RESOURCE_RECORD IN LISTS APP_RESOURCE_RECORDS)
+    string(REPLACE "|" ";" APP_RESOURCE_FIELDS "${APP_RESOURCE_RECORD}")
+    list(GET APP_RESOURCE_FIELDS 0 APP_RESOURCE_SOURCE)
+    list(GET APP_RESOURCE_FIELDS 1 APP_RESOURCE_OUTPUT)
+    list(GET APP_RESOURCE_FIELDS 2 APP_RESOURCE_SEMANTIC)
+    list(GET APP_RESOURCE_FIELDS 3 APP_RESOURCE_WIDTH)
+    list(GET APP_RESOURCE_FIELDS 4 APP_RESOURCE_HEIGHT)
+    list(GET APP_RESOURCE_FIELDS 5 APP_RESOURCE_KIND)
+    if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS AND APP_RESOURCE_KIND STREQUAL "PNG")
+        string(REGEX REPLACE "\\.[^.]+$" ".bin" APP_RESOURCE_STAGED_NAME "${APP_RESOURCE_OUTPUT}")
+    else()
+        set(APP_RESOURCE_STAGED_NAME "${APP_RESOURCE_OUTPUT}")
+    endif()
+    get_filename_component(APP_RESOURCE_STAGED_EXT
+        "${APP_RESOURCE_STAGED_NAME}" EXT)
+    get_filename_component(APP_RESOURCE_STAGED_BASE
+        "${APP_RESOURCE_STAGED_NAME}" NAME_WE)
+    list(FIND APP_RESOURCE_SORTED_NAMES
+        "${APP_RESOURCE_STAGED_EXT}|${APP_RESOURCE_STAGED_BASE}"
+        APP_RESOURCE_ASSET_INDEX)
+    if(APP_RESOURCE_KIND STREQUAL "PNG")
+        string(APPEND APP_RESOURCE_IMAGE_ENTRIES
+            "    { ${APP_RESOURCE_SEMANTIC}, ${APP_RESOURCE_ASSET_INDEX}U, ${APP_RESOURCE_WIDTH}U, ${APP_RESOURCE_HEIGHT}U },\n")
+    endif()
+    set(APP_RESOURCE_DEST "${APP_RESOURCE_STAGE_DIR}/${APP_RESOURCE_STAGED_NAME}")
+    if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS AND APP_RESOURCE_KIND STREQUAL "PNG")
+        set(APP_RESOURCE_TMP "${CMAKE_CURRENT_BINARY_DIR}/app_res_tmp_${APP_RESOURCE_INDEX}")
+        get_filename_component(APP_RESOURCE_SOURCE_STEM "${APP_RESOURCE_SOURCE}" NAME_WE)
+        add_custom_command(OUTPUT "${APP_RESOURCE_DEST}"
+            COMMAND ${CMAKE_COMMAND} -E remove_directory "${APP_RESOURCE_TMP}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_RESOURCE_TMP}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_RESOURCE_STAGE_DIR}"
+            COMMAND "${APP_RESOURCE_PYTHON}" "${APP_RESOURCE_CONVERTER}"
+                --ofmt BIN --cf RGB565A8 --compress NONE
+                --output "${APP_RESOURCE_TMP}" "${APP_RESOURCE_SOURCE}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${APP_RESOURCE_TMP}/${APP_RESOURCE_SOURCE_STEM}.bin" "${APP_RESOURCE_DEST}"
+            DEPENDS "${APP_RESOURCE_SOURCE}" "${APP_RESOURCE_CONVERTER}"
+            VERBATIM)
+    else()
+        add_custom_command(OUTPUT "${APP_RESOURCE_DEST}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_RESOURCE_STAGE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${APP_RESOURCE_SOURCE}" "${APP_RESOURCE_DEST}"
+            DEPENDS "${APP_RESOURCE_SOURCE}"
+            VERBATIM)
+    endif()
+    list(APPEND APP_RESOURCE_STAGED_FILES "${APP_RESOURCE_DEST}")
+    math(EXPR APP_RESOURCE_INDEX "${APP_RESOURCE_INDEX} + 1")
+endforeach()
+
+set(APP_RESOURCE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/app_resources_generated.h")
+set(APP_RESOURCE_FILE_COUNT_VALUE 0)
+set(APP_RESOURCE_CHECKSUM_VALUE 0)
+if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS)
+    set(APP_RESOURCE_FILE_COUNT_VALUE MMAP_RES_FILES)
+    set(APP_RESOURCE_CHECKSUM_VALUE MMAP_RES_CHECKSUM)
+endif()
+configure_file("${CMAKE_CURRENT_LIST_DIR}/app_resources_generated.h.in"
+    "${APP_RESOURCE_HEADER}" @ONLY)
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    APP_RESOURCES_ENABLED=${APP_RESOURCE_ENABLED})
+
+add_custom_target(app_resources_stage DEPENDS ${APP_RESOURCE_STAGED_FILES})
+if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS)
+    spiffs_create_partition_assets(res "${APP_RESOURCE_STAGE_DIR}"
+        FLASH_IN_PROJECT MMAP_FILE_SUPPORT_FORMAT ".ttf,.bin"
+        DEPENDS ${APP_RESOURCE_STAGED_FILES})
     add_dependencies(${COMPONENT_LIB} assets_res_bin)
 else()
-    fatfs_create_rawflash_image(res res_fs FLASH_IN_PROJECT)
+    fatfs_create_rawflash_image(res "${APP_RESOURCE_STAGE_DIR}" FLASH_IN_PROJECT)
+    add_dependencies(fatfs_res_bin app_resources_stage)
 endif()
