@@ -148,6 +148,20 @@ static const app_manager_app_desc_t s_required_apps[] =
         .name = "weather", .id = APP_MANAGER_ID_WEATHER,
         .root_page_id = "root",
     },
+    {
+        .name = "clock", .id = APP_MANAGER_ID_CLOCK, .root_page_id = "root",
+    },
+    {
+        .name = "recorder", .id = APP_MANAGER_ID_RECORDER,
+        .root_page_id = "root",
+    },
+    {
+        .name = "level", .id = APP_MANAGER_ID_LEVEL, .root_page_id = "root",
+    },
+    {
+        .name = "diagnostics", .id = APP_MANAGER_ID_DIAGNOSTICS,
+        .root_page_id = "root",
+    },
 };
 
 static void _test_record(test_event_t event)

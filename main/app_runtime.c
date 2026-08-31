@@ -29,6 +29,10 @@
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
+#include "timer_service.h"
+#include "recorder_service.h"
+#include "onboarding_service.h"
+#include "esp_timer.h"
 #include "weather_service.h"
 
 #ifdef ESP_PLATFORM
@@ -66,6 +70,9 @@ typedef struct app_runtime_ownership
     bool power_attempted;
     bool imu_attempted;
     bool audio_attempted;
+    bool timer_attempted;
+    bool recorder_attempted;
+    bool onboarding_attempted;
     bool sd_attempted;
     bool connectivity_owned;
     event_bus_sub_handle_t connectivity_subscription;
@@ -315,6 +322,8 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.wake_requester_registered ||
                  s_ownership.power_attempted || s_ownership.imu_attempted ||
                  s_ownership.audio_attempted || s_ownership.sd_attempted ||
+                 s_ownership.timer_attempted || s_ownership.recorder_attempted ||
+                 s_ownership.onboarding_attempted ||
                  s_ownership.connectivity_owned ||
                  s_ownership.connectivity_subscription !=
                  EVENT_BUS_SUB_HANDLE_INVALID ||
@@ -350,6 +359,10 @@ static bool _app_runtime_required_apps_present(void)
         APP_MANAGER_ID_SETTINGS,
         APP_MANAGER_ID_SETUP,
         APP_MANAGER_ID_WEATHER,
+        APP_MANAGER_ID_CLOCK,
+        APP_MANAGER_ID_RECORDER,
+        APP_MANAGER_ID_LEVEL,
+        APP_MANAGER_ID_DIAGNOSTICS,
     };
     bool found[sizeof(required_ids) / sizeof(required_ids[0])] = {false};
     bool all_found = true;
@@ -427,6 +440,24 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.weather_attempted = false;
         app_runtime_pm_set_weather_participant(false);
+    }
+    if (s_ownership.timer_attempted)
+    {
+        result = timer_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.timer_attempted = false;
+    }
+    if (s_ownership.recorder_attempted)
+    {
+        result = recorder_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.recorder_attempted = false;
     }
     if (s_ownership.connectivity_owned)
     {
@@ -602,6 +633,15 @@ static esp_err_t _app_runtime_stop_foundations(void)
             s_ownership.fs_attempted = false;
         }
     }
+    if (s_ownership.onboarding_attempted)
+    {
+        esp_err_t result = onboarding_service_deinit();
+        _app_runtime_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            s_ownership.onboarding_attempted = false;
+        }
+    }
     if (s_ownership.factory_reset_attempted)
     {
         esp_err_t result = factory_reset_service_deinit();
@@ -714,6 +754,20 @@ static esp_err_t _app_runtime_start_foundations(void)
             return result;
         }
     }
+    result = onboarding_service_init();
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    s_ownership.onboarding_attempted = true;
+    if (s_factory_reset_pending)
+    {
+        result = onboarding_service_reset();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+    }
 
     s_ownership.fs_attempted = true;
     result = fs_storage_init();
@@ -785,6 +839,17 @@ static esp_err_t _app_runtime_start_platform(
         return result;
     }
     app_runtime_pm_set_time_participant(true);
+
+    const timer_service_config_t timer_config =
+    {
+        .monotonic_time_us = esp_timer_get_time,
+    };
+    result = timer_service_init(&timer_config);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    s_ownership.timer_attempted = true;
 
     s_ownership.chore_attempted = true;
     result = chore_service_init(&context->product->chore);
@@ -1001,6 +1066,21 @@ static esp_err_t _app_runtime_start_app_services(
             LOG_W("SD card unavailable: %s", esp_err_to_name(result));
         }
     }
+    if (s_ownership.audio_attempted && s_ownership.sd_attempted)
+    {
+        const recorder_service_config_t recorder_config =
+        {
+            .directory = "/sdcard/MicroTech/Recordings",
+            .max_duration_seconds = 30U * 60U,
+            .minimum_free_bytes = 8U * 1024U * 1024U,
+        };
+        result = recorder_service_init(&recorder_config);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.recorder_attempted = true;
+    }
     return ESP_OK;
 }
 
@@ -1118,10 +1198,17 @@ static esp_err_t _app_runtime_start_initial_app(void)
         return result;
     }
 
+    onboarding_service_state_t onboarding = ONBOARDING_SERVICE_PENDING;
+    result = onboarding_service_get_state(&onboarding);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
     const app_manager_nav_request_t request =
     {
         .operation = APP_MANAGER_NAV_OP_RUN,
-        .app_id = APP_MANAGER_ID_HOME,
+        .app_id = onboarding == ONBOARDING_SERVICE_PENDING ?
+        APP_MANAGER_ID_SETUP : APP_MANAGER_ID_HOME,
         .transition = {
             .effect = APP_MANAGER_TRANSITION_NONE,
         },

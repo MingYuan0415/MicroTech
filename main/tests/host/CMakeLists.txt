@@ -73,6 +73,7 @@ add_executable(app_runtime_test
     app_runtime_test.c
     ../../app_product_config.c
     ../../app_runtime.c
+    timer_service_fake.c
 )
 
 target_include_directories(app_runtime_test PRIVATE
@@ -96,6 +97,9 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/middleware/components/sd_storage_service/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
+    ../../../layers/middleware/components/timer_service/include
+    ../../../layers/middleware/components/recorder_service/include
+    ../../../layers/middleware/components/onboarding_service/include
     ../../../layers/middleware/components/weather_service/include
 )
 
@@ -108,6 +112,7 @@ add_main_host_test(app_runtime_test app_runtime_test)
 add_executable(app_runtime_pm_test
     app_runtime_pm_test.c
     ../../app_runtime_pm.c
+    timer_service_fake.c
 )
 target_include_directories(app_runtime_pm_test PRIVATE
     fakes
@@ -126,6 +131,9 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/middleware/components/ble_runtime/include
     ../../../layers/middleware/components/system_pm/include
     ../../../layers/middleware/components/time_service/include
+    ../../../layers/middleware/components/timer_service/include
+    ../../../layers/middleware/components/recorder_service/include
+    ../../../layers/middleware/components/onboarding_service/include
     ../../../layers/middleware/components/weather_service/include
 )
 target_link_libraries(app_runtime_pm_test PRIVATE Threads::Threads)

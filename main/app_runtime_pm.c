@@ -11,6 +11,7 @@
 #include "imu_service.h"
 #include "power_service.h"
 #include "device_link_service.h"
+#include "recorder_service.h"
 #include "time_service.h"
 #include "weather_service.h"
 
@@ -60,6 +61,10 @@ static bool _app_runtime_pm_is_standby_allowed(void)
     }
     if (s_sleep_context.device_link_participant &&
             device_link_service_is_busy())
+    {
+        return false;
+    }
+    if (recorder_service_is_busy())
     {
         return false;
     }

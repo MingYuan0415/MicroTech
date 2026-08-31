@@ -17,6 +17,9 @@ idf_component_register(
         event_bus
         nv_storage
         time_service
+        timer_service
+        recorder_service
+        onboarding_service
         weather_service
         system_pm
         power_service
