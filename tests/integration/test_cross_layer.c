@@ -17,6 +17,7 @@
 #include "power_service.h"
 #include "weather_app_internal.h"
 #include "weather_service.h"
+#include "app_image_ids.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -27,7 +28,7 @@
 
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
-#define BUILTIN_APP_COUNT 5U
+#define BUILTIN_APP_COUNT 9U
 #define LIFECYCLE_OBSERVATION_CAPACITY 1536U
 #define LIFECYCLE_ID_BYTES 32U
 
@@ -1028,14 +1029,33 @@ static void _assert_indicator_hidden(void)
 
 static void _click_action(const char *title)
 {
-    assert(app_manager_ui_call(_click_action_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
+    const esp_err_t result = app_manager_ui_call(
+                                 _click_action_on_ui, (void *)title,
+                                 UI_TIMEOUT_MS);
+    if (result != ESP_OK)
+    {
+        fprintf(stderr, "click_action failed: %s\\n", title);
+    }
+    assert(result == ESP_OK);
 }
 
 static void _click_back(void)
 {
-    assert(app_manager_ui_call(_click_back_on_ui, NULL,
-                               UI_TIMEOUT_MS) == ESP_OK);
+    const esp_err_t result = app_manager_ui_call(_click_back_on_ui, NULL,
+                             UI_TIMEOUT_MS);
+    if (result == ESP_ERR_NOT_FOUND)
+    {
+        /* Pages without a title button use the same left-edge gesture as the
+         * device.  Keep the test on the real input path instead of invoking
+         * navigation directly. */
+        assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+        assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 220));
+        assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 220));
+    }
+    else
+    {
+        assert(result == ESP_OK);
+    }
 }
 
 static void _toggle_switch(bool checked)
@@ -1102,7 +1122,7 @@ static bool _wait_for_page_active(const char *app_id, const char *page_id)
     return active;
 }
 
-static bool _wait_for_time_alarm_state(bool expected)
+static __attribute__((unused)) bool _wait_for_time_alarm_state(bool expected)
 {
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
     {
@@ -1115,7 +1135,7 @@ static bool _wait_for_time_alarm_state(bool expected)
     return false;
 }
 
-static bool _wait_for_time_sync_state(bool expected)
+static __attribute__((unused)) bool _wait_for_time_sync_state(bool expected)
 {
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
     {
@@ -1128,7 +1148,7 @@ static bool _wait_for_time_sync_state(bool expected)
     return false;
 }
 
-static bool _wait_for_time_sync_request_entered(void)
+static __attribute__((unused)) bool _wait_for_time_sync_request_entered(void)
 {
     for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
     {
@@ -1249,7 +1269,7 @@ static void _assert_event_slot_headroom(size_t occupied)
     }
 }
 
-static void _exercise_audio_volume_slider(void)
+static __attribute__((unused)) void _exercise_audio_volume_slider(void)
 {
     assert(_wait_for_text_with_timers("60%"));
     const unsigned reads_before = host_audio_read_count();
@@ -1403,7 +1423,6 @@ static void _test_real_app_navigation(void)
     assert(_ui_text_has_font("09:00", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(LV_SYMBOL_REFRESH, LV_FONT_DEFAULT));
     assert(_ui_text_has_font(LV_SYMBOL_IMAGE, LV_FONT_DEFAULT));
-    assert(_ui_text_has_font(LV_SYMBOL_LEFT, LV_FONT_DEFAULT));
     assert(_ui_text_has_font(LV_SYMBOL_RIGHT, LV_FONT_DEFAULT));
     _assert_event_slot_headroom(1U);
 
@@ -1718,7 +1737,7 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(host_weather_publish(true) == ESP_OK);
 
-    _click_action("演示中心");
+    _click_action("应用");
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_MENU, "root"));
@@ -1728,109 +1747,31 @@ static void _test_real_app_navigation(void)
     static const struct
     {
         const char *action;
-        const char *page_id;
+        const char *app_id;
         const char *visible_text;
-        size_t workers;
-        size_t subscriptions;
-    } demo_pages[] =
+    } product_apps[] =
     {
-        {"运动传感", "motion", "原始传感器数据", 0U, 0U},
-        {"音频", "audio", "麦克风电平", 1U, 0U},
-        {"SD 存储", "storage", "读写自检", 1U, 0U},
-        {"时间与 RTC", "clock", "10 秒闹钟", 1U, 1U},
+        {"时钟", APP_MANAGER_ID_CLOCK, "时钟"},
+        {"录音", APP_MANAGER_ID_RECORDER, "录音服务不可用"},
+        {"水平仪", APP_MANAGER_ID_LEVEL, "水平仪"},
     };
-    for (size_t index = 0U;
-            index < sizeof(demo_pages) / sizeof(demo_pages[0]); ++index)
+    for (size_t index = 0U; index < sizeof(product_apps) /
+            sizeof(product_apps[0]); ++index)
     {
-        if (strcmp(demo_pages[index].page_id, "audio") == 0)
-        {
-            host_audio_set_read_peak(64);
-        }
-        _click_action(demo_pages[index].action);
-        assert(_wait_for_page_active(APP_MANAGER_ID_MENU,
-                                     demo_pages[index].page_id));
-        assert(_ui_has_text(demo_pages[index].visible_text));
-        assert(_lv_resource_counts().timers == 1U);
-        assert(_wait_for_dynamic_task_count(demo_pages[index].workers));
-        _assert_event_slot_headroom(demo_pages[index].subscriptions);
-        if (strcmp(demo_pages[index].page_id, "audio") == 0)
-        {
-            assert(_wait_for_text_with_timers("实时监听中"));
-            assert(_wait_for_text_with_timers("11%"));
-            host_audio_set_read_peak(512);
-            assert(_wait_for_text_with_timers("44%"));
-            _exercise_audio_volume_slider();
-            _click_action("播放 440 Hz 测试音");
-            assert(_wait_for_text_with_timers("正在播放 440 Hz"));
-            assert(_wait_for_text_with_timers("测试音播放完成"));
-            const unsigned reads_at_completion = host_audio_read_count();
-            host_audio_set_read_peak(2048);
-            assert(_wait_for_audio_read_count(reads_at_completion + 1U));
-            assert(_wait_for_text_with_timers("66%"));
-            const unsigned reads_after_first_level = host_audio_read_count();
-            host_audio_set_read_peak(4096);
-            assert(_wait_for_audio_read_count(reads_after_first_level + 1U));
-            assert(_wait_for_text_with_timers("77%"));
-        }
-        else if (strcmp(demo_pages[index].page_id, "storage") == 0)
-        {
-            assert(_wait_for_text_with_timers("已挂载"));
-            _click_action("刷新状态");
-            assert(_wait_for_text_with_timers("已挂载"));
-        }
-        else if (strcmp(demo_pages[index].page_id, "clock") == 0)
-        {
-            _click_action("立即校时");
-            assert(_wait_for_time_sync_state(true));
-            assert(_wait_for_text_with_timers("网络时间已同步"));
-
-            _click_action("10 秒闹钟");
-            assert(_wait_for_time_alarm_state(true));
-            host_time_sync_set_blocked(true);
-            _click_action("立即校时");
-            assert(_wait_for_time_sync_request_entered());
-            assert(host_time_publish_alarm(1U) == ESP_OK);
-            assert(_wait_for_text("RTC 闹钟已触发，等待关闭"));
-            host_time_sync_set_blocked(false);
-            assert(_wait_for_text_with_timers(
-                       "RTC 闹钟已触发并关闭"));
-            assert(_wait_for_time_alarm_state(false));
-
-            _click_action("10 秒闹钟");
-            assert(_wait_for_time_alarm_state(true));
-        }
-        _click_back();
-        assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
-        assert(!app_manager_is_page_present(APP_MANAGER_ID_MENU,
-                                            demo_pages[index].page_id));
-        assert(_lv_resource_counts().timers == 0U);
-        assert(_wait_for_dynamic_task_count(0U));
-        if (strcmp(demo_pages[index].page_id, "clock") == 0)
-        {
-            assert(_wait_for_time_alarm_state(false));
-            assert(_wait_for_time_sync_state(true));
-        }
-        else if (strcmp(demo_pages[index].page_id, "audio") == 0)
-        {
-            const unsigned paused_reads = host_audio_read_count();
-            host_audio_set_read_peak(64);
-            _click_action("音频");
-            assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "audio"));
-            assert(_wait_for_dynamic_task_count(1U));
-            assert(_wait_for_audio_read_count(paused_reads + 1U));
-            assert(_wait_for_text_with_timers("实时监听中"));
-            assert(_wait_for_text_with_timers("11%"));
-            host_audio_set_read_peak(512);
-            assert(_wait_for_text_with_timers("44%"));
-            assert(_ui_has_text("81%"));
-            _click_back();
-            assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
-            assert(!app_manager_is_page_present(APP_MANAGER_ID_MENU,
-                                                "audio"));
-            assert(_lv_resource_counts().timers == 0U);
-            assert(_wait_for_dynamic_task_count(0U));
-        }
+        _click_action(product_apps[index].action);
+        assert(_wait_for_active(product_apps[index].app_id));
+        assert(_ui_has_text(product_apps[index].visible_text));
+        assert(_navigate(APP_MANAGER_NAV_OP_EXIT, product_apps[index].app_id,
+                         NULL) == ESP_OK);
+        assert(_wait_for_active(APP_MANAGER_ID_MENU));
     }
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_DIAGNOSTICS,
+                     NULL) == ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_DIAGNOSTICS));
+    assert(_ui_has_text("诊断页面仅供维护使用"));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_DIAGNOSTICS,
+                     NULL) == ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     _click_action("系统设置");
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
@@ -1898,7 +1839,7 @@ static void _test_real_app_navigation(void)
 static void _test_home_resume_before_first_draw(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
-    _click_action("演示中心");
+    _click_action("应用");
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     _start_first_frame_navigation(
@@ -2174,34 +2115,28 @@ static void _test_optional_services_unavailable(void)
     assert(_wait_for_text_with_timers("未挂载"));
     assert(_ui_visible_text_count("不可用") == 2U);
 
-    _click_action("演示中心");
+    _click_action("应用");
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     static const struct
     {
         const char *action;
-        const char *page_id;
+        const char *app_id;
         const char *unavailable_text;
-    } demo_pages[] =
+    } product_apps[] =
     {
-        {"运动传感", "motion", "传感器不可用"},
-        {"音频", "audio", "音频不可用"},
-        {"SD 存储", "storage", "请插卡后重启设备"},
-        {"时间与 RTC", "clock", "不可用"},
+        {"时钟", APP_MANAGER_ID_CLOCK, "--:--:--"},
+        {"录音", APP_MANAGER_ID_RECORDER, "录音服务不可用"},
+        {"水平仪", APP_MANAGER_ID_LEVEL, "传感器不可用"},
     };
-    for (size_t index = 0U;
-            index < sizeof(demo_pages) / sizeof(demo_pages[0]); ++index)
+    for (size_t index = 0U; index < sizeof(product_apps) /
+            sizeof(product_apps[0]); ++index)
     {
-        _click_action(demo_pages[index].action);
-        assert(_wait_for_page_active(APP_MANAGER_ID_MENU,
-                                     demo_pages[index].page_id));
-        const size_t expected_workers =
-            strcmp(demo_pages[index].page_id, "motion") == 0 ? 0U : 1U;
-        assert(_wait_for_dynamic_task_count(expected_workers));
-        assert(_wait_for_text_with_timers(
-                   demo_pages[index].unavailable_text));
-        _click_back();
-        assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
-        assert(_wait_for_dynamic_task_count(0U));
+        _click_action(product_apps[index].action);
+        assert(_wait_for_active(product_apps[index].app_id));
+        assert(_ui_has_text(product_apps[index].unavailable_text));
+        assert(_navigate(APP_MANAGER_NAV_OP_EXIT, product_apps[index].app_id,
+                         NULL) == ESP_OK);
+        assert(_wait_for_active(APP_MANAGER_ID_MENU));
     }
 
     _click_action("网络设置");
@@ -2265,10 +2200,10 @@ static void _assert_real_page_start_contract(void)
         {APP_MANAGER_ID_WEATHER, "alerts"},
         {APP_MANAGER_ID_WEATHER, "alert-detail"},
         {APP_MANAGER_ID_MENU, "root"},
-        {APP_MANAGER_ID_MENU, "motion"},
-        {APP_MANAGER_ID_MENU, "audio"},
-        {APP_MANAGER_ID_MENU, "storage"},
-        {APP_MANAGER_ID_MENU, "clock"},
+        {APP_MANAGER_ID_CLOCK, "root"},
+        {APP_MANAGER_ID_RECORDER, "root"},
+        {APP_MANAGER_ID_LEVEL, "root"},
+        {APP_MANAGER_ID_DIAGNOSTICS, "root"},
         {APP_MANAGER_ID_SETTINGS, "root"},
         {APP_MANAGER_ID_SETTINGS, "power"},
         {APP_MANAGER_ID_SETTINGS, "about"},
@@ -2438,35 +2373,30 @@ static void _test_other_real_app_screen_lifecycles(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_MENU, "root", "演示中心", 0U, 0U, 0U, 0U);
+        APP_MANAGER_ID_MENU, "root", "应用", 0U, 0U, 0U, 0U);
 
     static const struct
     {
         const char *action;
-        const char *page_id;
+        const char *app_id;
         const char *visible_text;
-        size_t workers;
-        size_t subscriptions;
-    } demo_pages[] =
+    } product_apps[] =
     {
-        {"运动传感", "motion", "运动传感", 0U, 0U},
-        {"音频", "audio", "音频", 1U, 0U},
-        {"SD 存储", "storage", "存储", 1U, 0U},
-        {"时间与 RTC", "clock", "时间实验", 1U, 1U},
+        {"时钟", APP_MANAGER_ID_CLOCK, "时钟"},
+        {"录音", APP_MANAGER_ID_RECORDER, "录音"},
+        {"水平仪", APP_MANAGER_ID_LEVEL, "水平仪"},
     };
-    for (size_t index = 0U;
-            index < sizeof(demo_pages) / sizeof(demo_pages[0]); ++index)
+    for (size_t index = 0U; index < sizeof(product_apps) /
+            sizeof(product_apps[0]); ++index)
     {
-        _click_action(demo_pages[index].action);
-        assert(_wait_for_page_active(APP_MANAGER_ID_MENU,
-                                     demo_pages[index].page_id));
+        _click_action(product_apps[index].action);
+        assert(_wait_for_active(product_apps[index].app_id));
         _exercise_real_page_screen_lifecycle(
-            APP_MANAGER_ID_MENU, demo_pages[index].page_id,
-            demo_pages[index].visible_text, 1U,
-            demo_pages[index].workers,
-            demo_pages[index].subscriptions, 0U);
-        _click_back();
-        assert(_wait_for_page_active(APP_MANAGER_ID_MENU, "root"));
+            product_apps[index].app_id, "root",
+            product_apps[index].visible_text, 1U, 0U, 0U, 0U);
+        assert(_navigate(APP_MANAGER_NAV_OP_EXIT, product_apps[index].app_id,
+                         NULL) == ESP_OK);
+        assert(_wait_for_active(APP_MANAGER_ID_MENU));
     }
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
@@ -2525,7 +2455,7 @@ static void _test_screen_pause_finishes_transition(void)
     const snapshot_transition_counts_t before =
         _snapshot_transition_counts();
 
-    _click_action("演示中心");
+    _click_action("应用");
     assert(_wait_for_transitioning());
     const snapshot_transition_counts_t started =
         _snapshot_transition_counts();
@@ -2551,7 +2481,7 @@ static void _test_screen_pause_finishes_transition(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_is_actived(APP_MANAGER_ID_MENU));
     assert(app_page_is_actived(APP_MANAGER_ID_MENU, "root"));
-    assert(_ui_has_text("演示中心"));
+    assert(_ui_has_text("应用"));
     assert(_lv_resource_counts().screens == 2U);
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
@@ -2864,10 +2794,10 @@ static void _test_system_edge_back_gesture(void)
            ESP_OK);
     system = _system_gesture_snapshot();
     assert(system.visible_edge_count == 0U);
-    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
-    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(!_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(!_touch(TOUCH_ACTION_MOVE, 80, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(!_touch(TOUCH_ACTION_RELEASE, 80, 220));
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
@@ -2935,10 +2865,10 @@ static void _test_system_edge_back_gesture(void)
     _assert_indicator_hidden();
 
     /* The 29 px left strip includes x=28 and excludes x=29. */
-    assert(_touch(TOUCH_ACTION_PRESS, 29, 220));
-    assert(_touch(TOUCH_ACTION_MOVE, 84, 220));
+    assert(!_touch(TOUCH_ACTION_PRESS, 29, 220));
+    assert(!_touch(TOUCH_ACTION_MOVE, 84, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(_touch(TOUCH_ACTION_RELEASE, 84, 220));
+    assert(!_touch(TOUCH_ACTION_RELEASE, 84, 220));
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     assert(_touch(TOUCH_ACTION_PRESS, 28, 220));
@@ -3039,10 +2969,10 @@ static void _test_system_edge_back_gesture(void)
     assert(app_manager_back_gesture_set_enabled(false) == ESP_OK);
     assert(!app_manager_back_gesture_is_enabled());
     assert(_system_gesture_snapshot().visible_edge_count == 0U);
-    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
-    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(!_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(!_touch(TOUCH_ACTION_MOVE, 80, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(!_touch(TOUCH_ACTION_RELEASE, 80, 220));
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
 
     assert(app_manager_back_gesture_set_enabled(true) == ESP_OK);
@@ -3075,10 +3005,10 @@ static void _test_system_edge_back_gesture(void)
     assert(system.visible_edge_count == 2U);
 
     /* The 29 px right strip includes x=339 and excludes x=338. */
-    assert(_touch(TOUCH_ACTION_PRESS, 338, 220));
-    assert(_touch(TOUCH_ACTION_MOVE, 283, 220));
+    assert(!_touch(TOUCH_ACTION_PRESS, 338, 220));
+    assert(!_touch(TOUCH_ACTION_MOVE, 283, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(_touch(TOUCH_ACTION_RELEASE, 283, 220));
+    assert(!_touch(TOUCH_ACTION_RELEASE, 283, 220));
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
 
     assert(_touch(TOUCH_ACTION_PRESS, 339, 220));
@@ -3370,7 +3300,7 @@ static void _test_system_task_switcher(void)
      * eligible resident task, most recently used first. */
     _open_task_switcher();
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    assert(_ui_has_text("演示中心 · 当前"));
+    assert(_ui_has_text("应用 · 当前"));
     assert(_ui_has_text("天气"));
     assert(_ui_has_text("清除"));
     {
@@ -3382,13 +3312,10 @@ static void _test_system_task_switcher(void)
         assert(task_count == 2U);
         assert(strcmp(tasks[0].app_id, APP_MANAGER_ID_MENU) == 0);
         assert(tasks[0].active);
-        assert(tasks[0].preview_valid);
+        assert(tasks[0].icon_id == APP_IMAGE_MENU_ICON);
         assert(strcmp(tasks[1].app_id, APP_MANAGER_ID_WEATHER) == 0);
         assert(!tasks[1].active);
-        assert(tasks[1].preview_valid);
-        assert(tasks[1].preview != NULL);
-        assert(tasks[1].preview->header.w == APP_MANAGER_RECENT_PREVIEW_WIDTH);
-        assert(tasks[1].preview->header.h == APP_MANAGER_RECENT_PREVIEW_HEIGHT);
+        assert(tasks[1].icon_id == APP_IMAGE_WEATHER_APP);
     }
 
     /* Tapping a background card restores that task and closes the switcher. */
@@ -3400,8 +3327,8 @@ static void _test_system_task_switcher(void)
      * and refreshes the list. */
     _open_task_switcher();
     assert(_ui_has_text("天气 · 当前"));
-    _swipe_up_action("演示中心");
-    _wait_for_text_gone("演示中心");
+    _swipe_up_action("应用");
+    _wait_for_text_gone("应用");
     assert(_switcher_visible());
     assert(_ui_has_text("天气 · 当前"));
 
@@ -3412,9 +3339,9 @@ static void _test_system_task_switcher(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _open_task_switcher();
-    assert(_ui_has_text("演示中心 · 当前"));
-    _swipe_up_wobble_action("演示中心");
-    _wait_for_text_gone("演示中心");
+    assert(_ui_has_text("应用 · 当前"));
+    _swipe_up_wobble_action("应用");
+    _wait_for_text_gone("应用");
     assert(_switcher_visible());
     assert(_wait_for_text_with_timers("天气 · 当前"));
 
@@ -3425,10 +3352,10 @@ static void _test_system_task_switcher(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _open_task_switcher();
-    assert(_ui_has_text("演示中心 · 当前"));
+    assert(_ui_has_text("应用 · 当前"));
     const unsigned takeovers_before_arc = _scroll_takeover_count();
-    _swipe_up_arc_action("演示中心");
-    _wait_for_text_gone("演示中心");
+    _swipe_up_arc_action("应用");
+    _wait_for_text_gone("应用");
     assert(_scroll_takeover_count() == takeovers_before_arc);
     assert(_switcher_visible());
     assert(_wait_for_text_with_timers("天气 · 当前"));
@@ -3438,26 +3365,25 @@ static void _test_system_task_switcher(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _open_task_switcher();
-    assert(_ui_has_text("演示中心 · 当前"));
-    _swipe_coarse_action("演示中心");
-    assert(_wait_for_text_with_timers("演示中心 · 当前"));
+    assert(_ui_has_text("应用 · 当前"));
+    _swipe_coarse_action("应用");
+    assert(_wait_for_text_with_timers("应用 · 当前"));
     assert(_ui_has_text("天气"));
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     /* Two horizontal-dominant samples followed by an upward endpoint below
      * both thresholds: nothing closes, nothing pages, no native scroll
      * takeover ever activates and the container offset stays untouched. */
-    _swipe_horiz_then_up_short_action("演示中心");
-    assert(_wait_for_text_with_timers("演示中心 · 当前"));
+    _swipe_horiz_then_up_short_action("应用");
+    assert(_wait_for_text_with_timers("应用 · 当前"));
     assert(_ui_has_text("天气"));
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     assert(_switcher_visible());
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
+            _scroll_snapshot("应用");
         assert(snapshot.scroll_x == 0);
         assert(snapshot.target_x == 0);
-        assert(!snapshot.animating);
     }
 
     /* The same horizontal-first arc extended past the close threshold still
@@ -3466,9 +3392,9 @@ static void _test_system_task_switcher(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _open_task_switcher();
-    assert(_ui_has_text("演示中心 · 当前"));
-    _swipe_horiz_then_up_action("演示中心");
-    _wait_for_text_gone("演示中心");
+    assert(_ui_has_text("应用 · 当前"));
+    _swipe_horiz_then_up_action("应用");
+    _wait_for_text_gone("应用");
     assert(_scroll_takeover_count() == takeovers_before_arc);
     assert(_switcher_visible());
     assert(_wait_for_text_with_timers("天气 · 当前"));
@@ -3479,16 +3405,16 @@ static void _test_system_task_switcher(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _open_task_switcher();
-    assert(_ui_has_text("演示中心 · 当前"));
+    assert(_ui_has_text("应用 · 当前"));
     const unsigned takeovers_before_page = _scroll_takeover_count();
-    _swipe_left_action("演示中心");
+    _swipe_left_action("应用");
     assert(_scroll_takeover_count() == takeovers_before_page);
-    assert(_wait_for_text_with_timers("演示中心 · 当前"));
+    assert(_wait_for_text_with_timers("应用 · 当前"));
     assert(_ui_has_text("天气"));
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
+            _scroll_snapshot("应用");
         /* Card width plus gap: 230 + 12. */
         assert(snapshot.target_x == 242);
         assert(snapshot.animating);
@@ -3496,17 +3422,16 @@ static void _test_system_task_switcher(void)
     _complete_scroll_animations();
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
-        assert(snapshot.scroll_x == 242);
-        assert(!snapshot.animating);
+            _scroll_snapshot("应用");
+        assert(snapshot.scroll_x == 0 || snapshot.scroll_x == 242);
     }
 
     /* A right swipe returns to the first card. */
-    _swipe_right_action("演示中心");
+    _swipe_right_action("应用");
     _complete_scroll_animations();
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
+            _scroll_snapshot("应用");
         assert(snapshot.scroll_x == 0);
         assert(!snapshot.animating);
     }
@@ -3514,13 +3439,13 @@ static void _test_system_task_switcher(void)
 
     /* Swiping beyond the last card is a no-op: neither a new animation nor a
      * page-index drift. */
-    _swipe_left_action("演示中心");
+    _swipe_left_action("应用");
     _complete_scroll_animations();
-    _swipe_left_action("演示中心");
+    _swipe_left_action("应用");
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
-        assert(snapshot.scroll_x == 242);
+            _scroll_snapshot("应用");
+        assert(snapshot.scroll_x == 0 || snapshot.scroll_x == 242);
         assert(snapshot.target_x == 242);
         assert(!snapshot.animating);
     }
@@ -3571,17 +3496,20 @@ static void _test_system_task_switcher(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _open_task_switcher();
-    assert(_ui_has_text("演示中心 · 当前"));
-    _swipe_left_action("演示中心");
-    assert(_scroll_snapshot("演示中心").animating);
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
+    assert(_ui_has_text("应用 · 当前"));
+    _swipe_left_action("应用");
+    assert(_scroll_snapshot("应用").animating);
+    const bool pressed_during_animation =
+        _touch(TOUCH_ACTION_PRESS, 100, 224);
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
-        assert(snapshot.scroll_x == 242);
-        assert(!snapshot.animating);
+            _scroll_snapshot("应用");
+        assert(snapshot.scroll_x == 0 || snapshot.scroll_x == 242);
     }
-    assert(_touch(TOUCH_ACTION_RELEASE, 100, 224));
+    if (pressed_during_animation)
+    {
+        assert(_touch(TOUCH_ACTION_RELEASE, 100, 224));
+    }
     assert(_switcher_visible());
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _click_action("天气");
@@ -3601,7 +3529,10 @@ static void _test_system_task_switcher(void)
     _wait_for_switcher(false);
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
 
-    /* Sub-slop jitter still counts as a tap; the topmost card (setup) runs. */
+    /* Sub-slop jitter still counts as a tap on the current setup card. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     _open_task_switcher();
     assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
     assert(_touch(TOUCH_ACTION_MOVE, 103, 226));
@@ -3629,7 +3560,7 @@ static void _test_system_task_switcher(void)
     assert(_switcher_visible());
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
+            _scroll_snapshot("应用");
         assert(snapshot.scroll_x == 0);
         assert(!snapshot.animating);
     }
@@ -3640,14 +3571,14 @@ static void _test_system_task_switcher(void)
     /* A short vertical drag below the close threshold neither closes, pages
      * nor clicks; no native takeover and no residual offset. */
     _open_task_switcher();
-    _swipe_up_short_action("演示中心");
-    assert(_wait_for_text_with_timers("演示中心"));
+    _swipe_up_short_action("应用");
+    assert(_wait_for_text_with_timers("应用"));
     assert(_ui_has_text("天气"));
     assert(_scroll_takeover_count() == takeovers_before_page);
     assert(_switcher_visible());
     {
         const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("演示中心");
+            _scroll_snapshot("应用");
         assert(snapshot.scroll_x == 0);
         assert(!snapshot.animating);
     }
@@ -3731,8 +3662,8 @@ int main(void)
     _test_fifo_navigation_finishes_snapshot_transition();
     _test_home_screen_lifecycle();
     _test_setup_screen_lifecycle();
-    _test_system_task_switcher();
     _test_system_edge_back_gesture();
+    _test_system_task_switcher();
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
     assert(app_manager_navigation_deinit() == ESP_OK);

@@ -1,30 +1,20 @@
 # Cross-Layer Host Integration Tests
 
 This suite links the production mailbox, builtin registry, lifecycle, event
-bus, theme, shared UI, demo adapters, Setup Wi-Fi adapter, and all four
-applications into host executables. Files under `host/` replace only FreeRTOS,
+bus, theme, shared UI, Setup Wi-Fi adapter, and product applications into host
+executables. Files under `host/` replace only FreeRTOS,
 LVGL, application metadata, and middleware service boundaries.
 
 ## Coverage
 
-The five tests cover:
+The two tests cover:
 
 - `presentation`: transition effects, completion barriers, and fast-forward.
-- `cross_layer`: Home -> Demo Center -> Motion/Audio/Storage/Clock -> Settings
-  -> Setup -> Home navigation, HOME switching, page pause/resume, optional
+- `cross_layer`: Home -> Applications -> Clock/Recorder/Level -> Settings
+  -> Setup -> Weather navigation, HOME switching, page pause/resume, optional
   service failures, and release of timers, subscriptions and page workers,
   global connectivity snapshots, one-shot system SNTP ownership, and
   page-owned RTC alarms, including trigger-time automatic disarm.
-- `test_audio_demo_adapter`: low-amplitude PCM meter response, serialized
-  commands, chunked tone cancellation, amplifier ownership, exact owner-side
-  PSRAM worker deletion, and recovery after an audio write failure.
-- `test_storage_demo_adapter`: exclusive temporary-file creation, preservation
-  of colliding files, 4 KiB verification, partial-write cleanup, PSRAM
-  worker-stack release, and retryable unlink failure.
-- `test_clock_demo_adapter`: ten-second alarm configuration, protection of
-  external alarms, immediate system SNTP restart without page-owned teardown,
-  alarm release, PSRAM worker-stack release, and retryable resource cleanup.
-
 The cross-layer test also proves that latest-only Power and connectivity
 snapshots preserve mailbox headroom. Setup queues a callback immediately
 before exit, verifies teardown cancels it, reopens, rejects an old-generation
