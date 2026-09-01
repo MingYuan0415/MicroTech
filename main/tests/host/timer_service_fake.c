@@ -6,6 +6,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+bool g_host_onboarding_pending;
+
+void host_onboarding_set_pending(bool pending)
+{
+    g_host_onboarding_pending = pending;
+}
+
 bool recorder_service_is_busy(void)
 {
     return false;
@@ -42,7 +49,8 @@ esp_err_t onboarding_service_get_state(onboarding_service_state_t *state)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    *state = ONBOARDING_SERVICE_COMPLETED;
+    *state = g_host_onboarding_pending ? ONBOARDING_SERVICE_PENDING :
+             ONBOARDING_SERVICE_COMPLETED;
     return ESP_OK;
 }
 

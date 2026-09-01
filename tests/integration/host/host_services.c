@@ -10,6 +10,7 @@
 #include "host_device_link_service.h"
 #include "host_factory_reset_service.h"
 #include "imu_service.h"
+#include "nv_storage.h"
 #include "power_service.h"
 #include "sd_storage_service.h"
 #include "time_service.h"
@@ -33,6 +34,9 @@ static atomic_bool s_power_available;
 static atomic_bool s_time_available;
 static atomic_bool s_imu_available;
 static atomic_bool s_audio_available;
+
+static uint8_t s_level_calibration_blob[64];
+static size_t s_level_calibration_size;
 static atomic_bool s_storage_available;
 static atomic_uint s_random_nonce = 0x13579BDFU;
 static atomic_uint s_imu_sequence = 1U;
@@ -922,6 +926,39 @@ uint32_t esp_random(void)
 const esp_app_desc_t *esp_app_get_description(void)
 {
     return &s_app_description;
+}
+
+esp_err_t nv_storage_set_blob(const char *key, const void *data, size_t len)
+{
+    if (key == NULL || data == NULL || strcmp(key, "level_cal") != 0 ||
+            len > sizeof(s_level_calibration_blob))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memcpy(s_level_calibration_blob, data, len);
+    s_level_calibration_size = len;
+    return ESP_OK;
+}
+
+esp_err_t nv_storage_get_blob(const char *key, void *out, size_t *size)
+{
+    if (key == NULL || out == NULL || size == NULL ||
+            strcmp(key, "level_cal") != 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_level_calibration_size == 0U)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (*size < s_level_calibration_size)
+    {
+        *size = s_level_calibration_size;
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(out, s_level_calibration_blob, s_level_calibration_size);
+    *size = s_level_calibration_size;
+    return ESP_OK;
 }
 
 const char *esp_err_to_name(esp_err_t error)

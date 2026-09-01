@@ -679,12 +679,13 @@ static esp_err_t _app_runtime_unwind(void)
         goto blocked;
     }
 #endif
-    result = _app_runtime_stop_active_services();
+    /* Tear down pages and their UI dispatch before services they may read. */
+    result = _app_runtime_stop_app_services();
     if (result != ESP_OK)
     {
         goto blocked;
     }
-    result = _app_runtime_stop_app_services();
+    result = _app_runtime_stop_active_services();
     if (result != ESP_OK)
     {
         goto blocked;
@@ -1295,13 +1296,13 @@ esp_err_t app_runtime_start(void)
         goto failed;
     }
 
-    result = _app_runtime_start_initial_app();
+    result = _app_runtime_start_connectivity(context.product);
     if (result != ESP_OK)
     {
         goto failed;
     }
 
-    result = _app_runtime_start_connectivity(context.product);
+    result = _app_runtime_start_initial_app();
     if (result != ESP_OK)
     {
         goto failed;

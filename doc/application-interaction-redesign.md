@@ -289,12 +289,12 @@ Setup App 保持独立，不并入 Settings，因为它拥有 BLE pairing window
 | Setup | BLE/Wi-Fi 管理已可用 | 首次启动引导 + 日常连接管理 | P0 |
 | Home | 时间、状态和固定入口 | 今日总览和离线首页 | P0 |
 | Weather | 已按新标准实现 | 天气、预警、缓存和网络状态 | P0 |
-| Clock | RTC/SNTP demo | 持续运行的时钟、倒计时、秒表、专注计时 | P0 |
+| Clock | 已实现时钟与计时工具 | 持续运行的时钟、倒计时、秒表、专注计时 | P0 |
 | Settings | 多项设置已可用 | 系统设置中心和维护入口 | P0 |
 | Applications | 当前没有正式目录 | 遍历 registry 的应用目录 | P0 |
-| Recorder | 还没有产品页面 | WAV 录音、列表、播放和删除 | P1 |
-| Level | 当前为 IMU 原始数据 demo | 水平仪和倾角工具 | P1 |
-| Diagnostics | 当前内容位于演示中心 | 隐藏硬件诊断和工程验证 | P1 |
+| Recorder | 已实现录音控制和播放入口 | WAV 录音、列表、播放和删除 | P1 |
+| Level | 已实现倾角显示和有限平滑 | 水平仪和倾角工具 | P1 |
+| Diagnostics | 已迁移为隐藏维护页 | 隐藏硬件诊断和工程验证 | P1 |
 | Recent Apps | App Manager Sys Layer 已有雏形 | 紧凑的最近使用和关闭面板 | P1 |
 
 ## 8. 应用详细设计
@@ -494,9 +494,9 @@ Recent Apps 属于 App Manager Sys Layer，不属于 `layers/apps` 中任何业�
 
 ## 9. 服务层规划
 
-当前已有 `connectivity_manager`、`device_link_service`、`weather_service`、`time_service`、`power_service`、`imu_service`、`audio_service`、`sd_storage_service`、`factory_reset_service`、`system_pm` 和 `event_bus`。应用重构还需要把持续业务从 demo adapter 收敛为产品服务：
+当前已有 `connectivity_manager`、`device_link_service`、`weather_service`、`time_service`、`power_service`、`imu_service`、`audio_service`、`sd_storage_service`、`factory_reset_service`、`system_pm`、`timer_service`、`recorder_service` 和 `event_bus`。计时与录音已经收敛到服务所有权，页面只负责快照呈现和命令提交：
 
-### 9.1 timer_service（规划）
+### 9.1 timer_service（已实现）
 
 - 拥有倒计时、秒表和专注状态。
 - 使用单调时间计算，发布不可变 snapshot 和 generation。
@@ -504,19 +504,16 @@ Recent Apps 属于 App Manager Sys Layer，不属于 `layers/apps` 中任何业�
 - 支持暂停、恢复、重置和完成事件。
 - 与 system PM 协作，明确休眠期间是否继续计时。
 
-### 9.2 recorder_service（规划）
+### 9.2 recorder_service（已实现基础闭环）
 
 - 拥有音频会话、WAV 文件、SD 空间和录音索引。
 - 页面只提交 start/pause/resume/stop/play/delete 命令。
 - 所有文件 I/O 在 service worker 执行；事件只携带小型状态和 ID。
 - 将拔卡、空间不足、PCM 超时和文件损坏映射为稳定错误分类。
 
-### 9.3 update_service（规划）
+### 9.3 update_service（暂不实现）
 
-- 检查、下载、校验、安装、重启和失败回滚。
-- 下载过程不阻塞 UI worker；必须显示可取消和失败重试状态。
-- 使用 HTTPS、镜像身份校验和 OTA 分区策略。
-- 更新中禁止恢复出厂、进入低功耗或启动新的 BLE 配对窗口。
+OTA 需要后台服务和 App 支撑，当前固件只在 Settings 维护入口明确显示“暂不可用”，不创建下载、安装或回滚流程。
 
 ### 9.4 配置和持久化
 
@@ -576,23 +573,21 @@ Kconfig 不承载用户时区、录音列表、计时状态或页面布局；硬
 - 明确 App registry 图标和名称的资源约定。
 - 将 Diagnostics route 与普通入口分离。
 
-### 阶段二：核心工具（P0）
+### 阶段二：核心工具（已完成基础实现）
 
-- 实现 `timer_service`。
-- 重建 Clock 页面：时钟、倒计时、秒表、专注。
-- 将 Home 的下一项任务接入 timer snapshot。
-- 将 Settings 的时间与提醒入口接入统一服务。
+- `timer_service` 使用单调时间提供倒计时、秒表和专注快照。
+- Clock 页面提供时钟、倒计时、秒表和专注控制，Home 显示活动计时摘要。
+- Settings 显示时间和电源策略入口；复杂提醒策略待 RTC 唤醒能力具备后扩展。
 
-### 阶段三：媒体和传感（P1）
+### 阶段三：媒体和传感（已完成基础实现）
 
-- 实现 `recorder_service` 和 Recorder App。
-- 将 IMU demo 改为 Level App。
-- 原始硬件页面全部移入 hidden Diagnostics。
-- 完成 SD 拔卡、空间不足和音频异常恢复。
+- `recorder_service` 和 Recorder App 提供 WAV 录音、暂停/继续、停止和播放入口。
+- Level 使用 IMU 快照计算倾角并提供有限平滑与当前姿态校准。
+- 原始硬件状态集中在 hidden Diagnostics，服务错误保留可见状态。
 
-### 阶段四：可维护产品（P1）
+### 阶段四：可维护产品（部分完成）
 
-- 实现 update_service 和 OTA 页面。
+- OTA/update_service 暂不实现，Settings 仅保留不可用提示。
 - 增加时区、单位和用户偏好持久化。
 - 重构 Recent Apps 为轻量列表，减少大图预览依赖。
 - 增加版本迁移和恢复出厂后的全链路验证。

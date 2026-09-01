@@ -129,6 +129,9 @@ EVENT_BUS_DEFINE_ID(CONNECTIVITY_MANAGER_MSG);
 
 static test_runtime_t s_test;
 
+extern bool g_host_onboarding_pending;
+void host_onboarding_set_pending(bool pending);
+
 static const app_manager_app_desc_t s_required_apps[] =
 {
     {
@@ -830,7 +833,8 @@ esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
 {
     assert(request != NULL);
     assert(request->operation == APP_MANAGER_NAV_OP_RUN);
-    assert(strcmp(request->app_id, APP_MANAGER_ID_HOME) == 0);
+    assert(strcmp(request->app_id, g_host_onboarding_pending ?
+                 APP_MANAGER_ID_SETUP : APP_MANAGER_ID_HOME) == 0);
     assert(request->transition.effect == APP_MANAGER_TRANSITION_NONE);
     assert(timeout_ms == UINT32_MAX);
     return _test_result(TEST_EVENT_APP_NAVIGATE);
@@ -1137,21 +1141,25 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_AUDIO_INIT,
         TEST_EVENT_SD_REGISTER,
         TEST_EVENT_SD_INIT,
-        TEST_EVENT_BUILTIN_DISCOVER,
-        TEST_EVENT_APP_NAVIGATE,
-        TEST_EVENT_DISPLAY_COMMIT,
-        TEST_EVENT_SCREEN_COMMIT,
         TEST_EVENT_NETWORK_INIT,
         TEST_EVENT_CONNECTIVITY_INIT,
         TEST_EVENT_CONNECTIVITY_SUBSCRIBE,
         TEST_EVENT_CONNECTIVITY_GET_STATUS,
         TEST_EVENT_TIME_NETWORK_READY,
+        TEST_EVENT_BUILTIN_DISCOVER,
+        TEST_EVENT_APP_NAVIGATE,
+        TEST_EVENT_DISPLAY_COMMIT,
+        TEST_EVENT_SCREEN_COMMIT,
         TEST_EVENT_STARTUP_COMMIT,
         TEST_EVENT_DISPLAY_BENCHMARK_START,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
+        TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
+        TEST_EVENT_APP_MANAGER_DEINIT,
+        TEST_EVENT_BLE_DEINIT,
+        TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_CONNECTIVITY_DEINIT,
         TEST_EVENT_TIME_NETWORK_READY,
@@ -1160,10 +1168,6 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_AUDIO_DEINIT,
         TEST_EVENT_IMU_DEINIT,
         TEST_EVENT_POWER_DEINIT,
-        TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
-        TEST_EVENT_APP_MANAGER_DEINIT,
-        TEST_EVENT_BLE_DEINIT,
-        TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_DEINIT,
         TEST_EVENT_CHORE_DEINIT,
         TEST_EVENT_TIME_DEINIT,
@@ -1227,6 +1231,19 @@ static void _test_successful_lifecycle(void)
     event_count = s_test.event_count;
     assert(app_runtime_stop() == ESP_OK);
     assert(s_test.event_count == event_count);
+}
+
+static void _test_onboarding_start_order(void)
+{
+    _test_reset();
+    host_onboarding_set_pending(true);
+    assert(app_runtime_start() == ESP_OK);
+    const size_t connectivity_index =
+        _test_event_index(TEST_EVENT_CONNECTIVITY_INIT);
+    const size_t navigate_index = _test_event_index(TEST_EVENT_APP_NAVIGATE);
+    assert(connectivity_index < navigate_index);
+    assert(app_runtime_stop() == ESP_OK);
+    host_onboarding_set_pending(false);
 }
 
 static void _test_fatal_start_failures(void)
@@ -1352,6 +1369,10 @@ static void _test_cleanup_retry_before_restart(void)
     static const test_event_t first_cleanup[] =
     {
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
+        TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
+        TEST_EVENT_APP_MANAGER_DEINIT,
+        TEST_EVENT_BLE_DEINIT,
+        TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_CANCEL,
         TEST_EVENT_CONNECTIVITY_DEINIT,
     };
@@ -1370,10 +1391,6 @@ static void _test_cleanup_retry_before_restart(void)
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
     assert(s_test.events[0] == TEST_EVENT_CONNECTIVITY_DEINIT);
-    /* The first attempt failed before the App Manager stage, so the retry
-     * completes it, including the Device Link teardown that now runs after
-     * app_manager_deinit. */
-    assert(_test_event_seen(TEST_EVENT_BLE_DEINIT));
     assert(_test_event_seen(TEST_EVENT_LOG_INIT));
     assert(app_runtime_stop() == ESP_OK);
 }
@@ -1391,10 +1408,6 @@ static void _test_every_cleanup_failure_is_retryable(void)
         TEST_EVENT_AUDIO_DEINIT,
         TEST_EVENT_IMU_DEINIT,
         TEST_EVENT_POWER_DEINIT,
-        TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
-        TEST_EVENT_APP_MANAGER_DEINIT,
-        TEST_EVENT_BLE_DEINIT,
-        TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_DEINIT,
         TEST_EVENT_CHORE_DEINIT,
         TEST_EVENT_TIME_DEINIT,
@@ -1524,6 +1537,7 @@ static void _test_degradable_connectivity_failures(void)
 int main(void)
 {
     _test_successful_lifecycle();
+    _test_onboarding_start_order();
     _test_fatal_start_failures();
     _test_factory_reset_recovery_order();
     _test_cleanup_retry_before_restart();

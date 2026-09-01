@@ -2420,6 +2420,20 @@ static void _test_other_real_app_screen_lifecycles(void)
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
+    _click_action("时间设置");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "time"));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_SETTINGS, "time", "时间设置", 1U, 0U, 0U, 0U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+
+    _click_action("存储管理");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "storage"));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_SETTINGS, "storage", "存储管理", 1U, 0U, 0U, 0U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+
     assert(host_factory_reset_service_request_count() == 0U);
     _click_action("恢复出厂设置");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "factory-reset"));

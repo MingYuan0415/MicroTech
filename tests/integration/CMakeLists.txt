@@ -22,6 +22,7 @@ add_executable(test_cross_layer
     host/esp_timer_fake.c
     host/onboarding_service_fake.c
     host/recorder_service_fake.c
+    host/chore_service_fake.c
     host/connectivity_manager_fake.c
     host/device_link_service_fake.c
     host/factory_reset_service_fake.c
@@ -100,7 +101,9 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/sd_storage_service/include"
     "${MIDDLEWARE}/time_service/include"
     "${MIDDLEWARE}/timer_service/include"
+    "${MIDDLEWARE}/nv_storage/include"
     "${MIDDLEWARE}/recorder_service/include"
+    "${MIDDLEWARE}/chore_service/include"
     "${MIDDLEWARE}/onboarding_service/include"
     "${MIDDLEWARE}/weather_service/include"
     "${MIDDLEWARE}/connectivity_manager/include"

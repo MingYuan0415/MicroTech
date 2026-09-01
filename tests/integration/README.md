@@ -21,6 +21,12 @@ before exit, verifies teardown cancels it, reopens, rejects an old-generation
 snapshot, and renders the current global snapshot. Closing Clock does not stop
 the system-owned one-shot SNTP request.
 
+Recorder commands are modeled as service-owned requests: the page submits
+start/pause/resume/stop/play/delete and refreshes from a generation snapshot.
+The production recorder worker owns PCM and filesystem I/O; `chore_service` is
+reserved for short, bounded metadata or capacity work and is not used for the
+audio loop.
+
 ## Run
 
 From the repository root, run all three profiles:

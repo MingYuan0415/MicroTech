@@ -25,6 +25,19 @@ esp_err_t recorder_service_get_snapshot(recorder_service_snapshot_t *snapshot)
     return ESP_ERR_INVALID_STATE;
 }
 
+esp_err_t recorder_service_list(recorder_service_file_t *files,
+                                size_t capacity, size_t *count)
+{
+    (void)files;
+    (void)capacity;
+    if (count == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *count = 0U;
+    return ESP_OK;
+}
+
 bool recorder_service_is_busy(void)
 {
     return false;
