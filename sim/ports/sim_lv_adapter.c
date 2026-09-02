@@ -395,7 +395,10 @@ static void _worker_main(void *arg)
             if (!atomic_load(&s_paused))
             {
                 (void)pthread_mutex_lock(&s_lv_lock);
-                _drain_ready_timers();
+                if (!atomic_load(&s_paused))
+                {
+                    _drain_ready_timers();
+                }
                 (void)pthread_mutex_unlock(&s_lv_lock);
             }
             (void)pthread_mutex_lock(&s_step_lock);
@@ -410,7 +413,10 @@ static void _worker_main(void *arg)
         if (!atomic_load(&s_paused))
         {
             (void)pthread_mutex_lock(&s_lv_lock);
-            (void)lv_timer_handler();
+            if (!atomic_load(&s_paused))
+            {
+                (void)lv_timer_handler();
+            }
             (void)pthread_mutex_unlock(&s_lv_lock);
         }
         usleep(5000);
@@ -445,17 +451,33 @@ esp_err_t esp_lv_adapter_start(void)
 
 esp_err_t esp_lv_adapter_pause(int32_t timeout_ms)
 {
-    (void)timeout_ms;
+    const esp_err_t result = esp_lv_adapter_lock(timeout_ms);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
     fprintf(stderr, "sim_adapter: pause\n");
     atomic_store(&s_paused, true);
+    esp_lv_adapter_unlock();
     return ESP_OK;
 }
 
 esp_err_t esp_lv_adapter_resume(void)
 {
+    const esp_err_t result = esp_lv_adapter_lock(-1);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
     fprintf(stderr, "sim_adapter: resume\n");
     atomic_store(&s_paused, false);
+    esp_lv_adapter_unlock();
     return ESP_OK;
+}
+
+bool sim_lv_paused(void)
+{
+    return atomic_load(&s_paused);
 }
 
 void sim_lv_ci_mode_set(bool enabled)

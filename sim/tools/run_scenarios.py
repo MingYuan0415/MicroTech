@@ -142,9 +142,12 @@ class Runner:
                                           'status': 200, 'body': body})
         elif cmd == 'set_time':
             self.call('sim.set_time', {'epoch': step['epoch']})
+        elif cmd == 'pause':
+            self.call('sim.pause', {'enabled': bool(step['enabled'])})
         elif cmd == 'screenshot':
             path = self.call('sim.screenshot', {'name': step['name'],
-                                                'wait_idle': False})['path']
+                                                'wait_idle': step.get(
+                                                    'wait_idle', False)})['path']
             if self.golden:
                 golden_file = os.path.join(self.golden, step['name'])
                 digest = hashlib.sha256(open(path, 'rb').read()).hexdigest()
@@ -159,6 +162,14 @@ class Runner:
                 else:
                     gd = hashlib.sha256(open(golden_file, 'rb').read()).hexdigest()
                     assert gd == digest, 'png mismatch %s != %s' % (gd[:12], digest[:12])
+        elif cmd == 'expect_error':
+            reply = rpc(self.sock, step['method'], step.get('params'))
+            assert not reply.get('ok'), 'request unexpectedly succeeded: %s' % reply
+            assert 'result' not in reply, 'failure returned result: %s' % reply
+            want = step.get('error')
+            if want is not None:
+                assert reply.get('error') == want, \
+                    'error %r != %r' % (reply.get('error'), want)
         elif cmd == 'tree_assert':
             tree = self.call('sim.tree')['tree']
             match = step.get('contains')

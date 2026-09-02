@@ -17,6 +17,8 @@ void sim_lv_ci_mode_set(bool enabled);
 int sim_lv_ci_step(uint32_t ms);
 /** @brief True when CI step gating is active. */
 bool sim_lv_ci_enabled(void);
+/** @brief True when the LVGL worker is paused behind its display fence. */
+bool sim_lv_paused(void);
 /** @brief Drain until no LVGL timer is ready without advancing a step. */
 int sim_lv_ci_settle(void);
 /** @brief Monotonic blit counter (one increment per flushed strip). */

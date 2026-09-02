@@ -7,6 +7,8 @@
  * after boot (mailbox handshake completes inside app_manager_init).
  */
 #include <signal.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdatomic.h>
 #include <sys/stat.h>
 #include <stdio.h>
@@ -84,6 +86,22 @@ static void _usage(const char *argv0)
            "          [--frames N] [--screenshot NAME]\n", argv0);
 }
 
+static bool _parse_nonnegative_int(const char *raw, int *value_out)
+{
+    char *end = NULL;
+    long value;
+
+    errno = 0;
+    value = strtol(raw, &end, 10);
+    if ((errno != 0) || (end == raw) || (*end != '\0') || (value < 0) ||
+            (value > INT_MAX))
+    {
+        return false;
+    }
+    *value_out = (int)value;
+    return true;
+}
+
 static bool _parse_args(int argc, char **argv, sim_options_t *opt,
                         const char **screenshot)
 {
@@ -143,7 +161,11 @@ static bool _parse_args(int argc, char **argv, sim_options_t *opt,
         }
         else if ((strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc))
         {
-            opt->frames = atoi(argv[++i]);
+            if (!_parse_nonnegative_int(argv[++i], &opt->frames))
+            {
+                fprintf(stderr, "invalid --frames value: %s\n", argv[i]);
+                return false;
+            }
         }
         else if ((strcmp(argv[i], "--screenshot") == 0) && ((i + 1) < argc))
         {
@@ -223,6 +245,95 @@ static void _pump_sdl(const sim_options_t *opt)
     }
 }
 
+static bool _run_iteration(const sim_options_t *opt, SDL_Texture *texture,
+                           SDL_Renderer *renderer)
+{
+    if (opt->ci)
+    {
+        return sim_lv_ci_step(33U) == 0;
+    }
+    if (!opt->headless)
+    {
+        _pump_sdl(opt);
+        if (texture != NULL)
+        {
+            int update_result;
+            if (esp_lv_adapter_lock(-1) != ESP_OK)
+            {
+                return false;
+            }
+            update_result = SDL_UpdateTexture(
+                                texture, NULL, sim_bsp_framebuffer(),
+                                (int)(SIM_BSP_H_RES * sizeof(uint16_t)));
+            esp_lv_adapter_unlock();
+            if (update_result != 0)
+            {
+                fprintf(stderr, "SDL_UpdateTexture failed: %s\n", SDL_GetError());
+                return false;
+            }
+            (void)SDL_RenderClear(renderer);
+            (void)SDL_RenderCopy(renderer, texture, NULL, NULL);
+            SDL_RenderPresent(renderer);
+        }
+    }
+    usleep(10000U);
+    return true;
+}
+
+static bool _save_exit_screenshot(const sim_options_t *opt, const char *name)
+{
+    char path[512];
+    uint16_t *copy;
+    int path_length;
+    int saved;
+
+    if (opt->out_dir != NULL)
+    {
+        if ((mkdir(opt->out_dir, 0775) != 0) && (errno != EEXIST))
+        {
+            fprintf(stderr, "screenshot directory failed: %s\n", opt->out_dir);
+            return false;
+        }
+        path_length = snprintf(path, sizeof(path), "%s/%s", opt->out_dir, name);
+    }
+    else
+    {
+        path_length = snprintf(path, sizeof(path), "%s", name);
+    }
+    if ((path_length < 0) || (path_length >= (int)sizeof(path)))
+    {
+        fprintf(stderr, "screenshot path too long\n");
+        return false;
+    }
+
+    copy = malloc((size_t)SIM_BSP_H_RES * SIM_BSP_V_RES * sizeof(*copy));
+    if (copy == NULL)
+    {
+        fprintf(stderr, "screenshot allocation failed\n");
+        return false;
+    }
+    if (esp_lv_adapter_lock(-1) != ESP_OK)
+    {
+        fprintf(stderr, "screenshot framebuffer lock failed\n");
+        free(copy);
+        return false;
+    }
+    memcpy(copy, sim_bsp_framebuffer(),
+           (size_t)SIM_BSP_H_RES * SIM_BSP_V_RES * sizeof(*copy));
+    esp_lv_adapter_unlock();
+
+    saved = sim_png_save_rgb565(path, copy, SIM_BSP_H_RES, SIM_BSP_V_RES,
+                                opt->window_scale);
+    free(copy);
+    if (saved != 0)
+    {
+        fprintf(stderr, "screenshot failed: %s\n", path);
+        return false;
+    }
+    printf("screenshot: %s\n", path);
+    return true;
+}
+
 int main(int argc, char **argv)
 {
     sim_options_t opt =
@@ -241,10 +352,11 @@ int main(int argc, char **argv)
         .window_scale = 1,
         .frames = 0
     };
-    const char *screenshot = "sim_frame.png";
+    const char *screenshot = NULL;
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Texture *texture = NULL;
+    uint32_t iterations = 0U;
     int rc = EXIT_SUCCESS;
 
     if (!_parse_args(argc, argv, &opt, &screenshot))
@@ -436,28 +548,20 @@ int main(int argc, char **argv)
                   : NULL;
     }
 
-    for (int i = 0; !atomic_load(&sim_quit_flag) && !opt.ci; i++)
+    if (opt.frames > 0)
     {
-        if (!opt.headless)
+        while (!atomic_load(&sim_quit_flag) &&
+                (iterations < (uint32_t)opt.frames))
         {
-            _pump_sdl(&opt);
-            if (texture != NULL)
+            if (!_run_iteration(&opt, texture, renderer))
             {
-                SDL_UpdateTexture(texture, NULL, sim_bsp_framebuffer(),
-                                  (int)(SIM_BSP_H_RES * sizeof(uint16_t)));
-                SDL_RenderClear(renderer);
-                SDL_RenderCopy(renderer, texture, NULL, NULL);
-                SDL_RenderPresent(renderer);
+                rc = EXIT_FAILURE;
+                break;
             }
-        }
-        usleep(10000U);
-        if ((opt.frames > 0) && (i >= opt.frames))
-        {
-            break;
+            iterations++;
         }
     }
-
-    if (opt.ci && (opt.frames == 0))
+    else if (opt.ci)
     {
         /* CI sessions are resident: only a signal or sim.exit stops us. */
         while (!atomic_load(&sim_quit_flag))
@@ -465,40 +569,25 @@ int main(int argc, char **argv)
             usleep(50000U);
         }
     }
-
-    if (opt.out_dir != NULL)
+    else
     {
-        char png_path[512];
-        (void)mkdir(opt.out_dir, 0775);
-        if (snprintf(png_path, sizeof(png_path), "%s/%s", opt.out_dir,
-                     screenshot) < (int)sizeof(png_path))
+        while (!atomic_load(&sim_quit_flag))
         {
-            uint16_t *copy = malloc((size_t)SIM_BSP_H_RES * SIM_BSP_V_RES *
-                                    sizeof(*copy));
-            int saved = -1;
-            if (copy != NULL)
+            if (!_run_iteration(&opt, texture, renderer))
             {
-                (void)esp_lv_adapter_lock(-1);
-                memcpy(copy, sim_bsp_framebuffer(),
-                       (size_t)SIM_BSP_H_RES * SIM_BSP_V_RES *
-                       sizeof(*copy));
-                (void)esp_lv_adapter_unlock();
-                saved = sim_png_save_rgb565(png_path, copy, SIM_BSP_H_RES,
-                                            SIM_BSP_V_RES, opt.window_scale);
-                free(copy);
-            }
-            if (saved == 0)
-            {
-                printf("screenshot: %s\n", png_path);
-            }
-            else
-            {
-                fprintf(stderr, "screenshot failed: %s\n", png_path);
                 rc = EXIT_FAILURE;
+                break;
             }
+            iterations++;
         }
     }
-    printf("sim exiting: frames=%llu screen_suspended=%d brightness=%u pm_state=%d\n",
+
+    if ((screenshot != NULL) && !_save_exit_screenshot(&opt, screenshot))
+    {
+        rc = EXIT_FAILURE;
+    }
+    printf("sim exiting: iterations=%u blits=%llu screen_suspended=%d brightness=%u pm_state=%d\n",
+           (unsigned)iterations,
            (unsigned long long)sim_lv_frame_count(),
            sim_bsp_screen_is_suspended() ? 1 : 0,
            (unsigned)app_manager_screen_get_brightness(),

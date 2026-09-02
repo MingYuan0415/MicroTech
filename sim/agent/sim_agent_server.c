@@ -4,6 +4,7 @@
  * {"id":<echo>,"ok":false,"error":"<message>"}.
  */
 #include <arpa/inet.h>
+#include <limits.h>
 #include <stdatomic.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -46,18 +47,45 @@ static atomic_bool s_running;
 static pthread_mutex_t s_rpc_lock = PTHREAD_MUTEX_INITIALIZER;
 static char s_out_dir[256] = "shots";
 
-static uint64_t _fb_hash(void)
+typedef enum sim_wait_idle_result
+{
+    SIM_WAIT_IDLE_SETTLED = 0,
+    SIM_WAIT_IDLE_TIMEOUT,
+    SIM_WAIT_IDLE_PAUSED,
+    SIM_WAIT_IDLE_FAILED,
+} sim_wait_idle_result_t;
+
+static sim_wait_idle_result_t _fb_state(uint64_t *hash_out,
+                                        uint32_t *animations_out)
 {
     const uint16_t *fb = sim_bsp_framebuffer();
     const size_t words = (size_t)SIM_BSP_H_RES * SIM_BSP_V_RES;
     uint64_t hash = UINT64_C(1469598103934665603);
 
+    if (esp_lv_adapter_lock(-1) != ESP_OK)
+    {
+        return SIM_WAIT_IDLE_FAILED;
+    }
+    if (sim_lv_paused())
+    {
+        esp_lv_adapter_unlock();
+        return SIM_WAIT_IDLE_PAUSED;
+    }
     for (size_t i = 0; i < words; i++)
     {
         hash ^= fb[i];
         hash *= UINT64_C(1099511628211);
     }
-    return hash;
+    if (hash_out != NULL)
+    {
+        *hash_out = hash;
+    }
+    if (animations_out != NULL)
+    {
+        *animations_out = lv_anim_count_running();
+    }
+    esp_lv_adapter_unlock();
+    return SIM_WAIT_IDLE_SETTLED;
 }
 
 static bool _safe_shot_name(const char *raw, char *out, size_t out_size)
@@ -73,8 +101,33 @@ static bool _safe_shot_name(const char *raw, char *out, size_t out_size)
     return true;
 }
 
-static bool _wait_idle(uint32_t timeout_ms, uint64_t *hash_out,
-                       uint32_t *steps_out)
+static bool _number_in_range(const cJSON *item, double minimum,
+                             double maximum)
+{
+    return cJSON_IsNumber(item) && (item->valuedouble >= minimum) &&
+           (item->valuedouble <= maximum);
+}
+
+static bool _optional_bool(const cJSON *item)
+{
+    return (item == NULL) || cJSON_IsBool(item);
+}
+
+static const char *_wait_idle_error(sim_wait_idle_result_t result)
+{
+    if (result == SIM_WAIT_IDLE_PAUSED)
+    {
+        return "adapter paused";
+    }
+    if (result == SIM_WAIT_IDLE_FAILED)
+    {
+        return "wait idle failed";
+    }
+    return "wait idle timed out";
+}
+
+static sim_wait_idle_result_t _wait_idle(uint32_t timeout_ms,
+        uint64_t *hash_out, uint32_t *steps_out)
 {
     const uint32_t budget = (timeout_ms == 0U) ? 5000U : timeout_ms;
     uint32_t spent = 0U;
@@ -86,34 +139,53 @@ static bool _wait_idle(uint32_t timeout_ms, uint64_t *hash_out,
     {
         uint64_t current;
         uint64_t after;
+        uint32_t animations;
+        sim_wait_idle_result_t state;
+
+        if (sim_lv_paused())
+        {
+            return SIM_WAIT_IDLE_PAUSED;
+        }
 
         if (sim_lv_ci_enabled())
         {
             if (sim_lv_ci_step(33U) != 0)
             {
-                return false;
+                return SIM_WAIT_IDLE_FAILED;
             }
             steps++;
             spent += 33U;
-            current = _fb_hash();
+            state = _fb_state(&current, NULL);
+            if (state != SIM_WAIT_IDLE_SETTLED)
+            {
+                return state;
+            }
             if (sim_lv_ci_step(33U) != 0)
             {
-                return false;
+                return SIM_WAIT_IDLE_FAILED;
             }
             steps++;
             spent += 33U;
-            after = _fb_hash();
+            state = _fb_state(&after, &animations);
         }
         else
         {
             usleep(33000U);
             spent += 33U;
-            current = _fb_hash();
+            state = _fb_state(&current, NULL);
+            if (state != SIM_WAIT_IDLE_SETTLED)
+            {
+                return state;
+            }
             usleep(33000U);
             spent += 33U;
-            after = _fb_hash();
+            state = _fb_state(&after, &animations);
         }
-        if (lv_anim_count_running() == 0U && have_previous &&
+        if (state != SIM_WAIT_IDLE_SETTLED)
+        {
+            return state;
+        }
+        if (animations == 0U && have_previous &&
                 previous == current && current == after)
         {
             if (hash_out != NULL)
@@ -124,20 +196,24 @@ static bool _wait_idle(uint32_t timeout_ms, uint64_t *hash_out,
             {
                 *steps_out = steps;
             }
-            return true;
+            return SIM_WAIT_IDLE_SETTLED;
         }
         previous = after;
         have_previous = true;
     }
     if (hash_out != NULL)
     {
-        *hash_out = _fb_hash();
+        const sim_wait_idle_result_t state = _fb_state(hash_out, NULL);
+        if (state != SIM_WAIT_IDLE_SETTLED)
+        {
+            return state;
+        }
     }
     if (steps_out != NULL)
     {
         *steps_out = steps;
     }
-    return false;
+    return SIM_WAIT_IDLE_TIMEOUT;
 }
 
 static cJSON *_handle(cJSON *request, bool *ok)
@@ -203,13 +279,33 @@ static cJSON *_handle(cJSON *request, bool *ok)
                               params, "timeout_ms") : NULL;
         uint64_t hash = 0U;
         uint32_t steps = 0U;
-        const bool settled = _wait_idle((to != NULL && cJSON_IsNumber(to))
-                                        ? (uint32_t)to->valuedouble : 5000U,
-                                        &hash, &steps);
-        cJSON_AddBoolToObject(result, "idle", settled);
-        cJSON_AddNumberToObject(result, "hash", (double)hash);
-        cJSON_AddNumberToObject(result, "steps", steps);
-        *ok = true;
+        sim_wait_idle_result_t wait_result;
+
+        if ((to != NULL) && !_number_in_range(to, 0.0, UINT32_MAX))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid timeout_ms");
+        }
+        else
+        {
+            wait_result = _wait_idle((to != NULL) ? (uint32_t)to->valuedouble
+                                     : 5000U, &hash, &steps);
+            if ((wait_result == SIM_WAIT_IDLE_PAUSED) ||
+                    (wait_result == SIM_WAIT_IDLE_FAILED))
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        _wait_idle_error(wait_result));
+            }
+            else
+            {
+                cJSON_AddBoolToObject(result, "idle",
+                                      wait_result == SIM_WAIT_IDLE_SETTLED);
+                cJSON_AddNumberToObject(result, "hash", (double)hash);
+                cJSON_AddNumberToObject(result, "steps", steps);
+                *ok = true;
+            }
+        }
     }
     else if (strcmp(method, "sim.screenshot") == 0)
     {
@@ -220,9 +316,23 @@ static cJSON *_handle(cJSON *request, bool *ok)
         char path[512];
         char *pixels = NULL;
 
+        if (((name != NULL) && !cJSON_IsString(name)) || !_optional_bool(wi))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid screenshot params");
+            return result;
+        }
         if ((wi == NULL) || cJSON_IsTrue(wi))
         {
-            (void)_wait_idle(5000U, NULL, NULL);
+            const sim_wait_idle_result_t wait_result = _wait_idle(5000U, NULL,
+                NULL);
+            if (wait_result != SIM_WAIT_IDLE_SETTLED)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        _wait_idle_error(wait_result));
+                return result;
+            }
         }
         (void)mkdir(s_out_dir, 0775);
         {
@@ -245,16 +355,27 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         else
         {
-            (void)esp_lv_adapter_lock(-1);
-            memcpy(pixels, sim_bsp_framebuffer(),
-                   (size_t)SIM_BSP_H_RES * SIM_BSP_V_RES * 2U);
-            (void)esp_lv_adapter_unlock();
-            *ok = (sim_png_save_rgb565(path, (const uint16_t *)pixels,
-                                       SIM_BSP_H_RES, SIM_BSP_V_RES, 1) == 0);
+            const esp_err_t lock_result = esp_lv_adapter_lock(-1);
+            if (lock_result == ESP_OK)
+            {
+                memcpy(pixels, sim_bsp_framebuffer(),
+                       (size_t)SIM_BSP_H_RES * SIM_BSP_V_RES * 2U);
+                esp_lv_adapter_unlock();
+                *ok = (sim_png_save_rgb565(path, (const uint16_t *)pixels,
+                                           SIM_BSP_H_RES, SIM_BSP_V_RES, 1) == 0);
+            }
+            else
+            {
+                *ok = false;
+            }
             free(pixels);
             if (*ok)
             {
                 cJSON_AddStringToObject(result, "path", path);
+            }
+            else
+            {
+                cJSON_AddStringToObject(result, "error", "screenshot failed");
             }
         }
     }
@@ -293,9 +414,15 @@ static cJSON *_handle(cJSON *request, bool *ok)
         const cJSON *y = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                              params, "y") : NULL;
         const char *act = cJSON_GetStringValue(action);
-        if ((act == NULL) || !cJSON_IsNumber(x) || !cJSON_IsNumber(y))
+        const bool valid_action = (act != NULL) &&
+                                  ((strcmp(act, "down") == 0) ||
+                                   (strcmp(act, "move") == 0) ||
+                                   (strcmp(act, "up") == 0));
+        if (!valid_action || !_number_in_range(x, 0.0, SIM_BSP_H_RES - 1U) ||
+                !_number_in_range(y, 0.0, SIM_BSP_V_RES - 1U))
         {
             *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid touch params");
         }
         else
         {
@@ -313,9 +440,16 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                   params, "action") : NULL;
         const char *btn = cJSON_GetStringValue(button);
         const char *act = cJSON_GetStringValue(action);
-        const sim_key_t key = ((btn != NULL) && strcmp(btn, "power") == 0)
+        const bool valid_button = (btn != NULL) &&
+                                  ((strcmp(btn, "boot") == 0) ||
+                                   (strcmp(btn, "power") == 0));
+        const bool valid_action = (act != NULL) &&
+                                  ((strcmp(act, "press") == 0) ||
+                                   (strcmp(act, "release") == 0) ||
+                                   (strcmp(act, "click") == 0));
+        const sim_key_t key = ((btn != NULL) && (strcmp(btn, "power") == 0))
                               ? SIM_KEY_POWER : SIM_KEY_BOOT;
-        *ok = (btn != NULL && act != NULL);
+        *ok = valid_button && valid_action;
         if (*ok)
         {
             if (strcmp(act, "click") == 0)
@@ -328,6 +462,10 @@ static cJSON *_handle(cJSON *request, bool *ok)
                 (void)sim_bsp_key(key, (strcmp(act, "release") == 0)
                                   ? SIM_KEY_ACTION_RELEASE : SIM_KEY_ACTION_PRESS);
             }
+        }
+        else
+        {
+            cJSON_AddStringToObject(result, "error", "invalid key params");
         }
     }
     else if (strcmp(method, "sim.navigate") == 0)
@@ -367,13 +505,19 @@ static cJSON *_handle(cJSON *request, bool *ok)
     {
         const cJSON *epoch = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                                  params, "epoch") : NULL;
-        if (epoch == NULL)
+        if (!_number_in_range(epoch, 0.0, (double)INT64_MAX - 1024.0))
         {
             *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid epoch");
         }
         else
         {
-            (void)sim_time_set_epoch((int64_t)epoch->valuedouble);
+            const esp_err_t res = sim_time_set_epoch((int64_t)epoch->valuedouble);
+            *ok = (res == ESP_OK);
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            }
         }
     }
     else if (strcmp(method, "sim.set_power") == 0)
@@ -384,18 +528,21 @@ static cJSON *_handle(cJSON *request, bool *ok)
                              params, "pct") : NULL;
         const cJSON *c = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                              params, "charging") : NULL;
-        if ((v == NULL) || (p == NULL))
+        const cJSON *vbus = params != NULL ? cJSON_GetObjectItemCaseSensitive(
+                                params, "vbus") : NULL;
+        if (!_number_in_range(v, 0.0, UINT16_MAX) ||
+                !_number_in_range(p, 0.0, 100.0) ||
+                !_optional_bool(c) || !_optional_bool(vbus))
         {
             *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid power params");
         }
         else
         {
             sim_backends_set_power((uint16_t)(int)v->valuedouble,
                                    (int8_t)(int)p->valuedouble,
                                    cJSON_IsTrue(c),
-                                   cJSON_IsTrue(
-                                       cJSON_GetObjectItemCaseSensitive(
-                                           params, "vbus")));
+                                   cJSON_IsTrue(vbus));
         }
     }
     else if (strcmp(method, "sim.set_imu") == 0)
@@ -404,9 +551,13 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                  params, "pitch") : NULL;
         const cJSON *roll = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                                 params, "roll") : NULL;
-        if ((pitch == NULL) || (roll == NULL))
+        if (!_number_in_range(pitch, (double)INT_MIN / 100.0,
+                              (double)INT_MAX / 100.0) ||
+                !_number_in_range(roll, (double)INT_MIN / 100.0,
+                                  (double)INT_MAX / 100.0))
         {
             *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid imu params");
         }
         else
         {
@@ -440,9 +591,11 @@ static cJSON *_handle(cJSON *request, bool *ok)
                             cJSON_GetObjectItemCaseSensitive(params, "body") : NULL;
         const char *path = cJSON_GetStringValue(endpoint);
         const char *json = cJSON_GetStringValue(body);
-        if ((path == NULL) || (json == NULL))
+        if ((path == NULL) || (json == NULL) ||
+                ((status != NULL) && !_number_in_range(status, 100.0, 599.0)))
         {
             *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid weather params");
         }
         else
         {
@@ -456,7 +609,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
                 snprintf(match, sizeof(match), "/api/v1/weather/%s", path);
             }
             *ok = (sim_http_set_response(match,
-                                         (status != NULL) ? status->valueint : 200,
+                                         (status != NULL) ? (int)status->valuedouble : 200,
                                          "application/json",
                                          (const uint8_t *)json,
                                          strlen(json)) == 0);
@@ -470,14 +623,21 @@ static cJSON *_handle(cJSON *request, bool *ok)
     {
         const cJSON *enabled = params != NULL ?
                                cJSON_GetObjectItemCaseSensitive(params, "enabled") : NULL;
-        *ok = true;
-        if (enabled != NULL && cJSON_IsTrue(enabled))
+        esp_err_t res;
+        if (!cJSON_IsBool(enabled))
         {
-            (void)esp_lv_adapter_pause(-1);
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid pause params");
         }
         else
         {
-            (void)esp_lv_adapter_resume();
+            res = cJSON_IsTrue(enabled) ? esp_lv_adapter_pause(-1)
+                  : esp_lv_adapter_resume();
+            *ok = (res == ESP_OK);
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            }
         }
     }
     else if (strcmp(method, "sim.pm") == 0)
@@ -488,7 +648,20 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                cJSON_GetObjectItemCaseSensitive(params, "standby_ms") : NULL;
         const cJSON *want_get = params != NULL ?
                                 cJSON_GetObjectItemCaseSensitive(params, "get") : NULL;
-        if (cJSON_IsTrue(want_get))
+        const bool valid_get = (want_get == NULL) || cJSON_IsBool(want_get);
+        const bool valid_off = (off == NULL) ||
+                               _number_in_range(off, INT32_MIN, INT32_MAX);
+        const bool valid_standby = (standby == NULL) ||
+                                   _number_in_range(standby, INT32_MIN, INT32_MAX);
+        const bool want_read = cJSON_IsTrue(want_get);
+
+        if (!valid_get || !valid_off || !valid_standby ||
+                (!want_read && (off == NULL) && (standby == NULL)))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid pm params");
+        }
+        else if (want_read)
         {
             *ok = true;
             cJSON_AddNumberToObject(result, "pm_state",
@@ -498,9 +671,11 @@ static cJSON *_handle(cJSON *request, bool *ok)
             cJSON_AddNumberToObject(result, "standby_ms",
                                     (double)app_manager_pm_get_standby_delay_ms());
         }
-        *ok = (cJSON_IsNumber(off) || cJSON_IsNumber(standby) ||
-               cJSON_IsTrue(want_get));
-        if (*ok && cJSON_IsNumber(off))
+        else
+        {
+            *ok = true;
+        }
+        if (*ok && (off != NULL))
         {
             const esp_err_t res = app_manager_pm_set_timeout_ms(
                                       (int32_t)off->valuedouble);
@@ -511,7 +686,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                         esp_err_to_name(res));
             }
         }
-        if (*ok && cJSON_IsNumber(standby))
+        if (*ok && (standby != NULL))
         {
             const esp_err_t res = app_manager_pm_set_standby_delay_ms(
                                       (int32_t)standby->valuedouble);
@@ -559,6 +734,34 @@ static cJSON *_handle(cJSON *request, bool *ok)
     return result;
 }
 
+static bool _write_all(int fd, const char *data, size_t length)
+{
+    size_t offset = 0U;
+
+    while (offset < length)
+    {
+        const ssize_t written = write(fd, data + offset, length - offset);
+        if (written > 0)
+        {
+            offset += (size_t)written;
+        }
+        else if ((written < 0) && (errno == EINTR))
+        {
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool _write_line(int fd, const char *text)
+{
+    return _write_all(fd, text, strlen(text)) && _write_all(fd, "\n", 1U);
+}
+
 static void *_client_thread(void *arg)
 {
     int fd = (int)(intptr_t)arg;
@@ -586,6 +789,7 @@ static void *_client_thread(void *arg)
         bool ok = false;
         cJSON *result = NULL;
         char *text = NULL;
+        bool sent = true;
 
         if (reply == NULL)
         {
@@ -596,8 +800,10 @@ static void *_client_thread(void *arg)
         {
             const char *err = "{\"ok\":false,\"error\":\"invalid json\"}";
             cJSON_Delete(reply);
-            (void)!write(fd, err, strlen(err));
-            (void)!write(fd, "\n", 1);
+            if (!_write_line(fd, err))
+            {
+                break;
+            }
             continue;
         }
         const cJSON *rid = cJSON_GetObjectItemCaseSensitive(request, "id");
@@ -606,24 +812,47 @@ static void *_client_thread(void *arg)
         (void)pthread_mutex_lock(&s_rpc_lock);
         result = _handle(request, &ok);
         (void)pthread_mutex_unlock(&s_rpc_lock);
+        if (result == NULL)
+        {
+            ok = false;
+        }
         if (!cJSON_IsNumber(rid))
         {
             cJSON_DeleteItemFromObject(reply, "id");
         }
         cJSON_AddBoolToObject(reply, "ok", ok);
-        if (result != NULL)
+        if (ok && (result != NULL))
         {
             cJSON_AddItemToObject(reply, "result", result);
+        }
+        else
+        {
+            cJSON *error = (result != NULL) ?
+                           cJSON_DetachItemFromObjectCaseSensitive(result, "error") : NULL;
+            if (!cJSON_IsString(error))
+            {
+                cJSON_Delete(error);
+                error = cJSON_CreateString((result == NULL) ? "no memory" :
+                                           "invalid params");
+            }
+            if (error != NULL)
+            {
+                cJSON_AddItemToObject(reply, "error", error);
+            }
+            cJSON_Delete(result);
         }
         text = cJSON_PrintUnformatted(reply);
         if (text != NULL)
         {
-            (void)!write(fd, text, strlen(text));
-            (void)!write(fd, "\n", 1);
+            sent = _write_line(fd, text);
             free(text);
         }
         cJSON_Delete(request);
         cJSON_Delete(reply);
+        if (!sent)
+        {
+            break;
+        }
     }
     fclose(stream);
     free(line);

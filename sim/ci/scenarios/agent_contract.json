@@ -1,0 +1,97 @@
+{
+ "name": "agent-contract",
+ "steps": [
+  {
+   "cmd": "expect_error",
+   "method": "sim.touch",
+   "params": {"action": "invalid", "x": 20, "y": 30},
+   "error": "invalid touch params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.key",
+   "params": {"button": "invalid", "action": "click"},
+   "error": "invalid key params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.key",
+   "params": {"button": "boot", "action": "invalid"},
+   "error": "invalid key params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_time",
+   "params": {"epoch": "invalid"},
+   "error": "invalid epoch"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_power",
+   "params": {"voltage": "invalid", "pct": 50},
+   "error": "invalid power params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_power",
+   "params": {"voltage": 3900, "pct": 50, "charging": "invalid"},
+   "error": "invalid power params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_imu",
+   "params": {"pitch": "invalid", "roll": 0},
+   "error": "invalid imu params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_weather",
+   "params": {"endpoint": "current", "status": "invalid", "body": "{}"},
+   "error": "invalid weather params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.pause",
+   "params": {"enabled": "invalid"},
+   "error": "invalid pause params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.screenshot",
+   "params": {"name": "invalid.png", "wait_idle": "invalid"},
+   "error": "invalid screenshot params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.pm",
+   "params": {"get": true, "off_ms": "invalid"},
+   "error": "invalid pm params"
+  },
+  {
+   "cmd": "pause",
+   "enabled": true
+  },
+  {
+   "cmd": "navigate",
+   "app": "clock"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.wait_idle",
+   "params": {"timeout_ms": 100},
+   "error": "adapter paused"
+  },
+  {
+   "cmd": "screenshot",
+   "name": "agent_paused.png",
+   "wait_idle": false
+  },
+  {
+   "cmd": "pause",
+   "enabled": false
+  },
+  {
+   "cmd": "wait_idle"
+  }
+ ]
+}

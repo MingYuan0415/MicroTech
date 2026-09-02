@@ -48,12 +48,9 @@
    "pm_state": 2
   },
   {
-   "cmd": "wait_idle",
-   "timeout_ms": 2000
-  },
-  {
    "cmd": "screenshot",
-   "name": "pm_clock_off.png"
+   "name": "pm_clock_off.png",
+   "wait_idle": false
   },
    {
     "cmd": "key",
