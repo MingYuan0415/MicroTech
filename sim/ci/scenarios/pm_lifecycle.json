@@ -1,0 +1,84 @@
+{
+ "name": "pm-lifecycle",
+ "steps": [
+  {
+   "cmd": "set_time",
+   "epoch": 1785888100
+  },
+  {
+   "cmd": "step",
+   "times": 30
+  },
+  {
+   "cmd": "pm",
+   "get": true,
+   "pm_state": 0
+  },
+  {
+   "cmd": "navigate",
+   "app": "clock"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "screenshot",
+   "name": "pm_clock_on.png"
+  },
+  {
+   "cmd": "pm",
+   "off_ms": 15000,
+   "standby_ms": -1
+  },
+   {
+    "cmd": "sleep_ms",
+    "ms": 22000
+   },
+   {
+    "cmd": "step",
+    "times": 40
+   },
+  {
+   "cmd": "pm",
+   "get": true,
+   "pm_state": 2
+  },
+  {
+   "cmd": "wait_idle",
+   "timeout_ms": 2000
+  },
+  {
+   "cmd": "screenshot",
+   "name": "pm_clock_off.png"
+  },
+   {
+    "cmd": "key",
+    "button": "power",
+    "action": "click"
+   },
+   {
+    "cmd": "step",
+    "times": 40
+   },
+   {
+    "cmd": "wait_idle"
+   },
+  {
+   "cmd": "pm",
+   "get": true,
+   "pm_state": 0
+  },
+  {
+   "cmd": "screenshot",
+   "name": "pm_clock_wake.png"
+  },
+  {
+   "cmd": "pm",
+   "off_ms": -1
+  }
+ ]
+}

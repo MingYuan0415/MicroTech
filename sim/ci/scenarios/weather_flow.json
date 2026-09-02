@@ -1,0 +1,27 @@
+{
+    "name": "weather-flow",
+    "steps": [
+        {"cmd": "set_time", "epoch": 1785888100},
+        {"cmd": "set_wifi", "state": "connected"},
+        {"cmd": "set_weather", "endpoint": "location", "file": "sim/ci/fixtures/weather_location.json"},
+        {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
+        {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
+        {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
+        {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts.json"},
+        {"cmd": "sleep_ms", "ms": 9000},
+        {"cmd": "step", "times": 80},
+        {"cmd": "wait_idle"},
+        {"cmd": "navigate", "app": "weather"},
+        {"cmd": "step", "times": 30},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "Cloudy"}},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "31°"}},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "体感36°  高34°  低27°"}},
+        {"cmd": "screenshot", "name": "weather_current.png"},
+        {"cmd": "navigate", "app": "weather", "page": "forecast"},
+        {"cmd": "step", "times": 30},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "详细预报"}},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "35.6°C"}}
+    ]
+}

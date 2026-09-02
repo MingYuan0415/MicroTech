@@ -19,3 +19,11 @@ apps_local.cmake
 /.omo/run-continuation/
 /output/imagegen/
 node_modules/
+
+# LVGL 宿主模拟器：PNG 金样待固件 GUI 达标后入库（sim/ci/run_ci.sh --update 生成）
+/sim/golden/
+# 模拟器 Python / 直接在仓库根运行二进制时的产物
+__pycache__/
+/sim_data/
+/sim_nvs/
+/shots/

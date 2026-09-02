@@ -1,0 +1,236 @@
+{
+ "name": "all-apps",
+ "steps": [
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "set_time",
+   "epoch": 1785888100
+  },
+  {
+   "cmd": "set_power",
+   "voltage": 3900,
+   "pct": 66,
+   "charging": false
+  },
+  {
+   "cmd": "set_imu",
+   "pitch": 3.5,
+   "roll": -2.0
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "8月5日  周三"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "menu"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "应用"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "天气"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_menu.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "clock"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "时间与计时"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "level"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "水平仪"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "左右 -3.5°\n前后 +2.0°"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_level.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "diagnostics"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "IMU：有效采样"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "SD：未挂载"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "recorder"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "录音服务不可用"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "系统设置"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "亮度"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "setup"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "网络设置"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "请使用手机配置新网络"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_setup.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "weather"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "暂无实时天气"
+   }
+  }
+ ]
+}

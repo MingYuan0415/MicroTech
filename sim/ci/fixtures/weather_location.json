@@ -1,0 +1,1 @@
+{"schema_version": 1, "location": {"city": "Shenzhen", "district": "Nanshan", "region": "Guangdong", "country": "CN", "timezone": "Asia/Shanghai", "source": "ip", "provider": "maxmind", "precision": "coarse", "location_key": "9f4a2b3c8d1e5f06"}, "accuracy_radius_km": 50}

@@ -12,6 +12,7 @@ MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 的 ESP-IDF 固件工程
 | `layers/app_manager/` | 应用注册、生命周期、UI mailbox、主题和显示电源适配 |
 | `layers/apps/` | Home、Menu、Settings、Setup 等内置 LVGL 应用 |
 | `layers/apps/*/assets/`、`layers/app_manager/app_theme/assets/` | App 与全局主题的资源源文件；由 main 聚合写入 `res` 分区 |
+| `sim/` | 独立 CMake 宿主 LVGL 模拟器（不接入根 IDF 构建）；Agent `127.0.0.1:5002` |
 | `tests/` | 连接链路和跨层宿主集成测试 |
 
 四个 `layers/` 目录是独立 Git 子模块。`managed_components/` 由 ESP-IDF Component Manager 管理，不应直接修改。
@@ -20,7 +21,9 @@ MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 的 ESP-IDF 固件工程
 
 - ESP-IDF 6.0.x，目标芯片为 ESP32-S3
 - 16 MB Flash、Octal PSRAM 的目标板配置
-- CMake 3.16+、Ninja 和支持 C11/Pthreads 的宿主编译器（仅宿主测试需要）
+- CMake 3.16+、Ninja 和支持 C11/Pthreads 的宿主编译器（宿主测试与 `sim/` 需要）
+- 宿主模拟器另需 `libsdl2-dev`、`libcurl4-openssl-dev`；**不要**安装发行版
+  `libfreetype-dev` 来链接 sim（树内 FreeType 2.14.3，与设备一致）
 
 首次检出后初始化子模块：
 
@@ -105,6 +108,25 @@ Device Link 当前以 [`contracts/device_link`](contracts/device_link/) 中的
 `device-link/v1` freeze candidate 为规范源，采用 LE Secure Connections Numeric
 Comparison、MITM、单 bond、ATT MTU 498 和可查询确认的异步操作记录。契约 checker 与
 金标通过只说明规范数据自洽；配对、bond 替换、MTU/DLE、断连恢复及空中互操作仍需真机验证。
+
+## LVGL 宿主模拟器
+
+`sim/` 是独立 CMake 工程，在 Linux/WSL2 上用仓库内 LVGL 9.5 渲染 `layers/` 真实 UI，
+供页面调试、JSON-RPC Agent 驱动和控件树回归。不定义 `HOST_TEST`，不修改四个
+`layers/` 子模块。需已有 `managed_components/` 与一次 `idf.py build` 生成的
+`build/config/sdkconfig.h`。
+
+```sh
+python3 sim/dev.py
+# 或
+cmake -S sim -B build/sim -G Ninja && cmake --build build/sim
+sim/ci/run_ci.sh build/sim
+```
+
+默认无头路径使用 `SDL_VIDEODRIVER=dummy`；Agent 仅绑 `127.0.0.1:5002`（避开真机
+基准端口 5001）。主门禁为 `sim/ci/scenarios/` 树断言；PNG 金样默认关闭。模拟器不覆盖
+面板时序、DMA 与功耗，不能替代上板验证。操作见 [`sim/README.md`](sim/README.md)，
+详细说明见 [`doc/lvgl-simulator.md`](doc/lvgl-simulator.md)。
 
 ## 显示压力基准
 
