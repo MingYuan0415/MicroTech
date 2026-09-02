@@ -1,6 +1,6 @@
 ---
 name: esp32
-description: MicroTech ESP32-S3 and Waveshare ESP32-S3 Touch AMOLED 1.8 board-hardware guidance. Use for BSP drivers, GPIO assignments and strapping, I2C/SPI/I2S buses, Octal PSRAM and DMA capabilities, RTC/PMU/IMU/audio/SD hardware, sleep and wake sources, electrical constraints, or physical board behavior; use debug-esp32s3 for live-device evidence and validate-firmware for acceptance scope. Do not use as a generic ESP32-family reference.
+description: MicroTech ESP32-S3 and Waveshare ESP32-S3 Touch AMOLED 1.8 board-hardware guidance. Use for BSP drivers, GPIO assignments and strapping, I2C/SPI/I2S buses, Octal PSRAM and DMA capabilities, RTC/PMU/IMU/audio/SD hardware, sleep and wake sources, electrical constraints, or physical board behavior. Do not use as a generic ESP32-family reference.
 ---
 
 # MicroTech ESP32-S3 Hardware
@@ -74,9 +74,8 @@ Waveshare board.
 6. Validate driver timing, DMA, power, sleep/wake, radio coexistence, and
    physical peripheral behavior on hardware; report the exact tested scope.
 
-Use `validate-firmware` to choose and report that test matrix. Use
-`debug-esp32s3` for serial, ELF, core-dump, OpenOCD, JTAG, GDB, task, watchdog,
-heap, USB, port, and permission evidence from a failing device.
+Validation scope follows the `AGENTS.md` default workflow; do not expand it
+from this skill.
 
 ## Display Boundary
 

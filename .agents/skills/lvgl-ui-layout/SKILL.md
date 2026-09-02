@@ -105,9 +105,9 @@ Select sizing by semantics:
    flags, parentage, and events when the changed contract depends on them.
 4. Add tests for scroll direction and gestures beginning over child content,
    not only direct taps on the parent.
-5. Run the narrow host tests and project-required formatting/diff checks. Use
-   the project's validation skill to select broader sanitizer, firmware-build,
-   and hardware scope when code changes are involved.
+5. Run the narrow host tests and project-required formatting/diff checks.
+   Broader sanitizer, firmware-build, and hardware scope follows the
+   `AGENTS.md` default workflow.
 6. Inspect the real display for glyph fallback, wrapping, clipping, overlap,
    horizontal drift, touch dead zones, and scroll handoff. Host geometry cannot
    validate actual rasterized fonts or touch behavior.
