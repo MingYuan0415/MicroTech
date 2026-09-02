@@ -40,7 +40,7 @@ idf.py -p <PORT> flash monitor
 
 ## 功能
 
-- **天气**：menuconfig `MicroTech product integration` 中设置 `Weather server base URL` 与 `Weather device token`（不含 `Bearer ` 前缀）；任一为空时天气页显示“服务未配置”。获取、缓存、定位与会话刷新由后台 `weather_service` 负责，细节见 [`layers/middleware/README.md`](layers/middleware/README.md)。首次构建图片资源前安装转换依赖：`python -m pip install -r requirements-weather-assets.txt`；资源源文件归 `layers/apps/*/assets/` 与 `layers/app_manager/app_theme/assets/`，由 main 聚合打包进 `res` 分区。
+- **天气**：menuconfig `MicroTech product integration` 中设置 `Weather server base URL` 与 `Weather device token`（不含 `Bearer ` 前缀）；任一为空时天气页显示“服务未配置”。获取、缓存、定位与会话刷新由后台 `weather_service` 负责，细节见 [`layers/middleware/README.md`](layers/middleware/README.md)。构建图片资源（SVG 栅格化与 RGB565A8 转换）前安装依赖：`python -m pip install -r requirements-weather-assets.txt`；图片源文件是 `layers/apps/*/assets/*.svg`（唯一入库形态，构建期栅格化），字体在 `layers/app_manager/app_theme/assets/`，由 main 聚合打包进 `res` 分区。
 - **Device Link**：BLE 契约以 [`contracts/device_link`](contracts/device_link/) 的 `device-link/v1` freeze candidate 为规范源；实现与真机验证范围见 [`doc/device-link-implementation.md`](doc/device-link-implementation.md)。
 - **LVGL 宿主模拟器**：页面调试、JSON-RPC Agent 驱动与控件树回归，见 [`sim/README.md`](sim/README.md)。
 - **显示压力基准**：仅真机执行，验收门槛、profile 与配置基线见 [`tests/display/README.md`](tests/display/README.md)。

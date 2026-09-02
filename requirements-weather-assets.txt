@@ -1,3 +1,7 @@
-# Required by the locked LVGLImage.py when weather PNG resources are converted to RGB565A8 BIN.
+# Required by the app resource build pipeline (LVGLImage.py PNG->BIN step and
+# the svg2png.py SVG rasterizer). Install into the ESP-IDF python environment
+# before idf.py build or the sim build; svg2png.py needs Pillow + PyMuPDF.
 pypng==0.20220715.0
 lz4==4.4.5
+pillow==12.1.1
+pymupdf==1.27.2.2

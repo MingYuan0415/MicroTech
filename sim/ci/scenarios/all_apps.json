@@ -42,8 +42,24 @@
    }
   },
   {
-   "cmd": "navigate",
-   "app": "menu"
+   "cmd": "screenshot",
+   "name": "home.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 308
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 308
   },
   {
    "cmd": "step",
@@ -56,14 +72,78 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "应用"
+    "text": "暂无实时天气"
    }
+  },
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 56,
+   "y": 385
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 56,
+   "y": 385
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
   },
   {
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "天气"
+    "text": "时间与计时"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "key",
+   "button": "boot",
+   "action": "click"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "设备功能"
    }
   },
   {

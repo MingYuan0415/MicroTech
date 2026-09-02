@@ -18,6 +18,9 @@ capacities in the owning headers instead of copying them from this skill.
   production Page. Prefer Weather as the typed-ops and Typed Blob reference.
 - Read `app_manager_types.h`, `app_manager.h`, `app_ui.h`, and the target
   service's public header before changing interfaces or ownership.
+- Image assets follow the SVG-first pipeline in
+  [references/asset-authoring.md](references/asset-authoring.md); no committed
+  PNG sources exist.
 
 ## Workflow
 
@@ -34,6 +37,9 @@ capacities in the owning headers instead of copying them from this skill.
    NEWINTENT behavior. Preserve the first cleanup error and failed handle.
 6. Bind the immutable definition through an App-owned static route; export an
    App descriptor only for a new App and add sources to `APP_SRCS` explicitly.
+   When the App owns icons, author SVG sources, register them in
+   `resource_manifest.cmake` plus `app_image_ids.h`, and run
+   `idf.py reconfigure` (see references/asset-authoring.md).
 7. Navigate through `app_manager_navigate_*` or `app_ui_request_*`; validate
    Typed Blob type and exact size before use.
 8. Add focused host coverage for the changed behavior; validation scope

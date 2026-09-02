@@ -1,154 +1,49 @@
-# 复刻 main/CMakeLists.txt:50-206 的资源管线（宿主版）。
-# 解析 layers/apps 与 app_theme 的 manifest，PNG 经仓库内 LVGLImage.py 转
-# RGB565A8 BIN，FONT 原样拷贝，并生成 app_resources_generated.h 与
-# sim_res_meta.h（文件数 + mmap 校验和，算法对齐 spiffs_assets_gen.py）。
+# 宿主资源管线：清单解析与暂存复用父仓库 cmake/mt_app_resources.cmake
+# （与固件同一规则：PNG 经仓库内 LVGLImage.py 转 RGB565A8 BIN，SVG 先经
+# tools/asset_pipeline/svg2png.py 栅格化，FONT 原样拷贝），并生成
+# app_resources_generated.h 与 sim_res_meta.h（文件数 + mmap 校验和，算法
+# 对齐 spiffs_assets_gen.py）。
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-set(SIM_RESOURCE_PYTHON "${Python3_EXECUTABLE}")
-set(SIM_RESOURCE_LVGL_DIR "${MT_ROOT}/managed_components/lvgl__lvgl")
-set(SIM_RESOURCE_CONVERTER "${SIM_RESOURCE_LVGL_DIR}/scripts/LVGLImage.py")
-if(NOT EXISTS "${SIM_RESOURCE_CONVERTER}")
+include("${MT_ROOT}/cmake/mt_app_resources.cmake")
+include("${MT_ROOT}/layers/apps/resource_manifest.cmake")
+include("${MT_ROOT}/layers/app_manager/app_theme/resource_manifest.cmake")
+set(MT_APP_RESOURCE_RECORDS ${MICROTECH_APP_RESOURCE_RECORDS}
+    ${MICROTECH_THEME_RESOURCE_RECORDS})
+
+set(MT_APP_RESOURCE_PYTHON "${Python3_EXECUTABLE}")
+set(MT_APP_RESOURCE_LVGL_DIR "${MT_ROOT}/managed_components/lvgl__lvgl")
+set(MT_APP_RESOURCE_CONVERTER "${MT_APP_RESOURCE_LVGL_DIR}/scripts/LVGLImage.py")
+if(NOT EXISTS "${MT_APP_RESOURCE_CONVERTER}")
     message(FATAL_ERROR
         "managed_components/lvgl__lvgl is missing scripts/LVGLImage.py; "
         "run an idf.py build once to populate managed_components")
 endif()
+set(MT_APP_RESOURCE_RASTERIZER
+    "${MT_ROOT}/tools/asset_pipeline/svg2png.py")
+set(MT_APP_RESOURCE_ENABLE_FS 1)
+set(MT_APP_RESOURCE_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/sim_res_fs")
+set(MT_APP_RESOURCE_TMP_ROOT "${CMAKE_CURRENT_BINARY_DIR}")
 
-include("${MT_ROOT}/layers/apps/resource_manifest.cmake")
-include("${MT_ROOT}/layers/app_manager/app_theme/resource_manifest.cmake")
-set(SIM_RESOURCE_RECORDS ${MICROTECH_APP_RESOURCE_RECORDS}
-    ${MICROTECH_THEME_RESOURCE_RECORDS})
-
-set(SIM_RESOURCE_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/sim_res_fs")
-set(SIM_RESOURCE_OUTPUTS "")
-set(SIM_RESOURCE_SEMANTICS "")
-set(SIM_RESOURCE_STAGED_OUTPUTS "")
-set(SIM_RESOURCE_SORTED_NAMES "")
-
-foreach(SIM_RESOURCE_RECORD IN LISTS SIM_RESOURCE_RECORDS)
-    string(REPLACE "|" ";" SIM_RESOURCE_FIELDS "${SIM_RESOURCE_RECORD}")
-    list(LENGTH SIM_RESOURCE_FIELDS SIM_RESOURCE_FIELD_COUNT)
-    if(NOT SIM_RESOURCE_FIELD_COUNT EQUAL 6)
-        message(FATAL_ERROR "Invalid resource manifest record: ${SIM_RESOURCE_RECORD}")
-    endif()
-    list(GET SIM_RESOURCE_FIELDS 0 SIM_RESOURCE_SOURCE)
-    list(GET SIM_RESOURCE_FIELDS 1 SIM_RESOURCE_OUTPUT)
-    list(GET SIM_RESOURCE_FIELDS 2 SIM_RESOURCE_SEMANTIC)
-    list(GET SIM_RESOURCE_FIELDS 3 SIM_RESOURCE_WIDTH)
-    list(GET SIM_RESOURCE_FIELDS 4 SIM_RESOURCE_HEIGHT)
-    list(GET SIM_RESOURCE_FIELDS 5 SIM_RESOURCE_KIND)
-    if(NOT EXISTS "${SIM_RESOURCE_SOURCE}")
-        message(FATAL_ERROR "Resource source does not exist: ${SIM_RESOURCE_SOURCE}")
-    endif()
-    list(FIND SIM_RESOURCE_OUTPUTS "${SIM_RESOURCE_OUTPUT}" SIM_RESOURCE_OUTPUT_INDEX)
-    if(NOT SIM_RESOURCE_OUTPUT_INDEX EQUAL -1)
-        message(FATAL_ERROR "Duplicate resource output name: ${SIM_RESOURCE_OUTPUT}")
-    endif()
-    list(APPEND SIM_RESOURCE_OUTPUTS "${SIM_RESOURCE_OUTPUT}")
-    if(SIM_RESOURCE_KIND STREQUAL "PNG")
-        if(SIM_RESOURCE_WIDTH LESS 1 OR SIM_RESOURCE_HEIGHT LESS 1)
-            message(FATAL_ERROR "Invalid PNG dimensions: ${SIM_RESOURCE_SOURCE}")
-        endif()
-        list(FIND SIM_RESOURCE_SEMANTICS "${SIM_RESOURCE_SEMANTIC}" SIM_RESOURCE_SEMANTIC_INDEX)
-        if(NOT SIM_RESOURCE_SEMANTIC_INDEX EQUAL -1)
-            message(FATAL_ERROR "Duplicate resource semantic ID: ${SIM_RESOURCE_SEMANTIC}")
-        endif()
-        list(APPEND SIM_RESOURCE_SEMANTICS "${SIM_RESOURCE_SEMANTIC}")
-    elseif(NOT SIM_RESOURCE_KIND STREQUAL "FONT")
-        message(FATAL_ERROR "Unsupported resource kind ${SIM_RESOURCE_KIND}: ${SIM_RESOURCE_SOURCE}")
-    endif()
-    if(SIM_RESOURCE_KIND STREQUAL "PNG")
-        string(REGEX REPLACE "\\.[^.]+$" ".bin" SIM_RESOURCE_STAGED_NAME "${SIM_RESOURCE_OUTPUT}")
-    else()
-        set(SIM_RESOURCE_STAGED_NAME "${SIM_RESOURCE_OUTPUT}")
-    endif()
-    get_filename_component(SIM_RESOURCE_STAGED_EXT
-        "${SIM_RESOURCE_STAGED_NAME}" EXT)
-    get_filename_component(SIM_RESOURCE_STAGED_BASE
-        "${SIM_RESOURCE_STAGED_NAME}" NAME_WE)
-    list(FIND SIM_RESOURCE_STAGED_OUTPUTS "${SIM_RESOURCE_STAGED_NAME}"
-        SIM_RESOURCE_STAGED_INDEX)
-    if(NOT SIM_RESOURCE_STAGED_INDEX EQUAL -1)
-        message(FATAL_ERROR "Duplicate staged resource name: ${SIM_RESOURCE_STAGED_NAME}")
-    endif()
-    list(APPEND SIM_RESOURCE_STAGED_OUTPUTS "${SIM_RESOURCE_STAGED_NAME}")
-    list(APPEND SIM_RESOURCE_SORTED_NAMES
-        "${SIM_RESOURCE_STAGED_EXT}|${SIM_RESOURCE_STAGED_BASE}")
-endforeach()
-
-list(SORT SIM_RESOURCE_SORTED_NAMES)
-list(LENGTH SIM_RESOURCE_RECORDS SIM_RESOURCE_RECORD_COUNT)
-
-set(SIM_RESOURCE_IMAGE_ENTRIES "")
-set(SIM_RESOURCE_STAGED_FILES "")
-set(SIM_RESOURCE_INDEX 0)
-foreach(SIM_RESOURCE_RECORD IN LISTS SIM_RESOURCE_RECORDS)
-    string(REPLACE "|" ";" SIM_RESOURCE_FIELDS "${SIM_RESOURCE_RECORD}")
-    list(GET SIM_RESOURCE_FIELDS 0 SIM_RESOURCE_SOURCE)
-    list(GET SIM_RESOURCE_FIELDS 1 SIM_RESOURCE_OUTPUT)
-    list(GET SIM_RESOURCE_FIELDS 2 SIM_RESOURCE_SEMANTIC)
-    list(GET SIM_RESOURCE_FIELDS 3 SIM_RESOURCE_WIDTH)
-    list(GET SIM_RESOURCE_FIELDS 4 SIM_RESOURCE_HEIGHT)
-    list(GET SIM_RESOURCE_FIELDS 5 SIM_RESOURCE_KIND)
-    if(SIM_RESOURCE_KIND STREQUAL "PNG")
-        string(REGEX REPLACE "\\.[^.]+$" ".bin" SIM_RESOURCE_STAGED_NAME "${SIM_RESOURCE_OUTPUT}")
-    else()
-        set(SIM_RESOURCE_STAGED_NAME "${SIM_RESOURCE_OUTPUT}")
-    endif()
-    get_filename_component(SIM_RESOURCE_STAGED_EXT
-        "${SIM_RESOURCE_STAGED_NAME}" EXT)
-    get_filename_component(SIM_RESOURCE_STAGED_BASE
-        "${SIM_RESOURCE_STAGED_NAME}" NAME_WE)
-    list(FIND SIM_RESOURCE_SORTED_NAMES
-        "${SIM_RESOURCE_STAGED_EXT}|${SIM_RESOURCE_STAGED_BASE}"
-        SIM_RESOURCE_ASSET_INDEX)
-    if(SIM_RESOURCE_KIND STREQUAL "PNG")
-        string(APPEND SIM_RESOURCE_IMAGE_ENTRIES
-            "    { ${SIM_RESOURCE_SEMANTIC}, ${SIM_RESOURCE_ASSET_INDEX}U, ${SIM_RESOURCE_WIDTH}U, ${SIM_RESOURCE_HEIGHT}U },\n")
-    endif()
-    set(SIM_RESOURCE_DEST "${SIM_RESOURCE_STAGE_DIR}/${SIM_RESOURCE_STAGED_NAME}")
-    if(SIM_RESOURCE_KIND STREQUAL "PNG")
-        set(SIM_RESOURCE_TMP "${CMAKE_CURRENT_BINARY_DIR}/sim_res_tmp_${SIM_RESOURCE_INDEX}")
-        get_filename_component(SIM_RESOURCE_SOURCE_STEM "${SIM_RESOURCE_SOURCE}" NAME_WE)
-        add_custom_command(OUTPUT "${SIM_RESOURCE_DEST}"
-            COMMAND ${CMAKE_COMMAND} -E remove_directory "${SIM_RESOURCE_TMP}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${SIM_RESOURCE_TMP}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${SIM_RESOURCE_STAGE_DIR}"
-            COMMAND "${SIM_RESOURCE_PYTHON}" "${SIM_RESOURCE_CONVERTER}"
-                --ofmt BIN --cf RGB565A8 --compress NONE
-                --output "${SIM_RESOURCE_TMP}" "${SIM_RESOURCE_SOURCE}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${SIM_RESOURCE_TMP}/${SIM_RESOURCE_SOURCE_STEM}.bin" "${SIM_RESOURCE_DEST}"
-            DEPENDS "${SIM_RESOURCE_SOURCE}" "${SIM_RESOURCE_CONVERTER}"
-            VERBATIM)
-    else()
-        add_custom_command(OUTPUT "${SIM_RESOURCE_DEST}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${SIM_RESOURCE_STAGE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${SIM_RESOURCE_SOURCE}" "${SIM_RESOURCE_DEST}"
-            DEPENDS "${SIM_RESOURCE_SOURCE}"
-            VERBATIM)
-    endif()
-    list(APPEND SIM_RESOURCE_STAGED_FILES "${SIM_RESOURCE_DEST}")
-    math(EXPR SIM_RESOURCE_INDEX "${SIM_RESOURCE_INDEX} + 1")
-endforeach()
+mt_stage_app_resources()
 
 # 生成头对齐设备 configure_file 路径；校验和由构建期 sim_res_meta.h 提供，
 # 避免在 CMake 配置阶段读取二进制文件内容。
-set(APP_RESOURCE_FILE_COUNT_VALUE ${SIM_RESOURCE_RECORD_COUNT})
+set(APP_RESOURCE_FILE_COUNT_VALUE ${MT_APP_RESOURCE_RECORD_COUNT})
 set(APP_RESOURCE_CHECKSUM_VALUE APP_RESOURCES_SIM_CHECKSUM)
-set(APP_RESOURCE_IMAGE_ENTRIES ${SIM_RESOURCE_IMAGE_ENTRIES})
+set(APP_RESOURCE_IMAGE_ENTRIES ${MT_APP_RESOURCE_IMAGE_ENTRIES})
 configure_file("${MT_ROOT}/main/app_resources_generated.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/app_resources_generated.h" @ONLY)
 
 set(SIM_RESOURCE_META_HEADER "${CMAKE_CURRENT_BINARY_DIR}/sim_res_meta.h")
 add_custom_command(OUTPUT "${SIM_RESOURCE_META_HEADER}"
-    COMMAND "${SIM_RESOURCE_PYTHON}"
+    COMMAND "${MT_APP_RESOURCE_PYTHON}"
         "${CMAKE_CURRENT_LIST_DIR}/gen_res_meta.py"
-        --assets-dir "${SIM_RESOURCE_STAGE_DIR}"
+        --assets-dir "${MT_APP_RESOURCE_STAGE_DIR}"
         --output "${SIM_RESOURCE_META_HEADER}"
-    DEPENDS ${SIM_RESOURCE_STAGED_FILES}
+    DEPENDS ${MT_APP_RESOURCE_STAGED_FILES}
         "${CMAKE_CURRENT_LIST_DIR}/gen_res_meta.py"
     VERBATIM)
 add_custom_target(sim_resources ALL
-    DEPENDS ${SIM_RESOURCE_STAGED_FILES} "${SIM_RESOURCE_META_HEADER}")
+    DEPENDS ${MT_APP_RESOURCE_STAGED_FILES} "${SIM_RESOURCE_META_HEADER}")
