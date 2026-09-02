@@ -25,6 +25,7 @@ OUT_DIR = os.path.join(BUILD, 'shots')
 PID_FILE = os.path.join(BUILD, 'dev.pid')
 LOG_FILE = os.path.join(BUILD, 'dev_session.log')
 PORT = 5002
+LAST_NETWORK_ONLINE = False
 APPS = ['home', 'menu', 'clock', 'level', 'diagnostics', 'recorder',
         'settings', 'setup', 'weather']
 
@@ -47,9 +48,19 @@ def session_pid():
         return None
     try:
         pid = int(open(PID_FILE).read().strip())
-    except ValueError:
+    except (OSError, ValueError):
+        try:
+            os.remove(PID_FILE)
+        except OSError:
+            pass
         return None
-    return pid if _pid_alive(pid) else None
+    if _pid_alive(pid):
+        return pid
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
+    return None
 
 
 def agent_ready():
@@ -63,6 +74,29 @@ def agent_ready():
 
 def running():
     return session_pid() is not None and agent_ready()
+
+
+def session_summary():
+    pid = session_pid()
+    if pid is None:
+        return '未运行'
+    if not agent_ready():
+        return '启动中 pid=%d' % pid
+    try:
+        sock = _connect(timeout=1)
+        try:
+            reply = rpc(sock, 'sim.ping')
+        finally:
+            sock.close()
+    except OSError:
+        return '连接中断 pid=%d' % pid
+    if not reply.get('ok'):
+        return '运行中 pid=%d（状态不可用）' % pid
+    result = reply.get('result', {})
+    mode = 'CI' if result.get('ci') else '自由运行'
+    network = '联网' if result.get('network_ready') else '离线'
+    app = result.get('active_app') or '未知页面'
+    return '运行中 pid=%d（%s，%s，%s）' % (pid, mode, network, app)
 
 
 def build():
@@ -86,7 +120,44 @@ def build():
     return True
 
 
-def start_session(navigate=None, headless=False):
+def _pick_network():
+    print('  网络模式：')
+    print('    1  联网（真实 HTTP/HTTPS 请求）')
+    print('    2  离线（不发起天气请求）')
+    raw = input('  选择网络 [2]: ').strip()
+    if raw in ('', '2'):
+        return False
+    if raw == '1':
+        return True
+    print('  无效选择')
+    return None
+
+
+def _terminate_process(pid):
+    if not _pid_alive(pid):
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    for _ in range(20):
+        if not _pid_alive(pid):
+            return
+        time.sleep(0.1)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def _clear_pid_file():
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
+
+
+def start_session(navigate=None, headless=False, online=False):
     """后台启动常驻会话；navigate=app 时启动后自动跳转。"""
     if running():
         print('  会话已在运行（端口 %d）。先选 8 停止，或复用当前会话。' % PORT)
@@ -97,26 +168,52 @@ def start_session(navigate=None, headless=False):
     common = [BINARY, '--res-dir', RES_DIR, '--nvs-dir', NVS_DIR,
               '--out-dir', OUT_DIR, '--agent-port', str(PORT)]
     if headless or not os.environ.get('DISPLAY'):
-        cmd = [BINARY, '--headless', '--ci', '--res-dir', RES_DIR,
-               '--nvs-dir', NVS_DIR, '--out-dir', OUT_DIR,
-               '--agent-port', str(PORT)]
+        cmd = common + ['--headless']
+        if not online:
+            cmd.append('--ci')
     else:
         cmd = common + ['--window-scale', '1']
-    if '--ci' in cmd and not headless:
+    if '--headless' in cmd and not headless:
         print('  未检测到 DISPLAY，转为无头驻留（可用 simctl 驱动）')
-    print('  启动会话：%s' % ('无头驻留' if '--ci' in cmd else '窗口 1:1'))
+    if '--ci' in cmd:
+        launch_mode = '无头离线驻留'
+    elif '--headless' in cmd:
+        launch_mode = '无头联网驻留'
+    else:
+        launch_mode = '固定尺寸窗口'
+    print('  启动会话：%s' % launch_mode)
     log = open(LOG_FILE, 'w')
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
                             start_new_session=True)
+    log.close()
     open(PID_FILE, 'w').write(str(proc.pid))
     if not _wait_socket(60):
         print('  会话未就绪，日志末尾：')
         _dump_log()
+        _terminate_process(proc.pid)
+        _clear_pid_file()
         return False
-    mode = 'ci' if '--ci' in cmd else 'window'
-    print('  会话就绪 pid=%d（模式 %s，日志 %s）' % (proc.pid, mode, LOG_FILE))
+    mode = 'ci' if '--ci' in cmd else (
+        'headless' if '--headless' in cmd else 'window')
+    network = '联网' if online else '离线'
+    print('  会话就绪 pid=%d（模式 %s，%s，日志 %s）' %
+          (proc.pid, mode, network, LOG_FILE))
+    sock = _connect()
+    try:
+        reply = rpc(sock, 'sim.set_wifi',
+                    {'state': 'connected' if online else 'disconnected'})
+        if not reply.get('ok'):
+            print('  网络状态设置失败：%s' % reply)
+            _terminate_process(proc.pid)
+            _clear_pid_file()
+            return False
+    finally:
+        sock.close()
     if navigate:
-        _navigate(navigate)
+        if not _navigate(navigate):
+            return False
+    global LAST_NETWORK_ONLINE
+    LAST_NETWORK_ONLINE = online
     return True
 
 
@@ -149,30 +246,30 @@ def stop_session():
         sock.close()
     except OSError:
         pass
-    for _ in range(12):
-        if not _pid_alive(pid):
-            break
-        time.sleep(0.5)
-    if _pid_alive(pid):
-        os.kill(pid, signal.SIGKILL)
+    _terminate_process(pid)
     if os.path.exists(PID_FILE):
-        os.remove(PID_FILE)
+        _clear_pid_file()
     print('  会话已停止')
 
 
-def _connect():
-    return socket.create_connection(('127.0.0.1', PORT), timeout=60)
+def _connect(timeout=60):
+    return socket.create_connection(('127.0.0.1', PORT), timeout=timeout)
 
 
 def _navigate(app):
-    sock = _connect()
+    sock = _connect(timeout=5)
     try:
         reply = rpc(sock, 'sim.navigate', {'app': app})
-        rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
+        if not reply.get('ok'):
+            print('  导航失败：%s' % reply)
+            return False
+        settled = rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
+        if not settled.get('ok'):
+            print('  页面未稳定：%s' % settled)
+            return False
     finally:
         sock.close()
-    if not reply.get('ok'):
-        print('  导航失败：%s' % reply)
+    return True
 
 
 # ------------------------------------------------------------- 场景助手
@@ -184,7 +281,7 @@ def do_on_session(app, action):
         return False
     temp = not running()
     if temp:
-        if not start_session(headless=True):
+        if not start_session(headless=True, online=LAST_NETWORK_ONLINE):
             return False
         pid = session_pid()
     else:
@@ -193,8 +290,14 @@ def do_on_session(app, action):
         sock = _connect()
         try:
             if app:
-                rpc(sock, 'sim.navigate', {'app': app})
-            rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
+                reply = rpc(sock, 'sim.navigate', {'app': app})
+                if not reply.get('ok'):
+                    print('  导航失败：%s' % reply)
+                    return False
+            settled = rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
+            if not settled.get('ok'):
+                print('  页面未稳定：%s' % settled)
+                return False
             return action(sock)
         finally:
             sock.close()
@@ -220,11 +323,16 @@ def pick_app(default_current=False):
 
 
 def cmd_run(navigate=None):
-    start_session(navigate=navigate, headless=False)
+    online = _pick_network()
+    if online is not None:
+        start_session(navigate=navigate, headless=False, online=online)
 
 
 def cmd_headless():
-    if start_session(headless=True):
+    online = _pick_network()
+    if online is None:
+        return
+    if start_session(headless=True, online=online):
         print('  常用驱动：')
         print('    python3 sim/tools/simctl.py navigate clock')
         print('    python3 sim/tools/simctl.py step 33')
@@ -295,6 +403,11 @@ def _print_tree_summary(tree, depth=0, limit=18):
 
 
 def cmd_ci(update=False):
+    if running():
+        answer = input('  当前会话占用端口 %d，停止后运行 CI？ [y/N] ' % PORT)
+        if answer.strip().lower() != 'y':
+            return
+        stop_session()
     script = os.path.join(SIM_ROOT, 'ci', 'run_ci.sh')
     argv = [script, BUILD] + (['--update'] if update else [])
     if update:
@@ -315,16 +428,19 @@ def cmd_reset():
 
 MENU = """
 ──────────── MicroTech 模拟器 ────────────
- 1  运行（窗口 1:1，自动增量编译）
- 2  运行并直达某页面…
- 3  无头驻留（simctl 驱动）
- 4  截图某页面 → build/sim/shots/
- 5  导出某页面控件树
- 6  CI 回归
- 7  重新生成金样（UI 变更后）
+ 启动
+ 1  启动窗口
+ 2  启动窗口并进入页面
+ 3  启动无头会话（simctl 驱动）
+ 检查
+ 4  截图页面
+ 5  导出控件树
+ 6  运行 CI 回归
+ 7  更新 PNG 金样
+ 会话
  8  停止当前会话
  9  重置设备状态
-（PM 息屏默认关闭；测息屏用 simctl pm --off-ms 15000 / 场景 pm_lifecycle）
+（息屏：simctl pm --off-ms 15000；网络：simctl set-wifi connected|disconnected）
  0  退出
 """
 
@@ -333,7 +449,7 @@ def main():
     print('工作目录：%s' % ROOT)
     while True:
         print(MENU)
-        state = '运行中' if running() else '未运行'
+        state = session_summary()
         choice = input('  请选择 [%s]: ' % state).strip()
         try:
             if choice == '1':

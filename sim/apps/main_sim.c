@@ -180,13 +180,45 @@ static bool _parse_args(int argc, char **argv, sim_options_t *opt,
     return true;
 }
 
-static void _pump_sdl(const sim_options_t *opt)
+static bool _window_size_matches(const sim_options_t *opt, SDL_Window *window)
+{
+    int width;
+    int height;
+
+    if (window == NULL)
+    {
+        return true;
+    }
+    SDL_GetWindowSize(window, &width, &height);
+    return (width == (int)SIM_BSP_H_RES * opt->window_scale) &&
+           (height == (int)SIM_BSP_V_RES * opt->window_scale);
+}
+
+static void _restore_window_size(const sim_options_t *opt, SDL_Window *window)
+{
+    if ((window != NULL) && !_window_size_matches(opt, window))
+    {
+        SDL_SetWindowSize(window,
+                          (int)SIM_BSP_H_RES * opt->window_scale,
+                          (int)SIM_BSP_V_RES * opt->window_scale);
+    }
+}
+
+static void _pump_sdl(const sim_options_t *opt, SDL_Window *window)
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
         switch (event.type)
         {
+        case SDL_WINDOWEVENT:
+            if (window != NULL &&
+                    (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                     event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED))
+            {
+                _restore_window_size(opt, window);
+            }
+            break;
         case SDL_QUIT:
             atomic_store(&sim_quit_flag, 1);
             break;
@@ -194,6 +226,11 @@ static void _pump_sdl(const sim_options_t *opt)
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
         {
+            if (!_window_size_matches(opt, window))
+            {
+                _restore_window_size(opt, window);
+                break;
+            }
             const int scale = opt->window_scale;
             const int16_t x = (int16_t)(event.motion.x / scale);
             const int16_t y = (int16_t)(event.motion.y / scale);
@@ -245,8 +282,8 @@ static void _pump_sdl(const sim_options_t *opt)
     }
 }
 
-static bool _run_iteration(const sim_options_t *opt, SDL_Texture *texture,
-                           SDL_Renderer *renderer)
+static bool _run_iteration(const sim_options_t *opt, SDL_Window *window,
+                           SDL_Texture *texture, SDL_Renderer *renderer)
 {
     if (opt->ci)
     {
@@ -254,7 +291,9 @@ static bool _run_iteration(const sim_options_t *opt, SDL_Texture *texture,
     }
     if (!opt->headless)
     {
-        _pump_sdl(opt);
+        _restore_window_size(opt, window);
+        _pump_sdl(opt, window);
+        _restore_window_size(opt, window);
         if (texture != NULL)
         {
             int update_result;
@@ -540,6 +579,14 @@ int main(int argc, char **argv)
                                   (int)SIM_BSP_H_RES * opt.window_scale,
                                   (int)SIM_BSP_V_RES * opt.window_scale,
                                   0);
+        if (window != NULL)
+        {
+            const int window_width = (int)SIM_BSP_H_RES * opt.window_scale;
+            const int window_height = (int)SIM_BSP_V_RES * opt.window_scale;
+            SDL_SetWindowResizable(window, SDL_FALSE);
+            SDL_SetWindowMinimumSize(window, window_width, window_height);
+            SDL_SetWindowMaximumSize(window, window_width, window_height);
+        }
         renderer = (window != NULL) ? SDL_CreateRenderer(window, -1, 0) : NULL;
         texture = (renderer != NULL)
                   ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
@@ -553,7 +600,7 @@ int main(int argc, char **argv)
         while (!atomic_load(&sim_quit_flag) &&
                 (iterations < (uint32_t)opt.frames))
         {
-            if (!_run_iteration(&opt, texture, renderer))
+            if (!_run_iteration(&opt, window, texture, renderer))
             {
                 rc = EXIT_FAILURE;
                 break;
@@ -573,7 +620,7 @@ int main(int argc, char **argv)
     {
         while (!atomic_load(&sim_quit_flag))
         {
-            if (!_run_iteration(&opt, texture, renderer))
+            if (!_run_iteration(&opt, window, texture, renderer))
             {
                 rc = EXIT_FAILURE;
                 break;

@@ -65,7 +65,16 @@ def main():
     pm = sub.add_parser("pm"); pm.add_argument("--off-ms", type=int, default=None); pm.add_argument("--standby-ms", type=int, default=None); pm.add_argument("--get", action="store_true")
     args = ap.parse_args()
 
-    with socket.create_connection((args.host, args.port), timeout=30) as sock:
+    try:
+        sock = socket.create_connection((args.host, args.port), timeout=3)
+    except OSError as exc:
+        print("simctl: cannot connect to %s:%d: %s" %
+              (args.host, args.port, exc), file=sys.stderr)
+        print("请先运行 python3 sim/dev.py，或检查模拟器会话和端口。",
+              file=sys.stderr)
+        sys.exit(2)
+
+    with sock:
         if args.cmd == "ping":
             req = ("sim.ping", None)
         elif args.cmd == "step":
@@ -114,7 +123,9 @@ def main():
                 params["standby_ms"] = args.standby_ms
             req = ("sim.pm", params)
         reply = rpc(sock, *req)
-        if args.cmd == "tree":
+        if not reply.get("ok"):
+            print(json.dumps(reply, ensure_ascii=False))
+        elif args.cmd == "tree":
             print(json.dumps(reply.get("result", {}).get("tree"), ensure_ascii=False))
         else:
             print(json.dumps(reply, ensure_ascii=False))

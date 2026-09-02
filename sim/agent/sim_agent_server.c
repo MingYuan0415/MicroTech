@@ -126,6 +126,24 @@ static const char *_wait_idle_error(sim_wait_idle_result_t result)
     return "wait idle timed out";
 }
 
+static void _add_weather_status(cJSON *result)
+{
+    weather_service_status_snapshot_t status = {0};
+
+    if (weather_service_get_status(&status) != ESP_OK)
+    {
+        cJSON_AddBoolToObject(result, "network_ready", false);
+        cJSON_AddNumberToObject(result, "weather_state",
+                                WEATHER_SERVICE_STATE_ERROR);
+        cJSON_AddNumberToObject(result, "weather_failure",
+                                WEATHER_SERVICE_FAILURE_INTERNAL);
+        return;
+    }
+    cJSON_AddBoolToObject(result, "network_ready", status.network_ready);
+    cJSON_AddNumberToObject(result, "weather_state", status.state);
+    cJSON_AddNumberToObject(result, "weather_failure", status.failure);
+}
+
 static sim_wait_idle_result_t _wait_idle(uint32_t timeout_ms,
         uint64_t *hash_out, uint32_t *steps_out)
 {
@@ -242,12 +260,24 @@ static cJSON *_handle(cJSON *request, bool *ok)
         cJSON_AddBoolToObject(result, "ci", sim_lv_ci_enabled());
         cJSON_AddNumberToObject(result, "frames",
                                 (double)sim_lv_frame_count());
+        _add_weather_status(result);
         if (!sim_lv_ci_enabled())
         {
             /* The lifecycle query drains via the mailbox; only safe when the
              * worker free-runs (CI must read state from the tree instead). */
-            cJSON_AddStringToObject(result, "active_app",
-                                    app_manager_get_active_app_id());
+            const char *active_app = app_manager_get_active_app_id();
+            if (active_app != NULL)
+            {
+                cJSON_AddStringToObject(result, "active_app", active_app);
+            }
+            else
+            {
+                cJSON_AddNullToObject(result, "active_app");
+            }
+        }
+        else
+        {
+            cJSON_AddNullToObject(result, "active_app");
         }
     }
     else if (strcmp(method, "sim.step") == 0)
@@ -570,15 +600,28 @@ static cJSON *_handle(cJSON *request, bool *ok)
         const cJSON *state = params != NULL ?
                              cJSON_GetObjectItemCaseSensitive(params, "state") : NULL;
         const char *value = cJSON_GetStringValue(state);
-        if (value == NULL)
+        const bool valid_state = (value != NULL) &&
+                                 ((strcmp(value, "connected") == 0) ||
+                                  (strcmp(value, "disconnected") == 0));
+        if (!valid_state)
         {
             *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid wifi state");
         }
         else
         {
             const bool connected = (strcmp(value, "connected") == 0);
-            (void)weather_service_set_network_ready(connected,
-                                                    connected ? 0x0A000001U : 0U);
+            const esp_err_t res = weather_service_set_network_ready(
+                                      connected, connected ? 0x0A000001U : 0U);
+            *ok = (res == ESP_OK);
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            }
+            else
+            {
+                _add_weather_status(result);
+            }
         }
     }
     else if (strcmp(method, "sim.set_weather") == 0)
@@ -591,7 +634,13 @@ static cJSON *_handle(cJSON *request, bool *ok)
                             cJSON_GetObjectItemCaseSensitive(params, "body") : NULL;
         const char *path = cJSON_GetStringValue(endpoint);
         const char *json = cJSON_GetStringValue(body);
-        if ((path == NULL) || (json == NULL) ||
+        const bool valid_endpoint = (path != NULL) &&
+                                    ((strcmp(path, "location") == 0) ||
+                                     (strcmp(path, "current") == 0) ||
+                                     (strcmp(path, "alerts") == 0) ||
+                                     (strcmp(path, "hourly") == 0) ||
+                                     (strcmp(path, "daily") == 0));
+        if (!valid_endpoint || (json == NULL) ||
                 ((status != NULL) && !_number_in_range(status, 100.0, 599.0)))
         {
             *ok = false;

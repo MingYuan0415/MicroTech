@@ -34,10 +34,14 @@ LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 python3 sim/dev.py
 ```
 
-数字菜单：窗口 1:1 运行 / 直达某页 / 无头驻留 / 一键截图 / 控件树导出 /
-CI 回归 / 更新金样 / 停止会话 / 重置设备状态。全部路径自动注入
+数字菜单：启动窗口或无头会话时可选择联网/离线，默认离线；另提供直达某页、一键截图、
+控件树导出、CI 回归、更新金样、停止会话和重置设备状态。全部路径自动注入
 （`build/sim/dev_nvs`、`build/sim/shots`、端口 5002），零参数。
 无 DISPLAY 时"运行"自动转无头驻留并提示 simctl 用法。
+联网会话使用宿主机真实 HTTP/HTTPS；离线无头会话使用 CI 时钟，不会发起天气请求。
+
+窗口启动后使用固定的面板尺寸，不响应边缘拖拽；需要改变显示倍率时使用
+`--window-scale N` 启动模拟器。
 
 ## 运行
 
@@ -140,9 +144,16 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 类型值 + 图像语义 ID）、`sim.touch {action,x,y}`、`sim.key {button,action}`
 （press/release/click）、`sim.navigate {app}`（投 mailbox，不阻塞）、`sim.apps`、
 `sim.set_time {epoch}`、`sim.set_power {voltage,pct,charging,vbus}`、
-`sim.set_imu {pitch,roll}`（度）、`sim.set_weather {endpoint,status,body}`
+`sim.set_wifi {state}`（connected/disconnected）、`sim.set_imu {pitch,roll}`（度）、
+`sim.set_weather {endpoint,status,body}`
 （灌 sim_http 脚本表后 `request_refresh`，真解析链）、`sim.pause {enabled}`、
 `sim.exit`。客户端：`python3 sim/tools/simctl.py <command>`。
+
+`sim.ping` 返回 `network_ready`、`weather_state`、`weather_failure`、`active_app`、
+`ci` 和 `frames`，可用于 Agent 判断当前会话，而不必解析页面文本。
+`simctl` 无法连接时会快速失败并提示启动 `python3 sim/dev.py`；端口冲突时先停止
+开发会话再运行 CI。真实联网请求失败时，优先检查 `network_ready`、天气状态和
+`build/sim/dev_session.log`。
 
 失败响应使用顶层 `error`，不带 `result`；成功响应使用 `result`。`sim.wait_idle`
 暂停时返回 `error: "adapter paused"`；`sim.screenshot` 默认先等待稳定，暂停画面需
