@@ -137,9 +137,13 @@ Select sizing by semantics:
 6. Run the narrow host tests and project-required formatting/diff checks.
    Broader sanitizer, firmware-build, and hardware scope follows the
    `AGENTS.md` default workflow.
-7. Inspect the real display for glyph fallback, wrapping, clipping, overlap,
-   horizontal drift, touch dead zones, and scroll handoff. Host geometry cannot
-   validate actual rasterized fonts or touch behavior.
+7. Review in the simulator first: its SDL renderer rasterizes the real theme
+   fonts, so glyph fallback, wrapping, clipping, overlap, horizontal drift, and
+   scroll handoff are all judgeable from `sim.tree` geometry and screenshots
+   without hardware. Read wrap/overflow from `coords` and `styles.line_height`,
+   not from a PNG by eye. Use the `ui-review` skill's harness
+   (`sim/tools/review_pages.py`) as the gate for a UI change; reserve the real
+   display for touch feel, RF, and AMOLED color only.
 
 Report the tested resolutions, data extremes, interaction paths, and any
 unexecuted hardware checks. Do not claim that a single nominal screenshot

@@ -50,9 +50,13 @@ capacities in the owning headers instead of copying them from this skill.
    `drag` steps to prove the page's scroll policy both directions. `sim.step`
    accepts only multiples of 33 ms and every RPC result must be asserted: a
    rejected call advances no frames and masquerades as an unresponsive UI.
-   Derive tap coordinates from the dumped tree geometry, review a screenshot
-   for every new page, and remember that pages with looping animations (for
-   example `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow) never satisfy `wait_idle`.
+    Derive tap coordinates from the dumped tree geometry, review a screenshot
+    for every new page, and remember that pages with looping animations (for
+    example `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow) never satisfy `wait_idle`.
+    Before declaring a page done, run the `ui-review` gate: a per-page state
+    matrix (empty/loading/populated/disabled/error/transient) screenshotted and
+    linted by `sim/tools/review_pages.py` (single-line fit, unreachable control,
+    washed-out disabled, fallback icon), not one happy-path screenshot.
 
 ## Ownership Rules
 

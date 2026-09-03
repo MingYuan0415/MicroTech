@@ -58,6 +58,7 @@ Header `<type>(<scope>): <subject>`，正文写动机与影响，尾部 `Refs:` 
 | --- | --- |
 | App/Page 生命周期、路由、导航、参数 | `app-development` |
 | LVGL 布局、文本换行、裁切、触摸/滚动传递 | `lvgl-ui-layout` |
+| UI 改动完成前的模拟器对抗式审查 | `ui-review` |
 | 板级引脚、总线、硬件约束 | `esp32` |
 | 显示管线所有权边界、draw 提交、flush 握手 | `lvgl-integration` |
 
