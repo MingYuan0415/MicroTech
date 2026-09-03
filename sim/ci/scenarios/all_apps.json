@@ -797,6 +797,181 @@
   },
   {
    "cmd": "navigate",
+   "app": "settings",
+   "page": "wifi"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "Wi-Fi 开关"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "自动连接"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "忘记网络"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "可用网络"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "重新扫描"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_settings_wifi.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "bluetooth"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "set_bluetooth",
+   "enabled": true,
+   "bound": true,
+   "active": false
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "已绑定"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 356
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 356
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "再次点击“解除绑定”以确认"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 356
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 356
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "已解除绑定"
+   }
+  },
+  {
+   "cmd": "set_bluetooth",
+   "enabled": true,
+   "bound": false,
+   "active": true,
+   "window_remaining_ms": 90000
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "offer_pairing",
+   "token": 4660,
+   "passkey": 482913
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "482913"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_settings_bluetooth.png"
+  },
+  {
+   "cmd": "set_bluetooth",
+   "enabled": true,
+   "bound": false,
+   "active": false
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "navigate",
    "app": "setup"
   },
   {

@@ -173,6 +173,8 @@ set(SIM_APP_SOURCES
     "${APPS}/menu_app/src/menu_app.c"
     "${APPS}/settings_app/src/settings_app.c"
     "${APPS}/settings_app/src/settings_display_page.c"
+    "${APPS}/settings_app/src/settings_wifi_page.c"
+    "${APPS}/settings_app/src/settings_bluetooth_page.c"
     "${APPS}/settings_app/src/settings_device_page.c"
     "${APPS}/settings_app/src/settings_factory_reset_page.c"
     "${APPS}/setup_app/src/setup_app.c"

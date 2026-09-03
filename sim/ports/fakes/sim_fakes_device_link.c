@@ -40,6 +40,7 @@ void host_device_link_service_reset(void)
     s_device_link.status.generation = 1U;
     s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_ADVERTISING;
     s_device_link.status.available = true;
+    s_device_link.status.enabled = true;
     s_device_link.open_count = 0U;
     s_device_link.close_count = 0U;
     s_device_link.confirm_result = ESP_OK;
@@ -138,6 +139,31 @@ esp_err_t host_device_link_service_offer_numeric_comparison(
                &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
+esp_err_t device_link_service_set_enabled(bool enabled, uint32_t timeout_ms)
+{
+    device_link_service_status_t status;
+    (void)timeout_ms;
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    s_device_link.status.enabled = enabled;
+    s_device_link.status.last_error = ESP_OK;
+    s_device_link.status.state = enabled ?
+                                 DEVICE_LINK_SERVICE_STATE_ADVERTISING :
+                                 DEVICE_LINK_SERVICE_STATE_DISABLED;
+    if (!enabled)
+    {
+        s_device_link.status.active = false;
+        s_device_link.status.window_remaining_ms = 0U;
+        s_device_link.status.client_connected = false;
+    }
+    _host_device_link_next_generation_locked();
+    status = s_device_link.status;
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return event_bus_publish(
+               DEVICE_LINK_SERVICE_MSG,
+               DEVICE_LINK_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+               &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
+}
+
 esp_err_t device_link_service_open_window(void)
 {
     device_link_service_status_t status;
@@ -194,14 +220,42 @@ esp_err_t device_link_service_revoke_binding(void)
 esp_err_t device_link_service_confirm_binding(
     device_link_confirmation_token_t token, bool accept)
 {
-    (void)accept;
+    device_link_service_status_t status;
+
     (void)pthread_mutex_lock(&s_device_link.lock);
     ++s_device_link.confirm_count;
     s_device_link.last_confirmation_token = token;
     const esp_err_t result = s_device_link.confirm_result;
-
+    if (result == ESP_OK)
+    {
+        const ble_link_confirmation_snapshot_t confirmation =
+        {
+            .pending = false,
+            .token = 0U,
+            .numeric_comparison = 0U,
+        };
+        (void)device_link_confirmation_sync(&s_device_link.status,
+                                            &confirmation);
+        if (accept)
+        {
+            s_device_link.status.bound = true;
+            s_device_link.status.active = false;
+            s_device_link.status.window_remaining_ms = 0U;
+            s_device_link.status.client_connected = false;
+            s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_CONNECTED;
+        }
+        _host_device_link_next_generation_locked();
+    }
+    status = s_device_link.status;
     (void)pthread_mutex_unlock(&s_device_link.lock);
-    return result;
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    return event_bus_publish(
+               DEVICE_LINK_SERVICE_MSG,
+               DEVICE_LINK_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+               &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
 esp_err_t device_link_service_get_status(

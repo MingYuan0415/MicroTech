@@ -36,6 +36,9 @@
 #include "sim_png.h"
 #include "sim_time.h"
 #include "weather_service.h"
+#include "host_device_link_service.h"
+#include "host_wifi_port.h"
+#include "connectivity_manager.h"
 
 #define SIM_AGENT_LINE_MAX (256 * 1024)
 
@@ -622,6 +625,127 @@ static cJSON *_handle(cJSON *request, bool *ok)
             {
                 _add_weather_status(result);
             }
+        }
+    }
+    else if (strcmp(method, "sim.set_bluetooth") == 0)
+    {
+        device_link_service_status_t status;
+        if (device_link_service_get_status(&status) != ESP_OK)
+        {
+            memset(&status, 0, sizeof(status));
+            status.generation = 0U;
+        }
+        const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(params,
+                               "enabled");
+        const cJSON *bound = cJSON_GetObjectItemCaseSensitive(params, "bound");
+        const cJSON *active = cJSON_GetObjectItemCaseSensitive(params, "active");
+        const cJSON *connected = cJSON_GetObjectItemCaseSensitive(
+                                     params, "client_connected");
+        const cJSON *remaining = cJSON_GetObjectItemCaseSensitive(
+                                     params, "window_remaining_ms");
+        status.available = true;
+        if (cJSON_IsBool(enabled))
+        {
+            status.enabled = cJSON_IsTrue(enabled);
+        }
+        if (cJSON_IsBool(bound))
+        {
+            status.bound = cJSON_IsTrue(bound);
+        }
+        if (cJSON_IsBool(active))
+        {
+            status.active = cJSON_IsTrue(active);
+        }
+        if (cJSON_IsBool(connected))
+        {
+            status.client_connected = cJSON_IsTrue(connected);
+        }
+        if (cJSON_IsNumber(remaining))
+        {
+            status.window_remaining_ms = (uint32_t)remaining->valuedouble;
+        }
+        status.state = status.active ? DEVICE_LINK_SERVICE_STATE_WINDOW :
+                       (status.enabled ? DEVICE_LINK_SERVICE_STATE_ADVERTISING :
+                        DEVICE_LINK_SERVICE_STATE_DISABLED);
+        status.pending_confirmation = false;
+        status.confirmation_token = 0U;
+        status.generation = status.generation + 1U;
+        *ok = (host_device_link_service_publish_status(&status) == ESP_OK);
+    }
+    else if (strcmp(method, "sim.offer_pairing") == 0)
+    {
+        const cJSON *token = cJSON_GetObjectItemCaseSensitive(params, "token");
+        const cJSON *passkey = cJSON_GetObjectItemCaseSensitive(params,
+                               "passkey");
+        const device_link_confirmation_token_t use_token =
+            cJSON_IsNumber(token) ? (device_link_confirmation_token_t)
+            token->valuedouble : 0x1234U;
+        const uint32_t use_passkey = cJSON_IsNumber(passkey) ?
+                                     (uint32_t)passkey->valuedouble : 482913U;
+        *ok = (host_device_link_service_offer_numeric_comparison(use_token,
+               use_passkey) == ESP_OK);
+    }
+    else if (strcmp(method, "sim.set_wifi_scan") == 0)
+    {
+        const cJSON *records = cJSON_GetObjectItemCaseSensitive(params,
+                               "records");
+        wifi_service_port_scan_record_t port_records[WIFI_SERVICE_MAX_SCAN_RECORDS];
+        size_t count = 0U;
+        bool valid = cJSON_IsArray(records);
+        if (valid)
+        {
+            const cJSON *item = NULL;
+            cJSON_ArrayForEach(item, records)
+            {
+                if (count >= WIFI_SERVICE_MAX_SCAN_RECORDS)
+                {
+                    valid = false;
+                    break;
+                }
+                const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(item,
+                                    "ssid");
+                const char *text = cJSON_GetStringValue(ssid);
+                if (text == NULL)
+                {
+                    valid = false;
+                    break;
+                }
+                memset(&port_records[count], 0, sizeof(port_records[count]));
+                size_t length = strlen(text);
+                if (length > WIFI_SERVICE_SSID_MAX_BYTES)
+                {
+                    length = WIFI_SERVICE_SSID_MAX_BYTES;
+                }
+                memcpy(port_records[count].ssid, text, length);
+                port_records[count].ssid_length = (uint8_t)length;
+                const cJSON *rssi = cJSON_GetObjectItemCaseSensitive(item,
+                                    "rssi");
+                port_records[count].rssi = cJSON_IsNumber(rssi) ?
+                                           (int8_t)rssi->valuedouble : (int8_t) -55;
+                const cJSON *channel = cJSON_GetObjectItemCaseSensitive(item,
+                                       "channel");
+                port_records[count].channel = cJSON_IsNumber(channel) ?
+                                              (uint8_t)channel->valuedouble : 6U;
+                const cJSON *security = cJSON_GetObjectItemCaseSensitive(item,
+                                        "security");
+                const char *sec = cJSON_GetStringValue(security);
+                port_records[count].security =
+                    (sec != NULL && strcmp(sec, "open") == 0) ?
+                    WIFI_SERVICE_SECURITY_OPEN : WIFI_SERVICE_SECURITY_PERSONAL;
+                ++count;
+            }
+        }
+        if (valid)
+        {
+            host_wifi_port_set_scan_records(port_records, count,
+                                            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+                                                    params, "truncated")));
+            *ok = true;
+        }
+        else
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid scan records");
         }
     }
     else if (strcmp(method, "sim.set_weather") == 0)

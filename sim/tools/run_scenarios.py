@@ -157,6 +157,17 @@ class Runner:
                                       'roll': step['roll']})
         elif cmd == 'set_wifi':
             self.call('sim.set_wifi', {'state': step['state']})
+        elif cmd == 'set_bluetooth':
+            self.call('sim.set_bluetooth',
+                      {k: step[k] for k in
+                       ('enabled', 'bound', 'active', 'client_connected',
+                        'window_remaining_ms') if k in step})
+        elif cmd == 'offer_pairing':
+            self.call('sim.offer_pairing',
+                      {k: step[k] for k in ('token', 'passkey') if k in step})
+        elif cmd == 'set_wifi_scan':
+            self.call('sim.set_wifi_scan',
+                      {k: step[k] for k in ('records', 'truncated') if k in step})
         elif cmd == 'set_weather':
             path = step['file']
             if not os.path.isabs(path):
