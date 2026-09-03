@@ -11,6 +11,8 @@
  */
 #include "sim_freertos.h"
 
+#include "esp_heap_caps.h"
+
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -1282,12 +1284,39 @@ void heap_caps_free(void *memory)
 
 size_t heap_caps_get_free_size(uint32_t caps)
 {
-    (void)caps;
-    return SIZE_MAX / 4U;
+    if (caps & MALLOC_CAP_SPIRAM)
+    {
+        return 6U * 1024U * 1024U + 200U * 1024U;
+    }
+    if (caps & MALLOC_CAP_DMA)
+    {
+        return 190U * 1024U;
+    }
+    return 218U * 1024U;
+}
+
+size_t heap_caps_get_total_size(uint32_t caps)
+{
+    if (caps & MALLOC_CAP_SPIRAM)
+    {
+        return 8U * 1024U * 1024U;
+    }
+    if (caps & MALLOC_CAP_DMA)
+    {
+        return 300U * 1024U;
+    }
+    return 332U * 1024U;
 }
 
 size_t heap_caps_get_largest_free_block(uint32_t caps)
 {
-    (void)caps;
-    return SIZE_MAX / 8U;
+    if (caps & MALLOC_CAP_SPIRAM)
+    {
+        return 6U * 1024U * 1024U;
+    }
+    if (caps & MALLOC_CAP_DMA)
+    {
+        return 160U * 1024U;
+    }
+    return 176U * 1024U;
 }
