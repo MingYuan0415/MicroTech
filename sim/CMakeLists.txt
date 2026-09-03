@@ -162,6 +162,7 @@ set(SIM_APP_SOURCES
     "${APPS}/clock_app/src/clock_stopwatch_page.c"
     "${APPS}/clock_app/src/clock_focus_page.c"
     "${APPS}/recorder_app/src/recorder_app.c"
+    "${APPS}/recorder_app/src/recorder_files_page.c"
     "${APPS}/level_app/src/level_app.c"
     "${APPS}/diagnostics_app/src/diagnostics_app.c"
     "${APPS}/weather_app/src/weather_app.c"

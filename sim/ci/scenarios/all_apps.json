@@ -565,6 +565,45 @@
    }
   },
   {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 300,
+   "x1": 184,
+   "y1": 180,
+   "steps": 15
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_obj",
+    "coords.y": 64,
+    "flags.scrollable": false
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "recorder",
+   "page": "files"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "暂无已完成录音"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "recorder_files.png"
+  },
+  {
    "cmd": "navigate",
    "app": "settings"
   },
