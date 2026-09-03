@@ -158,6 +158,7 @@ set(SIM_APP_SOURCES
     "${APPS}/home_app/src/home_app.c"
     "${APPS}/clock_app/src/clock_app.c"
     "${APPS}/clock_app/src/clock_countdown_page.c"
+    "${APPS}/clock_app/src/clock_duration_page.c"
     "${APPS}/clock_app/src/clock_stopwatch_page.c"
     "${APPS}/clock_app/src/clock_focus_page.c"
     "${APPS}/recorder_app/src/recorder_app.c"

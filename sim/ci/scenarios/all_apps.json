@@ -190,7 +190,7 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 227,
+   "x": 184,
    "y": 336
   },
   {
@@ -200,7 +200,7 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 227,
+   "x": 184,
    "y": 336
   },
   {
@@ -298,6 +298,164 @@
     "type": "lv_label",
     "text": "选择时长后开始"
    }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 320,
+   "y": 336
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 320,
+   "y": 336
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "共 10 分钟"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 248,
+   "y": 164
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 248,
+   "y": 164
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "共 11 分钟"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "clock_duration.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 250
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 250
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "11:00"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "倒计时进行中"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 269,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 269,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 10
   },
   {
    "cmd": "navigate",
