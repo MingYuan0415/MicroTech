@@ -170,6 +170,156 @@
   },
   {
    "cmd": "navigate",
+   "app": "clock",
+   "page": "countdown"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "选择时长后开始"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 227,
+   "y": 336
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 227,
+   "y": 336
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "10:00"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "倒计时进行中"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "clock_countdown.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 99,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "已暂停"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 269,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 269,
+   "y": 392
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "选择时长后开始"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "clock",
+   "page": "root"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "1 / 5 / 10 / 25 分钟"
+   }
+  },
+  {
+   "cmd": "navigate",
    "app": "level"
   },
   {
