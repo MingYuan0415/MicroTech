@@ -740,7 +740,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "100% · 熄屏 1 分钟 · 待机 从不"
+    "text": "100%·熄屏 1 分钟·待机 从不"
    }
   },
   {
@@ -792,7 +792,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "100% · 熄屏 从不 · 待机 从不"
+    "text": "100%·熄屏 从不·待机 从不"
    }
   },
   {
