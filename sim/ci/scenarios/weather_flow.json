@@ -14,7 +14,7 @@
         {"cmd": "navigate", "app": "home"},
         {"cmd": "step", "times": 30},
         {"cmd": "wait_idle"},
-        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "Shenzhen"}},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "新界·北区"}},
         {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "Cloudy"}},
         {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "31.2°"}},
         {"cmd": "screenshot", "name": "home_weather.png"},

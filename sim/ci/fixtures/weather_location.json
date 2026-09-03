@@ -1,1 +1,1 @@
-{"schema_version": 1, "location": {"city": "Shenzhen", "district": "Nanshan", "region": "Guangdong", "country": "CN", "timezone": "Asia/Shanghai", "source": "ip", "provider": "maxmind", "precision": "coarse", "location_key": "9f4a2b3c8d1e5f06"}, "accuracy_radius_km": 50}
+{"schema_version": 1, "location": {"city": "新界", "district": "北区", "region": "香港特别行政区", "country": "CN", "timezone": "Asia/Shanghai", "source": "ip", "provider": "cloudflare", "precision": "coarse", "location_key": "9f4a2b3c8d1e5f06"}, "accuracy_radius_km": 50}
