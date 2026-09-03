@@ -173,7 +173,6 @@ set(SIM_APP_SOURCES
     "${APPS}/menu_app/src/menu_app.c"
     "${APPS}/settings_app/src/settings_app.c"
     "${APPS}/settings_app/src/settings_display_page.c"
-    "${APPS}/settings_app/src/settings_policy_page.c"
     "${APPS}/settings_app/src/settings_device_page.c"
     "${APPS}/settings_app/src/settings_factory_reset_page.c"
     "${APPS}/setup_app/src/setup_app.c"

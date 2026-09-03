@@ -86,6 +86,14 @@ Select sizing by semantics:
 - Measure actual fonts and strings with current LVGL APIs when a tight bound is
   unavoidable. Include Chinese glyphs, fallback fonts, negative values, units,
   and line spacing; do not infer geometry from nominal font size.
+- Keep single-line text on one line. A status summary, row value, chip caption,
+  or hint that wraps inside a fixed-height row is a defect: condense the copy
+  (shorter words, drop separators or the least essential segment, remove
+  trailing punctuation) or change the layout (wider container, split the fact
+  onto its own row, drop redundant text the selection state already shows).
+  Never accept a wrap, ellipsis, or orphaned punctuation for text that can fit
+  in one line after refinement; verify the worst-case string renders at one
+  line's height in the simulator tree.
 
 ## Define Input Ownership
 
@@ -102,6 +110,13 @@ Select sizing by semantics:
 - Verify taps and vertical drags that begin over every child label, icon,
   image, and nested control. Confirm that an interactive child neither triggers
   its parent accidentally nor blocks the intended page scroll.
+- A control that activates on tap must bind only `LV_EVENT_CLICKED`; never fire
+  on `PRESSED`, `PRESS_LOST`, or `RELEASED`. In LVGL 9.5 clickable objects
+  inherit `LV_OBJ_FLAG_PRESS_LOCK`, so `CLICKED` still fires when the finger
+  slides off before release. Call `app_ui_click_only()` (drops `PRESS_LOCK`) on
+  every click-activated button, row, chip, and switch so leaving the control
+  sends `PRESS_LOST` and cancels activation; verify with a simulator `drag` that
+  starts on the control and ends outside it, asserting no navigation.
 
 ## Validate Before Declaring the Layout Fixed
 
