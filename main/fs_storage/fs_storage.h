@@ -8,7 +8,9 @@
 /** @brief Read-only application resource mount path. */
 #define FS_RES_MOUNT_PATH "/res"
 /** @brief Runtime data filesystem mount path. */
-#define FS_DATA_MOUNT_PATH "/data"
+#ifndef FS_DATA_MOUNT_PATH
+    #define FS_DATA_MOUNT_PATH "/data"
+#endif
 
 /**
  * @brief Mount required runtime data and the optional legacy resource VFS.
@@ -38,5 +40,20 @@ esp_err_t fs_storage_deinit(void);
  * @return true when initialized; false otherwise.
  */
 bool fs_storage_is_initialized(void);
+
+/**
+ * @brief Delete every file and subdirectory under the runtime data mount.
+ *
+ * Factory reset recovery calls this before services start so cached
+ * application data (weather and future per-app files) cannot survive the
+ * reset. The mount point itself remains; only its contents are removed.
+ *
+ * @return ESP_OK when the data directory holds no entries, otherwise an
+ *         ESP-IDF or filesystem error.
+ *
+ * @warning The application runtime must serialize this with initialization
+ *          and cleanup.
+ */
+esp_err_t fs_storage_wipe_data(void);
 
 #endif

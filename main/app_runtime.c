@@ -12,6 +12,7 @@
 
 #include "app_manager.h"
 #include "app_manager_config.h"
+#include "apps_persistence.h"
 #include "app_resources_generated.h"
 #include "audio_service.h"
 #include "bsp_hal.h"
@@ -768,6 +769,16 @@ static esp_err_t _app_runtime_start_foundations(void)
         {
             return result;
         }
+        result = app_manager_factory_reset_persisted_state();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        result = apps_factory_reset_persisted_state();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
     }
 
     s_ownership.fs_attempted = true;
@@ -775,6 +786,16 @@ static esp_err_t _app_runtime_start_foundations(void)
     if (result != ESP_OK)
     {
         return result;
+    }
+    if (s_factory_reset_pending)
+    {
+        result = fs_storage_wipe_data();
+        if (result != ESP_OK)
+        {
+            LOG_E("factory reset data wipe failed: %s",
+                  esp_err_to_name(result));
+            return result;
+        }
     }
 
     result = event_bus_init();

@@ -11,9 +11,14 @@
 #include "esp_partition.h"
 #include "esp_vfs_fat.h"
 
+#include <dirent.h>
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define FS_STORAGE_RES_PARTITION  "res"
 #define FS_STORAGE_DATA_PARTITION "data"
@@ -234,4 +239,71 @@ esp_err_t fs_storage_deinit(void)
 bool fs_storage_is_initialized(void)
 {
     return atomic_load(&s_state) == FS_STORAGE_READY;
+}
+
+static esp_err_t _fs_storage_wipe_tree(const char *directory)
+{
+    DIR *dir = opendir(directory);
+    struct dirent *entry = NULL;
+    esp_err_t result = ESP_OK;
+
+    if (dir == NULL)
+    {
+        return errno == ENOENT ? ESP_OK : ESP_FAIL;
+    }
+    while ((entry = readdir(dir)) != NULL)
+    {
+        char path[256];
+        struct stat status;
+        int written;
+
+        if (strcmp(entry->d_name, ".") == 0 ||
+                strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+        written = snprintf(path, sizeof(path), "%s/%s", directory,
+                           entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path))
+        {
+            result = ESP_ERR_INVALID_SIZE;
+            break;
+        }
+        if (stat(path, &status) != 0)
+        {
+            if (errno == ENOENT)
+            {
+                continue;
+            }
+            result = ESP_FAIL;
+            break;
+        }
+        if (S_ISDIR(status.st_mode))
+        {
+            result = _fs_storage_wipe_tree(path);
+            if (result == ESP_OK && rmdir(path) != 0 && errno != ENOENT)
+            {
+                result = ESP_FAIL;
+            }
+        }
+        else if (unlink(path) != 0 && errno != ENOENT)
+        {
+            result = ESP_FAIL;
+        }
+        if (result != ESP_OK)
+        {
+            break;
+        }
+    }
+    closedir(dir);
+    return result;
+}
+
+esp_err_t fs_storage_wipe_data(void)
+{
+    if (atomic_load(&s_state) != FS_STORAGE_READY)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return _fs_storage_wipe_tree(FS_DATA_MOUNT_PATH);
 }

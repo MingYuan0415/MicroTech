@@ -286,6 +286,7 @@ function(add_fs_storage_test target mmap_enabled)
     target_compile_definitions(${target} PRIVATE
         CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS=${mmap_enabled}
         FS_STORAGE_TEST_MMAP=${mmap_enabled}
+        FS_DATA_MOUNT_PATH="/tmp/mt-${target}-data"
     )
     configure_main_host_target(${target})
     add_main_host_test(${target} ${target})

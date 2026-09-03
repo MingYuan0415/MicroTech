@@ -6,12 +6,15 @@
 #include "esp_vfs_fat.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define TEST_PARTITION_SIZE ((4096U * 2U) + 317U)
 
@@ -272,6 +275,59 @@ static void _test_probe_allocation_failure(void)
     assert(fs_storage_deinit() == ESP_OK);
 }
 
+static void _test_create_file(const char *path)
+{
+    FILE *file = fopen(path, "wb");
+
+    assert(file != NULL);
+    assert(fputs("test", file) >= 0);
+    assert(fclose(file) == 0);
+}
+
+static void _test_wipe_data(void)
+{
+    char nested[256];
+    char child[256];
+    char long_name[241];
+    char long_path[320];
+    struct stat status;
+
+    memset(long_name, 'x', sizeof(long_name) - 1U);
+    long_name[sizeof(long_name) - 1U] = '\0';
+    assert(snprintf(long_path, sizeof(long_path), "%s/%s",
+                    FS_DATA_MOUNT_PATH, long_name) > 0);
+    (void)unlink(FS_DATA_MOUNT_PATH "/root.bin");
+    (void)unlink(FS_DATA_MOUNT_PATH "/nested/child.bin");
+    (void)unlink(long_path);
+    (void)rmdir(FS_DATA_MOUNT_PATH "/nested");
+    (void)rmdir(FS_DATA_MOUNT_PATH);
+    assert(mkdir(FS_DATA_MOUNT_PATH, 0700) == 0);
+    assert(snprintf(nested, sizeof(nested), "%s/nested",
+                    FS_DATA_MOUNT_PATH) > 0);
+    assert(mkdir(nested, 0700) == 0);
+    assert(snprintf(child, sizeof(child), "%s/child.bin", nested) > 0);
+    _test_create_file(FS_DATA_MOUNT_PATH "/root.bin");
+    _test_create_file(child);
+
+    _test_reset_fake();
+    assert(fs_storage_init() == ESP_OK);
+    assert(fs_storage_wipe_data() == ESP_OK);
+    assert(stat(FS_DATA_MOUNT_PATH, &status) == 0);
+    assert(S_ISDIR(status.st_mode));
+    assert(access(FS_DATA_MOUNT_PATH "/root.bin", F_OK) != 0);
+    assert(access(nested, F_OK) != 0);
+    assert(fs_storage_wipe_data() == ESP_OK);
+
+    _test_create_file(long_path);
+    assert(fs_storage_wipe_data() == ESP_ERR_INVALID_SIZE);
+    assert(access(long_path, F_OK) == 0);
+    assert(unlink(long_path) == 0);
+
+    assert(fs_storage_deinit() == ESP_OK);
+    assert(fs_storage_wipe_data() == ESP_ERR_INVALID_STATE);
+    assert(rmdir(FS_DATA_MOUNT_PATH) == 0);
+}
+
 static void _test_deinit_retry(void)
 {
     _test_reset_fake();
@@ -325,6 +381,7 @@ int main(void)
     _test_data_mount_rollback();
     _test_erased_partition_provisioning();
     _test_probe_allocation_failure();
+    _test_wipe_data();
     _test_deinit_retry();
 #if !FS_STORAGE_TEST_MMAP
     _test_resource_degraded_and_rollback_retry();

@@ -2,6 +2,7 @@
 
 #include "app_manager.h"
 #include "app_manager_config.h"
+#include "apps_persistence.h"
 #include "app_runtime_pm.h"
 #include "chore_service.h"
 #include "connectivity_manager.h"
@@ -39,7 +40,10 @@ typedef enum
     TEST_EVENT_FACTORY_RESET_INIT,
     TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
     TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE,
+    TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE,
+    TEST_EVENT_APPS_RESET_PERSISTED_STATE,
     TEST_EVENT_FS_INIT,
+    TEST_EVENT_FS_WIPE_DATA,
     TEST_EVENT_EVENT_BUS_INIT,
     TEST_EVENT_BSP_INIT,
     TEST_EVENT_TIME_REGISTER_RTC,
@@ -474,6 +478,16 @@ esp_err_t nv_storage_deinit(void)
     return _test_result(TEST_EVENT_NV_DEINIT);
 }
 
+esp_err_t app_manager_factory_reset_persisted_state(void)
+{
+    return _test_result(TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE);
+}
+
+esp_err_t apps_factory_reset_persisted_state(void)
+{
+    return _test_result(TEST_EVENT_APPS_RESET_PERSISTED_STATE);
+}
+
 esp_err_t fs_storage_init(void)
 {
     return _test_result(TEST_EVENT_FS_INIT);
@@ -487,6 +501,11 @@ esp_err_t fs_storage_deinit(void)
 bool fs_storage_is_initialized(void)
 {
     return true;
+}
+
+esp_err_t fs_storage_wipe_data(void)
+{
+    return _test_result(TEST_EVENT_FS_WIPE_DATA);
 }
 
 esp_err_t event_bus_init(void)
@@ -834,7 +853,7 @@ esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
     assert(request != NULL);
     assert(request->operation == APP_MANAGER_NAV_OP_RUN);
     assert(strcmp(request->app_id, g_host_onboarding_pending ?
-                 APP_MANAGER_ID_SETUP : APP_MANAGER_ID_HOME) == 0);
+                  APP_MANAGER_ID_SETUP : APP_MANAGER_ID_HOME) == 0);
     assert(request->transition.effect == APP_MANAGER_TRANSITION_NONE);
     assert(timeout_ms == UINT32_MAX);
     return _test_result(TEST_EVENT_APP_NAVIGATE);
@@ -1300,10 +1319,23 @@ static void _test_factory_reset_recovery_order(void)
     assert(app_runtime_start() == ESP_OK);
     assert(app_runtime_is_running());
     assert(_test_event_seen(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE));
+    assert(_test_event_seen(TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE));
+    assert(_test_event_seen(TEST_EVENT_APPS_RESET_PERSISTED_STATE));
+    assert(_test_event_seen(TEST_EVENT_FS_WIPE_DATA));
     assert(_test_event_seen(TEST_EVENT_FACTORY_RESET_COMPLETE));
     assert(_test_event_seen(TEST_EVENT_DEVICE_LINK_RELEASE_GATE));
     assert(_test_event_index(TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING) <
            _test_event_index(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE));
+    assert(_test_event_index(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE) <
+           _test_event_index(TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE));
+    assert(_test_event_index(TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE) <
+           _test_event_index(TEST_EVENT_APPS_RESET_PERSISTED_STATE));
+    assert(_test_event_index(TEST_EVENT_APPS_RESET_PERSISTED_STATE) <
+           _test_event_index(TEST_EVENT_FS_INIT));
+    assert(_test_event_index(TEST_EVENT_FS_INIT) <
+           _test_event_index(TEST_EVENT_FS_WIPE_DATA));
+    assert(_test_event_index(TEST_EVENT_FS_WIPE_DATA) <
+           _test_event_index(TEST_EVENT_BLE_INIT));
     assert(_test_event_index(TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE) <
            _test_event_index(TEST_EVENT_BLE_INIT));
     assert(_test_event_index(TEST_EVENT_BLE_INIT) <
@@ -1322,6 +1354,9 @@ static void _test_factory_reset_recovery_order(void)
         TEST_EVENT_FACTORY_RESET_INIT,
         TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
         TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE,
+        TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE,
+        TEST_EVENT_APPS_RESET_PERSISTED_STATE,
+        TEST_EVENT_FS_WIPE_DATA,
         TEST_EVENT_BLE_INIT,
         TEST_EVENT_FACTORY_RESET_COMPLETE,
     };
@@ -1339,7 +1374,12 @@ static void _test_factory_reset_recovery_order(void)
         assert(!_test_event_seen(TEST_EVENT_NETWORK_INIT));
         assert(!_test_event_seen(TEST_EVENT_CONNECTIVITY_INIT));
         if (fail_closed_boundaries[index] ==
-                TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE)
+                TEST_EVENT_CONNECTIVITY_CLEAR_PROFILE ||
+                fail_closed_boundaries[index] ==
+                TEST_EVENT_APP_MANAGER_RESET_PERSISTED_STATE ||
+                fail_closed_boundaries[index] ==
+                TEST_EVENT_APPS_RESET_PERSISTED_STATE ||
+                fail_closed_boundaries[index] == TEST_EVENT_FS_WIPE_DATA)
         {
             assert(!_test_event_seen(TEST_EVENT_BLE_INIT));
         }

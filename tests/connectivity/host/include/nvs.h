@@ -4,4 +4,6 @@
 
 #include "esp_err.h"
 
+#define ESP_ERR_NVS_INVALID_LENGTH 0x110C
+
 #endif /* __CONNECTIVITY_HOST_NVS_H__ */
