@@ -164,6 +164,7 @@ set(SIM_APP_SOURCES
     "${APPS}/recorder_app/src/recorder_app.c"
     "${APPS}/recorder_app/src/recorder_files_page.c"
     "${APPS}/level_app/src/level_app.c"
+    "${APPS}/level_app/src/level_app_persistence.c"
     "${APPS}/diagnostics_app/src/diagnostics_app.c"
     "${APPS}/weather_app/src/weather_app.c"
     "${APPS}/weather_app/src/weather_ui.c"
