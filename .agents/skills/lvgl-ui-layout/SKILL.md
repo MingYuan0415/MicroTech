@@ -17,7 +17,7 @@ fixing visible symptoms with additional coordinates.
    height, flex/grid, scroll, and event flags that affect it. Do not reason from
    a cropped source fragment.
 3. Read [references/lvgl9-layout-patterns.md](references/lvgl9-layout-patterns.md)
-   when translating LVGL 7 container/FIT practices, selecting a label policy,
+   when budgeting a page against the viewport, selecting a label policy,
    or changing event and scroll propagation.
 4. Optionally run `scripts/audit_lvgl_layout.py <paths>` to locate suspicious
    absolute positioning, truncation, label setup order, and clickable labels.
@@ -42,8 +42,15 @@ fixing visible symptoms with additional coordinates.
    dimensions, chart/canvas geometry, bounded controls, or font-derived line
    boxes. Document the invariant and test its worst case. Do not use guessed
    coordinates to assemble ordinary page content.
-6. Choose one intentional scroll axis for a page. Disable accidental horizontal
-   scrolling and avoid nested scrollables unless their handoff is specified.
+6. Decide fit before scroll. Measure the page's vertical extent (last child
+   bottom plus `pad_bottom`, which counts toward the scrollable range) against
+   the viewport. When everything fits with a clean composition, disable
+   scrolling explicitly (`LV_DIR_NONE` and clear `SCROLLABLE`); never leave a
+   few-pixel rubber band. When it cannot fit, keep the page content as the one
+   scroll owner, distribute rows with a uniform gap, and end the first screen
+   on a whole-row boundary so no control is sliced by the viewport edge.
+   Disable accidental horizontal scrolling and avoid nested scrollables unless
+   their handoff is specified.
 
 ## Give Every Label a Policy
 
@@ -67,11 +74,15 @@ Select sizing by semantics:
   value and inseparable unit in one label, or in a non-wrapping content-sized
   row whose worst-case width is proven.
 - Give prose and localized dynamic text a bounded width,
-  `LV_LABEL_LONG_MODE_WRAP`, and content-driven height.
+  `LV_LABEL_LONG_WRAP`, and content-driven height.
 - Give frequently changing bounded values a stable width based on their
   worst-case formatted text to prevent layout jitter.
 - Use scrolling text only where motion is acceptable and the user can wait to
-  read it. Do not use `LV_LABEL_LONG_MODE_DOTS` for required information.
+  read it. Do not use `LV_LABEL_LONG_DOT` for required information. Remember
+  that a `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow animates forever: the page
+  never goes idle, which breaks simulator `wait_idle` coverage and burns
+  refresh cycles. Prefer `DOT` for secondary text and size required text to
+  its measured worst case instead.
 - Measure actual fonts and strings with current LVGL APIs when a tight bound is
   unavoidable. Include Chinese glyphs, fallback fonts, negative values, units,
   and line spacing; do not infer geometry from nominal font size.
@@ -80,8 +91,7 @@ Select sizing by semantics:
 
 - Let the nearest interactive ancestor own an ordinary tap whenever possible.
   LVGL 9.5 generic objects start clickable, while labels remove `CLICKABLE` in
-  their constructor. Inspect each widget class rather than assuming v7
-  defaults.
+  their constructor. Inspect each widget class rather than assuming defaults.
 - Remove `LV_OBJ_FLAG_CLICKABLE` from passive generic containers and overlays.
   Do not add it to decorative labels or symbols. Remember that
   `lv_obj_remove_style_all()` changes styles only; a styleless generic wrapper
@@ -105,10 +115,14 @@ Select sizing by semantics:
    flags, parentage, and events when the changed contract depends on them.
 4. Add tests for scroll direction and gestures beginning over child content,
    not only direct taps on the parent.
-5. Run the narrow host tests and project-required formatting/diff checks.
+5. Drag-verify the scroll policy both ways in the simulator: a scrolling page
+   must move (`scroll.y` changes) when dragged over labels, rows, and gaps; a
+   pinned page must stay at `scroll.y` 0 with `flags.scrollable` false. Review
+   a screenshot of every new or re-laid-out page.
+6. Run the narrow host tests and project-required formatting/diff checks.
    Broader sanitizer, firmware-build, and hardware scope follows the
    `AGENTS.md` default workflow.
-6. Inspect the real display for glyph fallback, wrapping, clipping, overlap,
+7. Inspect the real display for glyph fallback, wrapping, clipping, overlap,
    horizontal drift, touch dead zones, and scroll handoff. Host geometry cannot
    validate actual rasterized fonts or touch behavior.
 

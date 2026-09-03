@@ -1,33 +1,17 @@
 # LVGL 9 Layout Patterns
 
-Use these patterns after confirming the APIs in the project's locked LVGL
-headers. They map useful LVGL 7.11 ideas to LVGL 9.5 without carrying forward
-obsolete widget defaults.
+Use these patterns after confirming the APIs in the project's locked LVGL 9.5
+headers.
 
 ## Contents
 
-- [LVGL 7 to LVGL 9 Mapping](#lvgl-7-to-lvgl-9-mapping)
 - [Geometry Budget](#geometry-budget)
 - [Adaptive Row](#adaptive-row)
 - [Content-Sized Prose](#content-sized-prose)
 - [Inseparable Values and Units](#inseparable-values-and-units)
+- [One-Screen Fit vs Scroll](#one-screen-fit-vs-scroll)
 - [Input and Scroll Topology](#input-and-scroll-topology)
 - [Acceptable Fixed Geometry](#acceptable-fixed-geometry)
-- [Review Sources](#review-sources)
-
-## LVGL 7 to LVGL 9 Mapping
-
-| LVGL 7 idea | LVGL 9 pattern |
-| --- | --- |
-| `lv_cont` row/column layout | Generic `lv_obj` with Flex flow and alignment |
-| `lv_cont` grid-like layout | Generic `lv_obj` with Grid descriptors/cells |
-| FIT to children | `LV_SIZE_CONTENT` on the content-driven axis |
-| Child fills remaining area | Zero base size plus `lv_obj_set_flex_grow()` or `LV_GRID_FR()` |
-| Manual child coordinates | Flex/Grid placement or `lv_obj_align()` for a true overlay |
-| v7 click assumptions | Inspect the LVGL 9 widget constructor and explicit object flags |
-
-Do not use percentages on the same axis where the parent is
-`LV_SIZE_CONTENT`. Resolve one side of the relationship first.
 
 ## Geometry Budget
 
@@ -72,7 +56,7 @@ lv_obj_set_size(icon, icon_size, icon_size);
 lv_obj_set_width(text, 0);
 lv_obj_set_height(text, LV_SIZE_CONTENT);
 lv_obj_set_flex_grow(text, 1);
-lv_label_set_long_mode(text, LV_LABEL_LONG_MODE_WRAP);
+lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
 lv_obj_set_style_text_font(text, font, 0);
 lv_obj_set_style_text_color(text, color, 0);
 lv_label_set_text(text, value);
@@ -92,7 +76,7 @@ wrapped text:
 ```c
 lv_obj_set_width(label, LV_PCT(100));
 lv_obj_set_height(label, LV_SIZE_CONTENT);
-lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
 lv_obj_set_style_text_font(label, body_font, 0);
 lv_obj_set_style_text_color(label, body_color, 0);
 lv_obj_set_style_text_line_space(label, line_space, 0);
@@ -118,6 +102,40 @@ If value and unit require different fonts, place two content-sized labels in a
 content-sized non-wrapping row. Measure the worst-case pair and do not let the
 row shrink below that width.
 
+## One-Screen Fit vs Scroll
+
+Decide scrolling per page from a measured vertical budget, not habit. On the
+368 x 448 panel the content viewport is 448 px for a headerless page and
+384 px below the 64 px header.
+
+```text
+scroll_overflow = last_child_bottom + bottom_padding - viewport_bottom
+```
+
+Bottom padding counts toward the scrollable extent: a page whose children end
+exactly at the viewport still scrolls by its `pad_bottom`.
+
+- When every control fits and the composition looks intentional, disable
+  scrolling explicitly:
+
+```c
+lv_obj_set_scroll_dir(content, LV_DIR_NONE);
+lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+```
+
+  A page that is a few pixels over budget must not stay a 6 px rubber band:
+  tighten gaps and padding to land on the exact viewport height, or accept
+  scrolling as a visible design decision.
+
+- When content cannot fit, keep the page content as the single scroll owner
+  (the `app_ui` header-page default), distribute rows with a uniform gap, and
+  size rows so the first screen ends on a whole-row boundary. No control may
+  be sliced by the viewport edge; the remainder is revealed by dragging.
+
+On a fixed panel an exact one-screen grid may use explicit pixel budgets
+(for example 12 + 3 x 136 + 2 x 8 + 12 = 448); keep the invariant in named
+layout constants instead of scattering magic numbers.
+
 ## Input and Scroll Topology
 
 In the locked LVGL 9.5 implementation:
@@ -129,6 +147,13 @@ In the locked LVGL 9.5 implementation:
 - `GESTURE_BUBBLE` forwards recognized gestures to a parent.
 - `SCROLL_CHAIN_HOR` and `SCROLL_CHAIN_VER` let a scrollable child hand
   remaining movement to a scrollable ancestor on the named axis.
+- LVGL 9.5 resolves the scroll target by hit-testing the press point for the
+  deepest `CLICKABLE` object and then walking up ancestors only: a
+  non-scrollable object without the chain bit for the current direction stops
+  the search, and the walk never descends. Keep the scroll owner `CLICKABLE`
+  and `SCROLLABLE` (otherwise presses on its non-clickable descendants fall
+  through past it to the screen), and never clear the chain bits from passive
+  wrappers between an interactive child and the scroll owner.
 
 For a passive generic surface:
 
@@ -181,6 +206,23 @@ whether it should receive taps, recognize gestures, scroll itself, and hand
 vertical movement to the page. Add only the flags required by that topology.
 Test dragging from the child's rendered text/icon, not just its empty padding.
 
+### Flex and widget pitfalls
+
+- `LV_FLEX_FLOW_ROW_WRAP` never wraps children sized as `width 0 +
+  lv_obj_set_flex_grow()`: their base size is zero, so all of them share one
+  row. Give grid cards an explicit width and count the column gap in the
+  budget.
+- A `width 0 + flex_grow` button inside a non-flex container collapses to
+  zero width and becomes an invisible, unclickable control. Grow children need
+  a flex row parent.
+- Do not call `lv_obj_center()` or `lv_obj_align()` on a flex child; flex
+  placement owns its position. Center through the parent's alignment or a
+  dedicated wrapper.
+- Widget APIs are not interchangeable: `lv_label_set_text()` on an
+  `lv_button` corrupts memory in release builds where class asserts are
+  compiled out. A button's caption is its child label; reach it through
+  `lv_obj_get_child(button, 0)`.
+
 ## Acceptable Fixed Geometry
 
 Fixed geometry is valid when tied to a stable contract, such as a 44 px touch
@@ -193,18 +235,3 @@ When absolute placement is required for a plot annotation or canvas overlay,
 derive it from the current parent content rectangle and measured child size,
 then recompute it on size/style changes. Keep ordinary page composition in
 Flex/Grid.
-
-## Review Sources
-
-The workflow also incorporates general ideas reviewed from these public skills:
-
-- `font-measurement` from Even Realities: measure actual text, subtract border
-  and padding before wrapping, and account for missing-glyph behavior. Its
-  display and font constants do not apply to MicroTech.
-- `ux-css-layout` from VS Code: distinguish fixed and flexible children, model
-  scroll ownership, and treat text overflow as an explicit policy. Its CSS
-  ellipsis recommendation does not override this skill's rule that required
-  embedded-display information must remain fully readable.
-- `specialized` from `zephyr-agent-skills`: validate GUI behavior with the
-  actual embedded rendering environment. Its Zephyr configuration examples do
-  not apply to this ESP-IDF project.

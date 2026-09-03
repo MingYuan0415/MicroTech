@@ -44,10 +44,29 @@ capacities in the owning headers instead of copying them from this skill.
    Typed Blob type and exact size before use.
 8. Add focused host coverage for the changed behavior; validation scope
    follows the `AGENTS.md` default workflow.
+9. Cover UI behavior with simulator scenarios: reach subpages deterministically
+   via `sim.navigate` `page`, assert tree fields through dotted paths
+   (`scroll.y`, `flags.scrollable`, numeric `{"min": N, "max": M}`), and use
+   `drag` steps to prove the page's scroll policy both directions. `sim.step`
+   accepts only multiples of 33 ms and every RPC result must be asserted: a
+   rejected call advances no frames and masquerades as an unresponsive UI.
+   Derive tap coordinates from the dumped tree geometry, review a screenshot
+   for every new page, and remember that pages with looping animations (for
+   example `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow) never satisfy `wait_idle`.
 
 ## Ownership Rules
 
 - Initialize only nonzero sentinels in START; Page state is already zeroed.
+- Page state is zeroed only when the instance is allocated; a pop-back remounts
+  with the same arena. Re-initialize render caches and defaults at the top of
+  MOUNT, and keep values that must survive remounts (a selected duration, a
+  session choice) in App-scope statics behind internal accessors.
+- NEWINTENT runs on the App worker thread: copy payloads only and never call
+  LVGL from it (that deadlocks against the UI thread). Apply visual changes in
+  MOUNT/RESUME.
+- Structure a multi-page App as one file per page plus an
+  `<app>_internal.h` exposing route id macros, extern page definitions, and
+  shared helpers; register every source explicitly in `APP_SRCS`.
 - Create UI only below the Page Screen in MOUNT; destroy it and clear every
   LVGL pointer in UNMOUNT.
 - Start foreground resources in RESUME, stop them in PAUSE; support a
@@ -64,6 +83,9 @@ capacities in the owning headers instead of copying them from this skill.
 ## Prohibited Patterns
 
 - Do not create LVGL objects in START or use `lv_screen_active()` as a Page root.
+- Do not call LVGL from NEWINTENT or any other worker-thread callback.
+- Do not apply label APIs to non-label objects; a button caption is its child
+  label.
 - Do not create runtime Pages outside the owning App route table.
 - Do not clear a subscription, worker, or service handle after failed cleanup.
 - Do not add another LVGL task, tick source, Screen manager, or direct hardware
