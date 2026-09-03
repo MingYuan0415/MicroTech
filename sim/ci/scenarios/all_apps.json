@@ -621,41 +621,143 @@
     "text": "系统设置"
    }
   },
-   {
-    "cmd": "tree_assert",
-    "contains": {
-     "type": "lv_label",
-     "text": "亮度"
-    }
-   },
-   {
-    "cmd": "drag",
-    "x0": 184,
-    "y0": 330,
-    "x1": 184,
-    "y1": 180,
-    "steps": 15
-   },
-   {
-    "cmd": "tree_assert",
-    "contains": {
-     "scroll.y": {
-      "min": 20
-     }
-    }
-   },
-   {
-    "cmd": "drag",
-    "x0": 184,
-    "y0": 180,
-    "x1": 184,
-    "y1": 330,
-    "steps": 15
-   },
-   {
-    "cmd": "navigate",
-    "app": "setup"
-   },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "显示与亮度"
+   }
+  },
+  {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 330,
+   "x1": 184,
+   "y1": 180,
+   "steps": 15
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_obj",
+    "coords.y": 64,
+    "flags.scrollable": false
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "policy"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "自动熄屏"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 141,
+   "y": 206
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 141,
+   "y": 206
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "root"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "熄屏 1 分钟 · 待机 从不"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_settings.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "policy"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 311,
+   "y": 206
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 311,
+   "y": 206
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "root"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "熄屏 从不 · 待机 从不"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "setup"
+  },
   {
    "cmd": "step",
    "times": 25
