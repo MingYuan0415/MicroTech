@@ -192,6 +192,8 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     if (flags != NULL)
     {
         cJSON_AddBoolToObject(flags, "visible", lv_obj_is_visible(obj));
+        cJSON_AddBoolToObject(flags, "hidden",
+                              lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN));
         cJSON_AddBoolToObject(flags, "clickable",
                               lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE));
         cJSON_AddBoolToObject(flags, "scrollable",
