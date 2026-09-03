@@ -83,6 +83,10 @@ capacities in the owning headers instead of copying them from this skill.
 ## Prohibited Patterns
 
 - Do not create LVGL objects in START or use `lv_screen_active()` as a Page root.
+- Do not render copy that announces unimplemented features or absent hardware
+  (for example "firmware update: unavailable" or "no magnetometer, no
+  compass"). Show implemented behavior and live service state only; a
+  disabled control needs no explanatory label.
 - Do not call LVGL from NEWINTENT or any other worker-thread callback.
 - Do not apply label APIs to non-label objects; a button caption is its child
   label.
