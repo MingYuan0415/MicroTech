@@ -258,17 +258,41 @@
     "text": "系统设置"
    }
   },
-  {
-   "cmd": "tree_assert",
-   "contains": {
-    "type": "lv_label",
-    "text": "亮度"
-   }
-  },
-  {
-   "cmd": "navigate",
-   "app": "setup"
-  },
+   {
+    "cmd": "tree_assert",
+    "contains": {
+     "type": "lv_label",
+     "text": "亮度"
+    }
+   },
+   {
+    "cmd": "drag",
+    "x0": 184,
+    "y0": 330,
+    "x1": 184,
+    "y1": 180,
+    "steps": 15
+   },
+   {
+    "cmd": "tree_assert",
+    "contains": {
+     "scroll.y": {
+      "min": 20
+     }
+    }
+   },
+   {
+    "cmd": "drag",
+    "x0": 184,
+    "y0": 180,
+    "x1": 184,
+    "y1": 330,
+    "steps": 15
+   },
+   {
+    "cmd": "navigate",
+    "app": "setup"
+   },
   {
    "cmd": "step",
    "times": 25

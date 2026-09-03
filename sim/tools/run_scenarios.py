@@ -11,13 +11,15 @@ Scenario JSON:
       {"cmd": "set_power", "voltage": 3900, "pct": 66, "charging": false},
       {"cmd": "screenshot", "name": "clock.png"},
       {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "时钟"}},
-      {"cmd": "touch", "action": "down", "x": 20, "y": 30}
+      {"cmd": "touch", "action": "down", "x": 20, "y": 30},
+      {"cmd": "drag", "x0": 184, "y0": 300, "x1": 184, "y1": 160}
     ]
   }
 
 tree_assert: every node matching ALL given key/values must exist
 (coords/flags/state are checked via the flattened dotted key, e.g.
- "coords.x" style nesting is supported by walking dicts).
+ "coords.x" style nesting is supported by walking dicts; a numeric key may
+ match a range with {"min": N, "max": M}).
 
 Usage:
   python3 sim/tools/run_scenarios.py sim/ci/scenarios/*.json [--golden DIR]
@@ -48,7 +50,17 @@ def _flat_matches(node, match):
                 ok = False
                 break
             cur = cur[part]
-        if not ok or cur != want:
+        if not ok:
+            return False
+        if isinstance(want, dict):
+            value = cur if isinstance(cur, (int, float)) else None
+            if value is None:
+                return False
+            if 'min' in want and value < want['min']:
+                return False
+            if 'max' in want and value > want['max']:
+                return False
+        elif cur != want:
             return False
     return True
 
@@ -120,6 +132,20 @@ class Runner:
             time.sleep(step['ms'] / 1000.0)
         elif cmd == 'touch':
             self.call('sim.touch', {k: step[k] for k in ('action', 'x', 'y')})
+        elif cmd == 'drag':
+            x0, y0 = int(step['x0']), int(step['y0'])
+            x1, y1 = int(step['x1']), int(step['y1'])
+            moves = max(int(step.get('steps', 10)), 1)
+            pause_ms = int(step.get('ms_per_move', 33))
+            self.call('sim.touch', {'action': 'down', 'x': x0, 'y': y0})
+            for i in range(1, moves + 1):
+                self.call('sim.touch', {
+                    'action': 'move',
+                    'x': x0 + (x1 - x0) * i // moves,
+                    'y': y0 + (y1 - y0) * i // moves})
+                self.call('sim.step', {'ms': pause_ms})
+            self.call('sim.touch', {'action': 'up', 'x': x1, 'y': y1})
+            self.call('sim.step', {'ms': int(step.get('settle_ms', 330))})
         elif cmd == 'key':
             self.call('sim.key', {'button': step['button'],
                                   'action': step['action']})

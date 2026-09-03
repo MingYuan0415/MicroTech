@@ -209,6 +209,11 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
         cJSON_AddBoolToObject(states, "disabled", (state & LV_STATE_DISABLED)
                               != 0U);
     }
+    cJSON *scroll = cJSON_AddObjectToObject(node, "scroll");
+    if (scroll != NULL)
+    {
+        cJSON_AddNumberToObject(scroll, "y", (double)lv_obj_get_scroll_y(obj));
+    }
     _add_style(node, obj);
     _add_type_value(node, obj, aliases, alias_count);
 
