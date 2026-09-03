@@ -112,6 +112,15 @@ full-CI burden.
 - A control clipped below a NON-scrolling page reports `flags.visible=false`, so
   "is it visible" cannot detect it. The tree also exposes `flags.hidden`; treat
   "not hidden but `coords.y+h > viewport`" as an unreachable control.
+- System-layer overlays (task switcher on `lv_display_get_layer_sys`, edge-back,
+  global menus) are NOT in `sim.tree` — the dump walks `lv_screen_active()`
+  only. Review them from `sim.screenshot` (which composites every layer), and
+  drive them through a dedicated agent hook (e.g. `sim.switcher`) because their
+  real trigger (HOME double-press) is not reproducible under CI stepping.
+- Never delete an object inside its own CLICKED callback (a card/close button
+  that hides or destroys the list frees the event target and use-after-frees on
+  the next indev step). Defer such work with `lv_async_call`. Likewise keep
+  persistent chrome (empty-state label) out of any container you `lv_obj_clean`.
 - Confirm the binary rebuilt before trusting a screenshot: `touch` the source
   and check ninja recompiles it, or compare the executable mtime/hash. A no-op
   ninja build reviews a stale UI and hides the very defect you are checking.
