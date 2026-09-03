@@ -477,6 +477,22 @@
    }
   },
   {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 380,
+   "x1": 184,
+   "y1": 200,
+   "steps": 15
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_obj",
+    "coords.y": 64,
+    "flags.scrollable": false
+   }
+  },
+  {
    "cmd": "navigate",
    "app": "level"
   },
