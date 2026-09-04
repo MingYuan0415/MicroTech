@@ -618,7 +618,7 @@
    "contains": {
     "type": "lv_obj",
     "coords.y": 64,
-    "flags.scrollable": false
+    "flags.scrollable": true
    }
   },
   {
