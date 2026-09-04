@@ -76,8 +76,12 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
   源文件编译，配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住
   `.app_manager_apps` 链接段（注册表发现 9 个 app）。
 - middleware：mt_log、event_bus、nv_storage（文件后端 `sim_nvs`）、timer_service、
-  power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi 业务真源；
-  audio/sd/recorder 与 device_link 暂留 `ports/fakes/`。
+  power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder
+  业务真源；audio/sd 与 device_link 留 `ports/fakes/`——SD 由 `--sd-dir` 指定的
+  宿主目录真实承载（挂载语义用目录 rename 模拟，容量走 `statvfs`），recorder 的
+  WAV 读写、rename、删除都落在该真实文件系统上。注意服务内部文件名为 64 字节
+  全路径缓冲，`--sd-dir` 需保持足够浅（如 `/tmp/...`），过深时 boot 会打印告警
+  且录音不会入列。
 - 不编：`system_pm`、`ble_runtime`、`wifi_service_idf_port.c`、bsp 真源码
   （sim_bsp 提供 `bsp_hal.h` 三契约与 DISPLAY|TOUCH|INPUT 能力面）。
 
@@ -133,6 +137,9 @@ LVGL 侧仍四方核对并强制 CANVAS/SNAPSHOT/IMAGE/FREETYPE PORT/FS_POSIX=0 
 
 ## Agent 桥
 
+`--sd-dir DIR` 缺省 `/tmp/mt_sim_sdcard`；与 `--nvs-dir` 一样是纯宿主目录，
+删除即重置设备 SD 状态。
+
 `--agent-port N`（默认 5002，仅绑 127.0.0.1；5001 留给真机基准）。协议为逐行
 JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `{"id":1,"ok":true,"result":{...}}`。
@@ -143,11 +150,18 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `sim.screenshot {name,wait_idle}`、`sim.tree`（绝对坐标 + 多 part 计算样式 +
 类型值 + 图像语义 ID）、`sim.touch {action,x,y}`、`sim.key {button,action}`
 （press/release/click）、`sim.navigate {app}`（投 mailbox，不阻塞）、`sim.apps`、
-`sim.set_time {epoch}`、`sim.set_power {voltage,pct,charging,vbus}`、
+`sim.set_time {epoch}`、`sim.set_power {voltage?,pct?,charging,vbus}`（voltage/pct 可各自省略；缺 pct 走电压回退显示）、
 `sim.set_wifi {state}`（connected/disconnected）、`sim.set_imu {pitch,roll}`（度）、
 `sim.set_weather {endpoint,status,body}`
 （灌 sim_http 脚本表后 `request_refresh`，真解析链）、`sim.pause {enabled}`、
-`sim.exit`。客户端：`python3 sim/tools/simctl.py <command>`。
+`sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}`（灌 port
+扫描记录；`trigger` 注入真实 SCAN_DONE，`wait_scan` 轮询 port 扫描窗口确保事件
+落在扫描中，`request` 先经 connectivity_manager 发起一次扫描）、
+`sim.sd {action: mount|umount|write|clear|list|svc, name?, seconds?}`（挂载/
+卸载宿主目录卷、合成静音 WAV、清空、列目录、读 recorder 服务缓存索引与
+generation）、`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
+字符串键）、`sim.connectivity`（connectivity_manager 与 wifi_service 状态、
+扫描缓存快照）、`sim.switcher`、`sim.exit`。客户端：`python3 sim/tools/simctl.py <command>`。
 
 `sim.ping` 返回 `network_ready`、`weather_state`、`weather_failure`、`active_app`、
 `ci` 和 `frames`，可用于 Agent 判断当前会话，而不必解析页面文本。

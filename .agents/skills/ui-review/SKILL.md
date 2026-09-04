@@ -152,11 +152,21 @@ host/sim-only and adds no hardware or full-CI burden.
   that hides or destroys the list frees the event target and use-after-frees on
   the next indev step). Defer such work with `lv_async_call`. Likewise keep
   persistent chrome (empty-state label) out of any container you `lv_obj_clean`.
-- `sim.set_power` requires both `voltage` and `pct` (0-100); the firmware's
-  voltage-only fallback path cannot be driven in the sim — cover that branch
-  in a host test instead of probing forever.
-- Some states the agent cannot seed: Wi-Fi never receives a `SCAN_DONE`, so
-  the scan list stays "扫描中"; recorder/audio and parts of device-link are
-  fakes, so recording-time UI exists only in host tests or on hardware. Say
-  so in the report instead of fighting the harness.
+- `sim.set_power` takes `voltage` and `pct` independently; omit `pct` to
+  drive the voltage-only battery fallback.
+- Wi-Fi scan lists are seedable end to end: `sim.set_wifi_scan` with
+  `request` (start a real scan through the connectivity manager), then
+  `trigger` + `wait_scan` to inject `SCAN_DONE` inside the port's scan
+  window; the scan section sits below the fold, so finish the seed with a
+  `drag` to scroll it into view (see `settings/wifi scan_list` in the spec).
+- The SD card is a real host directory (`--sd-dir`, kept short: the service
+  stores full paths in a 64-byte buffer and silently skips deeper ones).
+  `sim.sd` writes silent WAVs, clears, remounts, and reads the service's
+  cached index (`svc`). Because `recorder_service_list` serves a cached
+  index refreshed only at init and after service commands, external file
+  changes show up on a freshly mounted page — order states so the page
+  mounts after the files exist, or use `sd write`/`clear` (they re-init the
+  service) before navigating in.
+- What remains hardware-only: BLE pairing crypto, real I2S audio output,
+  AMOLED color, touch feel, radio, deep sleep.
 
