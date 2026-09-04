@@ -25,6 +25,8 @@
 #include "imu_service.h"
 #include "nv_storage.h"
 #include "power_service.h"
+#include "recorder_service.h"
+#include "sim_sd_host.h"
 #include "time_service.h"
 #include "lvgl.h"
 #include "mt_log.h"
@@ -141,6 +143,17 @@ esp_err_t sim_runtime_boot(void)
     {
         fprintf(stderr, "sim boot: chore_service_init failed %s\n", esp_err_to_name(result));
         return result;
+    }
+    const recorder_service_config_t recorder_config =
+    {
+        .directory = host_sd_recordings_dir(),
+        .max_duration_seconds = 30U * 60U,
+        .minimum_free_bytes = 8U * 1024U * 1024U,
+    };
+    result = recorder_service_init(&recorder_config);
+    if (result != ESP_OK)
+    {
+        fprintf(stderr, "sim boot: recorder_service_init failed %s\n", esp_err_to_name(result));
     }
     result = power_service_register_power_ops(&sim_power_ops);
     if (result == ESP_OK)

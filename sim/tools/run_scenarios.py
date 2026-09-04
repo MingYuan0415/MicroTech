@@ -167,7 +167,26 @@ class Runner:
                       {k: step[k] for k in ('token', 'passkey') if k in step})
         elif cmd == 'set_wifi_scan':
             self.call('sim.set_wifi_scan',
-                      {k: step[k] for k in ('records', 'truncated') if k in step})
+                      {k: step[k] for k in
+                       ('records', 'truncated', 'request', 'trigger',
+                        'wait_scan', 'status') if k in step})
+        elif cmd == 'sd':
+            self.call('sim.sd',
+                      {k: step[k] for k in
+                       ('action', 'name', 'seconds') if k in step})
+        elif cmd == 'sd_assert':
+            result = self.call('sim.sd', {'action': 'list'})
+            files = result.get('files', [])
+            for name in step.get('contains', []):
+                assert name in files, \
+                    'sd missing %s in %s' % (name, files)
+            for name in step.get('absent', []):
+                assert name not in files, \
+                    'sd unexpected %s in %s' % (name, files)
+        elif cmd == 'nvs':
+            self.call('sim.nvs',
+                      {k: step[k] for k in
+                       ('action', 'key', 'value') if k in step})
         elif cmd == 'set_weather':
             path = step['file']
             if not os.path.isabs(path):

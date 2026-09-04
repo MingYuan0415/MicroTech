@@ -69,12 +69,17 @@ bool host_wifi_port_thread_violation(void);
 bool host_wifi_port_scan_ownership_violation(void);
 /** @brief Return whether a scan is owned. */
 bool host_wifi_port_scan_owned(void);
+/** @brief Return whether a scan currently owns the port. */
+bool host_wifi_port_scan_owned(void);
 /** @brief Return the fake port epoch. */
 uint64_t host_wifi_port_epoch(void);
 /** @brief Return the fake scan identifier. */
 uint8_t host_wifi_port_scan_id(void);
 
 /** @brief Configure fake scan records. */
+/** @brief Submit a SCAN_DONE event for the currently owned scan. */
+esp_err_t host_wifi_port_complete_scan(int32_t status);
+
 void host_wifi_port_set_scan_records(
     const wifi_service_port_scan_record_t *records, size_t count,
     bool truncated);

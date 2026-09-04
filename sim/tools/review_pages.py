@@ -59,14 +59,15 @@ def _port_open(host, port):
         return False
 
 
-def _launch_sim(build, port, nvs, shots):
+def _launch_sim(build, port, nvs, shots, sd):
     shutil.rmtree(nvs, ignore_errors=True)
+    shutil.rmtree(sd, ignore_errors=True)
     os.makedirs(shots, exist_ok=True)
     log = open(os.path.join(shots, 'review_sim.log'), 'wb')
     proc = subprocess.Popen(
         [os.path.join(build, 'microtech_sim'), '--headless', '--ci',
          '--res-dir', os.path.join(build, 'sim_res_fs'),
-         '--nvs-dir', nvs, '--out-dir', shots,
+         '--nvs-dir', nvs, '--sd-dir', sd, '--out-dir', shots,
          '--agent-port', str(port)], stdout=log, stderr=subprocess.STDOUT)
     for _ in range(60):
         if _port_open('127.0.0.1', port):
@@ -203,7 +204,8 @@ def main():
     proc = None
     if not args.no_launch and not _port_open('127.0.0.1', args.port):
         proc = _launch_sim(args.build, args.port,
-                           os.path.join(args.build, 'review_nvs'), args.shots)
+                           os.path.join(args.build, 'review_nvs'), args.shots,
+                           '/tmp/mrsd')
     runner = Runner('127.0.0.1', args.port, args.shots, None, args.update)
     try:
         _run_spec(runner, spec, args, proc)

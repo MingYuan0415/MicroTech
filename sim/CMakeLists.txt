@@ -186,7 +186,7 @@ set(SIM_APP_SOURCES
     "ports/fakes/sim_wifi_port.c"
     "ports/fakes/sim_connectivity_digest.c"
     "ports/sim_network_runtime.c"
-    "ports/fakes/sim_fakes_recorder.c")
+    "${MIDDLEWARE}/recorder_service/src/recorder_service.c")
 
 set(SIM_PORT_SOURCES
     "apps/main_sim.c"

@@ -1,117 +1,613 @@
 {
-  "viewport": {"w": 368, "h": 448},
+  "viewport": {
+    "w": 368,
+    "h": 448
+  },
   "pages": [
-    {"app": "settings", "page": "root", "states": [
-      {"name": "hub", "seed": [],
-       "expect_visible": ["系统设置", "显示与电源", "Wi-Fi", "蓝牙", "设备状态", "关于与维护"],
-       "single_line": ["熄屏", "待机", "SD", "电池"],
-       "allow_disabled": []}
-    ]},
-    {"app": "settings", "page": "display", "states": [
-      {"name": "brightness", "seed": [],
-       "expect_visible": ["显示与电源", "亮度", "自动熄屏", "熄屏后待机"],
-       "single_line": ["拖动即时预览", "亮度"],
-       "allow_disabled": []}
-    ]},
-    {"app": "settings", "page": "wifi", "states": [
-      {"name": "idle_no_profile", "seed": [],
-       "expect_visible": ["Wi-Fi 开关", "自动连接", "状态", "网络", "IP 地址", "忘记网络"],
-       "single_line": ["关闭后保持离线", "开机后自动连接", "清除本机保存"],
-       "allow_disabled": ["忘记网络"]},
-      {"name": "connected", "hardware_only": true}
-    ]},
-    {"app": "settings", "page": "bluetooth", "states": [
-      {"name": "off", "seed": [{"cmd": "set_bluetooth", "enabled": false, "bound": false, "active": false}],
-       "expect_visible": ["蓝牙开关", "状态", "详情", "配对手机", "解除绑定"],
-       "single_line": ["关闭后暂停配对", "开启绑定窗口", "清除与当前手机"],
-       "allow_disabled": ["配对手机"]},
-      {"name": "bound", "seed": [{"cmd": "set_bluetooth", "enabled": true, "bound": true, "active": false}],
-       "expect_visible": ["已绑定", "手机可随时连接"],
-       "single_line": [], "allow_disabled": []},
-      {"name": "pairing",
-       "seed": [
-         {"cmd": "set_bluetooth", "enabled": true, "bound": false, "active": true, "window_remaining_ms": 90000},
-         {"cmd": "offer_pairing", "token": 4660, "passkey": 482913}
-       ],
-       "expect_visible": ["482913", "确认", "拒绝"],
-       "single_line": [], "allow_disabled": ["配对手机"]}
-    ]},
-    {"app": "settings", "page": "device", "states": [
-      {"name": "info", "seed": [{"cmd": "set_power", "voltage": 3900, "pct": 82, "charging": false}],
-       "expect_visible": ["设备状态", "电量", "供电来源", "SD 卡", "立即熄屏", "时间设置", "存储管理", "连接向导"],
-       "single_line": ["熄屏或待机", "时区、时间来源", "SD 卡状态", "BLE 绑定"],
-       "allow_disabled": []}
-    ]},
-    {"app": "settings", "page": "about", "states": [
-      {"name": "about", "seed": [],
-       "expect_visible": ["关于与维护", "硬件", "固件"],
-       "single_line": ["368 x 448", "ESP32-S3"],
-       "allow_disabled": []}
-    ]},
-    {"app": "home", "page": "root", "states": [
-      {"name": "home", "seed": [{"cmd": "set_power", "voltage": 3900, "pct": 82, "charging": false}],
-       "expect_visible": ["天气", "时钟", "设置"],
-       "single_line": [], "allow_disabled": [], "no_golden": true}
-    ]},
-    {"app": "weather", "page": "root", "states": [
-      {"name": "no_data", "seed": [],
-       "expect_visible": ["天气"],
-       "single_line": [], "allow_disabled": [], "no_golden": true}
-    ]},
-    {"app": "clock", "page": "root", "states": [
-      {"name": "hub", "seed": [],
-       "expect_visible": ["时钟", "倒计时", "秒表", "专注"],
-       "single_line": ["时间与计时"], "allow_disabled": [], "no_golden": true}
-    ]},
-    {"app": "clock", "page": "countdown", "states": [
-      {"name": "idle", "seed": [],
-       "expect_visible": ["倒计时", "选择时长后开始"],
-       "single_line": ["选择时长后开始"], "allow_disabled": []}
-    ]},
-    {"app": "clock", "page": "duration", "states": [
-      {"name": "pick", "seed": [],
-       "expect_visible": ["时长"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "clock", "page": "stopwatch", "states": [
-      {"name": "idle", "seed": [],
-       "expect_visible": ["秒表"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "clock", "page": "focus", "states": [
-      {"name": "idle", "seed": [],
-       "expect_visible": ["专注"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "recorder", "page": "root", "states": [
-      {"name": "idle", "seed": [],
-       "expect_visible": ["录音"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "recorder", "page": "files", "states": [
-      {"name": "empty", "seed": [],
-       "expect_visible": ["播放库"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "level", "page": "root", "states": [
-      {"name": "level", "seed": [{"cmd": "set_imu", "pitch": 0, "roll": 0}],
-       "expect_visible": ["水平仪"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "menu", "page": "root", "states": [
-      {"name": "grid", "seed": [],
-       "expect_visible": ["系统设置", "水平仪", "录音"],
-       "single_line": [], "allow_disabled": []}
-    ]},
-    {"app": "setup", "page": "root", "states": [
-      {"name": "root", "seed": [],
-       "expect_visible": ["网络设置"],
-       "single_line": [], "allow_disabled": [], "no_golden": true}
-    ]},
-    {"app": "diagnostics", "page": "root", "states": [
-      {"name": "diag", "seed": [],
-       "expect_visible": ["诊断"],
-       "single_line": [], "allow_disabled": [], "no_golden": true}
-    ]}
+    {
+      "app": "settings",
+      "page": "root",
+      "states": [
+        {
+          "name": "hub",
+          "seed": [],
+          "expect_visible": [
+            "系统设置",
+            "显示与电源",
+            "Wi-Fi",
+            "蓝牙",
+            "设备状态",
+            "关于与维护"
+          ],
+          "single_line": [
+            "熄屏",
+            "待机",
+            "SD",
+            "电池"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "display",
+      "states": [
+        {
+          "name": "brightness",
+          "seed": [],
+          "expect_visible": [
+            "显示与电源",
+            "亮度",
+            "自动熄屏",
+            "熄屏后待机"
+          ],
+          "single_line": [
+            "拖动即时预览",
+            "亮度"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "wifi",
+      "states": [
+        {
+          "name": "idle_no_profile",
+          "seed": [],
+          "expect_visible": [
+            "Wi-Fi 开关",
+            "自动连接",
+            "状态",
+            "网络",
+            "IP 地址",
+            "忘记网络"
+          ],
+          "single_line": [
+            "关闭后保持离线",
+            "开机后自动连接",
+            "清除本机保存"
+          ],
+          "allow_disabled": [
+            "忘记网络"
+          ]
+        },
+        {
+          "name": "connected",
+          "hardware_only": true
+        },
+        {
+          "name": "scan_list",
+          "seed": [
+            {
+              "cmd": "set_wifi_scan",
+              "records": [
+                {
+                  "ssid": "a very long neighbour guest network name 2.4GHz",
+                  "rssi": -35,
+                  "security": "open"
+                },
+                {
+                  "ssid": "HomeNet",
+                  "rssi": -40,
+                  "security": "personal"
+                },
+                {
+                  "ssid": "中文路由器",
+                  "rssi": -55,
+                  "security": "personal"
+                }
+              ],
+              "trigger": true,
+              "wait_scan": true,
+              "request": true
+            },
+            {
+              "cmd": "step",
+              "ms": 33000
+            },
+            {
+              "cmd": "drag",
+              "x0": 184,
+              "y0": 380,
+              "x1": 184,
+              "y1": 140,
+              "steps": 12
+            },
+            {
+              "cmd": "step",
+              "ms": 990
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 20000
+            }
+          ],
+          "expect_visible": [
+            "HomeNet",
+            "发现 3 个网络"
+          ],
+          "single_line": [
+            "可用网络"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "bluetooth",
+      "states": [
+        {
+          "name": "off",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": false,
+              "bound": false,
+              "active": false
+            }
+          ],
+          "expect_visible": [
+            "蓝牙开关",
+            "状态",
+            "详情",
+            "配对手机",
+            "解除绑定"
+          ],
+          "single_line": [
+            "关闭后暂停配对",
+            "开启绑定窗口",
+            "清除与当前手机"
+          ],
+          "allow_disabled": [
+            "配对手机"
+          ]
+        },
+        {
+          "name": "bound",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": true,
+              "bound": true,
+              "active": false
+            }
+          ],
+          "expect_visible": [
+            "已绑定",
+            "手机可随时连接"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "pairing",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": true,
+              "bound": false,
+              "active": true,
+              "window_remaining_ms": 90000
+            },
+            {
+              "cmd": "offer_pairing",
+              "token": 4660,
+              "passkey": 482913
+            }
+          ],
+          "expect_visible": [
+            "482913",
+            "确认",
+            "拒绝"
+          ],
+          "single_line": [],
+          "allow_disabled": [
+            "配对手机"
+          ]
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "device",
+      "states": [
+        {
+          "name": "info",
+          "seed": [
+            {
+              "cmd": "set_power",
+              "voltage": 3900,
+              "pct": 82,
+              "charging": false
+            }
+          ],
+          "expect_visible": [
+            "设备状态",
+            "电量",
+            "供电来源",
+            "SD 卡",
+            "立即熄屏",
+            "时间设置",
+            "存储管理",
+            "连接向导"
+          ],
+          "single_line": [
+            "熄屏或待机",
+            "时区、时间来源",
+            "SD 卡状态",
+            "BLE 绑定"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "about",
+      "states": [
+        {
+          "name": "about",
+          "seed": [],
+          "expect_visible": [
+            "关于与维护",
+            "硬件",
+            "固件"
+          ],
+          "single_line": [
+            "368 x 448",
+            "ESP32-S3"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "home",
+      "page": "root",
+      "states": [
+        {
+          "name": "home",
+          "seed": [
+            {
+              "cmd": "set_power",
+              "voltage": 3900,
+              "pct": 82,
+              "charging": false
+            }
+          ],
+          "expect_visible": [
+            "天气",
+            "时钟",
+            "设置"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "weather",
+      "page": "root",
+      "states": [
+        {
+          "name": "no_data",
+          "seed": [],
+          "expect_visible": [
+            "天气"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "clock",
+      "page": "root",
+      "states": [
+        {
+          "name": "hub",
+          "seed": [],
+          "expect_visible": [
+            "时钟",
+            "倒计时",
+            "秒表",
+            "专注"
+          ],
+          "single_line": [
+            "时间与计时"
+          ],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "clock",
+      "page": "countdown",
+      "states": [
+        {
+          "name": "idle",
+          "seed": [],
+          "expect_visible": [
+            "倒计时",
+            "选择时长后开始"
+          ],
+          "single_line": [
+            "选择时长后开始"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "clock",
+      "page": "duration",
+      "states": [
+        {
+          "name": "pick",
+          "seed": [],
+          "expect_visible": [
+            "时长"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "clock",
+      "page": "stopwatch",
+      "states": [
+        {
+          "name": "idle",
+          "seed": [],
+          "expect_visible": [
+            "秒表"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "clock",
+      "page": "focus",
+      "states": [
+        {
+          "name": "idle",
+          "seed": [],
+          "expect_visible": [
+            "专注"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "recorder",
+      "page": "files",
+      "states": [
+        {
+          "name": "empty",
+          "seed": [
+            {
+              "cmd": "sd",
+              "action": "clear"
+            }
+          ],
+          "expect_visible": [
+            "播放库"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "recorder",
+      "page": "root",
+      "states": [
+        {
+          "name": "idle",
+          "seed": [
+            {
+              "cmd": "sd",
+              "action": "clear"
+            },
+            {
+              "cmd": "navigate",
+              "app": "recorder",
+              "page": "files"
+            },
+            {
+              "cmd": "step",
+              "ms": 990
+            },
+            {
+              "cmd": "navigate",
+              "app": "recorder",
+              "page": "root"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "录音"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "recording",
+          "seed": [
+            {
+              "cmd": "sd",
+              "action": "clear"
+            },
+            {
+              "cmd": "step",
+              "times": 10,
+              "ms": 33
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 184,
+              "y": 218
+            },
+            {
+              "cmd": "step",
+              "times": 10,
+              "ms": 33
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 184,
+              "y": 218
+            },
+            {
+              "cmd": "step",
+              "times": 60,
+              "ms": 33
+            }
+          ],
+          "expect_visible": [
+            "录音中",
+            "停止"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "stopped",
+          "seed": [
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 184,
+              "y": 218
+            },
+            {
+              "cmd": "step",
+              "times": 10,
+              "ms": 33
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 184,
+              "y": 218
+            },
+            {
+              "cmd": "step",
+              "times": 30,
+              "ms": 33
+            }
+          ],
+          "expect_visible": [
+            "1 个录音"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "level",
+      "page": "root",
+      "states": [
+        {
+          "name": "level",
+          "seed": [
+            {
+              "cmd": "set_imu",
+              "pitch": 0,
+              "roll": 0
+            }
+          ],
+          "expect_visible": [
+            "水平仪"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "tilt",
+          "seed": [
+            {
+              "cmd": "set_imu",
+              "pitch": 38,
+              "roll": -46
+            }
+          ],
+          "expect_visible": [
+            "水平仪"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "menu",
+      "page": "root",
+      "states": [
+        {
+          "name": "grid",
+          "seed": [],
+          "expect_visible": [
+            "系统设置",
+            "水平仪",
+            "录音"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "setup",
+      "page": "root",
+      "states": [
+        {
+          "name": "root",
+          "seed": [],
+          "expect_visible": [
+            "网络设置"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "diagnostics",
+      "page": "root",
+      "states": [
+        {
+          "name": "diag",
+          "seed": [],
+          "expect_visible": [
+            "诊断"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    }
   ]
 }

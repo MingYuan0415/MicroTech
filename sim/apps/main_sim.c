@@ -29,6 +29,7 @@
 #include "sim_fs.h"
 #include "sim_http.h"
 #include "sim_nvs.h"
+#include "sim_sd_host.h"
 #include "sim_lv_adapter.h"
 #include "sim_mmap_assets.h"
 #include "sim_png.h"
@@ -41,6 +42,7 @@ typedef struct sim_options
     bool ci;
     const char *res_dir;
     const char *nvs_dir;
+    const char *sd_dir;
     const char *out_dir;
     const char *navigate;
     int brightness;
@@ -82,6 +84,7 @@ static void _script_advance(bool ci_mode, int steps)
 static void _usage(const char *argv0)
 {
     printf("usage: %s [--headless] [--ci] [--res-dir DIR] [--nvs-dir DIR]\n"
+           "          [--sd-dir DIR]\n"
            "          [--out-dir DIR] [--agent-port N] [--window-scale N]\n"
            "          [--frames N] [--screenshot NAME]\n", argv0);
 }
@@ -123,6 +126,10 @@ static bool _parse_args(int argc, char **argv, sim_options_t *opt,
         else if ((strcmp(argv[i], "--nvs-dir") == 0) && ((i + 1) < argc))
         {
             opt->nvs_dir = argv[++i];
+        }
+        else if ((strcmp(argv[i], "--sd-dir") == 0) && ((i + 1) < argc))
+        {
+            opt->sd_dir = argv[++i];
         }
         else if ((strcmp(argv[i], "--out-dir") == 0) && ((i + 1) < argc))
         {
@@ -381,6 +388,7 @@ int main(int argc, char **argv)
         .ci = false,
         .res_dir = NULL,
         .nvs_dir = NULL,
+        .sd_dir = "/tmp/mt_sim_sdcard",
         .out_dir = NULL,
         .navigate = NULL,
         .brightness = -1,
@@ -449,6 +457,24 @@ int main(int argc, char **argv)
     {
         sim_nvs_set_dir(opt.nvs_dir);
     }
+    if (opt.sd_dir != NULL)
+    {
+        char sd_abs[PATH_MAX];
+        const char *sd_path = opt.sd_dir;
+        if (sd_path[0] != '/' && realpath(".", sd_abs) != NULL)
+        {
+            if (snprintf(sd_abs + strlen(sd_abs), sizeof(sd_abs) - strlen(sd_abs),
+                         "/%s", sd_path) < (int)sizeof(sd_abs))
+            {
+                sd_path = sd_abs;
+            }
+        }
+        if (host_sd_boot(sd_path) != ESP_OK)
+        {
+            fprintf(stderr, "sim boot: host_sd_boot(%s) failed\n", sd_path);
+        }
+    }
+    host_audio_set_available(true);
 
     if (sim_runtime_boot() != ESP_OK)
     {

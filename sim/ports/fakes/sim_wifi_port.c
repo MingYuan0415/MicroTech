@@ -322,6 +322,20 @@ uint8_t host_wifi_port_scan_id(void)
     return scan_id;
 }
 
+esp_err_t host_wifi_port_complete_scan(int32_t status)
+{
+    wifi_service_port_event_t event;
+
+    memset(&event, 0, sizeof(event));
+    (void)pthread_mutex_lock(&s_port.lock);
+    event.scan_id = s_port.scan_id;
+    event.epoch = s_port.epoch;
+    (void)pthread_mutex_unlock(&s_port.lock);
+    event.type = WIFI_SERVICE_PORT_EVENT_SCAN_DONE;
+    event.status = status;
+    return wifi_service_port_submit_event(&event);
+}
+
 void host_wifi_port_set_scan_records(
     const wifi_service_port_scan_record_t *records, size_t count,
     bool truncated)

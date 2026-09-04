@@ -31,6 +31,11 @@
 #include "sim_agent.h"
 #include "sim_agent_tree.h"
 #include "sim_backends.h"
+#include "sim_sd_host.h"
+#include "recorder_service.h"
+#include "nv_storage.h"
+#include "connectivity_manager.h"
+#include "wifi_service.h"
 #include "sim_bsp.h"
 #include "sim_http.h"
 #include "sim_lv_adapter.h"
@@ -115,6 +120,23 @@ static bool _number_in_range(const cJSON *item, double minimum,
 static bool _optional_bool(const cJSON *item)
 {
     return (item == NULL) || cJSON_IsBool(item);
+}
+
+static esp_err_t _restart_recorder_service(bool want_mounted)
+{
+    const recorder_service_config_t config =
+    {
+        .directory = host_sd_recordings_dir(),
+        .max_duration_seconds = 30U * 60U,
+        .minimum_free_bytes = 8U * 1024U * 1024U,
+    };
+
+    (void)recorder_service_deinit();
+    if (!want_mounted)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return recorder_service_init(&config);
 }
 
 static const char *_wait_idle_error(sim_wait_idle_result_t result)
@@ -585,8 +607,9 @@ static cJSON *_handle(cJSON *request, bool *ok)
                              params, "charging") : NULL;
         const cJSON *vbus = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                                 params, "vbus") : NULL;
-        if (!_number_in_range(v, 0.0, UINT16_MAX) ||
-                !_number_in_range(p, 0.0, 100.0) ||
+        if ((!cJSON_IsNumber(v) && !cJSON_IsNumber(p)) ||
+                !((v == NULL) || _number_in_range(v, 0.0, UINT16_MAX)) ||
+                !((p == NULL) || _number_in_range(p, 0.0, 100.0)) ||
                 !_optional_bool(c) || !_optional_bool(vbus))
         {
             *ok = false;
@@ -594,8 +617,10 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         else
         {
-            sim_backends_set_power((uint16_t)(int)v->valuedouble,
-                                   (int8_t)(int)p->valuedouble,
+            sim_backends_set_power(cJSON_IsNumber(v) ?
+                                   (uint16_t)(int)v->valuedouble : 0U,
+                                   cJSON_IsNumber(p) ?
+                                   (int8_t)(int)p->valuedouble : (int8_t) -1,
                                    cJSON_IsTrue(c),
                                    cJSON_IsTrue(vbus));
         }
@@ -757,17 +782,304 @@ static cJSON *_handle(cJSON *request, bool *ok)
                 ++count;
             }
         }
+        if (valid && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(params,
+                                  "request")))
+        {
+            connectivity_manager_operation_id_t op = 0U;
+            const esp_err_t request_result =
+                connectivity_manager_request_scan(&op);
+            if (request_result != ESP_OK)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(request_result));
+                valid = false;
+            }
+        }
         if (valid)
         {
             host_wifi_port_set_scan_records(port_records, count,
                                             cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
                                                     params, "truncated")));
-            *ok = true;
+            const cJSON *trigger = cJSON_GetObjectItemCaseSensitive(params,
+                                   "trigger");
+            esp_err_t scan_result = ESP_OK;
+            if (cJSON_IsTrue(trigger))
+            {
+                const cJSON *status = cJSON_GetObjectItemCaseSensitive(params,
+                                      "status");
+                if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(params,
+                                 "wait_scan")))
+                {
+                    /* The connectivity worker picks the request up on its own
+                     * cadence; keep delivering SCAN_DONE while a port scan
+                     * owns the radio so the completion cannot race ahead of
+                     * or miss the window. */
+                    bool owned_seen = false;
+                    for (int attempt = 0; attempt < 600; ++attempt)
+                    {
+                        if (host_wifi_port_scan_owned())
+                        {
+                            owned_seen = true;
+                            (void)host_wifi_port_complete_scan(
+                                cJSON_IsNumber(status) ?
+                                (int32_t)status->valuedouble : 0);
+                        }
+                        else if (owned_seen)
+                        {
+                            break;
+                        }
+                        usleep(50000U);
+                    }
+                }
+                else
+                {
+                    scan_result = host_wifi_port_complete_scan(
+                                      cJSON_IsNumber(status) ?
+                                      (int32_t)status->valuedouble : 0);
+                }
+            }
+            cJSON_AddNumberToObject(result, "scan_owned",
+                                    (double)host_wifi_port_scan_owned());
+            cJSON_AddNumberToObject(result, "scan_id",
+                                    (double)host_wifi_port_scan_id());
+            cJSON_AddNumberToObject(result, "epoch",
+                                    (double)host_wifi_port_epoch());
+            if (scan_result != ESP_OK)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(scan_result));
+            }
+            else if (cJSON_IsTrue(trigger))
+            {
+                /* Confirm the manager actually consumed the completion and
+                 * cached the records before replying, so callers never race
+                 * the publish cadence. */
+                connectivity_manager_scan_snapshot_t done;
+                bool settled = false;
+                for (int attempt = 0; attempt < 200 && !settled; ++attempt)
+                {
+                    usleep(50000U);
+                    if (connectivity_manager_get_scan_snapshot(&done) ==
+                            ESP_OK && !done.running)
+                    {
+                        settled = true;
+                    }
+                }
+                cJSON_AddNumberToObject(result, "settled_records",
+                                        settled ?
+                                        (double)done.record_count : -1.0);
+            }
+            else
+            {
+                *ok = true;
+            }
         }
         else
         {
             *ok = false;
             cJSON_AddStringToObject(result, "error", "invalid scan records");
+        }
+    }
+    else if (strcmp(method, "sim.connectivity") == 0)
+    {
+        connectivity_manager_status_snapshot_t status;
+        connectivity_manager_scan_snapshot_t scan;
+        memset(&status, 0, sizeof(status));
+        memset(&scan, 0, sizeof(scan));
+        const esp_err_t status_result = connectivity_manager_get_status(
+                                            &status);
+        const esp_err_t scan_result = connectivity_manager_get_scan_snapshot(
+                                          &scan);
+        if (status_result != ESP_OK || scan_result != ESP_OK)
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "no snapshot");
+        }
+        else
+        {
+            cJSON_AddNumberToObject(result, "state", (double)status.state);
+            cJSON_AddNumberToObject(result, "failure",
+                                    (double)status.failure);
+            cJSON_AddNumberToObject(result, "last_error",
+                                    (double)status.last_error);
+            cJSON_AddBoolToObject(result, "available", status.available);
+            cJSON_AddBoolToObject(result, "radio_available",
+                                  status.radio_available);
+            cJSON_AddBoolToObject(result, "saved_profile",
+                                  status.saved_profile);
+            cJSON_AddBoolToObject(result, "auto_connect",
+                                  status.auto_connect);
+            cJSON_AddBoolToObject(result, "manual_hold", status.manual_hold);
+            cJSON_AddNumberToObject(result, "scan_state_running",
+                                    (double)scan.running);
+            cJSON_AddNumberToObject(result, "scan_records",
+                                    (double)scan.record_count);
+            cJSON_AddNumberToObject(result, "scan_error",
+                                    (double)scan.last_error);
+            wifi_service_status_snapshot_t wifi_status;
+            wifi_service_scan_snapshot_t wifi_scan;
+            memset(&wifi_status, 0, sizeof(wifi_status));
+            memset(&wifi_scan, 0, sizeof(wifi_scan));
+            cJSON_AddBoolToObject(result, "wifi_available",
+                                  wifi_service_is_available());
+            if (wifi_service_get_status(&wifi_status) == ESP_OK)
+            {
+                cJSON_AddNumberToObject(result, "wifi_state",
+                                        (double)wifi_status.state);
+                cJSON_AddNumberToObject(result, "wifi_error",
+                                        (double)wifi_status.last_error);
+                cJSON_AddBoolToObject(result, "wifi_ready",
+                                      wifi_status.available);
+                cJSON_AddBoolToObject(result, "wifi_desired",
+                                      wifi_status.desired_connected);
+            }
+            if (wifi_service_get_scan_snapshot(&wifi_scan) == ESP_OK)
+            {
+                cJSON_AddNumberToObject(result, "wifi_scan_state",
+                                        (double)wifi_scan.state);
+                cJSON_AddNumberToObject(result, "wifi_scan_records",
+                                        (double)wifi_scan.record_count);
+                cJSON_AddNumberToObject(result, "wifi_scan_error",
+                                        (double)wifi_scan.last_error);
+            }
+        }
+    }
+    else if (strcmp(method, "sim.sd") == 0)
+    {
+        const cJSON *action = params != NULL ?
+                              cJSON_GetObjectItemCaseSensitive(params,
+                                  "action") : NULL;
+        const char *verb = cJSON_GetStringValue(action);
+        if (verb != NULL && strcmp(verb, "mount") == 0)
+        {
+            *ok = host_sd_set_mounted(true) &&
+                  _restart_recorder_service(true) == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", "mount failed");
+            }
+        }
+        else if (verb != NULL && strcmp(verb, "umount") == 0)
+        {
+            const bool removed = host_sd_set_mounted(false);
+            _restart_recorder_service(false);
+            *ok = removed && !host_sd_is_mounted();
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", "umount failed");
+            }
+        }
+        else if (verb != NULL && strcmp(verb, "write") == 0)
+        {
+            const cJSON *name = cJSON_GetObjectItemCaseSensitive(params,
+                                "name");
+            const cJSON *seconds = cJSON_GetObjectItemCaseSensitive(params,
+                                   "seconds");
+            esp_err_t result_sd = ESP_ERR_INVALID_ARG;
+            if (cJSON_IsString(name) && cJSON_IsNumber(seconds) &&
+                    seconds->valuedouble >= 0.0 &&
+                    seconds->valuedouble <= 3600.0)
+            {
+                result_sd = host_sd_write_wav(name->valuestring,
+                                              (uint32_t)seconds->valuedouble);
+                if (result_sd == ESP_OK)
+                {
+                    (void)_restart_recorder_service(host_sd_is_mounted());
+                }
+            }
+            *ok = result_sd == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(result_sd));
+            }
+        }
+        else if (verb != NULL && strcmp(verb, "svc") == 0)
+        {
+            recorder_service_snapshot_t snap;
+            recorder_service_file_t files[16];
+            size_t count = 0U;
+            memset(&snap, 0, sizeof(snap));
+            const esp_err_t snap_result = recorder_service_get_snapshot(&snap);
+            const esp_err_t list_result = recorder_service_list(files, 16U,
+                                          &count);
+            cJSON_AddNumberToObject(result, "snap", (double)snap_result);
+            cJSON_AddNumberToObject(result, "list", (double)list_result);
+            cJSON_AddNumberToObject(result, "generation",
+                                    (double)snap.generation);
+            cJSON_AddNumberToObject(result, "state", (double)snap.state);
+            cJSON_AddNumberToObject(result, "svc_files", (double)count);
+            *ok = true;
+        }
+        else if (verb != NULL && strcmp(verb, "clear") == 0)
+        {
+            cJSON_AddNumberToObject(result, "removed",
+                                    (double)host_sd_clear_recordings());
+            (void)_restart_recorder_service(host_sd_is_mounted());
+            *ok = true;
+        }
+        else if (verb != NULL && strcmp(verb, "list") == 0)
+        {
+            static char listed[24][SIM_SD_NAME_MAX];
+            size_t listed_count = host_sd_list_recordings(listed, 24U);
+            cJSON *files = cJSON_AddArrayToObject(result, "files");
+            cJSON_AddBoolToObject(result, "mounted",
+                                  host_sd_is_mounted());
+            for (size_t index = 0U; index < listed_count &&
+                    files != NULL; ++index)
+            {
+                cJSON_AddItemToArray(files, cJSON_CreateString(listed[index]));
+            }
+        }
+        else
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid sd action");
+        }
+    }
+    else if (strcmp(method, "sim.nvs") == 0)
+    {
+        const cJSON *action = params != NULL ?
+                              cJSON_GetObjectItemCaseSensitive(params,
+                                  "action") : NULL;
+        const cJSON *key = params != NULL ?
+                           cJSON_GetObjectItemCaseSensitive(params,
+                               "key") : NULL;
+        const char *verb = cJSON_GetStringValue(action);
+        const char *text = cJSON_GetStringValue(key);
+        if (verb != NULL && text != NULL && strcmp(verb, "set") == 0)
+        {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(params,
+                                 "value");
+            *ok = cJSON_IsString(value) &&
+                  nv_storage_set_str(text, value->valuestring) == ESP_OK;
+        }
+        else if (verb != NULL && text != NULL &&
+                 strcmp(verb, "get") == 0)
+        {
+            char stored[128];
+            size_t size = sizeof(stored);
+            if (nv_storage_get_str(text, stored, &size) == ESP_OK)
+            {
+                cJSON_AddStringToObject(result, "value", stored);
+            }
+            else
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error", "nvs key missing");
+            }
+        }
+        else if (verb != NULL && text != NULL &&
+                 strcmp(verb, "erase") == 0)
+        {
+            *ok = nv_storage_erase_key(text) == ESP_OK;
+        }
+        else
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid nvs params");
         }
     }
     else if (strcmp(method, "sim.set_weather") == 0)

@@ -14,6 +14,10 @@ Commands:
   key <boot|power> <press|release|click>
   navigate <app_id> [page_id]
   set-wifi <connected|disconnected>
+  set-wifi-scan <json|file>   # {"records":[{"ssid":..,"rssi":..,"security":..}], "request":true,"trigger":true,"wait_scan":true}
+  sd <mount|umount|write|list> [--name REC_x.wav --seconds 3]
+  nvs <get|set|erase> <key> [value]
+  connectivity
   apps
   set-time <epoch>
   set-power <voltage_mv> <pct> [charging]
@@ -22,6 +26,7 @@ Commands:
 """
 import argparse
 import json
+import os
 import socket
 import sys
 
@@ -55,9 +60,13 @@ def main():
     kp = sub.add_parser("key"); kp.add_argument("button"); kp.add_argument("action")
     np_ = sub.add_parser("navigate"); np_.add_argument("app"); np_.add_argument("page", nargs="?")
     sw = sub.add_parser("set-wifi"); sw.add_argument("state")
+    sws = sub.add_parser("set-wifi-scan"); sws.add_argument("json", help="JSON with records/request/trigger/wait_scan")
+    sd = sub.add_parser("sd"); sd.add_argument("action", choices=["mount", "umount", "write", "list"]); sd.add_argument("--name"); sd.add_argument("--seconds", type=int)
+    nvs = sub.add_parser("nvs"); nvs.add_argument("action", choices=["get", "set", "erase"]); nvs.add_argument("key"); nvs.add_argument("value", nargs="?")
+    sub.add_parser("connectivity")
     sub.add_parser("apps")
     etp = sub.add_parser("set-time"); etp.add_argument("epoch", type=int)
-    ep = sub.add_parser("set-power"); ep.add_argument("voltage", type=int); ep.add_argument("pct", type=int); ep.add_argument("charging", nargs="?", default="false")
+    ep = sub.add_parser("set-power"); ep.add_argument("voltage", nargs="?"); ep.add_argument("pct", nargs="?"); ep.add_argument("charging", nargs="?", default="false")
     ei = sub.add_parser("set-imu"); ei.add_argument("pitch", type=float); ei.add_argument("roll", type=float)
     pp = sub.add_parser("pause"); pp.add_argument("enabled", choices=["on", "off"])
     ew = sub.add_parser("set-weather"); ew.add_argument("endpoint"); ew.add_argument("file")
@@ -96,13 +105,31 @@ def main():
             req = ("sim.navigate", nav)
         elif args.cmd == "set-wifi":
             req = ("sim.set_wifi", {"state": args.state})
+        elif args.cmd == "set-wifi-scan":
+            text = args.json
+            if os.path.exists(text):
+                text = open(text).read()
+            req = ("sim.set_wifi_scan", json.loads(text))
+        elif args.cmd == "sd":
+            req = ("sim.sd", {"action": args.action,
+                              **({"name": args.name} if args.name else {}),
+                              **({"seconds": args.seconds} if args.seconds is not None else {})})
+        elif args.cmd == "nvs":
+            req = ("sim.nvs", {"action": args.action, "key": args.key,
+                               **({"value": args.value} if args.value else {})})
+        elif args.cmd == "connectivity":
+            req = ("sim.connectivity", {})
         elif args.cmd == "apps":
             req = ("sim.apps", {})
         elif args.cmd == "set-time":
             req = ("sim.set_time", {"epoch": args.epoch})
         elif args.cmd == "set-power":
-            req = ("sim.set_power", {"voltage": args.voltage, "pct": args.pct,
-                                     "charging": args.charging == "true"})
+            power = {"charging": args.charging == "true"}
+            if args.voltage not in (None, "-"):
+                power["voltage"] = int(args.voltage)
+            if args.pct not in (None, "-"):
+                power["pct"] = int(args.pct)
+            req = ("sim.set_power", power)
         elif args.cmd == "set-imu":
             req = ("sim.set_imu", {"pitch": args.pitch, "roll": args.roll})
         elif args.cmd == "pause":

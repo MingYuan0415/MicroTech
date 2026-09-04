@@ -1,4 +1,5 @@
 #include "apps_integration_runtime.h"
+#include "sim_sd_host.h"
 
 #include "app_manager.h"
 #include "audio_service.h"
@@ -17,9 +18,14 @@
 #include "weather_service.h"
 
 #include <assert.h>
+#include <dirent.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 
@@ -31,7 +37,6 @@ static atomic_bool s_time_available;
 static atomic_bool s_imu_available;
 static atomic_bool s_audio_available;
 
-static atomic_bool s_storage_available;
 static atomic_uint s_random_nonce = 0x13579BDFU;
 static atomic_uint s_imu_sequence = 1U;
 static atomic_int s_time_quality = TIME_SERVICE_QUALITY_RTC;
@@ -64,7 +69,6 @@ void host_runtime_reset(void)
     atomic_store(&s_time_available, true);
     atomic_store(&s_imu_available, true);
     atomic_store(&s_audio_available, true);
-    atomic_store(&s_storage_available, true);
     atomic_store(&s_random_nonce, 0x13579BDFU);
     atomic_store(&s_imu_sequence, 1U);
     atomic_store(&s_time_quality, TIME_SERVICE_QUALITY_RTC);
@@ -236,7 +240,6 @@ void host_optional_services_set_available(bool available)
     atomic_store(&s_time_available, available);
     atomic_store(&s_imu_available, available);
     atomic_store(&s_audio_available, available);
-    atomic_store(&s_storage_available, available);
     if (!available)
     {
         atomic_store(&s_time_quality, TIME_SERVICE_QUALITY_INVALID);
@@ -265,6 +268,11 @@ unsigned host_audio_set_volume_count(void)
 void host_audio_set_read_peak(int16_t peak)
 {
     atomic_store(&s_audio_read_peak, peak);
+}
+
+void host_audio_set_available(bool available)
+{
+    atomic_store(&s_audio_available, available);
 }
 
 void host_audio_fail_next_volume(void)
@@ -443,25 +451,287 @@ esp_err_t audio_service_set_pa(bool enabled)
 
 
 
+static char s_sd_dir[PATH_MAX];
+static char s_sd_recordings[PATH_MAX];
+static bool s_sd_mounted;
+
+static esp_err_t _host_sd_ensure_directory(const char *directory)
+{
+    char path[PATH_MAX];
+    size_t length = strlen(directory);
+    if (length == 0 || length >= sizeof(path))
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(path, directory, length + 1U);
+    for (char *cursor = path + 1; *cursor != '\0'; ++cursor)
+    {
+        if (*cursor == '/')
+        {
+            *cursor = '\0';
+            if (mkdir(path, 0775) != 0 && errno != EEXIST)
+            {
+                return ESP_FAIL;
+            }
+            *cursor = '/';
+        }
+    }
+    return mkdir(path, 0775) == 0 || errno == EEXIST ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t host_sd_boot(const char *dir)
+{
+    if (dir == NULL || dir[0] != '/')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t length = strlen(dir);
+    if (length >= sizeof(s_sd_dir))
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (_host_sd_ensure_directory(dir) != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
+    memcpy(s_sd_dir, dir, length + 1U);
+    if (snprintf(s_sd_recordings, sizeof(s_sd_recordings),
+                 "%s/MicroTech/Recordings", s_sd_dir) >=
+            (int)sizeof(s_sd_recordings))
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    s_sd_mounted = true;
+    if (strlen(s_sd_recordings) + 22U >= SIM_SD_NAME_MAX)
+    {
+        fprintf(stderr,
+                "sim: sd dir too deep for recorder name buffer (%zu + names "
+                "must fit %d bytes); recordings will not list\n",
+                strlen(s_sd_recordings), SIM_SD_NAME_MAX);
+    }
+    return ESP_OK;
+}
+
+bool host_sd_set_mounted(bool mounted)
+{
+    char hidden[PATH_MAX];
+    bool changed;
+
+    if (s_sd_dir[0] == '\0' || mounted == s_sd_mounted)
+    {
+        return s_sd_mounted == mounted && s_sd_dir[0] != '\0';
+    }
+    if (snprintf(hidden, sizeof(hidden), "%s.umounted", s_sd_dir) >=
+            (int)sizeof(hidden))
+    {
+        return false;
+    }
+    changed = mounted ? rename(hidden, s_sd_dir) == 0 :
+              rename(s_sd_dir, hidden) == 0;
+    if (!mounted && changed)
+    {
+        s_sd_mounted = false;
+    }
+    else if (mounted && changed)
+    {
+        s_sd_mounted = true;
+    }
+    else if (mounted && _host_sd_ensure_directory(s_sd_dir) == ESP_OK)
+    {
+        /* an empty volume was never renamed out: restore it by creation */
+        s_sd_mounted = true;
+        changed = true;
+    }
+    return changed;
+}
+
+bool host_sd_is_mounted(void)
+{
+    return s_sd_mounted && s_sd_dir[0] != '\0';
+}
+
+const char *host_sd_directory(void)
+{
+    return host_sd_is_mounted() ? s_sd_dir : NULL;
+}
+
+const char *host_sd_recordings_dir(void)
+{
+    return host_sd_is_mounted() ? s_sd_recordings : NULL;
+}
+
+esp_err_t host_sd_write_wav(const char *name, uint32_t seconds)
+{
+    const char *directory = host_sd_recordings_dir();
+    char path[PATH_MAX];
+    uint32_t data_size = seconds * 64000U;
+    unsigned char header[44];
+    static const uint32_t byte_rate = 64000U;
+    FILE *file;
+
+    if (directory == NULL || name == NULL || strchr(name, '/') != NULL ||
+            strstr(name, "..") != NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (snprintf(path, sizeof(path), "%s/%s", directory, name) >=
+            (int)sizeof(path))
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(header, "RIFF", 4U);
+    header[4] = (unsigned char)((data_size + 36U) & 0xFFU);
+    header[5] = (unsigned char)(((data_size + 36U) >> 8) & 0xFFU);
+    header[6] = (unsigned char)(((data_size + 36U) >> 16) & 0xFFU);
+    header[7] = (unsigned char)(((data_size + 36U) >> 24) & 0xFFU);
+    memcpy(header + 8, "WAVEfmt ", 8U);
+    header[16] = 16U;
+    header[17] = 0U;
+    header[18] = 0U;
+    header[19] = 0U;
+    header[20] = 1U;  /* PCM */
+    header[21] = 0U;
+    header[22] = 2U;  /* channels */
+    header[23] = 0U;
+    header[24] = (unsigned char)(16000U & 0xFFU);
+    header[25] = (unsigned char)((16000U >> 8) & 0xFFU);
+    header[26] = 0U;
+    header[27] = 0U;
+    header[28] = (unsigned char)(byte_rate & 0xFFU);
+    header[29] = (unsigned char)((byte_rate >> 8) & 0xFFU);
+    header[30] = (unsigned char)((byte_rate >> 16) & 0xFFU);
+    header[31] = (unsigned char)((byte_rate >> 24) & 0xFFU);
+    header[32] = 4U;  /* block align */
+    header[33] = 0U;
+    header[34] = 16U; /* bits */
+    header[35] = 0U;
+    memcpy(header + 36, "data", 4U);
+    header[40] = (unsigned char)(data_size & 0xFFU);
+    header[41] = (unsigned char)((data_size >> 8) & 0xFFU);
+    header[42] = (unsigned char)((data_size >> 16) & 0xFFU);
+    header[43] = (unsigned char)((data_size >> 24) & 0xFFU);
+    file = fopen(path, "wb");
+    if (file == NULL || fwrite(header, 1U, sizeof(header), file) !=
+            sizeof(header))
+    {
+        (void)fclose(file);
+        return ESP_FAIL;
+    }
+    if (data_size > 0U)
+    {
+        unsigned char silence[4096] = {0};
+        uint32_t remaining = data_size;
+        while (remaining > 0U)
+        {
+            size_t chunk = remaining > sizeof(silence) ? sizeof(silence) :
+                           (size_t)remaining;
+            if (fwrite(silence, 1U, chunk, file) != chunk)
+            {
+                (void)fclose(file);
+                (void)remove(path);
+                return ESP_FAIL;
+            }
+            remaining -= (uint32_t)chunk;
+        }
+    }
+    if (fclose(file) != 0)
+    {
+        (void)remove(path);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+size_t host_sd_clear_recordings(void)
+{
+    const char *directory = host_sd_recordings_dir();
+    DIR *handle;
+    struct dirent *entry;
+    size_t removed = 0U;
+
+    if (directory == NULL)
+    {
+        return 0U;
+    }
+    handle = opendir(directory);
+    if (handle == NULL)
+    {
+        return 0U;
+    }
+    while ((entry = readdir(handle)) != NULL)
+    {
+        const size_t length = strlen(entry->d_name);
+        if ((length > 4U && strcmp(entry->d_name + length - 4U, ".wav") == 0) ||
+                (length > 5U &&
+                 strcmp(entry->d_name + length - 5U, ".part") == 0))
+        {
+            char path[PATH_MAX];
+            if (snprintf(path, sizeof(path), "%s/%s", directory,
+                         entry->d_name) < (int)sizeof(path) &&
+                    remove(path) == 0)
+            {
+                ++removed;
+            }
+        }
+    }
+    (void)closedir(handle);
+    return removed;
+}
+
+size_t host_sd_list_recordings(char names[][SIM_SD_NAME_MAX], size_t capacity)
+{
+    const char *directory = host_sd_recordings_dir();
+    DIR *handle;
+    struct dirent *entry;
+    size_t count = 0U;
+
+    if (names == NULL || directory == NULL)
+    {
+        return 0U;
+    }
+    handle = opendir(directory);
+    if (handle == NULL)
+    {
+        return 0U;
+    }
+    while ((entry = readdir(handle)) != NULL && count < capacity)
+    {
+        size_t length = strlen(entry->d_name);
+        if (length > 4U && length < SIM_SD_NAME_MAX &&
+                strcmp(entry->d_name + length - 4U, ".wav") == 0)
+        {
+            memcpy(names[count], entry->d_name, length + 1U);
+            ++count;
+        }
+    }
+    (void)closedir(handle);
+    return count;
+}
+
 bool sd_storage_service_is_mounted(void)
 {
-    return atomic_load(&s_storage_available);
+    return host_sd_is_mounted();
 }
 
 const char *sd_storage_service_get_mount_path(void)
 {
-    return "/sdcard";
+    return host_sd_directory();
 }
 
 esp_err_t esp_vfs_fat_info(const char *base_path, uint64_t *total_bytes,
                            uint64_t *free_bytes)
 {
-    if (base_path == NULL || strcmp(base_path, "/sdcard") != 0 ||
-            total_bytes == NULL || free_bytes == NULL)
+    struct statvfs info;
+
+    if (base_path == NULL || total_bytes == NULL || free_bytes == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    *total_bytes = 32ULL * 1024ULL * 1024ULL * 1024ULL;
-    *free_bytes = 24ULL * 1024ULL * 1024ULL * 1024ULL;
+    if (statvfs(base_path, &info) != 0)
+    {
+        return ESP_FAIL;
+    }
+    *total_bytes = (uint64_t)info.f_blocks * info.f_frsize;
+    *free_bytes = (uint64_t)info.f_bavail * info.f_frsize;
     return ESP_OK;
 }
