@@ -29,7 +29,13 @@ audio loop.
 
 ## Run
 
-From the repository root, run all three profiles:
+This suite links app and app_manager sources, so a red build here is a
+regression signal for any change under `layers/apps/` or `layers/app_manager/`
+(see the impact table in `AGENTS.md`). Run it with the `none` profile per
+task; the sanitizer profiles are only required when a change touches memory
+ownership or concurrency.
+
+From the repository root, all three profiles (acceptance scope):
 
 ```sh
 cmake -S tests/integration -B /tmp/mt-cross-normal -G Ninja \

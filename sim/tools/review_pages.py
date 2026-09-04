@@ -28,7 +28,8 @@ Spec schema (JSON):
 Usage:
   python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json [--check]
       [--update] [--pages settings/wifi,...] [--golden DIR] [--shots DIR]
-      [--build build/sim] [--port 5002] [--no-launch] [--report out.json]
+      [--build build/sim] [--port 5002] [--no-launch] [--keep-sim]
+      [--report out.json]
 
 Exit non-zero on any lint violation or baseline mismatch.
 """
@@ -190,6 +191,9 @@ def main():
     ap.add_argument('--update', action='store_true')
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--no-launch', action='store_true')
+    ap.add_argument('--keep-sim', action='store_true',
+                    help='leave the sim running after the review for interactive '
+                         'probing instead of sending sim.exit')
     ap.add_argument('--report', default=None)
     ap.add_argument('--max-diff', type=float, default=0.005)
     args = ap.parse_args()
@@ -204,12 +208,13 @@ def main():
     try:
         _run_spec(runner, spec, args, proc)
     finally:
-        try:
-            runner.call('sim.exit')
-        except Exception:
-            pass
+        if not args.keep_sim:
+            try:
+                runner.call('sim.exit')
+            except Exception:
+                pass
         runner.close()
-        if proc is not None:
+        if proc is not None and not args.keep_sim:
             proc.terminate()
             try:
                 proc.wait(timeout=5)

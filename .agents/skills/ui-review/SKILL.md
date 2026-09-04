@@ -32,6 +32,22 @@ The common failure is trusting structure assertions and a single default-state
 screenshot. Fix it with a state matrix, geometry lint, gesture tests, and a
 verified artifact.
 
+## Review Tiers (pick per change; do not re-litigate verified pages)
+
+The full four-bar protocol below applies to a NEW page, a re-layout/restyle, or
+a newly reachable state. Everything else uses the narrower tier so an
+already-reviewed page costs minutes, not a full pass:
+
+- **Behavior fix, geometry unchanged** (state sync, error handling, service
+  calls): run the lint over affected pages only
+  (`review_pages.py --pages app/page[,app/page]`), screenshot and read just the
+  states the fix can touch, and replay only the gestures involved. Baselines
+  move only when mask-free pixels legitimately changed.
+- **Copy-only change**: lint (single-line invariant) plus the touched states'
+  screenshots; no gesture set.
+- **New/re-laid-out page or new state**: full protocol, and add the page/state
+  to `sim/ci/review/spec.json` in the same task.
+
 ## The Review Bar (all four, per changed page)
 
 1. **State matrix.** Enumerate and screenshot every state the page can show:
@@ -73,8 +89,17 @@ verified artifact.
 ```sh
 cmake --build build/sim
 python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json --check
+python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json --check --pages settings/wifi,settings/bluetooth   # affected subset (L0/L1 iteration)
 python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json --update   # re-baseline after an approved change
 ```
+
+By default the harness sends `sim.exit` when it finishes, killing any session
+you wanted to keep probing; interactive gesture work after a lint run then
+needs a fresh launch and re-navigation. Order your session as probe-first /
+lint-last, or pass `--keep-sim` and end the sim yourself (`simctl exit`). A
+baseline refresh costs exactly two runs: look at the new shots, `--update`,
+then one `--check` — re-running the full matrix repeatedly on an unchanged
+binary is process waste, not rigor.
 
 It launches its own headless `--ci` sim (fresh NVS), drives each page/state from
 the spec, dumps the tree, runs the lint above, and compares a masked PNG to the
@@ -94,9 +119,11 @@ have looked at the new screenshot and judged it correct.
 
 `review_pages.py --check` clean -> read every state screenshot against the
 invariants above -> gesture cases pass -> binary was the one you changed. Only
-then is a UI change reviewed. This tightens the `AGENTS.md` default only for
-changes that touch the interface; it stays host/sim-only and adds no hardware or
-full-CI burden.
+then is a UI change reviewed. Scope "every state screenshot" and "gesture
+cases" by the tier table above; the final `--check` before declaring done is
+always the full spec (`AGENTS.md` L2, paired with one `sim/ci/run_ci.sh`).
+This tightens the `AGENTS.md` default only for changes that touch the
+interface; it stays host/sim-only and adds no hardware or full-CI burden.
 
 ## Simulator Gotchas (cost real debugging time)
 
@@ -124,4 +151,11 @@ full-CI burden.
 - Confirm the binary rebuilt before trusting a screenshot: `touch` the source
   and check ninja recompiles it, or compare the executable mtime/hash. A no-op
   ninja build reviews a stale UI and hides the very defect you are checking.
+- `sim.set_power` requires both `voltage` and `pct` (0-100); the firmware's
+  voltage-only fallback path cannot be driven in the sim — cover that branch
+  in a host test instead of probing forever.
+- Some states the agent cannot seed: Wi-Fi never receives a `SCAN_DONE`, so
+  the scan list stays "扫描中"; recorder/audio and parts of device-link are
+  fakes, so recording-time UI exists only in host tests or on hardware. Say
+  so in the report instead of fighting the harness.
 

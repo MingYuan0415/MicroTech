@@ -10,7 +10,7 @@
 ## 默认工作方式
 
 - 只改与任务直接相关的代码；分析任务只读；不改计划外代码，但报告发现的问题。结论基于代码、测试或文档，不猜测。
-- **验证最小化**：默认只把受影响模块的宿主套件跑绿一次。不默认跑全仓库 CTest、sanitizer、`idf.py build`/`size`、sim 全量 CI、显示基准或真机；只有用户明确要求提交、验收或发布验证时才扩大范围，并说明扩大部分。同一任务内，代码未再变动就不重跑同一套件。
+- **验证最小化**：按「宿主测试与验证分层」的 L0–L3 执行，每个门禁每任务只跑一次。不默认跑全仓库 CTest、sanitizer、`idf.py build`/`size`、显示基准或真机；只有用户明确要求提交、验收或发布验证时才扩大范围，并说明扩大部分。
 - **不新增流程门禁**：不得为解决问题新增 CMake `FATAL_ERROR`、Kconfig 强制开关、CI 闸或新的“不得”条款。根 `CMakeLists.txt` 的 LVGL profile 门槛与 `sdkconfig.defaults` 基线保持原样——既不弱化，也不加码。
 - 烧录/擦除仅在用户明确要求时执行。
 
@@ -24,7 +24,7 @@ idf.py size   # 仅当改动缓存/DMA 预留/资源时检查
 
 配置改动落在 `sdkconfig.defaults`（`idf.py save-defconfig`），不手改 `sdkconfig`。`REQUIRES`/`PRIV_REQUIRES` 不依赖 `CONFIG_xxx`；改变源文件发现后运行 `idf.py reconfigure`，不手改生成的 Ninja/CMake 状态。
 
-## 宿主测试
+## 宿主测试与验证分层
 
 每套独立 CMake 工程（C11，`-Wall -Wextra -Werror -Wpedantic`），流程相同：
 
@@ -32,7 +32,27 @@ idf.py size   # 仅当改动缓存/DMA 预留/资源时检查
 cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名> && ctest --test-dir /tmp/mt-<名> --output-on-failure
 ```
 
-套件：`main/tests/host`、`tests/connectivity`、`tests/integration`、`layers/*/tests/host`（bsp 含 C++）。sanitizer（`-DMAIN_HOST_SANITIZER=address|thread` 等）仅在改动涉及内存所有权或并发时启用。宿主测试不覆盖驱动时序、射频、DMA、功耗，需要时上板并记录验证范围。
+**影响面**：套件被波及 = 本任务改动了它编译的任何源文件。
+
+| 改动位置 | 受影响套件 |
+| --- | --- |
+| `main/` | `main/tests/host` |
+| `layers/bsp/`、`layers/middleware/` | 对应 `layers/*/tests/host`（bsp 含 C++）；被 `main` 链接的再加 `main/tests/host` |
+| `layers/apps/`（页面、app_ui） | `layers/apps/tests/host`、`tests/integration` |
+| `layers/app_manager/`（app_core、app_theme） | `layers/app_manager/app_core/tests/host`、`tests/integration` |
+| 网络 runtime/连接性 | `tests/connectivity` |
+| Kconfig/契约文档、资源 manifest/资产 | `pytest tests/configuration`、`pytest tests/resources`（宿主无 pytest 时仅语法级校验，报告说明请人工补跑） |
+
+`tests/integration` 默认 none profile；sanitizer（`-DMAIN_HOST_SANITIZER=address|thread` 等）仅在改动涉及内存所有权或并发时启用。宿主测试不覆盖驱动时序、射频、DMA、功耗，需要时上板并记录验证范围。
+
+**分层**（对应「验证最小化」）：
+
+- L0 每批编辑：对改动文件直接跑 `doc/code-style.md` §8.1 astyle（幂等）+ 受影响工程增量构建。
+- L1 每任务：受影响宿主套件各跑一次。
+- L2 UI 改动完成前：`sim/ci/run_ci.sh` ×1 + `sim/tools/review_pages.py --check` ×1；评审分档见 `ui-review` skill。
+- L3 提交/验收：`doc/code-style.md` §8.2 完整清单。
+
+被测产物未变化时同一门禁无需重跑；flaky 修复的验证 = 串行一次 + 并行一次。
 
 ## 设备故障
 

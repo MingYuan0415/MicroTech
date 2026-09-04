@@ -108,8 +108,21 @@ Select sizing by semantics:
   flags only after naming the intended receiver and axis. They solve different
   propagation problems and are not interchangeable.
 - Verify taps and vertical drags that begin over every child label, icon,
-  image, and nested control. Confirm that an interactive child neither triggers
-  its parent accidentally nor blocks the intended page scroll.
+  image, and nested control. Confirm that an interactive child neither
+  triggers its parent accidentally nor blocks the intended page scroll.
+- A row container that forwards taps to an inner switch needs three
+  coordinated pieces: make the row `CLICKABLE` (drop `PRESS_LOCK`), toggle
+  the switch on the row's `CLICKED`, and emit `LV_EVENT_VALUE_CHANGED`
+  explicitly because a programmatic state flip never fires it; guard the
+  handler with `lv_event_get_target(event) !=
+  lv_event_get_current_target(event)`, since 9.5 propagates a child's
+  `CLICKED` up to clickable ancestors and an unguarded forward double-toggles
+  a direct switch tap. There is no `lv_obj_toggle()` in 9.5; use
+  `lv_obj_has_state()` with add/remove.
+- An `lv_async_call` cannot be cancelled (no `lv_async_call_delete` in 9.5),
+  so deferred work — such as rebuilding a list from inside a clicked row's
+  own callback — must re-validate its page root in the callback and no-op
+  when the page is gone.
 - A control that activates on tap must bind only `LV_EVENT_CLICKED`; never fire
   on `PRESSED`, `PRESS_LOST`, or `RELEASED`. In LVGL 9.5 clickable objects
   inherit `LV_OBJ_FLAG_PRESS_LOCK`, so `CLICKED` still fires when the finger
@@ -132,18 +145,17 @@ Select sizing by semantics:
    not only direct taps on the parent.
 5. Drag-verify the scroll policy both ways in the simulator: a scrolling page
    must move (`scroll.y` changes) when dragged over labels, rows, and gaps; a
-   pinned page must stay at `scroll.y` 0 with `flags.scrollable` false. Review
-   a screenshot of every new or re-laid-out page.
+   pinned page must stay at `scroll.y` 0 with `flags.scrollable` false.
 6. Run the narrow host tests and project-required formatting/diff checks.
    Broader sanitizer, firmware-build, and hardware scope follows the
    `AGENTS.md` default workflow.
 7. Review in the simulator first: its SDL renderer rasterizes the real theme
    fonts, so glyph fallback, wrapping, clipping, overlap, horizontal drift, and
-   scroll handoff are all judgeable from `sim.tree` geometry and screenshots
-   without hardware. Read wrap/overflow from `coords` and `styles.line_height`,
-   not from a PNG by eye. Use the `ui-review` skill's harness
-   (`sim/tools/review_pages.py`) as the gate for a UI change; reserve the real
-   display for touch feel, RF, and AMOLED color only.
+   scroll handoff are all judgeable from `sim.tree` geometry without hardware.
+   Read wrap/overflow from `coords` and `styles.line_height`, not from a PNG by
+   eye. Screenshots, state matrices, and the release gate are defined once, by
+   the `ui-review` skill at its assigned tier; reserve the real display for
+   touch feel, RF, and AMOLED color only.
 
 Report the tested resolutions, data extremes, interaction paths, and any
 unexecuted hardware checks. Do not claim that a single nominal screenshot
