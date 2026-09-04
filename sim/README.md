@@ -34,10 +34,11 @@ LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 python3 sim/dev.py
 ```
 
-数字菜单：启动窗口或无头会话时可选择联网/离线，默认离线；另提供直达某页、一键截图、
-控件树导出、CI 回归、更新金样、停止会话和重置设备状态。全部路径自动注入
-（`build/sim/dev_nvs`、`build/sim/shots`、端口 5002），零参数。
-无 DISPLAY 时"运行"自动转无头驻留并提示 simctl 用法。
+数字菜单只保留人类日常几件事：启动窗口（可选直达某页，联网/离线默认离线）、
+截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。退出（0 或 Ctrl+C）统一先停止模拟器会话。全部路径
+自动注入（`build/sim/dev_nvs`、`build/sim/shots`、端口 5002），零参数；
+无 DISPLAY 时启动自动转无头驻留。无头驱动、控件树、CI 回归与金样不再进菜单，
+直接用 `sim/tools/simctl.py` 与 `sh sim/ci/run_ci.sh [--update]`。
 联网会话使用宿主机真实 HTTP/HTTPS；离线无头会话使用 CI 时钟，不会发起天气请求。
 
 窗口启动后使用固定的面板尺寸，不响应边缘拖拽；需要改变显示倍率时使用

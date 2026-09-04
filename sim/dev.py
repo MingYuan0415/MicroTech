@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""MicroTech 模拟器开发助手：数字菜单，零参数。
+"""MicroTech 模拟器开发助手：数字菜单，零参数，面向快速查看页面。
 
 用法：
     python3 sim/dev.py
 
-所有产物固定在 build/ 下；会话端口 5002；截图与导树一步完成。
+所有产物固定在 build/ 下；会话端口 5002。退出（0 或 Ctrl+C）一律先停止
+模拟器会话。无头驱动与 CI 回归请直接使用 sim/tools/simctl.py 与
+sim/ci/run_ci.sh。
 """
-import json
 import os
 import shutil
 import signal
@@ -160,7 +161,7 @@ def _clear_pid_file():
 def start_session(navigate=None, headless=False, online=False):
     """后台启动常驻会话；navigate=app 时启动后自动跳转。"""
     if running():
-        print('  会话已在运行（端口 %d）。先选 8 停止，或复用当前会话。' % PORT)
+        print('  会话已在运行（端口 %d）。选 1 复用，或选 0 退出并停止。' % PORT)
         return False
     if not build():
         return False
@@ -313,7 +314,8 @@ def pick_app(default_current=False):
         print('  0 当前页面')
     for idx, name in enumerate(APPS, 1):
         print('  %d %s' % (idx, name))
-    raw = input('  选择页面: ').strip()
+    suffix = ' [回车=当前]' if default_current else ''
+    raw = input('  选择页面%s: ' % suffix).strip()
     if default_current and (raw == '' or raw == '0'):
         return None
     if not raw.isdigit() or not (1 <= int(raw) <= len(APPS)):
@@ -322,23 +324,19 @@ def pick_app(default_current=False):
     return APPS[int(raw) - 1]
 
 
-def cmd_run(navigate=None):
-    online = _pick_network()
-    if online is not None:
-        start_session(navigate=navigate, headless=False, online=online)
-
-
-def cmd_headless():
+def cmd_run():
+    app = pick_app(default_current=True)
+    if app is False:
+        return
+    if running():
+        print('  复用现有会话（%s）' % session_summary())
+        if app:
+            _navigate(app)
+        return
     online = _pick_network()
     if online is None:
         return
-    if start_session(headless=True, online=online):
-        print('  常用驱动：')
-        print('    python3 sim/tools/simctl.py navigate clock')
-        print('    python3 sim/tools/simctl.py step 33')
-        print('    python3 sim/tools/simctl.py wait')
-        print('    python3 sim/tools/simctl.py tree > /tmp/tree.json')
-        print('    python3 sim/tools/simctl.py screenshot x.png')
+    start_session(navigate=app, headless=False, online=online)
 
 
 def cmd_shot():
@@ -358,65 +356,6 @@ def cmd_shot():
     do_on_session(app, action)
 
 
-def cmd_tree():
-    app = pick_app(default_current=True)
-    if app is False:
-        return
-    holder = {}
-
-    def action(sock):
-        reply = rpc(sock, 'sim.tree')
-        holder['tree'] = reply.get('result', {}).get('tree')
-        return holder['tree'] is not None
-
-    if do_on_session(app, action) and holder.get('tree'):
-        path = os.path.join(BUILD, 'dev_tree.json')
-        with open(path, 'w') as fh:
-            json.dump(holder['tree'], fh, ensure_ascii=False, indent=1)
-        _print_tree_summary(holder['tree'])
-        print('  完整树已写入 %s' % path)
-
-
-def _print_tree_summary(tree, depth=0, limit=18):
-    count = [0]
-
-    def walk(node):
-        if count[0] >= limit:
-            return
-        text = node.get('text')
-        box = node.get('coords', {})
-        count[0] += 1
-        print('    %-10s %s %s%s' % (node.get('type'),
-                                      '[%s,%s %sx%s]' % (box.get('x'),
-                                                          box.get('y'),
-                                                          box.get('w'),
-                                                          box.get('h')),
-                                      repr(text)[:40] if text else '',
-                                      ' (hidden)' if not node.get(
-                                          'flags', {}).get('visible', True)
-                                      else ''))
-        for child in node.get('children', []):
-            walk(child)
-
-    print('  控件树概览（前 %d 个节点）：' % limit)
-    walk(tree)
-
-
-def cmd_ci(update=False):
-    if running():
-        answer = input('  当前会话占用端口 %d，停止后运行 CI？ [y/N] ' % PORT)
-        if answer.strip().lower() != 'y':
-            return
-        stop_session()
-    script = os.path.join(SIM_ROOT, 'ci', 'run_ci.sh')
-    argv = [script, BUILD] + (['--update'] if update else [])
-    if update:
-        answer = input('  重新生成金样需要人工 review 后入库。继续? [y/N] ')
-        if answer.strip().lower() != 'y':
-            return
-    subprocess.call(argv, cwd=ROOT)
-
-
 def cmd_reset():
     stop_session()
     if os.path.isdir(NVS_DIR):
@@ -426,60 +365,57 @@ def cmd_reset():
         print('  无需重置')
 
 
+def cmd_build():
+    restart = session_pid() is not None
+    if restart:
+        print('  会话运行中：先停止再编译，成功后自动重启')
+        stop_session()
+    print('  增量编译 ...')
+    if not build():
+        if restart:
+            print('  编译失败，会话未重启；修复后选 1 重新启动')
+        return
+    print('  编译完成：%s' % BINARY)
+    if restart:
+        start_session(headless=False, online=LAST_NETWORK_ONLINE)
+
+
 MENU = """
 ──────────── MicroTech 模拟器 ────────────
- 启动
- 1  启动窗口
- 2  启动窗口并进入页面
- 3  启动无头会话（simctl 驱动）
- 检查
- 4  截图页面
- 5  导出控件树
- 6  运行 CI 回归
- 7  更新 PNG 金样
- 会话
- 8  停止当前会话
- 9  重置设备状态
-（息屏：simctl pm --off-ms 15000；网络：simctl set-wifi connected|disconnected）
- 0  退出
+ 1  启动窗口（可选直达页面）
+ 2  截图页面
+ 3  重置设备状态
+ 4  重新编译（运行中则先停后重启）
+ 0  退出（停止模拟器会话）
+
+ 无头驱动：sim/tools/simctl.py（网络/息屏：set-wifi、pm）
+ CI 回归与金样：sh sim/ci/run_ci.sh [--update]
 """
 
 
 def main():
     print('工作目录：%s' % ROOT)
-    while True:
-        print(MENU)
-        state = session_summary()
-        choice = input('  请选择 [%s]: ' % state).strip()
-        try:
+    try:
+        while True:
+            print(MENU)
+            state = session_summary()
+            choice = input('  请选择 [%s]: ' % state).strip()
             if choice == '1':
                 cmd_run()
             elif choice == '2':
-                app = pick_app()
-                if app:
-                    cmd_run(navigate=app)
-            elif choice == '3':
-                cmd_headless()
-            elif choice == '4':
                 cmd_shot()
-            elif choice == '5':
-                cmd_tree()
-            elif choice == '6':
-                cmd_ci()
-            elif choice == '7':
-                cmd_ci(update=True)
-            elif choice == '8':
-                stop_session()
-            elif choice == '9':
+            elif choice == '3':
                 cmd_reset()
+            elif choice == '4':
+                cmd_build()
             elif choice in ('0', 'q'):
-                return
+                break
             else:
                 print('  无效选项')
-        except KeyboardInterrupt:
-            print()
-        except EOFError:
-            return
+    except (KeyboardInterrupt, EOFError):
+        print()
+    if session_pid() is not None:
+        stop_session()
 
 
 if __name__ == '__main__':
