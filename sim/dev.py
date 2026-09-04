@@ -9,6 +9,7 @@
 sim/ci/run_ci.sh。
 """
 import os
+import shlex
 import shutil
 import signal
 import socket
@@ -26,6 +27,8 @@ OUT_DIR = os.path.join(BUILD, 'shots')
 PID_FILE = os.path.join(BUILD, 'dev.pid')
 LOG_FILE = os.path.join(BUILD, 'dev_session.log')
 PORT = 5002
+DISPLAY_ENV_KEYS = ('DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
+                    'SDL_VIDEODRIVER')
 LAST_NETWORK_ONLINE = False
 APPS = ['home', 'menu', 'clock', 'level', 'diagnostics', 'recorder',
         'settings', 'setup', 'weather']
@@ -44,18 +47,80 @@ def _pid_alive(pid):
         return False
 
 
+def _pid_argv(pid):
+    proc_cmdline = '/proc/%d/cmdline' % pid
+    try:
+        with open(proc_cmdline, 'rb') as handle:
+            return [item.decode() for item in handle.read().split(b'\0') if item]
+    except (OSError, UnicodeDecodeError):
+        try:
+            result = subprocess.run(['ps', '-p', str(pid), '-o', 'command='],
+                                    capture_output=True, text=True,
+                                    check=False)
+        except OSError:
+            return []
+        try:
+            return shlex.split(result.stdout.strip())
+        except ValueError:
+            return []
+
+
+def _pid_is_simulator(pid):
+    """Return True only for our binary with the expected Agent port."""
+    argv = _pid_argv(pid)
+    if not argv or os.path.realpath(argv[0]) != os.path.realpath(BINARY):
+        return False
+    try:
+        port_index = argv.index('--agent-port')
+    except ValueError:
+        return False
+    return (port_index + 1 < len(argv) and
+            argv[port_index + 1] == str(PORT))
+
+
+def _display_environment(environment=None):
+    source = os.environ if environment is None else environment
+    return tuple(source.get(key, '') for key in DISPLAY_ENV_KEYS)
+
+
+def _process_environment(pid):
+    try:
+        with open('/proc/%d/environ' % pid, 'rb') as handle:
+            entries = handle.read().split(b'\0')
+    except OSError:
+        return None
+    environment = {}
+    try:
+        for entry in entries:
+            if entry:
+                key, value = entry.split(b'=', 1)
+                environment[key.decode()] = value.decode()
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return environment
+
+
+def _session_display_matches(pid):
+    """Return True/False, or None when the process environment is unavailable."""
+    environment = _process_environment(pid)
+    if environment is None:
+        return None
+    return _display_environment(environment) == _display_environment()
+
+
 def session_pid():
     if not os.path.exists(PID_FILE):
         return None
     try:
-        pid = int(open(PID_FILE).read().strip())
+        with open(PID_FILE) as handle:
+            pid = int(handle.read().strip())
     except (OSError, ValueError):
         try:
             os.remove(PID_FILE)
         except OSError:
             pass
         return None
-    if _pid_alive(pid):
+    if _pid_alive(pid) and _pid_is_simulator(pid):
         return pid
     try:
         os.remove(PID_FILE)
@@ -66,21 +131,32 @@ def session_pid():
 
 def agent_ready():
     try:
-        sock = socket.create_connection(('127.0.0.1', PORT), timeout=1)
-        sock.close()
-        return True
-    except OSError:
+        sock = _connect(timeout=1)
+        try:
+            reply = rpc(sock, 'sim.ping')
+        finally:
+            sock.close()
+        return (isinstance(reply, dict) and reply.get('ok') and
+                isinstance(reply.get('result'), dict))
+    except (OSError, RuntimeError, ValueError, AttributeError):
         return False
 
 
 def running():
-    return session_pid() is not None and agent_ready()
+    pid = session_pid()
+    return (pid is not None and _session_display_matches(pid) is not False and
+            agent_ready())
 
 
 def session_summary():
     pid = session_pid()
     if pid is None:
         return '未运行'
+    display_match = _session_display_matches(pid)
+    if display_match is False:
+        return '显示环境已变化 pid=%d（下次启动将重启）' % pid
+    if display_match is None:
+        return '运行中 pid=%d（无法确认显示环境）' % pid
     if not agent_ready():
         return '启动中 pid=%d' % pid
     try:
@@ -89,11 +165,12 @@ def session_summary():
             reply = rpc(sock, 'sim.ping')
         finally:
             sock.close()
-    except OSError:
+    except (OSError, RuntimeError, ValueError, AttributeError):
         return '连接中断 pid=%d' % pid
-    if not reply.get('ok'):
+    if (not isinstance(reply, dict) or not reply.get('ok') or
+            not isinstance(reply.get('result'), dict)):
         return '运行中 pid=%d（状态不可用）' % pid
-    result = reply.get('result', {})
+    result = reply['result']
     mode = 'CI' if result.get('ci') else '自由运行'
     network = '联网' if result.get('network_ready') else '离线'
     app = result.get('active_app') or '未知页面'
@@ -158,24 +235,50 @@ def _clear_pid_file():
         pass
 
 
+def _stop_started_process(proc):
+    _terminate_process(proc.pid)
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    _clear_pid_file()
+
+
 def start_session(navigate=None, headless=False, online=False):
     """后台启动常驻会话；navigate=app 时启动后自动跳转。"""
-    if running():
-        print('  会话已在运行（端口 %d）。选 1 复用，或选 0 退出并停止。' % PORT)
+    pid = session_pid()
+    if pid is not None:
+        display_match = _session_display_matches(pid)
+        if display_match is False:
+            print('  检测到显示环境变化，停止旧会话并重新启动（pid=%d）' % pid)
+            stop_session()
+            pid = None
+        elif display_match is None:
+            print('  无法确认旧会话显示环境，未自动停止（pid=%d）' % pid)
+            return False
+        elif agent_ready():
+            print('  会话已在运行（端口 %d）。选 1 复用，或选 0 退出并停止。' % PORT)
+            return False
+        else:
+            print('  会话进程正在启动（pid=%d），请稍后重试。' % pid)
+            return False
+    if agent_ready():
+        print('  端口 %d 已被其他 Agent 占用，请先停止占用者。' % PORT)
         return False
     if not build():
         return False
     os.makedirs(OUT_DIR, exist_ok=True)
     common = [BINARY, '--res-dir', RES_DIR, '--nvs-dir', NVS_DIR,
               '--out-dir', OUT_DIR, '--agent-port', str(PORT)]
-    if headless or not os.environ.get('DISPLAY'):
+    if headless or not (os.environ.get('DISPLAY') or
+                        os.environ.get('WAYLAND_DISPLAY')):
         cmd = common + ['--headless']
         if not online:
             cmd.append('--ci')
     else:
         cmd = common + ['--window-scale', '1']
     if '--headless' in cmd and not headless:
-        print('  未检测到 DISPLAY，转为无头驻留（可用 simctl 驱动）')
+        print('  未检测到图形显示环境，转为无头驻留（可用 simctl 驱动）')
     if '--ci' in cmd:
         launch_mode = '无头离线驻留'
     elif '--headless' in cmd:
@@ -188,39 +291,46 @@ def start_session(navigate=None, headless=False, online=False):
                             start_new_session=True)
     log.close()
     open(PID_FILE, 'w').write(str(proc.pid))
-    if not _wait_socket(60):
+    if not _wait_socket(60, proc):
         print('  会话未就绪，日志末尾：')
         _dump_log()
-        _terminate_process(proc.pid)
-        _clear_pid_file()
+        _stop_started_process(proc)
         return False
     mode = 'ci' if '--ci' in cmd else (
         'headless' if '--headless' in cmd else 'window')
     network = '联网' if online else '离线'
     print('  会话就绪 pid=%d（模式 %s，%s，日志 %s）' %
           (proc.pid, mode, network, LOG_FILE))
-    sock = _connect()
     try:
-        reply = rpc(sock, 'sim.set_wifi',
-                    {'state': 'connected' if online else 'disconnected'})
-        if not reply.get('ok'):
-            print('  网络状态设置失败：%s' % reply)
-            _terminate_process(proc.pid)
-            _clear_pid_file()
-            return False
-    finally:
-        sock.close()
+        sock = _connect(timeout=3)
+        try:
+            reply = rpc(sock, 'sim.set_wifi',
+                        {'state': 'connected' if online else 'disconnected'})
+        finally:
+            sock.close()
+    except (OSError, RuntimeError, ValueError, AttributeError) as exc:
+        print('  网络状态设置失败：%s' % exc)
+        _stop_started_process(proc)
+        return False
+    if not isinstance(reply, dict) or not reply.get('ok'):
+        print('  网络状态设置失败：%s' % reply)
+        _stop_started_process(proc)
+        return False
     if navigate:
         if not _navigate(navigate):
+            print('  启动后导航失败，停止本次异常会话')
+            _stop_started_process(proc)
             return False
     global LAST_NETWORK_ONLINE
     LAST_NETWORK_ONLINE = online
     return True
 
 
-def _wait_socket(seconds):
+def _wait_socket(seconds, proc=None):
     deadline = time.time() + seconds
     while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
         if agent_ready():
             return True
         pid = session_pid()
@@ -232,7 +342,9 @@ def _wait_socket(seconds):
 
 def _dump_log():
     if os.path.exists(LOG_FILE):
-        for line in open(LOG_FILE, errors='replace').read().splitlines()[-10:]:
+        with open(LOG_FILE, errors='replace') as handle:
+            lines = handle.read().splitlines()[-10:]
+        for line in lines:
             print('   ', line)
 
 
@@ -243,12 +355,14 @@ def stop_session():
         return
     try:
         sock = socket.create_connection(('127.0.0.1', PORT), timeout=3)
-        rpc(sock, 'sim.exit')
-        sock.close()
-    except OSError:
+        try:
+            rpc(sock, 'sim.exit')
+        finally:
+            sock.close()
+    except (OSError, RuntimeError, ValueError, AttributeError):
         pass
-    _terminate_process(pid)
-    if os.path.exists(PID_FILE):
+    finally:
+        _terminate_process(pid)
         _clear_pid_file()
     print('  会话已停止')
 
@@ -258,18 +372,22 @@ def _connect(timeout=60):
 
 
 def _navigate(app):
-    sock = _connect(timeout=5)
     try:
-        reply = rpc(sock, 'sim.navigate', {'app': app})
-        if not reply.get('ok'):
-            print('  导航失败：%s' % reply)
-            return False
-        settled = rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
-        if not settled.get('ok'):
-            print('  页面未稳定：%s' % settled)
-            return False
-    finally:
-        sock.close()
+        sock = _connect(timeout=5)
+        try:
+            reply = rpc(sock, 'sim.navigate', {'app': app})
+            if not isinstance(reply, dict) or not reply.get('ok'):
+                print('  导航失败：%s' % reply)
+                return False
+            settled = rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
+            if not isinstance(settled, dict) or not settled.get('ok'):
+                print('  页面未稳定：%s' % settled)
+                return False
+        finally:
+            sock.close()
+    except (OSError, RuntimeError, ValueError, AttributeError) as exc:
+        print('  导航连接失败：%s' % exc)
+        return False
     return True
 
 
@@ -292,16 +410,19 @@ def do_on_session(app, action):
         try:
             if app:
                 reply = rpc(sock, 'sim.navigate', {'app': app})
-                if not reply.get('ok'):
+                if not isinstance(reply, dict) or not reply.get('ok'):
                     print('  导航失败：%s' % reply)
                     return False
             settled = rpc(sock, 'sim.wait_idle', {'timeout_ms': 6000})
-            if not settled.get('ok'):
+            if not isinstance(settled, dict) or not settled.get('ok'):
                 print('  页面未稳定：%s' % settled)
                 return False
             return action(sock)
         finally:
             sock.close()
+    except (OSError, RuntimeError, ValueError, AttributeError) as exc:
+        print('  会话操作失败：%s' % exc)
+        return False
     finally:
         if temp and pid and _pid_alive(pid):
             stop_session()
@@ -414,8 +535,9 @@ def main():
                 print('  无效选项')
     except (KeyboardInterrupt, EOFError):
         print()
-    if session_pid() is not None:
-        stop_session()
+    finally:
+        if session_pid() is not None:
+            stop_session()
 
 
 if __name__ == '__main__':

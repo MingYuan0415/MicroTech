@@ -317,9 +317,25 @@ static bool _run_iteration(const sim_options_t *opt, SDL_Window *window,
                 fprintf(stderr, "SDL_UpdateTexture failed: %s\n", SDL_GetError());
                 return false;
             }
-            (void)SDL_RenderClear(renderer);
-            (void)SDL_RenderCopy(renderer, texture, NULL, NULL);
+            if (SDL_RenderClear(renderer) != 0)
+            {
+                fprintf(stderr, "SDL_RenderClear failed: %s\n", SDL_GetError());
+                return false;
+            }
+            if (SDL_RenderCopy(renderer, texture, NULL, NULL) != 0)
+            {
+                fprintf(stderr, "SDL_RenderCopy failed: %s\n", SDL_GetError());
+                return false;
+            }
+            /* SDL2 exposes no return value for Present; clear its error state
+             * first so backend presentation failures are still observable. */
+            SDL_ClearError();
             SDL_RenderPresent(renderer);
+            if (SDL_GetError()[0] != '\0')
+            {
+                fprintf(stderr, "SDL_RenderPresent failed: %s\n", SDL_GetError());
+                return false;
+            }
         }
     }
     usleep(10000U);
@@ -604,21 +620,44 @@ int main(int argc, char **argv)
                                   SDL_WINDOWPOS_UNDEFINED,
                                   (int)SIM_BSP_H_RES * opt.window_scale,
                                   (int)SIM_BSP_V_RES * opt.window_scale,
-                                  0);
-        if (window != NULL)
+                                  SDL_WINDOW_SHOWN);
+        if (window == NULL)
         {
-            const int window_width = (int)SIM_BSP_H_RES * opt.window_scale;
-            const int window_height = (int)SIM_BSP_V_RES * opt.window_scale;
-            SDL_SetWindowResizable(window, SDL_FALSE);
-            SDL_SetWindowMinimumSize(window, window_width, window_height);
-            SDL_SetWindowMaximumSize(window, window_width, window_height);
+            fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+            rc = EXIT_FAILURE;
+            goto exit_runtime;
         }
-        renderer = (window != NULL) ? SDL_CreateRenderer(window, -1, 0) : NULL;
-        texture = (renderer != NULL)
-                  ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
-                                      SDL_TEXTUREACCESS_STREAMING,
-                                      SIM_BSP_H_RES, SIM_BSP_V_RES)
-                  : NULL;
+        const int window_width = (int)SIM_BSP_H_RES * opt.window_scale;
+        const int window_height = (int)SIM_BSP_V_RES * opt.window_scale;
+        SDL_SetWindowResizable(window, SDL_FALSE);
+        SDL_SetWindowMinimumSize(window, window_width, window_height);
+        SDL_SetWindowMaximumSize(window, window_width, window_height);
+
+        /* Software rendering is reliable on WSL/X11 copy-mode servers and
+         * keeps the RGB565 texture path independent of host GL support. */
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+        if (renderer == NULL)
+        {
+            fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
+            rc = EXIT_FAILURE;
+            goto exit_runtime;
+        }
+        SDL_RendererInfo renderer_info;
+        if (SDL_GetRendererInfo(renderer, &renderer_info) == 0)
+        {
+            printf("SDL renderer=%s flags=0x%08x\n",
+                   renderer_info.name != NULL ? renderer_info.name : "unknown",
+                   (unsigned)renderer_info.flags);
+        }
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
+                                    SDL_TEXTUREACCESS_STREAMING,
+                                    SIM_BSP_H_RES, SIM_BSP_V_RES);
+        if (texture == NULL)
+        {
+            fprintf(stderr, "SDL_CreateTexture failed: %s\n", SDL_GetError());
+            rc = EXIT_FAILURE;
+            goto exit_runtime;
+        }
     }
 
     if (opt.frames > 0)

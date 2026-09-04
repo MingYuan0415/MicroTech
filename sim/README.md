@@ -37,9 +37,19 @@ python3 sim/dev.py
 数字菜单只保留人类日常几件事：启动窗口（可选直达某页，联网/离线默认离线）、
 截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。退出（0 或 Ctrl+C）统一先停止模拟器会话。全部路径
 自动注入（`build/sim/dev_nvs`、`build/sim/shots`、端口 5002），零参数；
-无 DISPLAY 时启动自动转无头驻留。无头驱动、控件树、CI 回归与金样不再进菜单，
-直接用 `sim/tools/simctl.py` 与 `sh sim/ci/run_ci.sh [--update]`。
+无图形显示环境时启动自动转无头驻留。无头驱动、控件树、CI 回归与金样不再进菜单，
+直接用 `sim/tools/simctl.py` 与 `sh sim/ci/run_ci.sh [--update]`。开发入口会校验
+会话 PID 和 Agent 响应，端口 5002 被其他 Agent 占用时拒绝启动。
 联网会话使用宿主机真实 HTTP/HTTPS；离线无头会话使用 CI 时钟，不会发起天气请求。
+
+开发入口同时记录会话启动时的 `DISPLAY`、`WAYLAND_DISPLAY`、`XDG_RUNTIME_DIR` 和
+`SDL_VIDEODRIVER`。远程桌面重连或切换图形会话后再次启动时，如果旧 PID 已确认是本项目
+且显示环境发生变化，会自动停止旧会话并在当前环境重新启动；无法读取旧进程环境时只提示，
+不会误终止其他进程。需要时可显式选择 SDL 后端：
+`SDL_VIDEODRIVER=wayland python3 sim/dev.py` 或
+`SDL_VIDEODRIVER=x11 python3 sim/dev.py`。Agent 截图验证的是 LVGL framebuffer，
+不等同于桌面窗口已经正常呈现；SDL 窗口、renderer 或呈现步骤失败时请查看
+`build/sim/dev_session.log`。
 
 窗口启动后使用固定的面板尺寸，不响应边缘拖拽；需要改变显示倍率时使用
 `--window-scale N` 启动模拟器。
