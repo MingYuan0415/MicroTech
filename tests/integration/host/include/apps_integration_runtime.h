@@ -38,6 +38,7 @@ void host_runtime_reset(void);
  * @param available selects normal snapshots or unavailable responses.
  */
 void host_optional_services_set_available(bool available);
+
 /** @brief Return accepted weather refresh requests. */
 unsigned host_weather_refresh_count(void);
 /** @brief Return currently retained immutable weather snapshots. */

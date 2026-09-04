@@ -31,6 +31,8 @@ static uint8_t s_brightness = 192;
 static int32_t s_screen_timeout_ms = 30000;
 static int32_t s_standby_timeout_ms = 5000;
 static atomic_bool s_power_available;
+static power_service_snapshot_t s_power_snapshot;
+static bool s_power_snapshot_valid;
 static atomic_bool s_time_available;
 static atomic_bool s_imu_available;
 static atomic_bool s_audio_available;
@@ -75,6 +77,7 @@ void host_runtime_reset(void)
     s_screen_timeout_ms = 30000;
     s_standby_timeout_ms = 5000;
     atomic_store(&s_power_available, true);
+    s_power_snapshot_valid = false;
     atomic_store(&s_time_available, true);
     atomic_store(&s_imu_available, true);
     atomic_store(&s_audio_available, true);
@@ -506,6 +509,17 @@ esp_err_t host_time_publish_alarm(uint32_t sequence)
                              &event, sizeof(event), 0U);
 }
 
+void host_power_set_snapshot(const power_service_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        s_power_snapshot_valid = false;
+        return;
+    }
+    s_power_snapshot = *snapshot;
+    s_power_snapshot_valid = true;
+}
+
 esp_err_t power_service_get_snapshot(power_service_snapshot_t *snapshot)
 {
     if (snapshot == NULL)
@@ -515,6 +529,11 @@ esp_err_t power_service_get_snapshot(power_service_snapshot_t *snapshot)
     if (!atomic_load(&s_power_available))
     {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (s_power_snapshot_valid)
+    {
+        *snapshot = s_power_snapshot;
+        return ESP_OK;
     }
     *snapshot = (power_service_snapshot_t)
     {
@@ -937,6 +956,20 @@ esp_err_t nv_storage_set_blob(const char *key, const void *data, size_t len)
     }
     memcpy(s_level_calibration_blob, data, len);
     s_level_calibration_size = len;
+    return ESP_OK;
+}
+
+esp_err_t nv_storage_erase_key(const char *key)
+{
+    if (key == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (strcmp(key, "level_cal") == 0)
+    {
+        s_level_calibration_size = 0U;
+        memset(s_level_calibration_blob, 0, sizeof(s_level_calibration_blob));
+    }
     return ESP_OK;
 }
 

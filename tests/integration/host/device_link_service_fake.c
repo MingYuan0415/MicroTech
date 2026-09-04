@@ -156,6 +156,32 @@ esp_err_t device_link_service_open_window(void)
                &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
 }
 
+esp_err_t device_link_service_set_enabled(bool enabled, uint32_t timeout_ms)
+{
+    device_link_service_status_t status;
+    (void)timeout_ms;
+    (void)pthread_mutex_lock(&s_device_link.lock);
+    s_device_link.status.enabled = enabled;
+    if (!enabled)
+    {
+        s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_DISABLED;
+        s_device_link.status.active = false;
+        s_device_link.status.window_remaining_ms = 0U;
+        s_device_link.status.client_connected = false;
+    }
+    else
+    {
+        s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_ADVERTISING;
+    }
+    _host_device_link_next_generation_locked();
+    status = s_device_link.status;
+    (void)pthread_mutex_unlock(&s_device_link.lock);
+    return event_bus_publish(
+               DEVICE_LINK_SERVICE_MSG,
+               DEVICE_LINK_SERVICE_MSG_SUB_TYPE_STATUS_SNAPSHOT,
+               &status, sizeof(status), EVENT_BUS_PUBLISH_FLAG_UI_LATEST);
+}
+
 esp_err_t device_link_service_close_window(void)
 {
     device_link_service_status_t status;

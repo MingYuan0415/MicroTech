@@ -71,6 +71,16 @@ typedef struct lv_point_t
     int32_t y;
 } lv_point_t;
 
+/** @brief Precise (float) point used by vector widgets such as the dial. */
+typedef struct lv_point_precise_t
+{
+    float x;
+    float y;
+} lv_point_precise_t;
+
+/** @brief Precise scalar used by arc/line angle setters. */
+typedef float lv_value_precise_t;
+
 /** @brief Fake pointer input state. */
 typedef enum
 {
@@ -177,17 +187,22 @@ extern const lv_font_t host_lv_default_font;
 #define LV_ALIGN_TOP_LEFT             0
 #define LV_ALIGN_TOP_RIGHT            2
 #define LV_ALIGN_CENTER               1
+#define LV_ALIGN_TOP_MID              3
+#define LV_ALIGN_BOTTOM_LEFT          4
+#define LV_ALIGN_OUT_BOTTOM_LEFT      5
 #define LV_ANIM_OFF                   0
 #define LV_ANIM_ON                    1
 #define LV_BAR_MODE_RANGE             1
 #define LV_CHART_AXIS_PRIMARY_Y       0
 #define LV_CHART_TYPE_LINE            0
+#define LV_DIR_NONE                   0
 #define LV_DIR_LEFT                   4
 #define LV_DIR_RIGHT                  8
 #define LV_DIR_TOP                    16
 #define LV_DIR_BOTTOM                 32
 #define LV_DIR_HOR                    (LV_DIR_LEFT | LV_DIR_RIGHT)
 #define LV_DIR_VER                    (LV_DIR_TOP | LV_DIR_BOTTOM)
+#define LV_DIR_ALL                    (LV_DIR_HOR | LV_DIR_VER)
 #define LV_EVENT_ALL                  0
 #define LV_EVENT_CLICKED              1
 #define LV_EVENT_VALUE_CHANGED        2
@@ -209,12 +224,17 @@ extern const lv_font_t host_lv_default_font;
 #define LV_FLEX_ALIGN_START           0
 #define LV_FLEX_ALIGN_CENTER          1
 #define LV_FLEX_ALIGN_SPACE_BETWEEN   2
+#define LV_FLEX_ALIGN_SPACE_EVENLY    3
+#define LV_FLEX_ALIGN_END             4
 #define LV_FLEX_FLOW_COLUMN           0
 #define LV_FLEX_FLOW_ROW              1
 #define LV_FLEX_FLOW_ROW_WRAP         2
 #define LV_LABEL_LONG_DOT             0
 #define LV_LABEL_LONG_WRAP            1
 #define LV_LABEL_LONG_SCROLL_CIRCULAR 2
+#define LV_LABEL_LONG_CLIP            3
+#define LV_ROLLER_MODE_NORMAL         0
+#define LV_ROLLER_MODE_INFINITE       1
 #define LV_OBJ_FLAG_HIDDEN            (1U << 0)
 #define LV_OBJ_FLAG_CLICKABLE         (1U << 1)
 #define LV_OBJ_FLAG_CLICK_FOCUSABLE   (1U << 2)
@@ -234,10 +254,14 @@ extern const lv_font_t host_lv_default_font;
 #define LV_OBJ_FLAG_FLOATING          (1U << 18)
 #define LV_OBJ_FLAG_OVERFLOW_VISIBLE  (1U << 20)
 #define LV_OPA_TRANSP                 0
+#define LV_OPA_10                     26
+#define LV_OPA_60                     153
+#define LV_OPA_80                     204
 #define LV_OPA_COVER                  255
 #define LV_PART_MAIN                  0
 #define LV_PART_INDICATOR             1
 #define LV_PART_KNOB                  2
+#define LV_PART_SELECTED              3
 #define LV_SCROLLBAR_MODE_AUTO        0
 #define LV_SCROLLBAR_MODE_OFF         1
 #define LV_SIZE_CONTENT               (-1)
@@ -271,6 +295,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_REFRESH   "refresh"
 #define LV_SYMBOL_RIGHT     "right"
 #define LV_SYMBOL_SAVE      "save"
+#define LV_SYMBOL_SHUFFLE   "shuffle"
 #define LV_SYMBOL_SD_CARD   "sd-card"
 #define LV_SYMBOL_SETTINGS  "settings"
 #define LV_SYMBOL_STOP      "stop"
@@ -662,6 +687,7 @@ static inline lv_color_t lv_color_white(void)
     }
 
 HOST_LV_NOOP_2(lv_obj_set_flex_flow, lv_obj_t *, int)
+HOST_LV_NOOP_2(lv_timer_set_period, lv_timer_t *, uint32_t)
 HOST_LV_NOOP_2(lv_obj_set_flex_grow, lv_obj_t *, int)
 void lv_obj_set_scroll_dir(lv_obj_t *object, int dir);
 /** @brief Return the fake object's scroll direction. */
@@ -700,6 +726,58 @@ HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_4(lv_obj_align, lv_obj_t *, int, int32_t, int32_t)
 HOST_LV_NOOP_4(lv_obj_set_flex_align, lv_obj_t *, int, int, int)
+HOST_LV_NOOP_3(lv_obj_set_style_pad_hor, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_pad_ver, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_border_opa, lv_obj_t *, int, int)
+HOST_LV_NOOP_3(lv_obj_set_style_arc_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_arc_opa, lv_obj_t *, int, int)
+HOST_LV_NOOP_3(lv_obj_set_style_arc_color, lv_obj_t *, lv_color_t, int)
+HOST_LV_NOOP_3(lv_obj_remove_style, lv_obj_t *, const void *, int)
+HOST_LV_NOOP_3(lv_arc_set_bg_angles, lv_obj_t *, int, int)
+HOST_LV_NOOP_3(lv_arc_set_angles, lv_obj_t *, int, int)
+HOST_LV_NOOP_2(lv_arc_set_rotation, lv_obj_t *, int)
+HOST_LV_NOOP_3(lv_line_set_points, lv_obj_t *, const lv_point_precise_t *, uint32_t)
+HOST_LV_NOOP_3(lv_line_set_points_mutable, lv_obj_t *, lv_point_precise_t *, uint32_t)
+HOST_LV_NOOP_3(lv_obj_set_style_line_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_roller_set_options, lv_obj_t *, const char *, int)
+HOST_LV_NOOP_2(lv_roller_set_visible_row_count, lv_obj_t *, int)
+HOST_LV_NOOP_3(lv_roller_set_selected, lv_obj_t *, uint32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_line_color, lv_obj_t *, lv_color_t, int)
+HOST_LV_NOOP_2(lv_obj_set_ext_click_area, lv_obj_t *, int32_t)
+HOST_LV_NOOP_3(lv_obj_scroll_to_y, lv_obj_t *, int32_t, int)
+lv_obj_t *lv_arc_create(lv_obj_t *parent);
+lv_obj_t *lv_line_create(lv_obj_t *parent);
+lv_obj_t *lv_roller_create(lv_obj_t *parent);
+/** @brief Return the fake object's index among its parent's children. */
+uint32_t lv_obj_get_index(const lv_obj_t *object);
+/** @brief Return the fake roller's selected option index. */
+uint32_t lv_roller_get_selected(const lv_obj_t *object);
+/** @brief Return the fake event's current target (same object, no bubbling). */
+lv_obj_t *lv_event_get_current_target(lv_event_t *event);
+/** @brief Dispatch an event to a fake object's matching bindings. */
+lv_result_t lv_obj_send_event(lv_obj_t *object, lv_event_code_t code,
+                              void *param);
+/** @brief Align a fake object relative to another (no layout). */
+static inline void lv_obj_align_to(lv_obj_t *object, const lv_obj_t *base,
+                                   int align, int32_t x_ofs, int32_t y_ofs)
+{
+    (void)object;
+    (void)base;
+    (void)align;
+    (void)x_ofs;
+    (void)y_ofs;
+}
+
+/** @brief Async callback posted by lv_async_call. */
+typedef void (*lv_async_cb_t)(void *user_data);
+/** @brief Queue a fake async callback; drained by the host step pump. */
+lv_result_t lv_async_call(lv_async_cb_t callback, void *user_data);
+/** @brief Measure fake text: width = bytes * 9, height = 28. */
+void lv_text_get_size(lv_point_t *size_res, const char *text,
+                      const lv_font_t *font, int32_t letter_space,
+                      int32_t line_space, int32_t max_width, int flag);
+#define LV_TEXT_FLAG_NONE             0
+#define LV_COORD_MAX                  32767
 
 /** @brief Center a fake object. */
 static inline void lv_obj_center(lv_obj_t *object)

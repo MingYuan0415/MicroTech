@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
+
 #define HOST_LV_OBJECT_CAPACITY 256U
 #define HOST_LV_EVENT_CAPACITY  4U
 #define HOST_LV_TIMER_CAPACITY  16U
@@ -27,6 +29,8 @@ typedef enum
     HOST_LV_OBJECT_SLIDER,
     HOST_LV_OBJECT_SWITCH,
     HOST_LV_OBJECT_BAR,
+    HOST_LV_OBJECT_ARC,
+    HOST_LV_OBJECT_LINE,
     HOST_LV_OBJECT_CHART,
     HOST_LV_OBJECT_CANVAS,
     HOST_LV_OBJECT_QRCODE,
@@ -1021,6 +1025,52 @@ lv_obj_t *lv_bar_create(lv_obj_t *parent)
     return _host_lv_allocate_object(HOST_LV_OBJECT_BAR, parent);
 }
 
+lv_obj_t *lv_arc_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_ARC, parent);
+}
+
+lv_obj_t *lv_line_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_LINE, parent);
+}
+
+lv_obj_t *lv_roller_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_GENERIC, parent);
+}
+
+uint32_t lv_roller_get_selected(const lv_obj_t *object)
+{
+    (void)object;
+    return 0U;
+}
+
+uint32_t lv_obj_get_index(const lv_obj_t *object)
+{
+    const lv_obj_t *parent = object != NULL ? object->parent : NULL;
+    if (parent == NULL)
+    {
+        return 0U;
+    }
+    const uint32_t child_count = lv_obj_get_child_count(parent);
+    for (uint32_t index = 0U; index < child_count; ++index)
+    {
+        if (lv_obj_get_child(parent, (int32_t)index) == object)
+        {
+            return index;
+        }
+    }
+    return 0U;
+}
+
+lv_result_t lv_obj_send_event(lv_obj_t *object, lv_event_code_t code,
+                              void *param)
+{
+    return _host_lv_emit_with_input(object, code, NULL, param) ?
+           LV_RESULT_OK : LV_RESULT_INVALID;
+}
+
 lv_obj_t *lv_chart_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_CHART, parent);
@@ -1705,6 +1755,11 @@ lv_obj_t *lv_event_get_current_target_obj(lv_event_t *event)
     return lv_event_get_target(event);
 }
 
+lv_obj_t *lv_event_get_current_target(lv_event_t *event)
+{
+    return lv_event_get_target(event);
+}
+
 lv_indev_t *lv_event_get_indev(lv_event_t *event)
 {
     return event == NULL ? NULL : event->indev;
@@ -2231,6 +2286,55 @@ lv_anim_t *lv_anim_start(const lv_anim_t *animation)
     return NULL;
 }
 
+#define HOST_LV_ASYNC_CAPACITY 16U
+
+static struct
+{
+    lv_async_cb_t callback;
+    void *user_data;
+} s_async_calls[HOST_LV_ASYNC_CAPACITY];
+static size_t s_async_count;
+
+lv_result_t lv_async_call(lv_async_cb_t callback, void *user_data)
+{
+    if (callback == NULL || s_async_count >= HOST_LV_ASYNC_CAPACITY)
+    {
+        return LV_RESULT_INVALID;
+    }
+    s_async_calls[s_async_count].callback = callback;
+    s_async_calls[s_async_count].user_data = user_data;
+    ++s_async_count;
+    return LV_RESULT_OK;
+}
+
+static void _host_lv_run_async_calls(void)
+{
+    size_t count = s_async_count;
+    s_async_count = 0U;
+    for (size_t index = 0U; index < count; ++index)
+    {
+        s_async_calls[index].callback(s_async_calls[index].user_data);
+    }
+}
+
+void lv_text_get_size(lv_point_t *size_res, const char *text,
+                      const lv_font_t *font, int32_t letter_space,
+                      int32_t line_space, int32_t max_width, int flag)
+{
+    (void)font;
+    (void)letter_space;
+    (void)line_space;
+    (void)max_width;
+    (void)flag;
+    if (size_res == NULL)
+    {
+        return;
+    }
+    size_t length = text != NULL ? strlen(text) : 0U;
+    size_res->x = (int32_t)(length * 9U);
+    size_res->y = 28;
+}
+
 static void _host_lv_run_ready_timers(void)
 {
     for (size_t index = 0; index < HOST_LV_TIMER_CAPACITY; ++index)
@@ -2243,6 +2347,7 @@ static void _host_lv_run_ready_timers(void)
             timer->callback(timer);
         }
     }
+    _host_lv_run_async_calls();
 }
 
 void host_lv_timer_step(void)
@@ -2629,6 +2734,47 @@ void *heap_caps_malloc(size_t size, uint32_t caps)
 {
     (void)caps;
     return malloc(size);
+}
+
+/* Deterministic caps-dependent heap figures mirroring the simulator stub so
+ * the task switcher memory footer renders stable values under host tests. */
+size_t heap_caps_get_total_size(uint32_t caps)
+{
+    if ((caps & MALLOC_CAP_SPIRAM) != 0U)
+    {
+        return 8U * 1024U * 1024U;
+    }
+    if ((caps & MALLOC_CAP_DMA) != 0U)
+    {
+        return 300U * 1024U;
+    }
+    return 332U * 1024U;
+}
+
+size_t heap_caps_get_free_size(uint32_t caps)
+{
+    if ((caps & MALLOC_CAP_SPIRAM) != 0U)
+    {
+        return 6U * 1024U * 1024U + (620U * 1024U);
+    }
+    if ((caps & MALLOC_CAP_DMA) != 0U)
+    {
+        return 190U * 1024U;
+    }
+    return 218U * 1024U;
+}
+
+size_t heap_caps_get_largest_free_block(uint32_t caps)
+{
+    if ((caps & MALLOC_CAP_SPIRAM) != 0U)
+    {
+        return 6U * 1024U * 1024U;
+    }
+    if ((caps & MALLOC_CAP_DMA) != 0U)
+    {
+        return 160U * 1024U;
+    }
+    return 176U * 1024U;
 }
 
 size_t host_lv_snapshot_live_allocation_count(void)

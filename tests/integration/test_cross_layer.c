@@ -14,6 +14,7 @@
 #include "host_connectivity_manager.h"
 #include "host_device_link_service.h"
 #include "host_factory_reset_service.h"
+#include "host_power.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
 #include "weather_service.h"
@@ -1396,15 +1397,15 @@ static void _test_real_app_navigation(void)
         .sampled_at_ms = 234567,
         .valid = true,
     };
+    host_power_set_snapshot(&snapshot);
     assert(event_bus_publish(
                POWER_SERVICE_MSG,
                POWER_SERVICE_MSG_SUB_TYPE_SNAPSHOT_UPDATE,
                &snapshot, sizeof(snapshot),
                EVENT_BUS_PUBLISH_FLAG_UI_LATEST) == ESP_OK);
-    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("90% · 充电中"));
+    assert(_wait_for_text("90%"));
 
-    _click_action("天气");
+    _click_action("Shenzhen");
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
     assert(_ui_has_text("Shenzhen"));
     assert(_ui_has_text("31°"));
@@ -1526,7 +1527,7 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("逐小时"));
     assert(_ui_has_text("7 天"));
     assert(_ui_has_text("35.6°C"));
-    assert(_ui_has_text("数据来源：QWeather"));
+    assert(_ui_has_text("数据来源：maxmind"));
     assert(_ui_text_has_font("实况", &s_theme_fonts[APP_THEME_FONT_SMALL]));
     assert(_ui_text_has_font("35.6°C",
                              &s_theme_fonts[APP_THEME_FONT_SMALL]));
@@ -1737,7 +1738,10 @@ static void _test_real_app_navigation(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(host_weather_publish(true) == ESP_OK);
 
-    _click_action("应用");
+    /* Home reaches the launcher via a physical HOME key (no host key stub);
+     * drive the same RUN op the power manager submits. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_MENU, "root"));
@@ -1778,25 +1782,22 @@ static void _test_real_app_navigation(void)
     assert(app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "root"));
 
     _start_first_frame_navigation(
-        APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS, "power",
-        "3910 mV", "读取中");
+        APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS, "display",
+        "亮度", "读取中");
     assert(_wait_for_transitioning());
-    assert(_transition_target_has_text("3910 mV"));
+    assert(_transition_target_has_text("亮度"));
     assert(!_transition_target_has_text("读取中"));
     assert(_lv_resource_counts().timers == 0U);
-    _assert_event_slot_headroom(1);
-    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
-    assert(_ui_has_text("熄屏或待机后使用 HOME 恢复。"));
-    assert(!_ui_has_text(
-               "普通熄屏可由触摸或 HOME 恢复；进入待机后仅 HOME 可唤醒。"));
+    _assert_event_slot_headroom(0);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "display"));
+    assert(_ui_has_text("拖动即时预览,松手保存"));
     assert(_wait_for_first_frame_completion());
     _assert_first_frame_probe(0U);
-    assert(_ui_has_text("3910 mV"));
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
-    assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "power"));
+    assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "display"));
 
-    _click_action("关于设备");
+    _click_action("关于与维护");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
     assert(_ui_has_text("test-version"));
     _click_back();
@@ -1839,7 +1840,10 @@ static void _test_real_app_navigation(void)
 static void _test_home_resume_before_first_draw(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
-    _click_action("应用");
+    /* Home reaches the launcher via a physical HOME key (no host key stub);
+     * drive the same RUN op the power manager submits. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     _start_first_frame_navigation(
@@ -1848,14 +1852,14 @@ static void _test_home_resume_before_first_draw(void)
     assert(_transition_target_has_text("08:30"));
     assert(!_transition_target_has_text("--:--"));
     assert(_lv_resource_counts().timers == 1U);
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
 
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_wait_for_first_frame_completion());
     _assert_first_frame_probe(1U);
     assert(_ui_has_text("08:30"));
     assert(_lv_resource_counts().timers == 1U);
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(app_manager_get_running_apps() == 1U);
@@ -1909,7 +1913,10 @@ static void _test_latest_power_backpressure(void)
     }
     assert(atomic_load(&s_noop_count) == mailbox_available);
     app_manager_mailbox_host_timer_pause(false);
-    assert(_ui_has_text("99% · 电池供电"));
+    /* The fake service serves the stored snapshot; the coalesced UI_LATEST
+     * delivery must reflect the final (99%) publish. */
+    host_power_set_snapshot(&snapshot);
+    assert(_wait_for_text_with_timers("99%"));
 }
 
 static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
@@ -1955,14 +1962,14 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_wait_for_text("已连接"));
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_text_has_font(
-               "已连接", &s_theme_fonts[APP_THEME_FONT_BIGL]));
+               "已连接", &s_theme_fonts[APP_THEME_FONT_HEAD]));
     assert(_ui_text_has_font(
                "Saved WiFi", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(
                "自动连接", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(
                "开启 2 分钟绑定窗口",
-               &s_theme_fonts[APP_THEME_FONT_SMALL]));
+               &s_theme_fonts[APP_THEME_FONT_BODY]));
 
     _click_action("断开连接");
     connectivity_manager_operation_id_t operation =
@@ -2067,7 +2074,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
@@ -2096,7 +2103,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
 }
 
 static void _test_optional_services_unavailable(void)
@@ -2112,10 +2119,20 @@ static void _test_optional_services_unavailable(void)
     };
     assert(host_connectivity_manager_publish_status(&offline) == ESP_OK);
     assert(_wait_for_text_with_timers("时间不可用"));
-    assert(_wait_for_text_with_timers("未挂载"));
-    assert(_ui_visible_text_count("不可用") == 2U);
 
-    _click_action("应用");
+    /* SD mount state now lives in the settings hub device summary. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(_wait_for_text_with_timers("电池未知 · SD 未挂载"));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    /* Home reaches the launcher via a physical HOME key (no host key stub);
+     * drive the same RUN op the power manager submits. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     static const struct
     {
@@ -2124,7 +2141,7 @@ static void _test_optional_services_unavailable(void)
         const char *unavailable_text;
     } product_apps[] =
     {
-        {"时钟", APP_MANAGER_ID_CLOCK, "--:--:--"},
+        {"时钟", APP_MANAGER_ID_CLOCK, "--:--"},
         {"录音", APP_MANAGER_ID_RECORDER, "录音服务不可用"},
         {"水平仪", APP_MANAGER_ID_LEVEL, "传感器不可用"},
     };
@@ -2160,8 +2177,7 @@ static void _test_optional_services_unavailable(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_wait_for_text("08:30"));
-    assert(_wait_for_text("已挂载"));
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(app_manager_get_running_apps() == 1U);
@@ -2178,12 +2194,17 @@ static void _test_optional_services_unavailable(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("初始化中"));
-    assert(_wait_for_text_with_timers("不可用"));
-    assert(!_ui_has_text("初始化中"));
-    assert(_ui_visible_text_count("不可用") == 1U);
+    /* The home dashboard signals Wi-Fi via color only; the textual state
+     * lives in the settings hub Wi-Fi summary. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(_wait_for_text_with_timers("未连接"));
     assert(host_connectivity_manager_publish_status(&idle) == ESP_OK);
-    assert(_wait_for_text("未连接"));
+    assert(_wait_for_text_with_timers("未连接"));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
 static void _assert_real_page_start_contract(void)
@@ -2205,7 +2226,7 @@ static void _assert_real_page_start_contract(void)
         {APP_MANAGER_ID_LEVEL, "root"},
         {APP_MANAGER_ID_DIAGNOSTICS, "root"},
         {APP_MANAGER_ID_SETTINGS, "root"},
-        {APP_MANAGER_ID_SETTINGS, "power"},
+        {APP_MANAGER_ID_SETTINGS, "display"},
         {APP_MANAGER_ID_SETTINGS, "about"},
         {APP_MANAGER_ID_SETUP, "root"},
     };
@@ -2373,7 +2394,7 @@ static void _test_other_real_app_screen_lifecycles(void)
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_MENU, "root", "应用", 0U, 0U, 0U, 0U);
+        APP_MANAGER_ID_MENU, "root", "系统设置", 0U, 0U, 0U, 0U);
 
     static const struct
     {
@@ -2405,36 +2426,40 @@ static void _test_other_real_app_screen_lifecycles(void)
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "root", "系统设置", 0U, 0U, 0U, 0U);
 
-    _click_action("电源状态");
-    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
+    _click_action("显示与电源");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "display"));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_SETTINGS, "power", "3910 mV", 0U, 0U, 1U, 0U);
+        APP_MANAGER_ID_SETTINGS, "display", "亮度", 0U, 0U, 0U, 0U);
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
-    _click_action("关于设备");
-    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
+    _click_action("设备状态");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "device"));
     _exercise_real_page_screen_lifecycle(
-        APP_MANAGER_ID_SETTINGS, "about",
-        "test-version", 0U, 0U, 0U, 0U);
-    _click_back();
-    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+        APP_MANAGER_ID_SETTINGS, "device", "SD 卡", 1U, 0U, 0U, 0U);
 
     _click_action("时间设置");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "time"));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "time", "时间设置", 1U, 0U, 0U, 0U);
     _click_back();
-    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "device"));
 
     _click_action("存储管理");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "storage"));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "storage", "存储管理", 1U, 0U, 0U, 0U);
     _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "device"));
+    _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
     assert(host_factory_reset_service_request_count() == 0U);
+    _click_action("关于与维护");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_SETTINGS, "about",
+        "test-version", 0U, 0U, 0U, 0U);
     _click_action("恢复出厂设置");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "factory-reset"));
     assert(host_factory_reset_service_request_count() == 0U);
@@ -2449,6 +2474,8 @@ static void _test_other_real_app_screen_lifecycles(void)
                UI_TIMEOUT_MS) == ESP_ERR_NOT_FOUND);
     assert(host_factory_reset_service_request_count() == 1U);
     _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "about"));
+    _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
@@ -2460,16 +2487,26 @@ static void _test_other_real_app_screen_lifecycles(void)
     assert(app_manager_get_running_apps() == 1U);
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(_ui_has_text("08:30"));
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
 }
 
 static void _test_screen_pause_finishes_transition(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     const snapshot_transition_counts_t before =
         _snapshot_transition_counts();
 
-    _click_action("应用");
+    /* App-level transitions fade; only page transitions capture snapshots. */
+    const app_manager_nav_request_t display_request =
+    {
+        .operation = APP_MANAGER_NAV_OP_OPEN_PAGE,
+        .app_id = APP_MANAGER_ID_SETTINGS,
+        .page_id = "display",
+    };
+    assert(app_manager_navigate_async(&display_request, NULL, NULL) == ESP_OK);
     assert(_wait_for_transitioning());
     const snapshot_transition_counts_t started =
         _snapshot_transition_counts();
@@ -2493,13 +2530,13 @@ static void _test_screen_pause_finishes_transition(void)
 
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
-    assert(app_manager_is_actived(APP_MANAGER_ID_MENU));
-    assert(app_page_is_actived(APP_MANAGER_ID_MENU, "root"));
-    assert(_ui_has_text("应用"));
+    assert(app_manager_is_actived(APP_MANAGER_ID_SETTINGS));
+    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "display"));
+    assert(_ui_has_text("亮度"));
     assert(_lv_resource_counts().screens == 2U);
 
-    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS,
+                     NULL) == ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
@@ -2509,15 +2546,22 @@ static void _test_fifo_navigation_finishes_snapshot_transition(void)
     const lv_resource_counts_t baseline = _lv_resource_counts();
     const snapshot_transition_counts_t snapshot_baseline =
         _snapshot_transition_counts();
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    /* App transitions fade without snapshots; queue two page pushes so the
+     * FIFO completion runs against real snapshot transitions. */
     const app_manager_nav_request_t first =
     {
-        .operation = APP_MANAGER_NAV_OP_RUN,
-        .app_id = APP_MANAGER_ID_MENU,
+        .operation = APP_MANAGER_NAV_OP_OPEN_PAGE,
+        .app_id = APP_MANAGER_ID_SETTINGS,
+        .page_id = "wifi",
     };
     const app_manager_nav_request_t second =
     {
-        .operation = APP_MANAGER_NAV_OP_RUN,
+        .operation = APP_MANAGER_NAV_OP_OPEN_PAGE,
         .app_id = APP_MANAGER_ID_SETTINGS,
+        .page_id = "bluetooth",
     };
 
     atomic_store(&s_fifo_completion_count, 0U);
@@ -2548,7 +2592,7 @@ static void _test_fifo_navigation_finishes_snapshot_transition(void)
     assert(atomic_load(&s_fifo_completion_order[1]) == 2U);
     assert(atomic_load(&s_fifo_completion_results[0]) == ESP_OK);
     assert(atomic_load(&s_fifo_completion_results[1]) == ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "bluetooth"));
     assert(!app_manager_is_transitioning());
     const snapshot_transition_counts_t snapshot_finished =
         _snapshot_transition_counts();
@@ -2559,9 +2603,6 @@ static void _test_fifo_navigation_finishes_snapshot_transition(void)
     assert(host_lv_snapshot_live_allocation_count() == 2U);
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     const lv_resource_counts_t restored = _lv_resource_counts();
@@ -2579,7 +2620,7 @@ static void _test_home_screen_lifecycle(void)
     lv_resource_counts_t resources = _lv_resource_counts();
     assert(resources.objects > 0);
     assert(resources.timers == 1U);
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
 
     const size_t starts_before = _lifecycle_observed(
                                      APP_MANAGER_ID_HOME, "root",
@@ -2633,7 +2674,7 @@ static void _test_home_screen_lifecycle(void)
     assert(resources.objects > 0);
     assert(resources.screens == 2U);
     assert(resources.timers == 1U);
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
     assert(_ui_has_text("08:30"));
 
     assert(_lifecycle_observed(
@@ -2772,7 +2813,7 @@ static void _test_setup_screen_lifecycle(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(host_device_link_service_close_count() >= closes_before + 1U);
     assert(!device_link_service_is_active());
-    _assert_event_slot_headroom(2);
+    _assert_event_slot_headroom(3);
 }
 
 static void _test_system_edge_back_gesture(void)
@@ -2781,12 +2822,11 @@ static void _test_system_edge_back_gesture(void)
            ESP_OK);
     assert(app_manager_back_gesture_is_enabled());
     system_gesture_snapshot_t system = _system_gesture_snapshot();
-    /* Sys Layer owns the two gesture strips, the indicator, its arrow and
-     * the permanent task-switcher root. */
-    /* Sys Layer holds the two gesture strips, the indicator, its arrow and
-     * the permanent task-switcher tree (root, content, clear button and its
-     * label, empty-state label). */
-    assert(system.object_count == 10U);
+    /* Sys Layer holds the two gesture strips, the indicator, its arrow,
+     * the permanent task-switcher tree (header, title, clear button/label,
+     * content, empty-state label, RAM footer rows/bars/values) and the
+     * persistent snapshot-transition overlay (overlay + from/to images). */
+    assert(system.object_count == 21U);
     assert(system.left_edge_found && system.right_edge_found);
     assert(system.indicator_found && system.arrow_found);
     assert(system.indicator.canvas);
@@ -2944,8 +2984,8 @@ static void _test_system_edge_back_gesture(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
            ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE,
-                     APP_MANAGER_ID_SETTINGS, "power") == ESP_OK);
-    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "power"));
+                     APP_MANAGER_ID_SETTINGS, "display") == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "display"));
     lifecycle_before = s_lifecycle_observation_count;
     resources_before = _lv_resource_counts();
     assert(_touch(TOUCH_ACTION_PRESS, 0, 120));
@@ -2955,7 +2995,7 @@ static void _test_system_edge_back_gesture(void)
     assert(_lv_resource_counts().screens == resources_before.screens);
     assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 120));
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
-    assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "power"));
+    assert(!app_manager_is_page_present(APP_MANAGER_ID_SETTINGS, "display"));
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
     assert(_touch(TOUCH_ACTION_MOVE, 40, 220));
@@ -3124,169 +3164,12 @@ static void _wait_for_switcher(bool expected)
     assert(_switcher_visible() == expected);
 }
 
-static esp_err_t _swipe_up_action_on_ui(void *arg)
-{
-    return host_lv_swipe_up_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_up_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_up_action_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
 static void _open_task_switcher(void)
 {
     assert(app_manager_navigation_submit_system_op(
                APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW, NULL, NULL) ==
            ESP_OK);
     _wait_for_switcher(true);
-}
-
-static esp_err_t _swipe_up_wobble_on_ui(void *arg)
-{
-    return host_lv_swipe_up_wobble_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_up_wobble_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_up_wobble_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_left_on_ui(void *arg)
-{
-    return host_lv_swipe_left_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_left_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_left_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_up_short_on_ui(void *arg)
-{
-    return host_lv_swipe_up_short_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_up_short_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_up_short_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_up_arc_on_ui(void *arg)
-{
-    return host_lv_swipe_up_arc_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_up_arc_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_up_arc_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_coarse_on_ui(void *arg)
-{
-    return host_lv_swipe_coarse_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_coarse_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_coarse_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_right_on_ui(void *arg)
-{
-    return host_lv_swipe_right_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_right_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_right_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_horiz_then_up_short_on_ui(void *arg)
-{
-    return host_lv_swipe_horiz_then_up_short_action(arg) ? ESP_OK :
-           ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_horiz_then_up_short_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_horiz_then_up_short_on_ui,
-                               (void *)title, UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _swipe_horiz_then_up_on_ui(void *arg)
-{
-    return host_lv_swipe_horiz_then_up_action(arg) ? ESP_OK :
-           ESP_ERR_NOT_FOUND;
-}
-
-static void _swipe_horiz_then_up_action(const char *title)
-{
-    assert(app_manager_ui_call(_swipe_horiz_then_up_on_ui, (void *)title,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-static esp_err_t _complete_scroll_animations_on_ui(void *arg)
-{
-    (void)arg;
-    host_lv_complete_scroll_animations();
-    return ESP_OK;
-}
-
-static void _complete_scroll_animations(void)
-{
-    assert(app_manager_ui_call(_complete_scroll_animations_on_ui, NULL,
-                               UI_TIMEOUT_MS) == ESP_OK);
-}
-
-typedef struct switcher_scroll_snapshot
-{
-    const char *card_title;
-    int32_t scroll_x;
-    int32_t target_x;
-    bool animating;
-} switcher_scroll_snapshot_t;
-
-static esp_err_t _scroll_snapshot_on_ui(void *arg)
-{
-    switcher_scroll_snapshot_t *snapshot = arg;
-    return host_lv_scroll_snapshot_by_title(snapshot->card_title,
-                                            &snapshot->scroll_x,
-                                            &snapshot->target_x,
-                                            &snapshot->animating) ?
-           ESP_OK : ESP_ERR_NOT_FOUND;
-}
-
-static switcher_scroll_snapshot_t _scroll_snapshot(const char *card_title)
-{
-    switcher_scroll_snapshot_t snapshot =
-    {
-        .card_title = card_title,
-    };
-    assert(app_manager_ui_call(_scroll_snapshot_on_ui, &snapshot,
-                               UI_TIMEOUT_MS) == ESP_OK);
-    return snapshot;
-}
-
-static esp_err_t _scroll_takeover_on_ui(void *arg)
-{
-    *(unsigned *)arg = host_lv_scroll_takeover_count();
-    return ESP_OK;
-}
-
-static unsigned _scroll_takeover_count(void)
-{
-    unsigned count = 0U;
-    assert(app_manager_ui_call(_scroll_takeover_on_ui, &count,
-                               UI_TIMEOUT_MS) == ESP_OK);
-    return count;
 }
 
 static void _wait_for_text_gone(const char *text)
@@ -3311,12 +3194,17 @@ static void _test_system_task_switcher(void)
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     /* Opening the switcher keeps the foreground task running and lists every
-     * eligible resident task, most recently used first. */
+     * eligible resident task, most recently used first, each on its own
+     * card with a status line. */
     _open_task_switcher();
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    assert(_ui_has_text("应用 · 当前"));
+    assert(_ui_has_text("最近任务"));
+    assert(_ui_has_text("应用"));
+    assert(_ui_has_text("当前"));
     assert(_ui_has_text("天气"));
+    assert(_ui_has_text("点按切换"));
     assert(_ui_has_text("清除"));
+    assert(_ui_has_text("内部内存"));
     {
         app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
         size_t task_count = 0U;
@@ -3337,328 +3225,53 @@ static void _test_system_task_switcher(void)
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
     _wait_for_switcher(false);
 
-    /* Swiping a card upward closes that task while the switcher stays open
-     * and refreshes the list. */
+    /* The per-card close button removes that task; the switcher stays open
+     * and the remaining card becomes the current one. */
     _open_task_switcher();
-    assert(_ui_has_text("天气 · 当前"));
-    _swipe_up_action("应用");
-    _wait_for_text_gone("应用");
-    assert(_switcher_visible());
-    assert(_ui_has_text("天气 · 当前"));
-
-    /* An upward swipe with a horizontal wobble still closes the card: the
-     * cumulative final displacement is vertical, so the gesture closes
-     * regardless of the wobble. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _open_task_switcher();
-    assert(_ui_has_text("应用 · 当前"));
-    _swipe_up_wobble_action("应用");
-    _wait_for_text_gone("应用");
-    assert(_switcher_visible());
-    assert(_wait_for_text_with_timers("天气 · 当前"));
-
-    /* The device reproducer: a horizontal-first arc that used to activate
-     * the container scroll before the upward intent was known still closes
-     * the card without any takeover. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _open_task_switcher();
-    assert(_ui_has_text("应用 · 当前"));
-    const unsigned takeovers_before_arc = _scroll_takeover_count();
-    _swipe_up_arc_action("应用");
-    _wait_for_text_gone("应用");
-    assert(_scroll_takeover_count() == takeovers_before_arc);
-    assert(_switcher_visible());
-    assert(_wait_for_text_with_timers("天气 · 当前"));
-
-    /* A single coarse sample neither closes the task nor clicks the card. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _open_task_switcher();
-    assert(_ui_has_text("应用 · 当前"));
-    _swipe_coarse_action("应用");
-    assert(_wait_for_text_with_timers("应用 · 当前"));
     assert(_ui_has_text("天气"));
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-
-    /* Two horizontal-dominant samples followed by an upward endpoint below
-     * both thresholds: nothing closes, nothing pages, no native scroll
-     * takeover ever activates and the container offset stays untouched. */
-    _swipe_horiz_then_up_short_action("应用");
-    assert(_wait_for_text_with_timers("应用 · 当前"));
-    assert(_ui_has_text("天气"));
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    assert(_switcher_visible());
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0);
-        assert(snapshot.target_x == 0);
-    }
-
-    /* The same horizontal-first arc extended past the close threshold still
-     * closes the task, again without any scroll takeover. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _open_task_switcher();
-    assert(_ui_has_text("应用 · 当前"));
-    _swipe_horiz_then_up_action("应用");
+    assert(_ui_has_text("当前"));
+    _click_action(LV_SYMBOL_CLOSE);
     _wait_for_text_gone("应用");
-    assert(_scroll_takeover_count() == takeovers_before_arc);
     assert(_switcher_visible());
-    assert(_wait_for_text_with_timers("天气 · 当前"));
-
-    /* A qualifying left swipe pages one card programmatically: no native
-     * scroll object, an animated target of one card pitch, no close. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _open_task_switcher();
-    assert(_ui_has_text("应用 · 当前"));
-    const unsigned takeovers_before_page = _scroll_takeover_count();
-    _swipe_left_action("应用");
-    assert(_scroll_takeover_count() == takeovers_before_page);
-    assert(_wait_for_text_with_timers("应用 · 当前"));
     assert(_ui_has_text("天气"));
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
     {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        /* Card width plus gap: 230 + 12. */
-        assert(snapshot.target_x == 242);
-        assert(snapshot.animating);
-    }
-    _complete_scroll_animations();
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0 || snapshot.scroll_x == 242);
+        app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+        size_t task_count = 0U;
+        assert(app_manager_get_recent_tasks(tasks,
+                                            APP_MANAGER_MAX_RECENT_TASKS,
+                                            &task_count) == ESP_OK);
+        assert(task_count == 1U);
+        assert(strcmp(tasks[0].app_id, APP_MANAGER_ID_WEATHER) == 0);
     }
 
-    /* A right swipe returns to the first card. */
-    _swipe_right_action("应用");
-    _complete_scroll_animations();
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0);
-        assert(!snapshot.animating);
-    }
-    assert(_switcher_visible());
-
-    /* Swiping beyond the last card is a no-op: neither a new animation nor a
-     * page-index drift. */
-    _swipe_left_action("应用");
-    _complete_scroll_animations();
-    _swipe_left_action("应用");
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0 || snapshot.scroll_x == 242);
-        assert(snapshot.target_x == 242);
-        assert(!snapshot.animating);
-    }
-
-    /* Paging must not poison the following tap: the card click still runs
-     * the selected task. */
+    /* Tapping the current card only dismisses the switcher. */
     _click_action("天气");
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-    _wait_for_switcher(false);
-
-    /* A three-card layout reaches every logical page target without clamping
-     * mid-page: the start-aligned row plus half-viewport side padding makes
-     * every index * pitch offset exactly reachable. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    _open_task_switcher();
-    assert(_ui_has_text("网络设置 · 当前"));
-    _swipe_left_action("网络设置");
-    assert(_scroll_snapshot("网络设置").target_x == 242);
-    _complete_scroll_animations();
-    _swipe_left_action("网络设置");
-    assert(_scroll_snapshot("网络设置").target_x == 484);
-    _complete_scroll_animations();
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("网络设置");
-        assert(snapshot.scroll_x == 484);
-        assert(!snapshot.animating);
-    }
-    _swipe_right_action("网络设置");
-    _complete_scroll_animations();
-    _swipe_right_action("网络设置");
-    _complete_scroll_animations();
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("网络设置");
-        assert(snapshot.scroll_x == 0);
-        assert(!snapshot.animating);
-    }
-    assert(_switcher_visible());
-
-    /* A press during an in-flight page animation settles the recorded
-     * target, but the whole sequence is ignored: LVGL picked the pointer
-     * target before the settle, so acting on it would hit the wrong card.
-     * The switcher stays open and a later tap works normally. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _open_task_switcher();
-    assert(_ui_has_text("应用 · 当前"));
-    _swipe_left_action("应用");
-    assert(_scroll_snapshot("应用").animating);
-    const bool pressed_during_animation =
-        _touch(TOUCH_ACTION_PRESS, 100, 224);
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0 || snapshot.scroll_x == 242);
-    }
-    if (pressed_during_animation)
-    {
-        assert(_touch(TOUCH_ACTION_RELEASE, 100, 224));
-    }
-    assert(_switcher_visible());
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _click_action("天气");
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-    _wait_for_switcher(false);
-
-    /* Drag away and return to the origin: nothing is triggered and the
-     * suppressed click does not leak into the next tap. */
-    _open_task_switcher();
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
-    assert(_touch(TOUCH_ACTION_MOVE, 160, 190));
-    assert(_touch(TOUCH_ACTION_MOVE, 100, 224));
-    assert(_touch(TOUCH_ACTION_RELEASE, 100, 224));
-    assert(_switcher_visible());
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-    _click_action("天气 · 当前");
     _wait_for_switcher(false);
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
 
-    /* Sub-slop jitter still counts as a tap on the current setup card. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    _open_task_switcher();
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
-    assert(_touch(TOUCH_ACTION_MOVE, 103, 226));
-    assert(_touch(TOUCH_ACTION_RELEASE, 103, 226));
-    _wait_for_switcher(false);
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-
-    /* Displacement that appears only in the release sample (no PRESSING
-     * event) still suppresses the click: 15 px cannot dismiss the
-     * switcher, and the next tap works normally. */
-    _open_task_switcher();
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
-    assert(_touch(TOUCH_ACTION_RELEASE, 115, 210));
-    assert(_switcher_visible());
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    _click_action("网络设置 · 当前");
-    _wait_for_switcher(false);
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-
-    /* An input reset while tracking cancels the gesture without residue. */
-    _open_task_switcher();
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 224));
-    assert(_touch(TOUCH_ACTION_MOVE, 140, 200));
-    assert(_touch(TOUCH_ACTION_RESET, 0, 0));
-    assert(_switcher_visible());
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0);
-        assert(!snapshot.animating);
-    }
-    _click_action("网络设置 · 当前");
-    _wait_for_switcher(false);
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-
-    /* A short vertical drag below the close threshold neither closes, pages
-     * nor clicks; no native takeover and no residual offset. */
-    _open_task_switcher();
-    _swipe_up_short_action("应用");
-    assert(_wait_for_text_with_timers("应用"));
-    assert(_ui_has_text("天气"));
-    assert(_scroll_takeover_count() == takeovers_before_page);
-    assert(_switcher_visible());
-    {
-        const switcher_scroll_snapshot_t snapshot =
-            _scroll_snapshot("应用");
-        assert(snapshot.scroll_x == 0);
-        assert(!snapshot.animating);
-    }
-
-    /* A drag that begins on the clickable background below the cards does
-     * not dismiss the switcher, and the suppression does not leak into the
-     * following tap. */
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 420));
-    assert(_touch(TOUCH_ACTION_MOVE, 160, 380));
-    assert(_touch(TOUCH_ACTION_MOVE, 100, 420));
-    assert(_touch(TOUCH_ACTION_RELEASE, 100, 420));
-    assert(_switcher_visible());
-    assert(_wait_for_active(APP_MANAGER_ID_SETUP));
-    _click_action("天气");
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-    _wait_for_switcher(false);
-    _open_task_switcher();
-
-    /* A background press that survives a hide/reopen cycle must not dismiss
-     * the new session with its late CLICKED. */
-    assert(_touch(TOUCH_ACTION_PRESS, 100, 420));
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-    _wait_for_switcher(false);
-    _open_task_switcher();
-    assert(_touch(TOUCH_ACTION_RELEASE, 100, 420));
-    assert(_switcher_visible());
-    assert(_wait_for_active(APP_MANAGER_ID_MENU));
-
-    /* Clearing all tasks returns to Home and closes the switcher. */
-    _click_action("清除");
-    assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    _wait_for_switcher(false);
-
-    /* The empty state shows; a background drag does not dismiss, a plain
-     * background tap still does. */
-    _open_task_switcher();
-    assert(_ui_has_text("暂无任务"));
-    assert(_touch(TOUCH_ACTION_PRESS, 184, 420));
-    assert(_touch(TOUCH_ACTION_MOVE, 220, 380));
-    assert(_touch(TOUCH_ACTION_MOVE, 184, 420));
-    assert(_touch(TOUCH_ACTION_RELEASE, 184, 420));
-    assert(_switcher_visible());
-    assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    assert(_touch(TOUCH_ACTION_PRESS, 184, 420));
-    assert(_touch(TOUCH_ACTION_RELEASE, 184, 420));
-    _wait_for_switcher(false);
-    assert(_wait_for_active(APP_MANAGER_ID_HOME));
-
-    /* Tapping the current task card only dismisses the switcher. */
-    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
-           ESP_OK);
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-    _open_task_switcher();
-    _click_action("天气 · 当前");
-    _wait_for_switcher(false);
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-
-    /* A repeated open while visible dismisses back to the previous task. */
+    /* A repeated open while visible dismisses back to the task. */
     _open_task_switcher();
     assert(app_manager_navigation_submit_system_op(
                APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW, NULL, NULL) ==
            ESP_OK);
     _wait_for_switcher(false);
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+
+    /* Clearing all tasks returns to Home and closes the switcher. */
+    _open_task_switcher();
+    _click_action("清除");
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    _wait_for_switcher(false);
+
+    /* The empty state shows and a plain tap on the backdrop still dismisses
+     * (the memory footer stays visible while open). */
+    _open_task_switcher();
+    assert(_ui_has_text("暂无任务"));
+    assert(_ui_has_text("内部内存"));
+    assert(_touch(TOUCH_ACTION_PRESS, 184, 200));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 200));
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
 int main(void)
