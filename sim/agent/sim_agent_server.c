@@ -22,6 +22,7 @@
 #include "app_manager.h"
 #include "app_manager_builtin.h"
 #include "app_manager_navigation.h"
+#include "app_manager_task_switcher.h"
 #include "app_manager_types.h"
 #include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
@@ -562,20 +563,34 @@ static cJSON *_handle(cJSON *request, bool *ok)
         /* The switcher is normally opened by a physical HOME double-press;
          * the CI harness cannot reproduce that timing reliably, so expose the
          * same gateway system command for deterministic review. */
-        const cJSON *action = params != NULL ?
-                              cJSON_GetObjectItemCaseSensitive(params, "action") :
-                              NULL;
-        const char *act = cJSON_GetStringValue(action);
-        const bool clear_all = (act != NULL) && (strcmp(act, "clear_all") == 0);
-        const esp_err_t res = app_manager_navigation_submit_system_op(
-                                  clear_all ?
-                                  APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_CLEAR_ALL :
-                                  APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW,
-                                  NULL, NULL);
-        *ok = (res == ESP_OK);
-        if (!*ok)
+        const cJSON *get = params != NULL ?
+                           cJSON_GetObjectItemCaseSensitive(params, "get") :
+                           NULL;
+        if (cJSON_IsTrue(get))
         {
-            cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            cJSON_AddBoolToObject(result, "visible",
+                                  app_manager_task_switcher_is_visible());
+            *ok = true;
+        }
+        else
+        {
+            const cJSON *action = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "action") :
+                                  NULL;
+            const char *act = cJSON_GetStringValue(action);
+            const bool clear_all = (act != NULL) &&
+                                   (strcmp(act, "clear_all") == 0);
+            const esp_err_t res = app_manager_navigation_submit_system_op(
+                                      clear_all ?
+                                      APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_CLEAR_ALL :
+                                      APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW,
+                                      NULL, NULL);
+            *ok = (res == ESP_OK);
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            }
         }
     }
     else if (strcmp(method, "sim.set_time") == 0)

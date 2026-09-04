@@ -191,6 +191,7 @@ static lv_display_t s_display = {.marker = 1U};
 static lv_indev_t s_pointer_indev;
 static lv_indev_t *s_event_indev;
 static lv_obj_t s_objects[HOST_LV_OBJECT_CAPACITY];
+static uint32_t s_tick_ms;
 static lv_timer_t s_timers[HOST_LV_TIMER_CAPACITY];
 static host_lv_transition_t s_transition;
 static host_lv_generic_animation_t
@@ -1930,6 +1931,11 @@ void lv_label_set_text(lv_obj_t *label, const char *text)
     snprintf(label->text, sizeof(label->text), "%s", text == NULL ? "" : text);
 }
 
+const char *lv_label_get_text(const lv_obj_t *label)
+{
+    return label != NULL && label->live ? label->text : "";
+}
+
 void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...)
 {
     if (label == NULL || !label->live || format == NULL)
@@ -2352,6 +2358,7 @@ static void _host_lv_run_ready_timers(void)
 
 void host_lv_timer_step(void)
 {
+    s_tick_ms += 1000U;
     for (size_t index = 0; index < HOST_LV_TIMER_CAPACITY; ++index)
     {
         if (s_timers[index].live && !s_timers[index].paused)
@@ -2360,6 +2367,11 @@ void host_lv_timer_step(void)
         }
     }
     _host_lv_run_ready_timers();
+}
+
+uint32_t lv_tick_get(void)
+{
+    return s_tick_ms;
 }
 
 static void _host_lv_refresh_generic_animations(void)

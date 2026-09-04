@@ -484,6 +484,10 @@ void lv_indev_wait_release(lv_indev_t *indev);
 
 /** @brief Set fake label text. */
 void lv_label_set_text(lv_obj_t *label, const char *text);
+/** @brief Return fake label text. */
+const char *lv_label_get_text(const lv_obj_t *label);
+/** @brief Virtual milliseconds advanced one second per host_lv_timer_step(). */
+uint32_t lv_tick_get(void);
 /** @brief Set formatted fake label text. */
 void lv_label_set_text_fmt(lv_obj_t *label, const char *format, ...);
 /** @brief Record a fake label's overflow mode. */

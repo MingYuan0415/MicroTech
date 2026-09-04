@@ -903,12 +903,24 @@ esp_err_t app_manager_pm_set_timeout_ms(int32_t timeout_ms)
     return ESP_OK;
 }
 
+esp_err_t app_manager_pm_set_timeout_ms_async(int32_t timeout_ms)
+{
+    s_screen_timeout_ms = timeout_ms;
+    return ESP_OK;
+}
+
 int32_t app_manager_pm_get_standby_delay_ms(void)
 {
     return s_standby_timeout_ms;
 }
 
 esp_err_t app_manager_pm_set_standby_delay_ms(int32_t timeout_ms)
+{
+    s_standby_timeout_ms = timeout_ms;
+    return ESP_OK;
+}
+
+esp_err_t app_manager_pm_set_standby_delay_ms_async(int32_t timeout_ms)
 {
     s_standby_timeout_ms = timeout_ms;
     return ESP_OK;
