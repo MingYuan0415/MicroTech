@@ -133,29 +133,24 @@ Select sizing by semantics:
 
 ## Validate Before Declaring the Layout Fixed
 
-1. Exercise the shortest, longest, missing, loading, error, stale, and
-   localized data states. Include large positive/negative numeric formats and
-   multi-line Chinese text.
-2. Force layout calculation with `lv_obj_update_layout()` in diagnostics or
+1. Force layout calculation with `lv_obj_update_layout()` in diagnostics or
    tests before reading coordinates. Check child bounds against the parent's
    content rectangle and verify that required text is not clipped.
-3. Extend the LVGL host fake to record explicit width, height, long mode, font,
-   flags, parentage, and events when the changed contract depends on them.
-4. Add tests for scroll direction and gestures beginning over child content,
-   not only direct taps on the parent.
-5. Drag-verify the scroll policy both ways in the simulator: a scrolling page
-   must move (`scroll.y` changes) when dragged over labels, rows, and gaps; a
-   pinned page must stay at `scroll.y` 0 with `flags.scrollable` false.
-6. Run the narrow host tests and project-required formatting/diff checks.
+2. Extend the LVGL host fake to record explicit width, height, long mode, font,
+   flags, parentage, and events when the changed contract depends on them, and
+   let host tests drive gestures that begin over child content — labels, rows,
+   gaps — not only direct taps on the parent.
+3. Run the narrow host tests and project-required formatting/diff checks.
    Broader sanitizer, firmware-build, and hardware scope follows the
    `AGENTS.md` default workflow.
-7. Review in the simulator first: its SDL renderer rasterizes the real theme
-   fonts, so glyph fallback, wrapping, clipping, overlap, horizontal drift, and
-   scroll handoff are all judgeable from `sim.tree` geometry without hardware.
-   Read wrap/overflow from `coords` and `styles.line_height`, not from a PNG by
-   eye. Screenshots, state matrices, and the release gate are defined once, by
-   the `ui-review` skill at its assigned tier; reserve the real display for
-   touch feel, RF, and AMOLED color only.
+4. Simulator-side validation — worst-case data states (shortest, longest,
+   missing, loading, error; signed numeric formats; multi-line Chinese), the
+   scroll policy checked both ways by dragging (a scrolling page must move
+   `scroll.y`; a pinned page must stay at 0 with `flags.scrollable` false),
+   geometry judged from `coords` and `styles.line_height` rather than a PNG,
+   and the release gate — are specified once, by the `ui-review` skill at its
+   assigned tier. Reserve the real display for touch feel, RF, and AMOLED
+   color only.
 
 Report the tested resolutions, data extremes, interaction paths, and any
 unexecuted hardware checks. Do not claim that a single nominal screenshot

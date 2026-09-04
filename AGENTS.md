@@ -32,7 +32,7 @@ idf.py size   # 仅当改动缓存/DMA 预留/资源时检查
 cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名> && ctest --test-dir /tmp/mt-<名> --output-on-failure
 ```
 
-**影响面**：套件被波及 = 本任务改动了它编译的任何源文件。
+**影响面**：套件被波及 = 本任务改动了它编译的任何源文件。例如改 clock 页面源只波及 `tests/integration`，`layers/apps/tests/host` 并不编译它。
 
 | 改动位置 | 受影响套件 |
 | --- | --- |
@@ -49,7 +49,7 @@ cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名>
 
 - L0 每批编辑：对改动文件直接跑 `doc/code-style.md` §8.1 astyle（幂等）+ 受影响工程增量构建。
 - L1 每任务：受影响宿主套件各跑一次。
-- L2 UI 改动完成前：`sim/ci/run_ci.sh` ×1 + `sim/tools/review_pages.py --check` ×1；评审分档见 `ui-review` skill。
+- L2 UI 改动完成前：`sim/ci/run_ci.sh` ×1 + `sim/tools/review_pages.py --check` ×1；终验范围按 `ui-review` 分档，仅当改动触及共享件（`app_ui`/`app_theme`/视口文案）、新页或 re-layout 时升为全量。
 - L3 提交/验收：`doc/code-style.md` §8.2 完整清单。
 
 被测产物未变化时同一门禁无需重跑；flaky 修复的验证 = 串行一次 + 并行一次。

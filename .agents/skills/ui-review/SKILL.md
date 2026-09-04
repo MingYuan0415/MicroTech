@@ -48,7 +48,7 @@ already-reviewed page costs minutes, not a full pass:
 - **New/re-laid-out page or new state**: full protocol, and add the page/state
   to `sim/ci/review/spec.json` in the same task.
 
-## The Review Bar (all four, per changed page)
+## The Review Bar (all four, full tier only)
 
 1. **State matrix.** Enumerate and screenshot every state the page can show:
    empty/no-data, loading/scanning, populated, disabled/ineligible, error, and
@@ -60,10 +60,11 @@ already-reviewed page costs minutes, not a full pass:
    press-and-drag-off a control must NOT activate it; a scroll page must move
    `scroll.y` when dragged over labels/rows/gaps and a pinned page must stay at
    0 with `flags.scrollable` false; a toggle must persist across re-navigate.
-4. **Verified artifact.** Before any screenshot conclusion, confirm the binary
-   actually rebuilt: `touch` the edited source and check ninja recompiles it (or
-   compare the executable hash/mtime). Re-screenshot only from the fresh build.
-   Measure geometry from the tree dump, never from a PNG by eye.
+4. **Verified artifact.** The binary you review is the one you just built: run
+   `cmake --build build/sim` immediately before any screenshot or tree
+   conclusion. A failed build, or an edit made after the build, voids every
+   prior review conclusion. Measure geometry from the tree dump, never from a
+   PNG by eye.
 
 ## Geometry Invariants To Enforce (what review_pages.py checks)
 
@@ -117,13 +118,16 @@ have looked at the new screenshot and judged it correct.
 
 ## Gate Order Before "Done"
 
-`review_pages.py --check` clean -> read every state screenshot against the
-invariants above -> gesture cases pass -> binary was the one you changed. Only
-then is a UI change reviewed. Scope "every state screenshot" and "gesture
-cases" by the tier table above; the final `--check` before declaring done is
-always the full spec (`AGENTS.md` L2, paired with one `sim/ci/run_ci.sh`).
-This tightens the `AGENTS.md` default only for changes that touch the
-interface; it stays host/sim-only and adds no hardware or full-CI burden.
+`review_pages.py --check` clean -> read the screenshots the tier covers
+against the invariants above -> the involved gesture cases pass -> binary was
+the one you built. Only then is a UI change reviewed. The final `--check`
+covers the pages/states the change can affect (`--pages`); it upgrades to the
+full spec only when the change touches shared widgets (`app_ui` / `app_theme`
+/ viewport copy), adds a page or state, or is full-tier for another reason in
+the table above. Cross-page regressions remain covered by the one
+`sim/ci/run_ci.sh` paired with this gate (`AGENTS.md` L2). This tightens the
+`AGENTS.md` default only for changes that touch the interface; it stays
+host/sim-only and adds no hardware or full-CI burden.
 
 ## Simulator Gotchas (cost real debugging time)
 
@@ -148,9 +152,6 @@ interface; it stays host/sim-only and adds no hardware or full-CI burden.
   that hides or destroys the list frees the event target and use-after-frees on
   the next indev step). Defer such work with `lv_async_call`. Likewise keep
   persistent chrome (empty-state label) out of any container you `lv_obj_clean`.
-- Confirm the binary rebuilt before trusting a screenshot: `touch` the source
-  and check ninja recompiles it, or compare the executable mtime/hash. A no-op
-  ninja build reviews a stale UI and hides the very defect you are checking.
 - `sim.set_power` requires both `voltage` and `pct` (0-100); the firmware's
   voltage-only fallback path cannot be driven in the sim — cover that branch
   in a host test instead of probing forever.
