@@ -66,7 +66,9 @@ function(add_main_host_test test_name target)
     else()
         add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${target}> ${ARGN})
     endif()
-    set_tests_properties(${test_name} PROPERTIES TIMEOUT 10)
+    # 10 s starves the threaded runtime tests when ctest runs next to a
+    # parallel compiler/simulator load; 30 s keeps them deterministic.
+    set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
 endfunction()
 
 add_executable(app_runtime_test

@@ -299,7 +299,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             contract / ".github/workflows/contract.yml"
         ).read_text(encoding="utf-8")
         status = (
-            self.root / "doc/device-link-implementation.md"
+            self.root / "contracts/device_link/README.md"
         ).read_text(encoding="utf-8")
         wifi_policy = (
             self.root /
@@ -308,7 +308,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         normalized_policy = " ".join(wifi_policy.split())
         self.assertIn("tooling.check", workflow)
         self.assertIn("unittest discover", workflow)
-        self.assertIn("contracts/device_link", status)
+        self.assertIn("device-link/v1", status)
         self.assertIn("freeze candidate", status)
         self.assertIn("non-normative", wifi_policy)
         self.assertIn("Pending policy target", wifi_policy)
