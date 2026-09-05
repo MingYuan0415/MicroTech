@@ -255,6 +255,8 @@ extern const lv_font_t host_lv_default_font;
 #define LV_OBJ_FLAG_OVERFLOW_VISIBLE  (1U << 20)
 #define LV_OPA_TRANSP                 0
 #define LV_OPA_10                     26
+#define LV_OPA_20                     51
+#define LV_OPA_40                     102
 #define LV_OPA_60                     153
 #define LV_OPA_80                     204
 #define LV_OPA_COVER                  255

@@ -9,6 +9,7 @@
 #include "app_manager_presentation.h"
 #include "app_manager_task_switcher.h"
 #include "app_theme.h"
+#include "app_theme_colors.h"
 #include "event_bus.h"
 #include "host_freertos.h"
 #include "host_connectivity_manager.h"
@@ -2833,7 +2834,8 @@ static void _test_system_edge_back_gesture(void)
     assert(system.indicator.canvas_color_format == LV_COLOR_FORMAT_A8);
     assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
     assert(system.indicator.height == GESTURE_CANVAS_HEIGHT);
-    assert(system.indicator.image_recolor == lv_color_hex(0x202124U));
+    assert(system.indicator.image_recolor ==
+           lv_color_hex(APP_THEME_COLOR_PLUME_HI));
     assert(system.indicator.image_opacity == 220);
     assert(system.indicator.canvas_flush_count == 1U);
     assert(system.indicator.invalidation_count == 1U);
