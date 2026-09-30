@@ -92,7 +92,7 @@ typedef struct app_runtime_start_context
     const bsp_display_port_t *display;
 } app_runtime_start_context_t;
 
-static atomic_int s_runtime_state = ATOMIC_VAR_INIT(APP_RUNTIME_STOPPED);
+static atomic_int s_runtime_state = APP_RUNTIME_STOPPED;
 static app_runtime_ownership_t s_ownership;
 static const bsp_rtc_ops_t *s_runtime_rtc;
 static const bsp_imu_ops_t *s_runtime_imu;

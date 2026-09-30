@@ -35,7 +35,7 @@ regression signal for any change under `layers/apps/` or `layers/app_manager/`
 task; the sanitizer profiles are only required when a change touches memory
 ownership or concurrency.
 
-From the repository root, all three profiles (acceptance scope):
+From the repository root, run the normal profile:
 
 ```sh
 cmake -S tests/integration -B /tmp/mt-cross-normal -G Ninja \
@@ -43,16 +43,11 @@ cmake -S tests/integration -B /tmp/mt-cross-normal -G Ninja \
 cmake --build /tmp/mt-cross-normal -j2
 ctest --test-dir /tmp/mt-cross-normal --output-on-failure
 
-cmake -S tests/integration -B /tmp/mt-cross-asan -G Ninja \
-    -DCROSS_LAYER_SANITIZER=address
-cmake --build /tmp/mt-cross-asan -j2
-ctest --test-dir /tmp/mt-cross-asan --output-on-failure
-
-cmake -S tests/integration -B /tmp/mt-cross-tsan -G Ninja \
-    -DCROSS_LAYER_SANITIZER=thread
-cmake --build /tmp/mt-cross-tsan -j2
-ctest --test-dir /tmp/mt-cross-tsan --output-on-failure
 ```
+
+`CROSS_LAYER_SANITIZER=address` or `thread` is an additional profile for
+memory-ownership or concurrency changes. Select the profile matching the risk
+and use a separate build directory; both profiles are not required by default.
 
 These host checks do not replace ESP32-S3 validation for LVGL rendering,
 driver timing, SD card insertion/removal, IMU and audio behavior, radio and RTC

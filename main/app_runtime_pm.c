@@ -44,9 +44,9 @@ typedef struct app_runtime_sleep_context
     bool input_resume_required;
 } app_runtime_sleep_context_t;
 
-static atomic_bool s_standby_admitted = ATOMIC_VAR_INIT(false);
-static atomic_uint s_standby_request_users = ATOMIC_VAR_INIT(0U);
-static atomic_bool s_benchmark_inhibited = ATOMIC_VAR_INIT(false);
+static atomic_bool s_standby_admitted = false;
+static atomic_uint s_standby_request_users = 0U;
+static atomic_bool s_benchmark_inhibited = false;
 static app_runtime_sleep_context_t s_sleep_context;
 static const bsp_power_ops_t *s_bsp_power;
 static const bsp_input_ops_t *s_bsp_input;

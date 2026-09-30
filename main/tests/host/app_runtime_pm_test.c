@@ -109,7 +109,7 @@ static pthread_cond_t s_request_condition = PTHREAD_COND_INITIALIZER;
 static bool s_block_request;
 static bool s_request_entered;
 static bool s_request_released;
-static atomic_uint s_delay_count = ATOMIC_VAR_INIT(0U);
+static atomic_uint s_delay_count = 0U;
 
 static void _test_record(test_call_t call)
 {

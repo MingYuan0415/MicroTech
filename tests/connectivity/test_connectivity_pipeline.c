@@ -78,7 +78,7 @@ static const connectivity_manager_config_t s_manager_config =
 
 static TaskHandle_t s_ui_worker;
 static app_manager_ui_dispatch_fn s_real_ui_dispatch;
-static atomic_bool s_block_ui_dispatch = ATOMIC_VAR_INIT(false);
+static atomic_bool s_block_ui_dispatch = false;
 static void _sleep_one_ms(void);
 static bool _wait_long_retry(connectivity_manager_failure_t failure,
                              connectivity_manager_status_snapshot_t *output);

@@ -32,7 +32,7 @@ typedef enum
     FS_STORAGE_DEINITIALIZING,
 } fs_storage_state_t;
 
-static atomic_int s_state = ATOMIC_VAR_INIT(FS_STORAGE_UNINITIALIZED);
+static atomic_int s_state = FS_STORAGE_UNINITIALIZED;
 static bool s_res_mounted;
 static bool s_data_mounted;
 

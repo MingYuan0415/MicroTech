@@ -5,7 +5,7 @@ A host-side client for the on-device matrix in
 doc/device-link-implementation.md. It implements the fixed wire (fragment
 framing, application header, status), the Security 2 SRP-6a/AES-256-GCM
 session, and the Core/Wi-Fi method procedures, all derived from the ESP-IDF
-v6.0.2 protocomm Security 2 adapter (security2.c / esp_srp.c) and the
+v6.1 protocomm Security 2 adapter (security2.c / esp_srp.c) and the
 canonical contract tooling.
 
 Validation status: the wire/framing/QR/link-state pieces reuse the
@@ -89,7 +89,7 @@ ALLOWED_STATUSES = {
 # --------------------------------------------------------------------------
 # Security 2: SRP-6a (RFC 5054, 3072-bit, SHA-512) + AES-256-GCM.
 # Derived from components/protocomm/src/crypto/srp6a/esp_srp.c and
-# components/protocomm/src/security/security2.c (ESP-IDF v6.0.2).
+# components/protocomm/src/security/security2.c (ESP-IDF v6.1).
 # --------------------------------------------------------------------------
 
 N_3072 = int.from_bytes(bytes.fromhex(

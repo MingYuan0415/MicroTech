@@ -29,11 +29,11 @@ if [ -d "$ROOT/build/esp-idf/main/app_res_fs" ]; then
         || { echo "ERROR: staged resources differ from device staging"; exit 1; }
 fi
 
-# PNG aux gate: off unless SIM_PNG_GOLDEN=1 or --update (local leftover
-# goldens must not silently re-enable the gate).
+# PNG aux gate: off unless SIM_PNG_GOLDEN=1 or --update. Scenario goldens live
+# under the tracked CI directory; page-review goldens use sim/ci/golden/ui.
 GOLDEN_ARG=""
 if [ "$UPDATE" = "--update" ] || [ "${SIM_PNG_GOLDEN:-}" = "1" ]; then
-    GOLDEN_ARG="--golden $ROOT/sim/golden"
+    GOLDEN_ARG="--golden $ROOT/sim/ci/golden/scenarios"
 else
     echo "note: PNG aux gate off (set SIM_PNG_GOLDEN=1 to enable; tree asserts are the primary gate)"
 fi

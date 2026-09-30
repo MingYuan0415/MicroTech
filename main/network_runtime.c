@@ -5,10 +5,8 @@
 
 #include <stdatomic.h>
 
-static atomic_int s_netif_state =
-    ATOMIC_VAR_INIT(NETWORK_RUNTIME_RESOURCE_UNINITIALIZED);
-static atomic_int s_event_loop_state =
-    ATOMIC_VAR_INIT(NETWORK_RUNTIME_RESOURCE_UNINITIALIZED);
+static atomic_int s_netif_state = NETWORK_RUNTIME_RESOURCE_UNINITIALIZED;
+static atomic_int s_event_loop_state = NETWORK_RUNTIME_RESOURCE_UNINITIALIZED;
 static atomic_flag s_init_busy = ATOMIC_FLAG_INIT;
 
 static bool _network_runtime_resource_ready(

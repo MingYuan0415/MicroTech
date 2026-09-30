@@ -41,9 +41,9 @@ cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名>
 | `layers/apps/`（页面、app_ui） | `layers/apps/tests/host`、`tests/integration` |
 | `layers/app_manager/`（app_core、app_theme） | `layers/app_manager/app_core/tests/host`、`tests/integration` |
 | 网络 runtime/连接性 | `tests/connectivity` |
-| Kconfig/契约文档、资源 manifest/资产 | `pytest tests/configuration`、`pytest tests/resources`（宿主无 pytest 时仅语法级校验，报告说明请人工补跑） |
+| Kconfig/契约边界、资源 manifest/资产 | `python3 tests/run_python_tests.py configuration resources` |
 
-`tests/integration` 默认 none profile；sanitizer（`-DMAIN_HOST_SANITIZER=address|thread` 等）仅在改动涉及内存所有权或并发时启用。宿主测试不覆盖驱动时序、射频、DMA、功耗，需要时上板并记录验证范围。
+`tests/integration` 默认 none profile；sanitizer（`-D<套件>_SANITIZER=address|thread`）仅在改动涉及内存所有权或并发时启用，通常选择与风险匹配的一种。宿主测试不覆盖驱动时序、射频、DMA、功耗，需要时上板并记录验证范围。
 
 **分层**（对应「验证最小化」）：
 

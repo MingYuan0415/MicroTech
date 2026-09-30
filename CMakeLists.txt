@@ -99,10 +99,10 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
     if(CONFIG_BT_NIMBLE_MAX_BONDS EQUAL 1)
         # NimBLE's one-bond NVS ordering loop is unreachable but GCC 15 still
         # diagnoses its guarded i + 1 expressions as out of bounds. Keep this
-        # ESP-IDF 6.0.2 workaround inside the upstream BT component.
+        # ESP-IDF 6.1 workaround inside the upstream BT component.
         idf_component_get_property(_bt_component bt COMPONENT_LIB)
         target_compile_options(${_bt_component} PRIVATE -Wno-array-bounds)
-        # ESP-IDF 6.0.2 otherwise starts a fresh SMP procedure when an LTK
+        # ESP-IDF 6.1 otherwise starts a fresh SMP procedure when an LTK
         # lookup fails. Device Link admits pairing only inside its local
         # window, so keep the project-owned build fail-closed outside it.
         target_compile_definitions(${_bt_component} PRIVATE

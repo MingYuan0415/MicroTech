@@ -3,17 +3,12 @@ project(main_runtime_host_tests LANGUAGES C)
 
 enable_testing()
 find_package(Threads REQUIRED)
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(MAIN_HOST_SANITIZER "none" CACHE STRING
     "Host-test sanitizer: none, address, or thread")
 set_property(CACHE MAIN_HOST_SANITIZER PROPERTY STRINGS
     none address thread)
 find_program(MAIN_HOST_SETARCH setarch)
-
-add_test(NAME configuration_governance COMMAND
-    ${Python3_EXECUTABLE}
-    "${CMAKE_CURRENT_LIST_DIR}/../../../tests/configuration/test_configuration_governance.py")
 
 function(configure_main_host_target target)
     target_compile_features(${target} PRIVATE c_std_11)

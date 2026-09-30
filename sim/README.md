@@ -212,9 +212,10 @@ sim/ci/run_ci.sh                    # 端口预检 + check_lv_conf + 构建 + st
 sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review 后入库）
 ```
 
-**PNG 辅门禁当前挂起**：固件 GUI 仍在调整，`sim/golden/` 已被 .gitignore 排除。
-默认只跑树断言；本地残留 PNG 不会自动打开辅门禁。显式 `SIM_PNG_GOLDEN=1`
-或 `--update` 才比对/生成。GUI 定标后人工 review 再入库。
+**场景 PNG 辅门禁当前挂起**：固件 GUI 仍在调整，场景基线使用
+`sim/ci/golden/scenarios/`，页面 review 基线使用 `sim/ci/golden/ui/`。
+默认只跑树断言；显式 `SIM_PNG_GOLDEN=1` 或 `--update` 才比对/生成场景基线。
+`review_pages.py --check` 独立负责页面状态矩阵、几何 lint 和 UI 基线比对。
 
 **tree_assert 基线约定**：场景文本断言代表当前固件 UI 快照。GUI 调整期
 `run_ci.sh` FAIL 是回归信号——有意改动在同一提交里更新场景断言；意外改动即

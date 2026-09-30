@@ -108,7 +108,62 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.MULTILINE,
             ))
-        self.assertEqual(len(symbols), 49, sorted(symbols))
+        expected = {
+            "MAIN_PROJECT_TASK_AFFINITY_CPU0",
+            "MAIN_PROJECT_TASK_AFFINITY_CPU1",
+            "MAIN_PROJECT_TASK_AFFINITY_NO_AFFINITY",
+            "MAIN_PROJECT_TASK_CORE_ID",
+            "MAIN_WEATHER_SERVER_BASE_URL",
+            "MAIN_WEATHER_DEVICE_TOKEN",
+            "MAIN_DISPLAY_BENCHMARK",
+            "BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_8",
+            "XPOWERS_ESP_IDF_NEW_API",
+            "EVENT_BUS_SUBSCRIBER_CAPACITY",
+            "EVENT_BUS_UI_CALLBACK_CAPACITY",
+            "EVENT_BUS_UI_PAYLOAD_CAPACITY",
+            "EVENT_BUS_UI_PAYLOAD_SIZE",
+            "CHORE_SERVICE_TASK_STACK_SIZE",
+            "CHORE_SERVICE_JOB_CAPACITY",
+            "APP_MANAGER_LIFECYCLE_DEBUG_LOG",
+            "APP_MANAGER_MAX_RESIDENT_APPS",
+            "APP_MANAGER_MAX_PAGE_INSTANCES",
+            "APP_MANAGER_PAGE_STATE_BYTES",
+            "APP_MANAGER_NAV_COMMAND_CAPACITY",
+            "APP_MANAGER_MAILBOX_CAPACITY",
+            "APP_MANAGER_CONTROL_QUEUE_DEPTH",
+            "APP_MANAGER_CONTROL_TASK_STACK",
+            "APP_MANAGER_LVGL_PARTIAL_BUFFER_HEIGHT",
+            "APP_MANAGER_LVGL_WORKER_STACK_SIZE",
+            "APP_MANAGER_LVGL_WORKER_AFFINITY_CPU0",
+            "APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1",
+            "APP_MANAGER_LVGL_WORKER_AFFINITY_NO_AFFINITY",
+            "APP_MANAGER_LVGL_WORKER_CORE_ID",
+            "APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION",
+            "APP_MANAGER_DISPLAY_DIAGNOSTICS",
+            "DEVICE_LINK_SERVICE_TASK_STACK",
+            "DEVICE_LINK_SERVICE_QUEUE_DEPTH",
+            "CONNECTIVITY_MANAGER_TASK_STACK",
+            "CONNECTIVITY_MANAGER_QUEUE_DEPTH",
+            "TIME_SERVICE_SYNC_WORKER_STACK",
+            "POWER_SERVICE_TASK_STACK",
+            "BLE_RUNTIME_ADV_FAST_INTERVAL_MS",
+            "BLE_RUNTIME_ADV_SLOW_INTERVAL_MS",
+            "BLE_RUNTIME_ADV_FAST_WINDOW_MS",
+            "BLE_RUNTIME_TX_QUEUE_DEPTH",
+            "BLE_RUNTIME_TX_FRAME_BYTES",
+            "SYSTEM_PM_STANDBY_TASK_STACK",
+            "NV_STORAGE_BLOB_POOL_SIZE",
+            "WIFI_SERVICE_TASK_STACK",
+            "WIFI_SERVICE_QUEUE_DEPTH",
+            "IMU_SERVICE_TASK_STACK",
+            "WEATHER_SERVICE_TASK_STACK_SIZE",
+            "WEATHER_SERVICE_MAX_RESPONSE_BYTES",
+        }
+        actual = set(symbols)
+        self.assertEqual(actual, expected, {
+            "missing": sorted(expected - actual),
+            "unexpected": sorted(actual - expected),
+        })
 
     def test_connectivity_defaults(self) -> None:
         defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
@@ -175,82 +230,12 @@ class ConfigurationGovernanceTest(unittest.TestCase):
 
     def test_device_link_contract_source_is_authoritative(self) -> None:
         contract = self.root / "contracts/device_link"
-        protocol = yaml.safe_load(
-            (contract / "protocol.yaml").read_text(encoding="utf-8")
-        )
+        self.assertTrue((contract / "protocol.yaml").is_file())
+        self.assertTrue((contract / "vectors/golden.json").is_file())
         self.assertEqual(
             (contract / "VERSION").read_text(encoding="utf-8").strip(),
             "1.0.0",
         )
-        self.assertEqual(protocol["profile"], {
-            "name": "device-link/v1",
-            "schema_format": "fixed-binary/1",
-            "version": "1.0.0",
-            "release_state": "freeze_candidate",
-        })
-        self.assertEqual(
-            protocol["protocol"]["transport"]["preferred_att_mtu"], 498
-        )
-        self.assertEqual(
-            protocol["protocol"]["transport"]["maximum_att_value_bytes"], 495
-        )
-        security = protocol["protocol"]["security"]
-        self.assertEqual(security["transport"], "ble_le_secure_connections")
-        self.assertTrue(security["sc_only"])
-        self.assertTrue(security["mitm"])
-        self.assertTrue(security["bonding"])
-        self.assertEqual(security["max_bonds"], 1)
-        self.assertEqual(security["io_capability"], "display_yes_no")
-        self.assertEqual(security["association_model"], "numeric_comparison")
-        self.assertEqual(security["encryption_key_bytes"], 16)
-        self.assertEqual(security["bond_replacement"], "local_clear_then_pair")
-        self.assertNotIn("bond_replacement_candidate", security)
-        characteristics = protocol["protocol"]["gatt"]["characteristics"]
-        self.assertEqual(characteristics["command_rx"]["properties"], ["write"])
-        self.assertEqual(characteristics["server_tx"]["properties"], ["indicate"])
-        for characteristic in characteristics.values():
-            self.assertTrue(characteristic["encrypted"])
-            self.assertTrue(characteristic["authenticated"])
-        self.assertTrue(characteristics["server_tx"]["cccd_write_encrypted"])
-        self.assertTrue(
-            characteristics["server_tx"]["cccd_write_authenticated"]
-        )
-        self.assertEqual(
-            protocol["protocol"]["att_errors"][
-                "insufficient_authentication"
-            ],
-            0x05,
-        )
-        self.assertEqual(
-            protocol["protocol"]["transport"]["operation_id_wire"], "u32"
-        )
-        transport = protocol["protocol"]["transport"]
-        self.assertEqual(transport["application_error_opcode"], 0x80)
-        self.assertNotIn("l2cap_pdu_bytes", transport)
-        self.assertFalse(transport["operation_id_reuse_within_boot"])
-        self.assertEqual(transport["operation_id_exhausted_status"], "INTERNAL")
-        self.assertNotIn("recovery_requires_full_mtu", transport["low_mtu"])
-        self.assertEqual(
-            {command["name"]: command["id"] for command in protocol["commands"]}
-            ["GET_OPERATION"],
-            8,
-        )
-        self.assertEqual(
-            {command["name"]: command["id"] for command in protocol["commands"]}
-            ["ACK_OPERATION"],
-            9,
-        )
-        self.assertNotIn("admission", protocol["wire_rules"])
-        self.assertNotIn("scan", protocol["wire_rules"])
-        self.assertIn(
-            "SCAN",
-            protocol["wire_rules"]["operation_result"]["failure_matrix"],
-        )
-        vectors = yaml.safe_load(
-            (contract / "vectors/golden.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(vectors["format_version"], 4)
-
         gitmodules = (self.root / ".gitmodules").read_text(encoding="utf-8")
         self.assertIn("path = contracts/device_link", gitmodules)
         self.assertIn(

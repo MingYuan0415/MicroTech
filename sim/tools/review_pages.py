@@ -259,10 +259,7 @@ def _run_spec(runner, spec, args, proc):
                     for seed in state.get('seed', []):
                         runner._step(seed)
                     runner.call('sim.step', {'ms': 33 * 30})
-                    try:
-                        runner.call('sim.wait_idle', {'timeout_ms': 5000})
-                    except Exception:
-                        pass
+                    runner.call('sim.wait_idle', {'timeout_ms': 5000})
                     tree = runner.call('sim.tree')['tree']
                     if not want:
                         break

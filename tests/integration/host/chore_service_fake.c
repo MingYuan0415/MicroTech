@@ -9,7 +9,7 @@ esp_err_t chore_service_submit(const chore_service_job_t *job,
     {
         return ESP_ERR_INVALID_ARG;
     }
-    static const atomic_bool cancelled = ATOMIC_VAR_INIT(false);
+    static const atomic_bool cancelled = false;
     const chore_service_cancel_token_t token =
     {
         .requested = &cancelled,
