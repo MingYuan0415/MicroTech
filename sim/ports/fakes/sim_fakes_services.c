@@ -454,6 +454,17 @@ esp_err_t audio_service_set_pa(bool enabled)
 static char s_sd_dir[PATH_MAX];
 static char s_sd_recordings[PATH_MAX];
 static bool s_sd_mounted;
+static bool s_sd_report_fixed;
+static uint64_t s_sd_report_total;
+static uint64_t s_sd_report_free;
+
+void host_sd_set_report_capacity(bool deterministic, uint64_t total_bytes,
+                                 uint64_t free_bytes)
+{
+    s_sd_report_total = total_bytes;
+    s_sd_report_free = free_bytes;
+    s_sd_report_fixed = deterministic;
+}
 
 static esp_err_t _host_sd_ensure_directory(const char *directory)
 {
@@ -726,6 +737,12 @@ esp_err_t esp_vfs_fat_info(const char *base_path, uint64_t *total_bytes,
     if (base_path == NULL || total_bytes == NULL || free_bytes == NULL)
     {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (s_sd_report_fixed)
+    {
+        *total_bytes = s_sd_report_total;
+        *free_bytes = s_sd_report_free;
+        return ESP_OK;
     }
     if (statvfs(base_path, &info) != 0)
     {

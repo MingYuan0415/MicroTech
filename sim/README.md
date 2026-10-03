@@ -10,7 +10,11 @@ sudo apt install build-essential cmake ninja-build python3 python3-pip \
     libsdl2-dev libcurl4-openssl-dev
 # 不要 apt install libfreetype-dev 来链接 sim：发行版 2.13.x 与设备 2.14.3 不符。
 # FreeType 2.14.3 使用树内 managed_components/espressif__freetype/freetype 源码。
-pip3 install -r requirements-weather-assets.txt
+# sim 的 CMake 需要 $ENV{IDF_PATH}（tinycrypt 源/头），因此先导出 IDF 环境；
+# 资源与审查依赖（Pillow/PyMuPDF/pypng/lz4）建议装入 IDF 虚拟环境（系统 python3
+# 可能没有 pip 与这些包）：
+source ~/esp/esp-idf/export.sh
+python -m pip install -r requirements-weather-assets.txt
 ```
 
 `managed_components/lvgl__lvgl`、`espressif__cjson`、`espressif__freetype`、
@@ -81,10 +85,12 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
 
 ## 编译进 sim 的真实源码
 
-- app_manager：app_core 15 个 `.c` + app_theme；`HOST_TEST` 不定义，mailbox 在
+- app_manager：app_core 16 个 `.c` + app_theme（`app_manager_persistence.c`
+  未编，工厂重置不清理持久化按键）；`HOST_TEST` 不定义，mailbox 在
   LVGL worker 的 `lv_timer` 上排空（与真机一致）。
-- apps：9 个 app + app_ui/app_weather_ui 共 17 个 `.c`，全部作为可执行文件的
-  源文件编译，配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住
+- apps：9 个 app + app_ui/app_weather_ui 共 27 个 `.c`（`apps_persistence.c`
+  除外，它只被 `main/app_runtime.c` 使用），全部作为可执行文件的源文件编译，
+  配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住
   `.app_manager_apps` 链接段（注册表发现 9 个 app）。
 - middleware：mt_log、event_bus、nv_storage（文件后端 `sim_nvs`）、timer_service、
   power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder
@@ -93,8 +99,16 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
   WAV 读写、rename、删除都落在该真实文件系统上。注意服务内部文件名为 64 字节
   全路径缓冲，`--sd-dir` 需保持足够浅（如 `/tmp/...`），过深时 boot 会打印告警
   且录音不会入列。
-- 不编：`system_pm`、`ble_runtime`、`wifi_service_idf_port.c`、bsp 真源码
-  （sim_bsp 提供 `bsp_hal.h` 三契约与 DISPLAY|TOUCH|INPUT 能力面）。
+- 不编：`system_pm`、`ble_runtime`、`wifi_service_idf_port.c`、
+  `time_service_port.c`、`connectivity_manager_digest.c`（sim 用真 tinycrypt
+  SHA-256 替代）、bsp 真源码（sim_bsp 提供 `bsp_hal.h` 三契约与
+  DISPLAY|TOUCH|INPUT 能力面）。`main/` 仅编 `app_product_config.c`，运行时由
+  `sim/runtime/sim_runtime.c` 顶替 `main/app_runtime.c`。
+
+**sim 不覆盖的边界**（需上板验证，宿主测试不替代）：BLE 射频/配对/GATT、
+Wi-Fi 扫描与关联/RSSI、真实音频 I2S 链路、`system_pm` 待机/深睡、SD FAT 格式化
+与挂载失败语义、RTC 闹钟、DMA/QSPI 时序、factory reset 的实际重启。CI 的
+SD 容量为固定值（见下），不代表真机 `statvfs`。
 
 ## 已知设备语义要点（踩坑记录）
 
@@ -158,8 +172,10 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 方法：`sim.ping`、`sim.step {ms}`（33 的倍数，仅 CI）、`sim.wait_idle
 {timeout_ms}`（帧哈希连续 2 步不变 + `lv_anim_count_running()==0`；暂停时返回顶层
 `error`）、
-`sim.screenshot {name,wait_idle}`、`sim.tree`（绝对坐标 + 多 part 计算样式 +
-类型值 + 图像语义 ID）、`sim.touch {action,x,y}`、`sim.key {button,action}`
+`sim.screenshot {name,wait_idle}`、`sim.tree {include_layers?}`（绝对坐标 +
+`LV_PART_MAIN` 计算样式 + 类型值 + 图像语义 ID；`include_layers:true` 时在
+`overlays` 数组附 top/sys 层，任务切换器位于 sys 层）、`sim.touch {action,x,y}`、
+`sim.key {button,action}`
 （press/release/click）、`sim.navigate {app}`（投 mailbox，不阻塞）、`sim.apps`、
 `sim.set_time {epoch}`、`sim.set_power {voltage?,pct?,charging,vbus}`（voltage/pct 可各自省略；缺 pct 走电压回退显示）、
 `sim.set_wifi {state}`（connected/disconnected）、`sim.set_imu {pitch,roll}`（度）、
@@ -172,10 +188,14 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 卸载宿主目录卷、合成静音 WAV、清空、列目录、读 recorder 服务缓存索引与
 generation）、`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
 字符串键）、`sim.connectivity`（connectivity_manager 与 wifi_service 状态、
-扫描缓存快照）、`sim.switcher`、`sim.exit`。客户端：`python3 sim/tools/simctl.py <command>`。
+扫描缓存快照）、`sim.switcher {get?|action?}`（任务切换器可见性/显示/清空）、
+`sim.set_bluetooth {enabled?,bound?,active?,client_connected?,window_remaining_ms?}`、
+`sim.offer_pairing {token?,passkey?}`、`sim.exit`。客户端：
+`python3 sim/tools/simctl.py <command>`。
 
 `sim.ping` 返回 `network_ready`、`weather_state`、`weather_failure`、`active_app`、
-`ci` 和 `frames`，可用于 Agent 判断当前会话，而不必解析页面文本。
+`ci`、`frames` 和 `paused`。CI 会话与暂停期间 `active_app` 恒为 `null`（生命周期
+查询会经 mailbox 阻塞），此时改用 `sim.tree`/`sim.switcher` 判断当前页面。
 `simctl` 无法连接时会快速失败并提示启动 `python3 sim/dev.py`；端口冲突时先停止
 开发会话再运行 CI。真实联网请求失败时，优先检查 `network_ready`、天气状态和
 `build/sim/dev_session.log`。
@@ -212,9 +232,10 @@ sim/ci/run_ci.sh                    # 端口预检 + check_lv_conf + 构建 + st
 sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review 后入库）
 ```
 
-**场景 PNG 辅门禁当前挂起**：固件 GUI 仍在调整，场景基线使用
-`sim/ci/golden/scenarios/`，页面 review 基线使用 `sim/ci/golden/ui/`。
-默认只跑树断言；显式 `SIM_PNG_GOLDEN=1` 或 `--update` 才比对/生成场景基线。
+**场景 PNG 辅门禁当前挂起**：固件 GUI 仍在调整，场景基线目录
+`sim/ci/golden/scenarios/` 尚未入库，页面 review 基线使用 `sim/ci/golden/ui/`。
+默认只跑树断言；显式 `SIM_PNG_GOLDEN=1` 时会真正比对，**缺基线即 FAIL**（生成用
+`run_ci.sh --update`，人工 review 后入库）。
 `review_pages.py --check` 独立负责页面状态矩阵、几何 lint 和 UI 基线比对。
 
 **tree_assert 基线约定**：场景文本断言代表当前固件 UI 快照。GUI 调整期

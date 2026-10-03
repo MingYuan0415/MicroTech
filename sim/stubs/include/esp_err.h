@@ -2,6 +2,9 @@
 #ifndef __SIM_ESP_ERR_H__
 #define __SIM_ESP_ERR_H__
 
+#include <stdio.h>
+#include <stdlib.h>
+
 /** @brief Host representation of an ESP-IDF error code. */
 typedef int esp_err_t;
 
@@ -40,7 +43,13 @@ const char *esp_err_to_name(esp_err_t code);
 
 #define ESP_ERROR_CHECK(x) do {                             \
         esp_err_t _err_rc = (x);                            \
-        (void) _err_rc;                                     \
+        if (_err_rc != ESP_OK) {                            \
+            fprintf(stderr,                                 \
+                    "ESP_ERROR_CHECK failed: %s (%d) at %s:%d\n", \
+                    esp_err_to_name(_err_rc), (int)_err_rc,     \
+                    __FILE__, __LINE__);                    \
+            abort();                                        \
+        }                                                   \
     } while (0)
 
 #endif /* __SIM_ESP_ERR_H__ */

@@ -69,6 +69,8 @@ def _walk(node):
     yield node
     for child in node.get('children', []):
         yield from _walk(child)
+    for child in node.get('overlays', []):
+        yield from _walk(child)
 
 
 class Runner:
@@ -212,9 +214,11 @@ class Runner:
                     os.makedirs(self.golden, exist_ok=True)
                     shutil.copyfile(path, golden_file)
                 elif not os.path.exists(golden_file):
-                    # PNG 辅门禁挂起期（固件 GUI 未定标）：缺基线只提示不失败。
-                    print('   note: golden %s 未生成，PNG 比对跳过'
-                          % step['name'])
+                    # 显式开启 PNG 门禁（SIM_PNG_GOLDEN=1）时，缺基线是错误，
+                    # 否则门禁会永远空过。默认（未传 --golden）不受影响。
+                    raise AssertionError(
+                        'golden %s missing; run with --update to generate'
+                        % step['name'])
                 else:
                     gd = hashlib.sha256(open(golden_file, 'rb').read()).hexdigest()
                     assert gd == digest, 'png mismatch %s != %s' % (gd[:12], digest[:12])
@@ -227,12 +231,19 @@ class Runner:
                 assert reply.get('error') == want, \
                     'error %r != %r' % (reply.get('error'), want)
         elif cmd == 'tree_assert':
-            tree = self.call('sim.tree')['tree']
+            tree = self.call('sim.tree', step.get('params') or {})['tree']
             match = step.get('contains')
             assert isinstance(match, dict), 'tree_assert needs a contains map'
             any_match = any(_flat_matches(node, match)
                             for node in _walk(tree))
             assert any_match, 'no node matches %s' % json.dumps(match, ensure_ascii=False)
+        elif cmd == 'call':
+            self.call(step['method'], step.get('params'))
+        elif cmd == 'assert_result':
+            res = self.call(step['method'], step.get('params'))
+            for key, want in (step.get('expect') or {}).items():
+                assert res.get(key) == want, \
+                    'result[%s] %r != %r' % (key, res.get(key), want)
         else:
             raise RuntimeError('unknown step cmd %r' % cmd)
 

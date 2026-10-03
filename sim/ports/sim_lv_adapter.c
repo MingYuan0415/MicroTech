@@ -12,6 +12,7 @@
  *    after mailbox s_ready), then from an explicit counter;
  *  - SDL is never called from the worker.
  */
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -117,13 +118,31 @@ bool esp_lv_adapter_is_initialized(void)
 
 esp_err_t esp_lv_adapter_lock(int32_t timeout_ms)
 {
-    (void)timeout_ms;
     (void)pthread_once(&s_lock_once, _lock_init_once);
-    if (pthread_mutex_lock(&s_lv_lock) != 0)
+    if (timeout_ms < 0)
+    {
+        return (pthread_mutex_lock(&s_lv_lock) == 0) ? ESP_OK : ESP_FAIL;
+    }
+
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0)
     {
         return ESP_FAIL;
     }
-    return ESP_OK;
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    if (deadline.tv_nsec >= 1000000000L)
+    {
+        deadline.tv_sec += 1;
+        deadline.tv_nsec -= 1000000000L;
+    }
+
+    const int rc = pthread_mutex_timedlock(&s_lv_lock, &deadline);
+    if (rc == ETIMEDOUT)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return (rc == 0) ? ESP_OK : ESP_FAIL;
 }
 
 void esp_lv_adapter_unlock(void)

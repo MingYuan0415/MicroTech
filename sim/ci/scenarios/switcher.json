@@ -1,0 +1,47 @@
+{
+ "name": "task-switcher",
+ "steps": [
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.switcher",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "call",
+   "method": "sim.switcher",
+   "params": {}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.switcher",
+   "params": {"get": true},
+   "expect": {"visible": true}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "最近任务"}
+  },
+  {
+   "cmd": "call",
+   "method": "sim.switcher",
+   "params": {"action": "clear_all"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.switcher",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  }
+ ]
+}

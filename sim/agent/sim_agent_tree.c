@@ -240,7 +240,7 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     return node;
 }
 
-char *sim_agent_tree_dump_active_screen(void)
+char *sim_agent_tree_dump_active_screen(bool include_layers)
 {
     lv_obj_t *scr = lv_screen_active();
     image_alias_t aliases[64];
@@ -269,6 +269,24 @@ char *sim_agent_tree_dump_active_screen(void)
     }
 #endif
     cJSON *root = _dump_obj(scr, aliases, alias_count);
+    if ((root != NULL) && include_layers)
+    {
+        cJSON *overlays = cJSON_AddArrayToObject(root, "overlays");
+        if (overlays != NULL)
+        {
+            lv_obj_t *const layers[] = { lv_layer_top(), lv_layer_sys() };
+            for (size_t i = 0U; i < (sizeof(layers) / sizeof(layers[0])); i++)
+            {
+                cJSON *dump = (layers[i] != NULL)
+                              ? _dump_obj(layers[i], aliases, alias_count)
+                              : NULL;
+                if (dump != NULL)
+                {
+                    cJSON_AddItemToArray(overlays, dump);
+                }
+            }
+        }
+    }
     if (root != NULL)
     {
         text = cJSON_PrintUnformatted(root);

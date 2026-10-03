@@ -288,10 +288,16 @@ static cJSON *_handle(cJSON *request, bool *ok)
         cJSON_AddNumberToObject(result, "frames",
                                 (double)sim_lv_frame_count());
         _add_weather_status(result);
-        if (!sim_lv_ci_enabled())
+        /* The lifecycle query drains via the mailbox; it is only safe while the
+         * worker free-runs. In CI the worker is step-gated, and while paused the
+         * mailbox is not drained at all, so both cases must skip the query
+         * instead of blocking the RPC thread (and s_rpc_lock) forever. */
+        if (sim_lv_ci_enabled() || sim_lv_paused())
         {
-            /* The lifecycle query drains via the mailbox; only safe when the
-             * worker free-runs (CI must read state from the tree instead). */
+            cJSON_AddNullToObject(result, "active_app");
+        }
+        else
+        {
             const char *active_app = app_manager_get_active_app_id();
             if (active_app != NULL)
             {
@@ -302,10 +308,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
                 cJSON_AddNullToObject(result, "active_app");
             }
         }
-        else
-        {
-            cJSON_AddNullToObject(result, "active_app");
-        }
+        cJSON_AddBoolToObject(result, "paused", sim_lv_paused());
     }
     else if (strcmp(method, "sim.step") == 0)
     {
@@ -438,10 +441,14 @@ static cJSON *_handle(cJSON *request, bool *ok)
     }
     else if (strcmp(method, "sim.tree") == 0)
     {
+        const cJSON *layers = params != NULL ?
+                              cJSON_GetObjectItemCaseSensitive(
+                                  params, "include_layers") :
+                              NULL;
         char *tree = NULL;
 
         (void)esp_lv_adapter_lock(-1);
-        tree = sim_agent_tree_dump_active_screen();
+        tree = sim_agent_tree_dump_active_screen(cJSON_IsTrue(layers));
         (void)esp_lv_adapter_unlock();
         if (tree == NULL)
         {
@@ -1242,10 +1249,11 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                     d->root_page_id : "");
             cJSON_AddItemToArray(apps, item);
         }
-        if (!sim_lv_ci_enabled())
+        if (!sim_lv_ci_enabled() && !sim_lv_paused())
         {
+            const char *active = app_manager_get_active_app_id();
             cJSON_AddStringToObject(result, "active",
-                                    app_manager_get_active_app_id());
+                                    active != NULL ? active : "");
         }
     }
     else

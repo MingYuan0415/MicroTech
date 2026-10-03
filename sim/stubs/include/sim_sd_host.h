@@ -19,6 +19,11 @@ bool host_sd_set_mounted(bool mounted);
 bool host_sd_is_mounted(void);
 /** @brief Return the mounted volume path, or NULL while unmounted. */
 const char *host_sd_directory(void);
+/** @brief Override FAT capacity reporting with deterministic values (CI) so
+ *  goldens do not depend on the host filesystem. Pass deterministic=false to
+ *  restore real statvfs reporting. */
+void host_sd_set_report_capacity(bool deterministic, uint64_t total_bytes,
+                                 uint64_t free_bytes);
 /** @brief Return the recordings directory, or NULL while unmounted. */
 const char *host_sd_recordings_dir(void);
 /** @brief Synthesize a silent 16 kHz / 16-bit / stereo WAV recording. */

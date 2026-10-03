@@ -189,8 +189,11 @@ def main():
     ap.add_argument('--shots', default='build/sim/review_shots')
     ap.add_argument('--port', type=int, default=5002)
     ap.add_argument('--pages', default=None, help='app/page,app/page filter')
-    ap.add_argument('--update', action='store_true')
-    ap.add_argument('--check', action='store_true')
+    ap.add_argument('--update', action='store_true',
+                    help='write/refresh baselines instead of comparing')
+    ap.add_argument('--check', action='store_true',
+                    help='compare only (default), failing on missing or '
+                         'differing baselines')
     ap.add_argument('--no-launch', action='store_true')
     ap.add_argument('--keep-sim', action='store_true',
                     help='leave the sim running after the review for interactive '
@@ -198,6 +201,8 @@ def main():
     ap.add_argument('--report', default=None)
     ap.add_argument('--max-diff', type=float, default=0.005)
     args = ap.parse_args()
+    if args.check and args.update:
+        ap.error('--check and --update are mutually exclusive')
 
     spec = json.load(open(args.spec))
 

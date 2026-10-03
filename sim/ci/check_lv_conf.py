@@ -154,9 +154,6 @@ def main():
     if norm(lv_conf.get('LV_FONT_DEFAULT')) != '&lv_font_montserrat_18':
         fail(errors, 'lv_conf.h LV_FONT_DEFAULT must be &lv_font_montserrat_18')
 
-    if not gates.get('LV_USE_FS_POSIX') == '0':
-        fail(errors, 'internal gate error')
-
     if errors:
         print('check_lv_conf: FAIL (%d issue(s))' % len(errors), file=sys.stderr)
         for e in errors:

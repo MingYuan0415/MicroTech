@@ -86,8 +86,22 @@
    "error": "invalid pm params"
   },
   {
+   "cmd": "expect_error",
+   "method": "sim.no_such_method",
+   "params": {},
+   "error": "unknown method"
+  },
+  {
    "cmd": "pause",
    "enabled": true
+  },
+  {
+   "cmd": "call",
+   "method": "sim.ping"
+  },
+  {
+   "cmd": "call",
+   "method": "sim.apps"
   },
   {
    "cmd": "navigate",
