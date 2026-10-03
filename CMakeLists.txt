@@ -27,7 +27,7 @@ if(NOT CONFIG_LV_USE_CLIB_STRING OR
 endif()
 
 if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
-    if(NOT CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_8)
+    if(NOT ${MT_BOARD_KCONFIG_SYMBOL})
         message(FATAL_ERROR
             "The selected target and MicroTech board Kconfig do not match")
     endif()

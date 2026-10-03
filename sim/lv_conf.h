@@ -24,6 +24,10 @@
 #define LV_USE_STDLIB_SPRINTF           LV_STDLIB_CLIB
 
 /* ---- Color (root CMakeLists enforces RGB565 on device) ---- */
+/* LVGL 9.6 replaced LV_COLOR_DEPTH with LV_COLOR_FORMAT_DEFAULT. Keep the
+ * depth for the three-way drift check and name the format explicitly so the
+ * deprecation #warning is not emitted (host uses -Werror). */
+#define LV_COLOR_FORMAT_DEFAULT         LV_COLOR_FORMAT_RGB565
 #define LV_COLOR_DEPTH                  16
 
 /* ---- Default font (sdkconfig.defaults:102) ---- */
@@ -64,6 +68,9 @@
 #define LV_USE_ASSERT_NULL                           1
 #define LV_USE_ASSERT_MALLOC                         1
 #define LV_ASSERT_HANDLER_INCLUDE                    "assert.h"
+/* LVGL 9.6 deprecates LV_ASSERT_HANDLER_INCLUDE with a #warning; the sim is
+ * built with -Werror, so acknowledge the deprecation explicitly. */
+#define LV_DISABLE_ASSERT_HANDLER_INCLUDE_WARNING    1
 #define LV_CACHE_DEF_SIZE                            0
 #define LV_IMAGE_HEADER_CACHE_DEF_CNT                0
 #define LV_GRADIENT_MAX_STOPS                        2
@@ -139,5 +146,27 @@
 #define LV_FREETYPE_CACHE_FT_GLYPH_CNT               256
 #define LV_USE_SNAPSHOT                              1
 #define LV_USE_OBSERVER                              1
+
+/* ---- Input device tuning (mirror device LVGL Kconfig defaults) ---- */
+#define LV_INDEV_DEF_SCROLL_LIMIT                    10
+#define LV_INDEV_DEF_SCROLL_THROW                    10
+#define LV_INDEV_DEF_SCROLL_ELASTIC_FACTOR           4
+#define LV_INDEV_DEF_LONG_PRESS_TIME                 400
+#define LV_INDEV_DEF_LONG_PRESS_REP_TIME             100
+#define LV_INDEV_DEF_DOUBLE_CLICK_TIME               400
+#define LV_INDEV_DEF_GESTURE_LIMIT                   50
+#define LV_INDEV_DEF_GESTURE_MIN_VELOCITY            3
+#define LV_INDEV_DEF_ROTARY_SENSITIVITY              256
+#define LV_INDEV_DEF_GESTURE_PINCH_DOWN_THRESHOLD    75
+#define LV_INDEV_DEF_GESTURE_PINCH_UP_THRESHOLD      150
+#define LV_INDEV_DEF_GESTURE_PINCH_MAX_INITIAL_SCALE 250
+#define LV_INDEV_DEF_GESTURE_ROTATION_THRESHOLD      200
+
+/* LVGL 9.6's lvgl.h includes config/lv_conf_kconfig.h unconditionally. Its
+ * documented LV_CONF_KCONFIG_EXTERNAL_INCLUDE switch only guards the top
+ * sdkconfig include block, not the LV_* mapping section below it, so the only
+ * way to keep the mapping compiled out (this desktop build owns every value in
+ * this file via LV_KCONFIG_IGNORE) is to satisfy its include guard. */
+#define LV_CONF_KCONFIG_H
 
 #endif /* LV_CONF_H */

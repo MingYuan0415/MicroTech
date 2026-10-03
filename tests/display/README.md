@@ -127,6 +127,19 @@ TCP 中断恢复、冷启动、休眠恢复或 8 小时 soak。
 STOP 和 NEW_INTENT 的 INFO trace。生产默认关闭；错误、警告、handler、observer 和状态
 迁移不受影响。
 
+## 可复现证据包
+
+一次可比较的验收运行必须成组归档以下内容，缺一不可：
+
+- **display config**：设备日志中固件启动打印的 `display config transport=... bus_hz=...` 行，字段来自 BSP descriptor 与 LVGL 配置；C_EXT 分析器以 `display config ` 为标记读取，RAM 分析器以 `display_bench: display config ` 为标记读取。
+- **profile 文件**：`tests/display/profiles/*.json`（严格 schema，见 `display_profile_utils.load_benchmark_profile`）及构建时叠加的 `tests/display/profile_defaults/*.defaults`；`lvgl_ram_profiles.py prepare` 在隔离目录生成的 `display_benchmark_profile.h` 与 `source_manifest.json` 一并归档。
+- **固件来源指纹**：`prepare` 写入 `source_manifest.json` 的 `source_fingerprint` 与 `repositories[*].commit`，覆盖父仓库及子模块的 commit、diff 和未跟踪文件内容。
+- **原始日志**：设备串口完整日志，分别交给 `analyze_c_ext_stress.py <log>` 或 `analyze_lvgl_ram.py --log PROFILE=PATH`。
+
+本目录工具不产生 **Device ID** 和 **Boot ID** 字段，解析器也不读取它们；工具也不计算**固件镜像 hash**（`validate_profile_artifacts` 只检查 `<build>/microtech.bin` 是否存在，不生成摘要）。日志只含 IDF 启动标记（`boot: ESP-IDF`、`rst:0x`），用于计数重启而非标识单台设备或单次启动。需要区分设备或启动时须自行记录，不能声称由本工具产生。
+
+缺少上述任一条目的运行不得与任何基线比较；`source_fingerprint` 或 profile 不一致时，该运行不与旧基线同组。
+
 ## 调试顺序
 
 1. 先用纯色 flush 验证 adapter 管理的 `lv_display_flush_ready` 握手。

@@ -26,6 +26,42 @@ MT_ROOT = os.path.dirname(SIM_ROOT)
 DEFINE_RE = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)(?:\s+([^\s/].*?))?\s*(?:/\*\*?.*\*/)?\s*$',
                        re.M)
 
+# LVGL 9.6 Kconfig exposes internal constants and derived values that the
+# desktop lv_conf.h does not own: calendar month strings, standard include
+# names, the stdlib selector enum values, and a few derived booleans. These are
+# enumerated explicitly (no prefix/suffix blanket rules) so a newly introduced
+# profile-relevant symbol fails the check instead of being silently ignored.
+IGNORED_MIRROR = {
+    'CONFIG_LV_JANUARY_STR',
+    'CONFIG_LV_FEBRUARY_STR',
+    'CONFIG_LV_MARCH_STR',
+    'CONFIG_LV_APRIL_STR',
+    'CONFIG_LV_MAY_STR',
+    'CONFIG_LV_JUNE_STR',
+    'CONFIG_LV_JULY_STR',
+    'CONFIG_LV_AUGUST_STR',
+    'CONFIG_LV_SEPTEMBER_STR',
+    'CONFIG_LV_OCTOBER_STR',
+    'CONFIG_LV_NOVEMBER_STR',
+    'CONFIG_LV_DECEMBER_STR',
+    'CONFIG_LV_INTTYPES_INCLUDE',
+    'CONFIG_LV_LIMITS_INCLUDE',
+    'CONFIG_LV_STDARG_INCLUDE',
+    'CONFIG_LV_STDBOOL_INCLUDE',
+    'CONFIG_LV_STDDEF_INCLUDE',
+    'CONFIG_LV_STDINT_INCLUDE',
+    'CONFIG_LV_STDLIB_BUILTIN',
+    'CONFIG_LV_STDLIB_CLIB',
+    'CONFIG_LV_STDLIB_CUSTOM',
+    'CONFIG_LV_STDLIB_MICROPYTHON',
+    'CONFIG_LV_STDLIB_RTTHREAD',
+    'CONFIG_LV_USE_CHECK_ARG',
+    'CONFIG_LV_CHECK_ARG_LOG_MODE',
+    'CONFIG_LV_CHECK_ARG_LOG_MODE_NONE',
+    'CONFIG_LV_ASSERT_HANDLER_INCLUDE_IS_NON_EMPTY',
+    'CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_L1',
+}
+
 
 def parse_defines(path):
     if not os.path.exists(path):
@@ -74,9 +110,14 @@ def main():
     # Every CONFIG_LV_* in the mirror must have an agreeing LV_* in lv_conf.h.
     special = {
         'CONFIG_LV_OS_NONE': ('LV_USE_OS', 'LV_OS_NONE'),
+        'CONFIG_LV_USE_OS': ('LV_USE_OS', 'LV_OS_NONE'),
+        'CONFIG_LV_USE_STDLIB_MALLOC': ('LV_USE_STDLIB_MALLOC', 'LV_STDLIB_CLIB'),
+        'CONFIG_LV_USE_STDLIB_STRING': ('LV_USE_STDLIB_STRING', 'LV_STDLIB_CLIB'),
+        'CONFIG_LV_USE_STDLIB_SPRINTF': ('LV_USE_STDLIB_SPRINTF', 'LV_STDLIB_CLIB'),
         'CONFIG_LV_FONT_DEFAULT_MONTSERRAT_18': ('LV_FONT_DEFAULT', '&lv_font_montserrat_18'),
         'CONFIG_LV_CONF_SKIP': None,
         'CONFIG_LV_COLOR_DEPTH_16': None,
+        'CONFIG_LV_COLOR_FORMAT_RGB565': None,
         'CONFIG_LV_DRAW_SW_ASM_NONE': None,
     }
     for name, mval in sorted(mirror.items()):
@@ -94,6 +135,8 @@ def main():
         if name.startswith('CONFIG_LV_BUILD_'):
             # Component build options (demos/examples): controlled by the
             # sim CMake cache (CONFIG_LV_BUILD_*_OFF), not lv_conf.h.
+            continue
+        if name in IGNORED_MIRROR:
             continue
         if name in ('CONFIG_LV_USE_CLIB_MALLOC',
                     'CONFIG_LV_USE_CLIB_STRING',
@@ -128,6 +171,7 @@ def main():
     # Hard gates from the root CMakeLists.txt / design doc.
     gates = {
         'LV_COLOR_DEPTH': '16',
+        'LV_COLOR_FORMAT_DEFAULT': 'LV_COLOR_FORMAT_RGB565',
         'LV_USE_CLIB_MALLOC': '1',
         'LV_USE_CLIB_STRING': '1',
         'LV_USE_CLIB_SPRINTF': '1',

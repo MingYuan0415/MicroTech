@@ -57,6 +57,7 @@ add_executable(test_cross_layer
     "${APPS}/recorder_app/src/recorder_files_page.c"
     "${APPS}/level_app/src/level_app.c"
     "${APPS}/level_app/src/level_app_persistence.c"
+    "${APPS}/level_app/src/level_math.c"
     "${APPS}/diagnostics_app/src/diagnostics_app.c"
     "${APPS}/settings_app/src/settings_app.c"
     "${APPS}/settings_app/src/settings_display_page.c"

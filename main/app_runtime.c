@@ -60,6 +60,7 @@ typedef struct app_runtime_ownership
     bool factory_reset_attempted;
     bool fs_attempted;
     bool bsp_attempted;
+    bool display_lease_acquired;
     bool time_attempted;
     bool weather_attempted;
     bool chore_attempted;
@@ -97,6 +98,7 @@ static app_runtime_ownership_t s_ownership;
 static const bsp_rtc_ops_t *s_runtime_rtc;
 static const bsp_imu_ops_t *s_runtime_imu;
 static const bsp_sd_ops_t *s_runtime_sd;
+static bsp_display_lease_t s_display_lease;
 static bool s_factory_reset_pending;
 
 static void _app_runtime_restart(void *context)
@@ -314,7 +316,8 @@ static bool _app_runtime_has_owned_resources(void)
     bool owned = s_ownership.nv_attempted ||
                  s_ownership.factory_reset_attempted ||
                  s_ownership.fs_attempted ||
-                 s_ownership.bsp_attempted || s_ownership.time_attempted ||
+                 s_ownership.bsp_attempted || s_ownership.display_lease_acquired ||
+                 s_ownership.time_attempted ||
                  s_ownership.weather_attempted ||
                  s_ownership.chore_attempted ||
                  s_ownership.system_pm_attempted ||
@@ -615,15 +618,43 @@ static esp_err_t _app_runtime_stop_platform_services(void)
 static esp_err_t _app_runtime_stop_foundations(void)
 {
     esp_err_t first_error = ESP_OK;
-    if (s_ownership.bsp_attempted)
+    if (s_ownership.display_lease_acquired && s_ownership.bsp_attempted)
     {
-        esp_err_t result = bsp_deinit();
+        /* Atomic release + teardown so no new acquire can interleave. */
+        esp_err_t result = bsp_display_release_and_deinit(&s_display_lease);
         _app_runtime_record_first_error(&first_error, result);
+        if (result != ESP_ERR_INVALID_STATE)
+        {
+            /* OK / FAILED / UNINITIALIZED all consume the lease. */
+            s_ownership.display_lease_acquired = false;
+            app_runtime_pm_detach_bsp();
+        }
         if (result == ESP_OK)
         {
             s_ownership.bsp_attempted = false;
         }
-        app_runtime_pm_detach_bsp();
+    }
+    else
+    {
+        if (s_ownership.display_lease_acquired)
+        {
+            esp_err_t result = bsp_display_release(&s_display_lease);
+            _app_runtime_record_first_error(&first_error, result);
+            if (result == ESP_OK)
+            {
+                s_ownership.display_lease_acquired = false;
+            }
+        }
+        if (s_ownership.bsp_attempted)
+        {
+            esp_err_t result = bsp_deinit();
+            _app_runtime_record_first_error(&first_error, result);
+            if (result == ESP_OK)
+            {
+                s_ownership.bsp_attempted = false;
+            }
+            app_runtime_pm_detach_bsp();
+        }
     }
     if (s_ownership.fs_attempted)
     {
@@ -887,6 +918,13 @@ static esp_err_t _app_runtime_start_platform(
         result = ESP_ERR_INVALID_STATE;
         return result;
     }
+
+    result = bsp_display_acquire("app_runtime", &s_display_lease);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+    s_ownership.display_lease_acquired = true;
 
     system_pm_config_t system_pm_config;
     result = app_runtime_pm_build_system_config(&system_pm_config);

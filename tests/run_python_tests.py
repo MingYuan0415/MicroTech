@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 GROUPS = {
     "configuration": (ROOT / "tests" / "configuration", "test_*.py"),
+    "docs": (ROOT / "tests" / "docs", "test_*.py"),
     "resources": (ROOT / "tests" / "resources", "test_*.py"),
     "display-tools": (ROOT / "tests" / "display", "test_*.py"),
     "sim-tools": (ROOT / "sim", "test_*.py"),

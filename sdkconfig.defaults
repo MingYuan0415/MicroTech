@@ -103,3 +103,7 @@ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_18=y
 CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_USE_FREETYPE=y
 CONFIG_LV_FREETYPE_USE_LVGL_PORT=y
+# LVGL 9.6 deprecates LV_ASSERT_HANDLER_INCLUDE, which this project uses, with a
+# #warning that the GCC 15 toolchain promotes to an error. Suppress only that
+# deprecation; the assert handler include itself is unchanged.
+CONFIG_LV_DISABLE_ASSERT_HANDLER_INCLUDE_WARNING=y

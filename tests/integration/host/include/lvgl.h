@@ -394,6 +394,45 @@ void lv_obj_set_user_data(lv_obj_t *object, void *user_data);
 void *lv_obj_get_user_data(lv_obj_t *object);
 /** @brief Return whether all requested fake object flags are set. */
 bool lv_obj_has_flag(const lv_obj_t *object, lv_obj_flag_t flags);
+/* LVGL 9.6 dedicated per-flag setters/is_ helpers on the fake object. */
+#define MT_FAKE_FLAG_SETTER(name, flag) \
+    static inline void lv_obj_set_##name(lv_obj_t *object, bool en) \
+    { \
+        if (en) \
+        { \
+            lv_obj_add_flag(object, flag); \
+        } \
+        else \
+        { \
+            lv_obj_remove_flag(object, flag); \
+        } \
+    }
+MT_FAKE_FLAG_SETTER(hidden, LV_OBJ_FLAG_HIDDEN)
+MT_FAKE_FLAG_SETTER(clickable, LV_OBJ_FLAG_CLICKABLE)
+MT_FAKE_FLAG_SETTER(click_focusable, LV_OBJ_FLAG_CLICK_FOCUSABLE)
+MT_FAKE_FLAG_SETTER(scrollable, LV_OBJ_FLAG_SCROLLABLE)
+MT_FAKE_FLAG_SETTER(scroll_elastic, LV_OBJ_FLAG_SCROLL_ELASTIC)
+MT_FAKE_FLAG_SETTER(scroll_momentum, LV_OBJ_FLAG_SCROLL_MOMENTUM)
+MT_FAKE_FLAG_SETTER(scroll_chain, LV_OBJ_FLAG_SCROLL_CHAIN)
+MT_FAKE_FLAG_SETTER(scroll_with_arrow, LV_OBJ_FLAG_SCROLL_WITH_ARROW)
+MT_FAKE_FLAG_SETTER(snappable, LV_OBJ_FLAG_SNAPPABLE)
+MT_FAKE_FLAG_SETTER(press_lock, LV_OBJ_FLAG_PRESS_LOCK)
+MT_FAKE_FLAG_SETTER(event_bubble, LV_OBJ_FLAG_EVENT_BUBBLE)
+MT_FAKE_FLAG_SETTER(gesture_bubble, LV_OBJ_FLAG_GESTURE_BUBBLE)
+MT_FAKE_FLAG_SETTER(ignore_layout, LV_OBJ_FLAG_IGNORE_LAYOUT)
+MT_FAKE_FLAG_SETTER(floating, LV_OBJ_FLAG_FLOATING)
+MT_FAKE_FLAG_SETTER(overflow_visible, LV_OBJ_FLAG_OVERFLOW_VISIBLE)
+#undef MT_FAKE_FLAG_SETTER
+#define MT_FAKE_FLAG_IS(name, flag) \
+    static inline bool lv_obj_is_##name(const lv_obj_t *object) \
+    { \
+        return lv_obj_has_flag(object, flag); \
+    }
+MT_FAKE_FLAG_IS(hidden, LV_OBJ_FLAG_HIDDEN)
+MT_FAKE_FLAG_IS(clickable, LV_OBJ_FLAG_CLICKABLE)
+MT_FAKE_FLAG_IS(scrollable, LV_OBJ_FLAG_SCROLLABLE)
+MT_FAKE_FLAG_IS(overflow_visible, LV_OBJ_FLAG_OVERFLOW_VISIBLE)
+#undef MT_FAKE_FLAG_IS
 /** @brief Add state flags to a fake object. */
 void lv_obj_add_state(lv_obj_t *object, lv_state_t state);
 /** @brief Remove state flags from a fake object. */

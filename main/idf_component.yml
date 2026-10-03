@@ -2,5 +2,5 @@
 dependencies:
   idf:
     version: '>=5.0'
-  espressif/esp_lvgl_adapter: '*'
-  joltwallet/littlefs: '*'
+  espressif/esp_lvgl_adapter: '0.7.2'
+  joltwallet/littlefs: '1.22.3'

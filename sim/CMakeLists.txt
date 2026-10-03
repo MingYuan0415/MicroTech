@@ -27,7 +27,7 @@ find_package(SDL2 REQUIRED)
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
 
-# ---- LVGL 9.5 from the repo tree (same bytes as the firmware) ----
+# ---- LVGL 9.6 from the repo tree (same bytes as the firmware) ----
 set(LV_BUILD_CONF_PATH "${CMAKE_CURRENT_LIST_DIR}/lv_conf.h" CACHE PATH "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -52,18 +52,37 @@ target_compile_definitions(freetype PUBLIC
     FT_CONFIG_OPTION_ERROR_STRINGS FT_ERR_PREFIX=FT_Err_ FT2_BUILD_LIBRARY)
 target_link_libraries(lvgl PUBLIC freetype)
 
-# Mirror espressif__esp_lvgl_adapter/CMakeLists.txt:363-386: with
-# LV_FREETYPE_USE_LVGL_PORT the stream opener must be LVGL's lv_ftsystem.c
-# (F: volume), not FreeType's fopen-based ftsystem.c.
+# Mirror espressif__esp_lvgl_adapter 0.7.2: with LV_FREETYPE_USE_LVGL_PORT the
+# stream opener must be LVGL's lv_ftsystem.c (F: volume), not FreeType's
+# fopen-based ftsystem.c. LVGL 9.6 moved the port to src/font/freetype and that
+# source uses FreeType internal-header aliases FreeType 2.14 no longer exports
+# from ftheader.h.
+set(SIM_LVGL_DIR "${MT_ROOT}/managed_components/lvgl__lvgl")
+set(SIM_LV_FTSYSTEM "${SIM_LVGL_DIR}/src/font/freetype/lv_ftsystem.c")
+if(NOT EXISTS "${SIM_LV_FTSYSTEM}")
+    set(SIM_LV_FTSYSTEM "${SIM_LVGL_DIR}/src/libs/freetype/lv_ftsystem.c")
+endif()
+
 get_target_property(SIM_FT_SOURCES freetype SOURCES)
 list(FILTER SIM_FT_SOURCES EXCLUDE REGEX ".*/ftsystem\\.c$")
 set_target_properties(freetype PROPERTIES SOURCES "${SIM_FT_SOURCES}")
-target_sources(freetype PRIVATE
-    "${MT_ROOT}/managed_components/lvgl__lvgl/src/libs/freetype/lv_ftsystem.c")
-target_include_directories(freetype PRIVATE "${MT_ROOT}/managed_components/lvgl__lvgl")
+target_sources(freetype PRIVATE "${SIM_LV_FTSYSTEM}")
+target_include_directories(freetype PRIVATE "${SIM_LVGL_DIR}")
 target_compile_definitions(freetype PRIVATE
-    "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\"" LV_KCONFIG_IGNORE)
+    "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\"" LV_KCONFIG_IGNORE
+    "FT_INTERNAL_DEBUG_H=<freetype/internal/ftdebug.h>"
+    "FT_INTERNAL_STREAM_H=<freetype/internal/ftstream.h>")
 target_include_directories(freetype PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+
+# LVGL 9.6 also carries the port source in the LVGL target; keep one copy.
+if(EXISTS "${SIM_LVGL_DIR}/src/font/freetype/lv_ftsystem.c")
+    get_target_property(SIM_LVGL_SOURCES lvgl SOURCES)
+    if(SIM_LVGL_SOURCES)
+        list(FILTER SIM_LVGL_SOURCES EXCLUDE
+            REGEX ".*/src/font/freetype/lv_ftsystem\\.c$")
+        set_target_properties(lvgl PROPERTIES SOURCES "${SIM_LVGL_SOURCES}")
+    endif()
+endif()
 
 # ---- libpng from the in-tree component (screenshot encoder; host zlib) ----
 set(PNG_SHARED OFF)
@@ -165,6 +184,7 @@ set(SIM_APP_SOURCES
     "${APPS}/recorder_app/src/recorder_files_page.c"
     "${APPS}/level_app/src/level_app.c"
     "${APPS}/level_app/src/level_app_persistence.c"
+    "${APPS}/level_app/src/level_math.c"
     "${APPS}/diagnostics_app/src/diagnostics_app.c"
     "${APPS}/weather_app/src/weather_app.c"
     "${APPS}/weather_app/src/weather_ui.c"
@@ -264,7 +284,9 @@ target_include_directories(microtech_sim PRIVATE
 # Production-config mirror is force-injected exactly like IDF does; HOST_TEST
 # is deliberately NOT defined (mailbox must drain on the LVGL worker timer).
 target_compile_definitions(microtech_sim PRIVATE
-    APP_RESOURCES_ENABLED=1)
+    APP_RESOURCES_ENABLED=1
+    "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\""
+    LV_KCONFIG_IGNORE)
 target_compile_options(microtech_sim PRIVATE
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG
     "-include;${SIM_SDKCONFIG_GENERATED}")

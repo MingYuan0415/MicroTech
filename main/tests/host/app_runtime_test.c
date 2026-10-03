@@ -579,8 +579,11 @@ esp_err_t bsp_init(void)
     return _test_result(TEST_EVENT_BSP_INIT);
 }
 
+static bool s_fake_display_leased;
+
 esp_err_t bsp_deinit(void)
 {
+    assert(!s_fake_display_leased);
     return _test_result(TEST_EVENT_BSP_DEINIT);
 }
 
@@ -612,6 +615,37 @@ const bsp_sd_ops_t *bsp_hal_get_sd(void)
 const bsp_display_port_t *bsp_display_get_port(void)
 {
     return &s_display_port;
+}
+
+esp_err_t bsp_display_acquire(const char *owner, bsp_display_lease_t *lease)
+{
+    assert(lease != NULL);
+    assert(!s_fake_display_leased);
+    lease->id = 1U;
+    lease->owner = owner;
+    s_fake_display_leased = true;
+    return ESP_OK;
+}
+
+esp_err_t bsp_display_release(const bsp_display_lease_t *lease)
+{
+    assert(lease != NULL);
+    assert(lease->id != 0U);
+    s_fake_display_leased = false;
+    return ESP_OK;
+}
+
+esp_err_t bsp_display_release_and_deinit(const bsp_display_lease_t *lease)
+{
+    assert(lease != NULL);
+    assert(lease->id != 0U);
+    s_fake_display_leased = false;
+    return _test_result(TEST_EVENT_BSP_DEINIT);
+}
+
+bool bsp_display_is_leased(void)
+{
+    return s_fake_display_leased;
 }
 
 esp_err_t time_service_register_rtc_ops(const time_service_rtc_ops_t *ops)

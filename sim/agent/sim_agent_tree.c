@@ -193,11 +193,11 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     {
         cJSON_AddBoolToObject(flags, "visible", lv_obj_is_visible(obj));
         cJSON_AddBoolToObject(flags, "hidden",
-                              lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN));
+                              lv_obj_is_hidden(obj));
         cJSON_AddBoolToObject(flags, "clickable",
-                              lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE));
+                              lv_obj_is_clickable(obj));
         cJSON_AddBoolToObject(flags, "scrollable",
-                              lv_obj_has_flag(obj, LV_OBJ_FLAG_SCROLLABLE));
+                              lv_obj_is_scrollable(obj));
     }
     cJSON *states = cJSON_AddObjectToObject(node, "state");
     if (states != NULL)
