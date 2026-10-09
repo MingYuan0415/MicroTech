@@ -59,7 +59,7 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
         message(FATAL_ERROR
             "The ESP32-S3 LVGL profile requires 32K I-cache and 64K/64B D-cache")
     endif()
-    if(NOT CONFIG_LV_COLOR_DEPTH_16)
+    if(NOT CONFIG_LV_COLOR_FORMAT_RGB565)
         message(FATAL_ERROR
             "The Waveshare display pipeline requires LVGL RGB565")
     endif()
