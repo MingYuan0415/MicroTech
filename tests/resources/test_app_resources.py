@@ -26,19 +26,12 @@ COMMON_GLYPHS = (
     "ui_check",
     "ui_trash",
     "ui_loop",
-    "ui_link",
-    "ui_unlink",
     "ui_bluetooth",
     "ui_wifi",
-    "ui_wifi_off",
     "ui_brightness",
     "ui_power",
     "ui_standby",
     "ui_chevron_right",
-    "ui_info",
-    "ui_warning",
-    "ui_play",
-    "ui_stop",
 )
 
 
