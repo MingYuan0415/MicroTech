@@ -186,6 +186,7 @@ extern const lv_font_t host_lv_default_font;
 
 #define LV_ALIGN_TOP_LEFT             0
 #define LV_ALIGN_TOP_RIGHT            2
+#define LV_ALIGN_BOTTOM_RIGHT         6
 #define LV_ALIGN_CENTER               1
 #define LV_ALIGN_TOP_MID              3
 #define LV_ALIGN_BOTTOM_LEFT          4
