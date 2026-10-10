@@ -20,6 +20,28 @@ APP_DIRS = (
 )
 
 
+COMMON_GLYPHS = (
+    "ui_refresh",
+    "ui_close",
+    "ui_check",
+    "ui_trash",
+    "ui_loop",
+    "ui_link",
+    "ui_unlink",
+    "ui_bluetooth",
+    "ui_wifi",
+    "ui_wifi_off",
+    "ui_brightness",
+    "ui_power",
+    "ui_standby",
+    "ui_chevron_right",
+    "ui_info",
+    "ui_warning",
+    "ui_play",
+    "ui_stop",
+)
+
+
 def _assert_final_colored_svg(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "currentColor" not in text, f"{path} must bake explicit colors"
@@ -42,6 +64,21 @@ class AppResourceTest(unittest.TestCase):
             if "build" not in path.parts
         )
         self.assertEqual([], leftovers)
+
+    def test_common_glyph_set_is_complete(self) -> None:
+        assets = APPS_DIR / "common" / "assets"
+        actual = sorted(path.name for path in assets.glob("ui_*.svg"))
+        self.assertEqual(
+            sorted(f"{glyph}.svg" for glyph in COMMON_GLYPHS), actual
+        )
+        for name in actual:
+            _assert_final_colored_svg(assets / name)
+        identifiers = (APPS_DIR / "common" / "include" / "app_image_ids.h").read_text()
+        manifest = (APPS_DIR / "common" / "resource_manifest.cmake").read_text()
+        for glyph in COMMON_GLYPHS:
+            token = "APP_IMAGE_UI_" + glyph[len("ui_"):].upper()
+            self.assertIn(token, identifiers)
+            self.assertIn(f"{glyph}.svg|{glyph}.png|{token}|28|28|SVG", manifest)
 
     def test_theme_font_exists(self) -> None:
         font = PROJECT_ROOT / "layers" / "app_manager" / "app_theme" / "assets" / "font.ttf"

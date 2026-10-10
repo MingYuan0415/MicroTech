@@ -243,7 +243,11 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
 char *sim_agent_tree_dump_active_screen(bool include_layers)
 {
     lv_obj_t *scr = lv_screen_active();
-    image_alias_t aliases[64];
+#if APP_RESOURCES_ENABLED
+    image_alias_t aliases[APP_RESOURCES_IMAGE_COUNT];
+#else
+    image_alias_t aliases[1];
+#endif
     size_t alias_count = 0;
     char *text = NULL;
 

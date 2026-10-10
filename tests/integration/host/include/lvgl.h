@@ -489,6 +489,9 @@ void lv_obj_set_style_text_opa(lv_obj_t *object, lv_opa_t opacity,
 /** @brief Set the recolor used to render an A8 Canvas. */
 void lv_obj_set_style_image_recolor(lv_obj_t *object, lv_color_t color,
                                     lv_style_selector_t selector);
+/** @brief Set the recolor opacity used to render an image. */
+void lv_obj_set_style_image_recolor_opa(lv_obj_t *object, lv_opa_t opacity,
+                                        lv_style_selector_t selector);
 /** @brief Set the fixed image opacity used to render a Canvas. */
 void lv_obj_set_style_image_opa(lv_obj_t *object, lv_opa_t opacity,
                                 lv_style_selector_t selector);

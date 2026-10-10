@@ -1711,6 +1711,14 @@ void lv_obj_set_style_image_opa(lv_obj_t *object, lv_opa_t opacity,
     }
 }
 
+void lv_obj_set_style_image_recolor_opa(lv_obj_t *object, lv_opa_t opacity,
+                                        lv_style_selector_t selector)
+{
+    (void)object;
+    (void)opacity;
+    (void)selector;
+}
+
 void lv_obj_remove_style_all(lv_obj_t *object)
 {
     if (object != NULL && object->live)
