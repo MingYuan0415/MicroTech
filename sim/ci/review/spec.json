@@ -337,6 +337,29 @@
           "single_line": [],
           "allow_disabled": [],
           "no_golden": true
+        },
+        {
+          "name": "control_center",
+          "seed": [
+            {
+              "cmd": "set_power",
+              "voltage": 3900,
+              "pct": 82,
+              "charging": false
+            },
+            {
+              "cmd": "call",
+              "method": "sim.control_center",
+              "params": {"action": "show"}
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [],
+          "single_line": [],
+          "allow_disabled": []
         }
       ]
     },

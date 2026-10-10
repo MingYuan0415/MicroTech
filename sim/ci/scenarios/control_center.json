@@ -42,7 +42,61 @@
   {
    "cmd": "tree_assert",
    "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "待机"}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "Wi-Fi"}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "蓝牙"}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
    "contains": {"type": "lv_label", "text": "已连接"}
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 388
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 388
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "call",
+   "method": "sim.control_center",
+   "params": {"action": "show"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": true}
   },
   {
    "cmd": "call",
