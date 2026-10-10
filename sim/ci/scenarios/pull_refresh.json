@@ -1,0 +1,82 @@
+{
+ "name": "pull-refresh",
+ "steps": [
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "navigate",
+   "app": "weather"
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 200
+  },
+  {
+   "cmd": "touch",
+   "action": "move",
+   "x": 184,
+   "y": 220
+  },
+  {
+   "cmd": "step",
+   "ms": 33
+  },
+  {
+   "cmd": "touch",
+   "action": "move",
+   "x": 184,
+   "y": 240
+  },
+  {
+   "cmd": "step",
+   "ms": 33
+  },
+  {
+   "cmd": "touch",
+   "action": "move",
+   "x": 184,
+   "y": 260
+  },
+  {
+   "cmd": "step",
+   "ms": 33
+  },
+  {
+   "cmd": "touch",
+   "action": "move",
+   "x": 184,
+   "y": 280
+  },
+  {
+   "cmd": "step",
+   "ms": 33
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {"type": "lv_label", "text": "松开刷新"}
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 280
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {"type": "lv_label", "text": "下拉刷新"}
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {"type": "lv_label", "text": "天气"}
+  }
+ ]
+}

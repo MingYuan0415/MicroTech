@@ -40,6 +40,7 @@ add_executable(test_cross_layer
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
     "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"
     "${APPS}/common/src/app_ui.c"
+    "${APPS}/common/src/app_ui_pull_refresh.c"
     "${APPS}/common/src/app_weather_ui.c"
     "${APPS}/common/src/apps_persistence.c"
     "${APPS}/home_app/src/home_app.c"

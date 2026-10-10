@@ -174,6 +174,7 @@ set(SIM_LAYER_SOURCES
 # .app_manager_apps section stays empty (app_manager_builtin.c gate).
 set(SIM_APP_SOURCES
     "${APPS}/common/src/app_ui.c"
+    "${APPS}/common/src/app_ui_pull_refresh.c"
     "${APPS}/common/src/app_weather_ui.c"
     "${APPS}/home_app/src/home_app.c"
     "${APPS}/clock_app/src/clock_app.c"
