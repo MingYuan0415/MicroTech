@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "app_main.c" "app_product_config.c" "app_runtime.c" "app_runtime_pm.c"
+         "app_runtime_control.c"
          "network_runtime.c"
          "display_benchmark.c"
          "fs_storage/fs_storage.c"

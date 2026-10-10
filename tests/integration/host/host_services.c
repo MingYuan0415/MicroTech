@@ -892,6 +892,11 @@ esp_err_t app_manager_pm_request_screen_off(void)
     return ESP_OK;
 }
 
+esp_err_t app_manager_pm_request_standby(void)
+{
+    return ESP_OK;
+}
+
 int32_t app_manager_pm_get_timeout_ms(void)
 {
     return s_screen_timeout_ms;

@@ -600,6 +600,40 @@ static cJSON *_handle(cJSON *request, bool *ok)
             }
         }
     }
+    else if (strcmp(method, "sim.control_center") == 0)
+    {
+        /* The control center is normally opened by a top-edge pull, whose
+         * timing the CI harness cannot reproduce reliably; expose the same
+         * gateway system command for deterministic review. */
+        const cJSON *get = params != NULL ?
+                           cJSON_GetObjectItemCaseSensitive(params, "get") :
+                           NULL;
+        if (cJSON_IsTrue(get))
+        {
+            cJSON_AddBoolToObject(result, "visible",
+                                  app_manager_control_center_is_visible());
+            *ok = true;
+        }
+        else
+        {
+            const cJSON *action = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "action") :
+                                  NULL;
+            const char *act = cJSON_GetStringValue(action);
+            const bool hide_ = (act != NULL) && (strcmp(act, "hide") == 0);
+            const esp_err_t res = hide_ ?
+                                  app_manager_control_center_hide() :
+                                  app_manager_navigation_submit_system_op(
+                                      APP_MANAGER_NAV_SYSTEM_CONTROL_CENTER_SHOW,
+                                      NULL, NULL);
+            *ok = (res == ESP_OK);
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            }
+        }
+    }
     else if (strcmp(method, "sim.set_time") == 0)
     {
         const cJSON *epoch = params != NULL ? cJSON_GetObjectItemCaseSensitive(

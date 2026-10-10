@@ -82,6 +82,7 @@ def main():
     sw = sub.add_parser("set-wifi"); sw.add_argument("state")
     sws = sub.add_parser("set-wifi-scan"); sws.add_argument("json", help="JSON with records/request/trigger/wait_scan")
     swt = sub.add_parser("switcher"); swt.add_argument("--get", action="store_true"); swt.add_argument("--action", choices=["show", "clear_all"], default="show")
+    cc = sub.add_parser("control-center"); cc.add_argument("--get", action="store_true"); cc.add_argument("--action", choices=["show", "hide"], default="show")
     sbt = sub.add_parser("set-bluetooth"); sbt.add_argument("json", help="JSON object (or file) with enabled/bound/active/client_connected/window_remaining_ms")
     op = sub.add_parser("offer-pairing"); op.add_argument("--token", type=int, default=None); op.add_argument("--passkey", type=int, default=None)
     sd = sub.add_parser("sd"); sd.add_argument("action", choices=["mount", "umount", "write", "clear", "list", "svc"]); sd.add_argument("--name"); sd.add_argument("--seconds", type=int)
@@ -132,6 +133,11 @@ def main():
                 req = ("sim.switcher", {"get": True})
             else:
                 req = ("sim.switcher", {"action": args.action})
+        elif args.cmd == "control-center":
+            if args.get:
+                req = ("sim.control_center", {"get": True})
+            else:
+                req = ("sim.control_center", {"action": args.action})
         elif args.cmd == "set-wifi":
             req = ("sim.set_wifi", {"state": args.state})
         elif args.cmd == "set-wifi-scan":

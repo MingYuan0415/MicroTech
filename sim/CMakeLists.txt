@@ -165,6 +165,7 @@ set(SIM_LAYER_SOURCES
     "${APP_CORE}/src/app_manager_lifecycle.c"
     "${APP_CORE}/src/app_manager_lifecycle_api.c"
     "${APP_CORE}/src/app_manager_task_switcher.c"
+    "${APP_CORE}/src/app_manager_control_center.c"
     "${APP_CORE}/src/app_manager_display_diagnostics.c"
     "${APP_CORE}/src/app_manager_lvgl_adapter.c")
 

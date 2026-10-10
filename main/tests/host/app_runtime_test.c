@@ -747,6 +747,14 @@ app_manager_standby_ops_t app_runtime_pm_get_standby_ops(void)
     };
 }
 
+app_manager_control_center_ops_t app_runtime_control_get_ops(void)
+{
+    return (app_manager_control_center_ops_t)
+    {
+        0
+    };
+}
+
 esp_err_t app_runtime_pm_prepare_power(bsp_capabilities_t capabilities)
 {
     assert(capabilities == s_test.capabilities);

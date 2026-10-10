@@ -35,6 +35,7 @@ add_executable(test_cross_layer
     "${APP_CORE}/src/app_manager_navigation.c"
     "${APP_CORE}/src/app_manager_presentation.c"
     "${APP_CORE}/src/app_manager_task_switcher.c"
+    "${APP_CORE}/src/app_manager_control_center.c"
     "${APP_THEME}/src/app_theme.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
     "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"

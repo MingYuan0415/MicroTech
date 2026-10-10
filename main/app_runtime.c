@@ -4,6 +4,7 @@
 
 #include "app_runtime.h"
 #include "app_runtime_pm.h"
+#include "app_runtime_control.h"
 #include "app_product_config.h"
 #include "display_benchmark.h"
 #if CONFIG_MAIN_DISPLAY_BENCHMARK
@@ -969,6 +970,7 @@ static esp_err_t _app_runtime_start_app_services(
         },
         .input_ops = app_runtime_pm_get_input_ops(),
         .standby_ops = app_runtime_pm_get_standby_ops(),
+        .control_center_ops = app_runtime_control_get_ops(),
         .max_resident_apps = context->product->app_max_resident_apps,
         .resident_policy = context->product->app_resident_policy,
         .app_forward_transition = {

@@ -1,0 +1,62 @@
+{
+ "name": "control-center",
+ "steps": [
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "set_bluetooth",
+   "enabled": true,
+   "bound": true
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 4,
+   "x1": 184,
+   "y1": 130,
+   "steps": 12,
+   "ms_per_move": 33,
+   "settle_ms": 495
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": true}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "熄屏"}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "已连接"}
+  },
+  {
+   "cmd": "call",
+   "method": "sim.control_center",
+   "params": {"action": "hide"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  }
+ ]
+}
