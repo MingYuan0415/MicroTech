@@ -60,6 +60,10 @@ IGNORED_MIRROR = {
     'CONFIG_LV_CHECK_ARG_LOG_MODE_NONE',
     'CONFIG_LV_ASSERT_HANDLER_INCLUDE_IS_NON_EMPTY',
     'CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_L1',
+    # LVGL 9.6 dropped LV_ASSERT_HANDLER_INCLUDE in favour of
+    # LV_ASSERT_USE_CUSTOM_INCLUDE; the device Kconfig leaves the legacy string
+    # empty, so it is not a property the desktop lv_conf.h owns any more.
+    'CONFIG_LV_ASSERT_HANDLER_INCLUDE',
 }
 
 
@@ -116,6 +120,9 @@ def main():
         'CONFIG_LV_USE_STDLIB_SPRINTF': ('LV_USE_STDLIB_SPRINTF', 'LV_STDLIB_CLIB'),
         'CONFIG_LV_FONT_DEFAULT_MONTSERRAT_18': ('LV_FONT_DEFAULT', '&lv_font_montserrat_18'),
         'CONFIG_LV_CONF_SKIP': None,
+        # Color-depth choice arms: the runtime property is gated separately
+        # (LV_COLOR_DEPTH=16, LV_COLOR_FORMAT_DEFAULT=RGB565).
+        'CONFIG_LV_COLOR_DEPTH_UNSET': None,
         'CONFIG_LV_COLOR_DEPTH_16': None,
         'CONFIG_LV_COLOR_FORMAT_RGB565': None,
         'CONFIG_LV_DRAW_SW_ASM_NONE': None,

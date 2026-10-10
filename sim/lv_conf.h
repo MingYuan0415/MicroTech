@@ -67,14 +67,14 @@
 #define LV_USE_DRAW_SW_ASM                           0
 #define LV_USE_ASSERT_NULL                           1
 #define LV_USE_ASSERT_MALLOC                         1
-#define LV_ASSERT_HANDLER_INCLUDE                    "assert.h"
-/* LVGL 9.6 deprecates LV_ASSERT_HANDLER_INCLUDE with a #warning; the sim is
- * built with -Werror, so acknowledge the deprecation explicitly. */
+/* LVGL 9.6 dropped LV_ASSERT_HANDLER_INCLUDE in favour of
+ * LV_ASSERT_USE_CUSTOM_INCLUDE, so the sim follows the device and leaves the
+ * handler at LVGL's default. Mirror the device's warning-suppression flag. */
 #define LV_DISABLE_ASSERT_HANDLER_INCLUDE_WARNING    1
 #define LV_CACHE_DEF_SIZE                            0
 #define LV_IMAGE_HEADER_CACHE_DEF_CNT                0
 #define LV_GRADIENT_MAX_STOPS                        2
-#define LV_COLOR_MIX_ROUND_OFS                       128
+#define LV_COLOR_MIX_ROUND_OFS                         0
 #define LV_OBJ_STYLE_CACHE                           1
 #define LV_USE_GESTURE_RECOGNITION                   1
 #define LV_ATTRIBUTE_MEM_ALIGN_SIZE                  1
@@ -83,7 +83,7 @@
 #define LV_FONT_MONTSERRAT_18                        1
 #define LV_USE_FONT_PLACEHOLDER                      1
 #define LV_TXT_ENC_UTF8                              1
-#define LV_TXT_BREAK_CHARS                           " ,.;:-_)}"
+#define LV_TXT_BREAK_CHARS                           " ,.;:-_)]}"
 #define LV_TXT_LINE_BREAK_LONG_LEN                   0
 #define LV_TXT_COLOR_CMD                             "#"
 #define LV_WIDGETS_HAS_DEFAULT_VALUE                 1
@@ -137,6 +137,7 @@
 #define LV_THEME_DEFAULT_GROW                        1
 #define LV_THEME_DEFAULT_TRANSITION_TIME             80
 #define LV_USE_THEME_SIMPLE                          1
+#define LV_USE_THEME_MONO                            1
 #define LV_USE_FLEX                                  1
 #define LV_USE_GRID                                  1
 #define LV_FS_DEFAULT_DRIVER_LETTER                  0
