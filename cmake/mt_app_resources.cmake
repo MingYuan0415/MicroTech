@@ -182,7 +182,43 @@ function(mt_stage_app_resources)
         math(EXPR MT_AR_INDEX "${MT_AR_INDEX} + 1")
     endwhile()
 
+    # The asset packer consumes the staging directory whole, so drop the
+    # outputs of records that no longer exist. Without this, a renamed or
+    # removed resource keeps riding along in the res image and desyncs the
+    # sim/device staged-parity check.
+    file(GLOB MT_AR_STAGED_PRESENT RELATIVE "${MT_APP_RESOURCE_STAGE_DIR}"
+        "${MT_APP_RESOURCE_STAGE_DIR}/*")
+    foreach(MT_AR_PRESENT IN LISTS MT_AR_STAGED_PRESENT)
+        if(MT_AR_PRESENT IN_LIST MT_AR_STAGED_OUTPUTS)
+            continue()
+        endif()
+        if(IS_DIRECTORY "${MT_APP_RESOURCE_STAGE_DIR}/${MT_AR_PRESENT}")
+            continue()
+        endif()
+        message(STATUS "Dropping stale staged resource: ${MT_AR_PRESENT}")
+        file(REMOVE "${MT_APP_RESOURCE_STAGE_DIR}/${MT_AR_PRESENT}")
+    endforeach()
+
+    # Device and sim consumers depend on the record list, so removing or
+    # renaming a record would invalidate neither the asset image nor the sim
+    # meta header: their DEPENDS loses an entry and nothing gets newer. Publish
+    # a manifest stamp that changes only with the staged set, and let both
+    # consumers depend on it.
+    set(MT_AR_STAMP "${MT_APP_RESOURCE_TMP_ROOT}/mt_app_resources.stamp")
+    set(MT_AR_STAGED_SORTED ${MT_AR_STAGED_OUTPUTS})
+    list(SORT MT_AR_STAGED_SORTED)
+    set(MT_AR_STAMP_CONTENT "records=${MT_AR_STAGED_SORTED}")
+    if(EXISTS "${MT_AR_STAMP}")
+        file(READ "${MT_AR_STAMP}" MT_AR_STAMP_OLD)
+    else()
+        set(MT_AR_STAMP_OLD "")
+    endif()
+    if(NOT "${MT_AR_STAMP_OLD}" STREQUAL "${MT_AR_STAMP_CONTENT}")
+        file(WRITE "${MT_AR_STAMP}" "${MT_AR_STAMP_CONTENT}")
+    endif()
+
     set(MT_APP_RESOURCE_STAGED_FILES "${MT_AR_STAGED_FILES}" PARENT_SCOPE)
+    set(MT_APP_RESOURCE_STAMP_FILE "${MT_AR_STAMP}" PARENT_SCOPE)
     set(MT_APP_RESOURCE_IMAGE_ENTRIES "${MT_AR_IMAGE_ENTRIES}" PARENT_SCOPE)
     set(MT_APP_RESOURCE_RECORD_COUNT "${MT_AR_RECORD_COUNT}" PARENT_SCOPE)
 endfunction()

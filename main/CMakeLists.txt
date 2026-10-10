@@ -95,11 +95,12 @@ target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     APP_RESOURCES_ENABLED=${APP_RESOURCE_ENABLED})
 
-add_custom_target(app_resources_stage DEPENDS ${MT_APP_RESOURCE_STAGED_FILES})
+add_custom_target(app_resources_stage DEPENDS ${MT_APP_RESOURCE_STAGED_FILES}
+    "${MT_APP_RESOURCE_STAMP_FILE}")
 if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS)
     spiffs_create_partition_assets(res "${MT_APP_RESOURCE_STAGE_DIR}"
         FLASH_IN_PROJECT MMAP_FILE_SUPPORT_FORMAT ".ttf,.bin"
-        DEPENDS ${MT_APP_RESOURCE_STAGED_FILES})
+        DEPENDS ${MT_APP_RESOURCE_STAGED_FILES} "${MT_APP_RESOURCE_STAMP_FILE}")
     add_dependencies(${COMPONENT_LIB} assets_res_bin)
 else()
     fatfs_create_rawflash_image(res "${MT_APP_RESOURCE_STAGE_DIR}" FLASH_IN_PROJECT)
