@@ -79,6 +79,10 @@
           "hardware_only": true
         },
         {
+          "name": "forget_confirm",
+          "hardware_only": true
+        },
+        {
           "name": "scan_list",
           "seed": [
             {
@@ -179,6 +183,52 @@
           "expect_visible": [
             "已绑定",
             "手机可随时连接"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "unbind_confirm",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": true,
+              "bound": true,
+              "active": false
+            },
+            {
+              "cmd": "navigate",
+              "app": "settings",
+              "page": "bluetooth"
+            },
+            {
+              "cmd": "step",
+              "ms": 990
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 184,
+              "y": 344
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 184,
+              "y": 344
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "解除绑定",
+            "取消"
           ],
           "single_line": [],
           "allow_disabled": []
@@ -404,6 +454,76 @@
           ],
           "expect_visible": [
             "播放库"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "delete_confirm",
+          "seed": [
+            {
+              "cmd": "sd",
+              "action": "clear"
+            },
+            {
+              "cmd": "sd",
+              "action": "write",
+              "name": "REC_review.wav",
+              "seconds": 2
+            },
+            {
+              "cmd": "navigate",
+              "app": "recorder",
+              "page": "files"
+            },
+            {
+              "cmd": "step",
+              "ms": 990
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 184,
+              "y": 100
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 184,
+              "y": 100
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 267,
+              "y": 404
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 267,
+              "y": 404
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "删除录音",
+            "取消"
           ],
           "single_line": [],
           "allow_disabled": []

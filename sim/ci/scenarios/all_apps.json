@@ -49,7 +49,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 308
+   "y": 214
   },
   {
    "cmd": "step",
@@ -59,7 +59,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 308
+   "y": 214
   },
   {
    "cmd": "step",
@@ -143,7 +143,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "当前与预报"
+    "text": "应用"
    }
   },
   {
@@ -963,14 +963,14 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "再次点击“解除绑定”以确认"
+    "text": "取消"
    }
   },
   {
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 356
+   "y": 344
   },
   {
    "cmd": "step",
@@ -980,7 +980,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 356
+   "y": 344
   },
   {
    "cmd": "step",
