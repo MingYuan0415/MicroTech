@@ -189,6 +189,8 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 generation）、`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
 字符串键）、`sim.connectivity`（connectivity_manager 与 wifi_service 状态、
 扫描缓存快照）、`sim.switcher {get?|action?}`（任务切换器可见性/显示/清空）、
+ `sim.control_center {get?|action: show|hide}`（控制中心可见性/打开/关闭；顶部下拉手势
+ 也可用 `touch`/`drag` 复现）、
 `sim.set_bluetooth {enabled?,bound?,active?,client_connected?,window_remaining_ms?}`、
 `sim.offer_pairing {token?,passkey?}`、`sim.exit`。客户端：
 `python3 sim/tools/simctl.py <command>`。

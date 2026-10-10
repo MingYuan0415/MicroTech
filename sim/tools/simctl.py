@@ -14,6 +14,7 @@ Commands:
   key <boot|power> <press|release|click>
   navigate <app_id> [page_id]
   switcher [--get | --action show|clear_all]
+  control-center [--get | --action show|hide]
   set-wifi <connected|disconnected>
   set-wifi-scan <json|file>   # {"records":[{"ssid":..,"rssi":..,"security":..}], "request":true,"trigger":true,"wait_scan":true}
   set-bluetooth <json|file>   # {"enabled":..,"bound":..,"active":..,"client_connected":..,"window_remaining_ms":..}
