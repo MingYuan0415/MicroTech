@@ -20,6 +20,7 @@
 #include "weather_app_internal.h"
 #include "weather_service.h"
 #include "app_image_ids.h"
+#include "app_ui.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -3276,6 +3277,107 @@ static void _test_system_task_switcher(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
+/* Whole-page pull-to-refresh must keep its hold while a refresh is in flight:
+ * an incidental tap during "refreshing" must neither collapse the revealed
+ * hint nor start a new pull. */
+typedef struct pull_refresh_tap_result
+{
+    size_t anim_before;
+    size_t anim_after;
+    int32_t offset;
+    bool refreshing;
+} pull_refresh_tap_result_t;
+
+static app_ui_pull_refresh_t s_pull_refresh;
+static size_t s_pull_refresh_fired;
+
+static void _pull_refresh_on_refresh(void *user_data)
+{
+    (void)user_data;
+    ++s_pull_refresh_fired;
+}
+
+static esp_err_t _pull_refresh_attach_on_ui(void *arg)
+{
+    (void)arg;
+    app_ui_page_t page;
+    memset(&page, 0, sizeof(page));
+    page.root = lv_obj_create(lv_screen_active());
+    assert(page.root != NULL);
+    lv_obj_remove_style_all(page.root);
+    lv_obj_set_pos(page.root, 0, 0);
+    lv_obj_set_size(page.root, 368, 448);
+    page.content = lv_obj_create(page.root);
+    assert(page.content != NULL);
+    lv_obj_remove_style_all(page.content);
+    lv_obj_set_pos(page.content, 0, 64);
+    lv_obj_set_size(page.content, 368, 384);
+    lv_obj_set_scroll_dir(page.content, LV_DIR_VER);
+    lv_obj_set_scrollable(page.content, true);
+    lv_obj_set_clickable(page.content, true);
+    app_ui_pull_refresh_attach(&s_pull_refresh, &page,
+                               _pull_refresh_on_refresh, NULL);
+    return ESP_OK;
+}
+
+static esp_err_t _pull_refresh_stray_tap_on_ui(void *arg)
+{
+    pull_refresh_tap_result_t *result = arg;
+    result->anim_before = host_lv_generic_animation_start_count();
+    (void)host_lv_touch_press(184, 300);
+    (void)host_lv_touch_release(184, 300);
+    result->anim_after = host_lv_generic_animation_start_count();
+    result->offset = s_pull_refresh.offset;
+    result->refreshing = s_pull_refresh.refreshing;
+    return ESP_OK;
+}
+
+static esp_err_t _pull_refresh_finish_on_ui(void *arg)
+{
+    (void)arg;
+    app_ui_pull_refresh_set_refreshing(&s_pull_refresh, false);
+    if (s_pull_refresh.root != NULL)
+    {
+        lv_obj_delete(s_pull_refresh.root);
+    }
+    app_ui_pull_refresh_detach(&s_pull_refresh);
+    return ESP_OK;
+}
+
+static void _test_pull_refresh_hold(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(app_manager_ui_call(_pull_refresh_attach_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    /* Drag past the trigger and release: the page holds open and the refresh
+     * callback fires exactly once. */
+    assert(_touch(TOUCH_ACTION_PRESS, 184, 300));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 360));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 420));
+    assert(s_pull_refresh.armed);
+    assert(s_pull_refresh.offset == 56);
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 420));
+    assert(s_pull_refresh.refreshing);
+    assert(s_pull_refresh.offset == 56);
+    assert(s_pull_refresh_fired == 1U);
+
+    /* A stray tap during the hold must not collapse it or start a new pull. */
+    pull_refresh_tap_result_t tap;
+    assert(app_manager_ui_call(_pull_refresh_stray_tap_on_ui, &tap,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(tap.refreshing);
+    assert(tap.offset == 56);
+    assert(tap.anim_after == tap.anim_before);
+
+    /* Completion closes the hold and animates the page back to rest. */
+    assert(app_manager_ui_call(_pull_refresh_finish_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(!s_pull_refresh.refreshing);
+}
+
 int main(void)
 {
     _initialize_stack();
@@ -3293,6 +3395,7 @@ int main(void)
     _test_setup_screen_lifecycle();
     _test_system_edge_back_gesture();
     _test_system_task_switcher();
+    _test_pull_refresh_hold();
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
     assert(app_manager_navigation_deinit() == ESP_OK);
