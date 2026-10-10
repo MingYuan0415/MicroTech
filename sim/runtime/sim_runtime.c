@@ -65,14 +65,13 @@ static esp_err_t _cc_get_wifi(app_manager_radio_state_t *state,
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if (status.saved_profile &&
-            status.state == CONNECTIVITY_MANAGER_STATE_IP_READY)
-    {
-        *state = APP_MANAGER_RADIO_CONNECTED;
-    }
-    else if (status.state == CONNECTIVITY_MANAGER_STATE_OFFLINE)
+    if (status.state == CONNECTIVITY_MANAGER_STATE_OFFLINE)
     {
         *state = APP_MANAGER_RADIO_OFF;
+    }
+    else if (status.state == CONNECTIVITY_MANAGER_STATE_IP_READY)
+    {
+        *state = APP_MANAGER_RADIO_CONNECTED;
     }
     else
     {

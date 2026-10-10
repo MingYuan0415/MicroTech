@@ -75,9 +75,14 @@ class AppResourceTest(unittest.TestCase):
             _assert_final_colored_svg(assets / name)
         identifiers = (APPS_DIR / "common" / "include" / "app_image_ids.h").read_text()
         manifest = (APPS_DIR / "common" / "resource_manifest.cmake").read_text()
+        defined = {
+            parts[1]
+            for parts in (line.split() for line in identifiers.splitlines())
+            if len(parts) >= 2 and parts[0] == "#define"
+        }
         for glyph in COMMON_GLYPHS:
             token = "APP_IMAGE_UI_" + glyph[len("ui_"):].upper()
-            self.assertIn(token, identifiers)
+            self.assertIn(token, defined)
             self.assertIn(f"{glyph}.svg|{glyph}.png|{token}|28|28|SVG", manifest)
 
     def test_theme_font_exists(self) -> None:

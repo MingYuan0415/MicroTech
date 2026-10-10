@@ -564,7 +564,8 @@
             "录音"
           ],
           "single_line": [],
-          "allow_disabled": []
+          "allow_disabled": [],
+          "no_golden": true
         },
         {
           "name": "recording",

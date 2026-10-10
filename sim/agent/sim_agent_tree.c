@@ -243,11 +243,9 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
 char *sim_agent_tree_dump_active_screen(bool include_layers)
 {
     lv_obj_t *scr = lv_screen_active();
-#if APP_RESOURCES_ENABLED
-    image_alias_t aliases[APP_RESOURCES_IMAGE_COUNT];
-#else
-    image_alias_t aliases[1];
-#endif
+    /* One spare slot keeps the array non-empty even when no images are compiled
+     * in (APP_RESOURCES_IMAGE_COUNT is a sizeof expression, not a #if constant). */
+    image_alias_t aliases[APP_RESOURCES_IMAGE_COUNT + 1];
     size_t alias_count = 0;
     char *text = NULL;
 

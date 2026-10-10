@@ -621,16 +621,31 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                       params, "action") :
                                   NULL;
             const char *act = cJSON_GetStringValue(action);
-            const bool hide_ = (act != NULL) && (strcmp(act, "hide") == 0);
-            const esp_err_t res = hide_ ?
-                                  app_manager_control_center_hide() :
-                                  app_manager_navigation_submit_system_op(
-                                      APP_MANAGER_NAV_SYSTEM_CONTROL_CENTER_SHOW,
-                                      NULL, NULL);
-            *ok = (res == ESP_OK);
-            if (!*ok)
+            const bool want_show = (act != NULL) && (strcmp(act, "show") == 0);
+            const bool want_hide = (act != NULL) && (strcmp(act, "hide") == 0);
+            if (!want_show && !want_hide)
             {
-                cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+                *ok = false;
+                cJSON_AddStringToObject(result, "error", "invalid action");
+            }
+            else
+            {
+                /* Route both actions through the LVGL worker-owned system
+                 * command and keep them idempotent: only submit when the
+                 * current visibility differs from the requested state. */
+                esp_err_t res = ESP_OK;
+                if (want_show != app_manager_control_center_is_visible())
+                {
+                    res = app_manager_navigation_submit_system_op(
+                              APP_MANAGER_NAV_SYSTEM_CONTROL_CENTER_SHOW,
+                              NULL, NULL);
+                }
+                *ok = (res == ESP_OK);
+                if (!*ok)
+                {
+                    cJSON_AddStringToObject(result, "error",
+                                            esp_err_to_name(res));
+                }
             }
         }
     }
