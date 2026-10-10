@@ -1421,7 +1421,7 @@ static void _test_real_app_navigation(void)
     assert(_ui_text_has_font("多云", &s_theme_fonts[APP_THEME_FONT_HEAD]));
     assert(_ui_text_has_font("08-05 08:00 更新",
                              &s_theme_fonts[APP_THEME_FONT_BODY]));
-    assert(_ui_text_has_font("72%", &s_theme_fonts[APP_THEME_FONT_SMALL]));
+    assert(_ui_text_has_font("72%", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font("09:00", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(LV_SYMBOL_REFRESH, LV_FONT_DEFAULT));
     assert(_ui_text_has_font(LV_SYMBOL_IMAGE, LV_FONT_DEFAULT));
@@ -1435,12 +1435,12 @@ static void _test_real_app_navigation(void)
     const label_layout_query_t hero_layout = _ui_label_layout(
             "31°", &s_theme_fonts[APP_THEME_FONT_TITLE]);
     const label_layout_query_t range_layout = _ui_label_layout(
-            "体感36°  高34°  低27°", &s_theme_fonts[APP_THEME_FONT_BODY]);
+            "体感36°  高34°  低27°", &s_theme_fonts[APP_THEME_FONT_SMALL]);
     const label_layout_query_t status_layout =
         _ui_label_layout("08-05 08:00 更新",
                          &s_theme_fonts[APP_THEME_FONT_BODY]);
     const label_layout_query_t metric_layout = _ui_label_layout(
-            "72%", &s_theme_fonts[APP_THEME_FONT_SMALL]);
+            "72%", &s_theme_fonts[APP_THEME_FONT_BODY]);
     const label_layout_query_t hourly_layout = _ui_label_layout(
             "09:00", &s_theme_fonts[APP_THEME_FONT_BODY]);
     const label_layout_query_t detail_layout =
@@ -1453,7 +1453,7 @@ static void _test_real_app_navigation(void)
     assert(range_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(range_layout.parent_height == LV_SIZE_CONTENT);
     assert(status_layout.long_mode == LV_LABEL_LONG_SCROLL_CIRCULAR);
-    assert(status_layout.height == 22);
+    assert(status_layout.height == LV_SIZE_CONTENT);
     assert(metric_layout.parent_height == 58);
     assert(metric_layout.grandparent_height == LV_SIZE_CONTENT);
     assert(hourly_layout.parent_height == 88);
@@ -1496,9 +1496,9 @@ static void _test_real_app_navigation(void)
             "雷阵雨伴有冰雹和大风", &s_theme_fonts[APP_THEME_FONT_HEAD]);
     const label_layout_query_t extreme_range_layout = _ui_label_layout(
             "体感-100°  高100°  低-100°",
-            &s_theme_fonts[APP_THEME_FONT_BODY]);
+            &s_theme_fonts[APP_THEME_FONT_SMALL]);
     const label_layout_query_t extreme_metric_layout = _ui_label_layout(
-            "1000 km/h", &s_theme_fonts[APP_THEME_FONT_SMALL]);
+            "1000 km/h", &s_theme_fonts[APP_THEME_FONT_BODY]);
     assert(long_condition_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(long_condition_layout.parent_height == LV_SIZE_CONTENT);
     assert(extreme_range_layout.long_mode == LV_LABEL_LONG_WRAP);
@@ -1531,7 +1531,7 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("数据来源：maxmind"));
     assert(_ui_text_has_font("实况", &s_theme_fonts[APP_THEME_FONT_SMALL]));
     assert(_ui_text_has_font("35.6°C",
-                             &s_theme_fonts[APP_THEME_FONT_SMALL]));
+                             &s_theme_fonts[APP_THEME_FONT_BODY]));
     host_weather_set_service_state(WEATHER_SERVICE_STATE_AUTH_ERROR, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
@@ -1970,7 +1970,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
                "自动连接", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(
                "开启 2 分钟绑定窗口",
-               &s_theme_fonts[APP_THEME_FONT_BODY]));
+               &s_theme_fonts[APP_THEME_FONT_SMALL]));
 
     _click_action("断开连接");
     connectivity_manager_operation_id_t operation =
@@ -2777,9 +2777,9 @@ static void _test_setup_screen_lifecycle(void)
     assert(_ui_text_has_font(
                "123456", &s_theme_fonts[APP_THEME_FONT_BIGL]));
     assert(_ui_text_has_font(
-               "确认绑定", &s_theme_fonts[APP_THEME_FONT_SMALL]));
+               "确认绑定", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(
-               "拒绝", &s_theme_fonts[APP_THEME_FONT_SMALL]));
+               "拒绝", &s_theme_fonts[APP_THEME_FONT_BODY]));
     const unsigned confirmations_before =
         host_device_link_service_confirm_count();
 
