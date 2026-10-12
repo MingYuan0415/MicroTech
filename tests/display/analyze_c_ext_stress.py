@@ -104,6 +104,27 @@ def _require_result(record: dict[str, str] | None, context: str,
         )
 
 
+def _positive(record, name, context, analysis):
+    value = _integer(record, name, context, analysis)
+    if value is not None and value <= 0:
+        analysis.gate_failures.append(f"{context}: {name}={value} must be positive")
+    return value
+
+
+def _equals(record, name, expected, context, analysis):
+    value = _integer(record, name, context, analysis)
+    if value is not None and value != expected:
+        analysis.gate_failures.append(f"{context}: {name}={value}, expected {expected}")
+
+
+def _throughput(record, tx, rx, target, context, analysis):
+    wanted = _positive(record, target, context, analysis)
+    for name in (tx, rx):
+        value = _positive(record, name, context, analysis)
+        if value is not None and wanted is not None and value * 100 < wanted * 95:
+            analysis.gate_failures.append(f"{context}: {name} below 95% target")
+
+
 def _validate_phases(lines: Sequence[str], analysis: StressAnalysis) -> None:
     marker = "c_ext_stress phase="
     phases = []
@@ -225,6 +246,7 @@ def _validate_tasks(lines: Sequence[str], analysis: StressAnalysis) -> None:
         return
     for name, record in by_name.items():
         context = f"task {name}"
+        _positive(record, "samples", context, analysis)
         _require_result(record, context, analysis)
         minimum = _integer(record, "min_hwm", context, analysis)
         found = _integer(record, "found", context, analysis)
@@ -279,6 +301,7 @@ def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:
             if value not in (None, 0):
                 analysis.gate_failures.append(f"BLE summary: {name}={value}")
     if audio is not None:
+        _throughput(audio, "tx_bytes", "rx_bytes", "target_bytes", "audio summary", analysis)
         for name in (
             "tx_short",
             "rx_short",
@@ -299,6 +322,15 @@ def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:
         if mic not in (None, 1):
             analysis.gate_failures.append(f"audio summary: mic_nonzero={mic}")
     if heap is not None:
+        _positive(heap, "samples", "heap summary", analysis)
+        decline = _integer(heap, "psram_max_decline", "heap summary", analysis)
+        if decline is not None and (decline < 0 or decline > 65536):
+            analysis.gate_failures.append("heap summary: PSRAM decline exceeds budget")
+        for name, allowance in (("internal", 8192), ("psram", 65536)):
+            warm = _positive(heap, "warm_" + name, "heap summary", analysis)
+            cleanup = _positive(heap, "cleanup_" + name, "heap summary", analysis)
+            if warm is not None and cleanup is not None and cleanup + allowance < warm:
+                analysis.gate_failures.append(f"heap summary: {name} not recovered")
         dma = _integer(heap, "min_dma_largest", "heap summary", analysis)
         if dma is not None and dma < DMA_LARGEST_MINIMUM:
             analysis.gate_failures.append(
@@ -309,6 +341,10 @@ def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:
             if value not in (None, 1):
                 analysis.gate_failures.append(f"heap summary: {name}={value}")
     if stress is not None:
+        _equals(stress, "cleanup", 0, "stress summary", analysis)
+        _equals(stress, "routes", 0xff, "stress summary", analysis)
+        _equals(stress, "effects", 0x1fff, "stress summary", analysis)
+        _positive(stress, "duration_us", "stress summary", analysis)
         if stress.get("performance") not in ("TARGET", "FLOOR"):
             analysis.gate_failures.append(
                 f"stress summary: performance={stress.get('performance')}"
@@ -318,10 +354,20 @@ def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:
             if value not in (None, 1):
                 analysis.gate_failures.append(f"stress summary: {name}={value}")
 
+    _validate_display(lines, analysis)
+
+
+def _validate_display(lines: Sequence[str], analysis: StressAnalysis) -> None:
     display = _one(
         lines, "display benchmark ", "display final", analysis
     )
     if display is not None:
+        if display.get("state") != "COMPLETE":
+            analysis.gate_failures.append("display final: state is not COMPLETE")
+        for name in ("samples", "frame_submits"):
+            _positive(display, name, "display final", analysis)
+        for name in ("sample_err", "submit_fail", "dma_fail"):
+            _equals(display, name, 0, "display final", analysis)
         if display.get("stability") != "PASS":
             analysis.gate_failures.append(
                 f"display final: stability={display.get('stability')}"
@@ -346,6 +392,9 @@ def _validate_summaries(lines: Sequence[str], analysis: StressAnalysis) -> None:
             )
     load = _one(lines, "display load ", "load final", analysis)
     if load is not None:
+        _throughput(load, "tcp_tx_bytes", "tcp_rx_bytes", "tcp_target_bytes",
+                    "load final", analysis)
+        _positive(load, "tcp_active_us", "load final", analysis)
         for name in (
             "tcp_rate_ok",
         ):

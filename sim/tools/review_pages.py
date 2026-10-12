@@ -101,13 +101,54 @@ def _walk_visible(node):
         yield from _walk_visible(child)
 
 
-def _walk_annotated(node, in_scroll, in_hidden):
+def _walk_annotated(node, ancestors=(), in_hidden=False):
     flags = node.get('flags') or {}
     hidden = in_hidden or bool(flags.get('hidden'))
-    child_in_scroll = in_scroll or bool(flags.get('scrollable'))
-    yield node, in_scroll, in_hidden
+    yield node, ancestors, hidden
     for child in node.get('children') or []:
-        yield from _walk_annotated(child, child_in_scroll, hidden)
+        yield from _walk_annotated(child, ancestors + (node,), hidden)
+
+
+def _reachable(node, ancestors, vw, vh):
+    """Fit each axis through ancestor clips using only available scroll travel."""
+    coords = node.get('coords') or {}
+    for axis, size, limit, before, after, direction in (
+            ('x', 'w', vw, 'left', 'right', 3),
+            ('y', 'h', vh, 'top', 'bottom', 12)):
+        low = high = coords.get(axis, 0)
+        extent = coords.get(size, 0)
+        for parent in reversed(ancestors):
+            scroll = parent.get('scroll') or {}
+            if ((parent.get('flags') or {}).get('scrollable')
+                    and scroll.get('dir', 0) & direction):
+                low -= max(0, scroll.get(after, 0))
+                high += max(0, scroll.get(before, 0))
+            box = parent.get('coords') or {}
+            low = max(low, box.get(axis, 0) - 2)
+            high = min(high, box.get(axis, 0) + box.get(size, limit) - extent + 2)
+            if low > high:
+                return False
+        if high < -2 or low + extent > limit + 2:
+            return False
+    return True
+
+
+def _selected_pages(spec, pages):
+    requested = set(pages.split(',')) if pages else None
+    available = {'%s/%s' % (p['app'], p.get('page', 'root')): p
+                 for p in spec['pages']}
+    if requested and requested - available.keys():
+        raise ValueError('unknown pages: %s' % ', '.join(sorted(requested - available.keys())))
+    selected = [p for key, p in available.items() if not requested or key in requested]
+    if not any(not s.get('hardware_only') for p in selected for s in p.get('states', [])):
+        raise ValueError('selection contains no simulator states')
+    return selected
+
+
+def _wait_idle(runner):
+    result = runner.call('sim.wait_idle', {'timeout_ms': 5000})
+    if result.get('idle') is not True:
+        raise RuntimeError('sim.wait_idle timed out: %r' % result)
 
 
 def _lint(tree, page, state, vw, vh):
@@ -129,7 +170,7 @@ def _lint(tree, page, state, vw, vh):
                              % (selector, h, lh, lab['text']))
 
     allow_disabled = state.get('allow_disabled', [])
-    for node, in_scroll, in_hidden in _walk_annotated(tree, False, False):
+    for node, ancestors, in_hidden in _walk_annotated(tree):
         flags = node.get('flags') or {}
         coords = node.get('coords') or {}
         state_flags = node.get('state') or {}
@@ -137,12 +178,8 @@ def _lint(tree, page, state, vw, vh):
                        or flags.get('clickable'))
         if not interactive or in_hidden or flags.get('hidden'):
             continue
-        y2 = coords.get('y', 0) + coords.get('h', 0)
-        x2 = coords.get('x', 0) + coords.get('w', 0)
-        if not in_scroll and (y2 > vh + 2 or x2 > vw + 2):
-            v.append('unreachable control %s at y=%d h=%d (viewport %d, not in '
-                     'a scroll owner)' % (node.get('type'), coords.get('y', 0),
-                                          coords.get('h', 0), vh))
+        if not _reachable(node, ancestors, vw, vh):
+            v.append('unreachable control %s at %r' % (node.get('type'), coords))
         if state_flags.get('disabled'):
             texts = _descendant_texts(node)
             if not any(any(a in t for a in allow_disabled) for t in texts):
@@ -183,7 +220,7 @@ def _masked_diff(a, b, masks, tol=24):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--spec', required=True)
+    ap.add_argument('--spec', default='sim/ci/review/spec.json')
     ap.add_argument('--build', default='build/sim')
     ap.add_argument('--golden', default='sim/ci/golden/ui')
     ap.add_argument('--shots', default='build/sim/review_shots')
@@ -205,6 +242,10 @@ def main():
         ap.error('--check and --update are mutually exclusive')
 
     spec = json.load(open(args.spec))
+    try:
+        spec['pages'] = _selected_pages(spec, args.pages)
+    except ValueError as error:
+        ap.error(str(error))
 
     proc = None
     if not args.no_launch and not _port_open('127.0.0.1', args.port):
@@ -215,7 +256,7 @@ def main():
     try:
         _run_spec(runner, spec, args, proc)
     finally:
-        if not args.keep_sim:
+        if proc is not None and not args.keep_sim:
             try:
                 runner.call('sim.exit')
             except Exception:
@@ -232,18 +273,19 @@ def main():
 def _run_spec(runner, spec, args, proc):
     vw = (spec.get('viewport') or {}).get('w', 368)
     vh = (spec.get('viewport') or {}).get('h', 448)
-    filt = set(args.pages.split(',')) if args.pages else None
     runner.connect()
     os.makedirs(args.golden, exist_ok=True)
 
     failures = []
     checked = 0
+    visual_checked = 0
+    geometry_only = []
+    hardware_only = []
     for page in spec['pages']:
         key = '%s/%s' % (page['app'], page.get('page', 'root'))
-        if filt and key not in filt:
-            continue
         for state in page.get('states', []):
             if state.get('hardware_only'):
+                hardware_only.append(key + '/' + state['name'])
                 continue
             checked += 1
             name = '%s__%s__%s' % (page['app'], page.get('page', 'root'),
@@ -264,7 +306,7 @@ def _run_spec(runner, spec, args, proc):
                     for seed in state.get('seed', []):
                         runner._step(seed)
                     runner.call('sim.step', {'ms': 33 * 30})
-                    runner.call('sim.wait_idle', {'timeout_ms': 5000})
+                    _wait_idle(runner)
                     tree = runner.call('sim.tree')['tree']
                     if not want:
                         break
@@ -277,11 +319,13 @@ def _run_spec(runner, spec, args, proc):
                 for viol in _lint(tree, page, state, vw, vh):
                     failures.append('%s: %s' % (name, viol))
                 if state.get('no_golden'):
+                    geometry_only.append(name)
                     continue
                 golden = os.path.join(args.golden, name + '.png')
                 if args.update:
                     shutil.copyfile(path, golden)
                 elif os.path.exists(golden):
+                    visual_checked += 1
                     frac = _masked_diff(path, golden, state.get('masks', []))
                     if frac > args.max_diff:
                         failures.append('%s: baseline diff %.3f%% > %.3f%%'
@@ -294,11 +338,15 @@ def _run_spec(runner, spec, args, proc):
 
     print('ui-review: %d states checked, %d failures'
           % (checked, len(failures)))
+    print('  visual=%d geometry-only=%d hardware-only=%d'
+          % (visual_checked, len(geometry_only), len(hardware_only)))
     for f in failures:
         print('   -', f)
     if args.report:
         with open(args.report, 'w') as fh:
-            json.dump({'checked': checked, 'failures': failures}, fh, indent=1)
+            json.dump({'checked': checked, 'visual_checked': visual_checked,
+                       'geometry_only': geometry_only, 'hardware_only': hardware_only,
+                       'failures': failures}, fh, indent=1)
     sys.exit(1 if failures else 0)
 
 

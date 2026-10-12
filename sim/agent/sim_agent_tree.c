@@ -214,6 +214,11 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     cJSON *scroll = cJSON_AddObjectToObject(node, "scroll");
     if (scroll != NULL)
     {
+        cJSON_AddNumberToObject(scroll, "dir", lv_obj_get_scroll_dir(obj));
+        cJSON_AddNumberToObject(scroll, "left", lv_obj_get_scroll_left(obj));
+        cJSON_AddNumberToObject(scroll, "right", lv_obj_get_scroll_right(obj));
+        cJSON_AddNumberToObject(scroll, "top", lv_obj_get_scroll_top(obj));
+        cJSON_AddNumberToObject(scroll, "bottom", lv_obj_get_scroll_bottom(obj));
         cJSON_AddNumberToObject(scroll, "y", (double)lv_obj_get_scroll_y(obj));
     }
     _add_style(node, obj);

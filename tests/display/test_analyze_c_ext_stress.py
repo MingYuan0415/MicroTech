@@ -65,15 +65,20 @@ class CExtStressAnalyzerTest(unittest.TestCase):
             "min_internal_free=110000 min_internal_largest=50000 "
             "min_dma_free=70000 min_dma_largest=18000 "
             "min_psram_free=5900000 min_psram_largest=5800000 "
-            "trend_ok=1 recovery_ok=1",
+            "trend_ok=1 recovery_ok=1 samples=2 psram_max_decline=1024 "
+            "warm_internal=120000 cleanup_internal=120000 "
+            "warm_psram=5900000 cleanup_psram=5900000",
             "I display_bench: c_ext_stress summary result=PASS completed=1 "
-            "navigation_ok=1 tasks_ok=1 performance=FLOOR",
+            "navigation_ok=1 tasks_ok=1 performance=FLOOR "
+            "cleanup=0 routes=0xff effects=0x1fff duration_us=1800000000",
             "I display_bench: display benchmark stability=PASS "
             "performance=FLOOR state=COMPLETE snapshot_fallbacks=0 "
-            "snapshot_prepare_max_p95_us=80000",
+            "snapshot_prepare_max_p95_us=80000 samples=2 frame_submits=100 "
+            "sample_err=0 submit_fail=0 dma_fail=0",
             "I display_bench: display load profile=full tcp_rate_ok=1 "
             "tcp_reconnects=0 wifi_disconnects=0 workload=0x0 control=0x0 "
-            "audio=0x0 tcp=0x0",
+            "audio=0x0 tcp=0x0 tcp_tx_bytes=460800000 tcp_rx_bytes=460800000 "
+            "tcp_target_bytes=460800000 tcp_active_us=1800000000",
         ])
         return lines
 
@@ -145,6 +150,23 @@ class CExtStressAnalyzerTest(unittest.TestCase):
         self.assertEqual(analysis.status, "FAIL")
         self.assertTrue(any("rx_timeout=1" in item
                             for item in analysis.gate_failures))
+
+    def test_claimed_pass_cannot_override_raw_metrics(self):
+        for before, after in (("samples=3600", "samples=0"),
+                              ("target_bytes=345600000", "target_bytes=0"),
+                              ("tx_bytes=345600000", "tx_bytes=1"),
+                              ("tcp_rx_bytes=460800000", "tcp_rx_bytes=1"),
+                              ("routes=0xff", "routes=0xfe"),
+                              ("effects=0x1fff", "effects=0x1ffe"),
+                              ("cleanup=0 ", "cleanup=1 "),
+                              ("state=COMPLETE", "state=STOPPED")):
+            with self.subTest(metric=before):
+                def mutate(lines):
+                    lines[:] = [line.replace(before, after) for line in lines]
+                self.assertEqual(self._analyze(mutate).status, "FAIL")
+
+    def test_truncated_log_is_invalid(self):
+        self.assertEqual(self._analyze(lambda lines: lines.pop()).status, "INVALID")
 
 
 if __name__ == "__main__":

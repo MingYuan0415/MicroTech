@@ -66,31 +66,28 @@ Snapshot 只依赖 SPIRAM 和自身 build gate。缓冲、采集、overlay 或�
 原生 LVGL Screen 动画；`NONE`、零时长、同一 Screen 和边缘返回 `PRESSING` 不创建快照。
 真机验收要求所有有效效果无 fallback，prepare P95 不超过 100 ms。
 
-## LVGL 内部 RAM profile
+## 当前显示 campaign
 
-LVGL RAM 工具只改变 LVGL OS、software draw unit、draw-thread stack 和 FreeType render
-pool，并复用固定板型显示基线：
+工具只准备生产 C_EXT 配置，并通过运行时 campaign 选择负载：
 
-| Profile | LVGL OS | Draw unit / stack | FreeType pool | 理论内部 RAM 回收 |
-| --- | --- | --- | ---: | ---: |
-| B0 | FreeRTOS | 2 / 32 KiB | 16 KiB | 基线 |
-| C | NONE | 1 / 无 draw task | 16 KiB | 64 KiB |
-| A | FreeRTOS | 1 / 32 KiB | 16 KiB | 32 KiB |
-| B24/B20/B16 | FreeRTOS | 1 / 24/20/16 KiB | 4 KiB | 40/44/48 KiB |
+| Campaign | 负载 |
+| --- | --- |
+| characterization | 两种 load、五种 transition |
+| stress | 1800 秒生产转场 |
+| ble-stress | 1800 秒 BLE connected 综合负载 |
+| soak | 28800 秒综合负载 |
 
 准备、构建和验证隔离候选：
 
 ```sh
-python3 tests/display/lvgl_ram_profiles.py prepare --reset --profiles B0 C
+python3 tests/display/display_profiles.py prepare --reset --campaigns characterization ble-stress
 # 依次执行上一步打印的 idf.py build size 命令
-python3 tests/display/lvgl_ram_profiles.py validate --profiles B0 C
-python3 tests/display/analyze_lvgl_ram.py \
-  --log B0=/path/to/b0.log --log C=/path/to/c.log
+python3 tests/display/display_profiles.py validate --campaigns characterization ble-stress
+python3 tests/display/analyze_characterization.py /path/to/characterization.log
 ```
 
-源码变更后必须重新 `prepare --reset`。分析器校验两阶段五种 effect、稳定性、FLOOR、
-Snapshot、DMA、render task、栈位置/high-water 和 internal free 收益。13 种转场、字形、
-10 分钟 full-load、1800 秒 stress、冷启动和休眠恢复是独立验收项。
+源码变更后必须重新 `prepare --reset`。分析器直接核验设备输出的原始字节数、采样数、
+cleanup、路由/effect masks、Snapshot、DMA、render task 和性能门槛。
 
 ## C_EXT 与保留压测
 
@@ -100,11 +97,11 @@ Snapshot、DMA、render task、栈位置/high-water 和 internal free 收益。1
 任务亲和性保证。
 
 ```sh
-python3 tests/display/lvgl_ram_profiles.py prepare --reset \
-  --profiles C_EXT C_EXT_STRESS
+python3 tests/display/display_profiles.py prepare --reset \
+  --campaigns stress ble-stress
 # 依次执行生成的隔离构建命令
-python3 tests/display/lvgl_ram_profiles.py validate \
-  --profiles C_EXT C_EXT_STRESS
+python3 tests/display/display_profiles.py validate \
+  --campaigns stress ble-stress
 ```
 
 `C_EXT_STRESS` 在 `C_EXT` 基础上加载 Device Link ACL 连接负载（`ble_connected`
@@ -131,12 +128,13 @@ STOP 和 NEW_INTENT 的 INFO trace。生产默认关闭；错误、警告、hand
 
 一次可比较的验收运行必须成组归档以下内容，缺一不可：
 
-- **display config**：设备日志中固件启动打印的 `display config transport=... bus_hz=...` 行，字段来自 BSP descriptor 与 LVGL 配置；C_EXT 分析器以 `display config ` 为标记读取，RAM 分析器以 `display_bench: display config ` 为标记读取。
-- **profile 文件**：`tests/display/profiles/*.json`（严格 schema，见 `display_profile_utils.load_benchmark_profile`）及构建时叠加的 `tests/display/profile_defaults/*.defaults`；`lvgl_ram_profiles.py prepare` 在隔离目录生成的 `display_benchmark_profile.h` 与 `source_manifest.json` 一并归档。
+- **display config**：设备日志中固件启动打印的 `display config transport=... bus_hz=...` 行，字段来自 BSP descriptor 与 LVGL 配置；当前分析器以 `display config ` 为标记读取。
+- **profile 文件**：`tests/display/profiles/*.json`（严格 schema，见 `display_profile_utils.load_benchmark_profile`）及构建时叠加的 `tests/display/profile_defaults/*.defaults`；`display_profiles.py prepare` 在隔离目录生成的 `display_benchmark_profile.h` 与 `source_manifest.json` 一并归档。
 - **固件来源指纹**：`prepare` 写入 `source_manifest.json` 的 `source_fingerprint` 与 `repositories[*].commit`，覆盖父仓库及子模块的 commit、diff 和未跟踪文件内容。
-- **原始日志**：设备串口完整日志，分别交给 `analyze_c_ext_stress.py <log>` 或 `analyze_lvgl_ram.py --log PROFILE=PATH`。
+- **原始日志**：设备串口完整日志，交给 `analyze_c_ext_stress.py <log>` 或
+  `analyze_characterization.py <log>`。
 
-本目录工具不产生 **Device ID** 和 **Boot ID** 字段，解析器也不读取它们；工具也不计算**固件镜像 hash**（`validate_profile_artifacts` 只检查 `<build>/microtech.bin` 是否存在，不生成摘要）。日志只含 IDF 启动标记（`boot: ESP-IDF`、`rst:0x`），用于计数重启而非标识单台设备或单次启动。需要区分设备或启动时须自行记录，不能声称由本工具产生。
+本目录工具不产生 **Device ID** 和 **Boot ID** 字段，解析器也不读取它们；工具也不计算**固件镜像 hash**。日志只含 IDF 启动标记（`boot: ESP-IDF`、`rst:0x`），用于计数重启而非标识单台设备或单次启动。需要区分设备或启动时须自行记录，不能声称由本工具产生。
 
 缺少上述任一条目的运行不得与任何基线比较；`source_fingerprint` 或 profile 不一致时，该运行不与旧基线同组。
 

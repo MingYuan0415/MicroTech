@@ -175,7 +175,6 @@ function(add_display_benchmark_test target port stress characterization
         CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID=${lvgl_core_id}
         TEST_PROJECT_CORE_ID=0
         TEST_LVGL_CORE_ID=${lvgl_core_id}
-        CONFIG_PROVISIONING_SERVICE_DIAGNOSTICS=${c_ext_stress}
         TEST_C_EXT_STRESS=${c_ext_stress}
         TEST_DISPLAY_BENCHMARK_MODE_STRESS=${stress}
         TEST_DISPLAY_BENCHMARK_MODE_CHARACTERIZATION=${characterization}
