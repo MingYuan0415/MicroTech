@@ -83,6 +83,26 @@ CLI：`--headless`、`--ci`、`--res-dir <staged 资源目录>`、`--nvs-dir <NV
 Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001）见
 `sim/tools/simctl.py`。
 
+## 天气联调（联网实时数据）
+
+`--ci` 会话的 HTTP 数据面是脚本独占的（未注册 URL 视作离线），只能用
+`sim.set_weather` 灌入 `sim/ci/fixtures/*.json` 做确定性回归，**不会联网**。要在
+模拟器里看**实时天气**，用非 `--ci` 模式（`python3 sim/dev.py` 的联网会话，或裸
+`--headless` 无头驻留），并注意：
+
+- 先 `sim.set_wifi {connected}`（`simctl set-wifi connected`）让 connectivity 就绪；
+- **等待天气服务完成抓取**：约 20 s 起陆续出现数据，location→current/alerts/hourly/
+  daily 全部取齐并稳定为「… 更新」通常需要 **1–2 分钟**；在此之前短暂显示
+  `缓存实况` / `服务降级` 属抓取过渡态，**不是缺陷**，不要据此下结论；
+- **默认直连，不要加代理**：加代理会改变出口 IP，导致定位漂移（例如落到境外城市），
+  结果与真机/直连不一致；仅当直连确实不通时才临时启用代理；
+- 长时间无数据时，依次检查 `sim.ping` 的 `network_ready`、天气状态与
+  `build/sim/dev_session.log`。
+
+天气时效走宿主真实时钟（`weather_service_port_now_seconds` → `time(NULL)`），而
+`sim.set_time` 只作用于 app 时钟：因此 CI 里固定的 fixtures 时间戳会被判为过期，
+`sim/ci/golden/ui/` 的天气金标只保证布局回归、不代表实时态；真机由 SNTP 校时，无此差异。
+
 ## 编译进 sim 的真实源码
 
 - app_manager：app_core 16 个 `.c` + app_theme（`app_manager_persistence.c`
