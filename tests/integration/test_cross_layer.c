@@ -1708,6 +1708,10 @@ static void _test_real_app_navigation(void)
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("共 2 条气象预警"));
     assert(_ui_has_text("severe · active\n08-05 08:00 - 08-05 14:00"));
+    /* The window line only fits the row at the SMALL role; at BODY it wrapped
+     * mid-token ("...18:" / "00"). */
+    assert(_ui_text_has_font("severe · active\n08-05 08:00 - 08-05 14:00",
+                             &s_theme_fonts[APP_THEME_FONT_SMALL]));
     assert(_ui_text_has_font("暴雨红色预警",
                              &s_theme_fonts[APP_THEME_FONT_SMALL]));
     const label_layout_query_t alert_title_layout =

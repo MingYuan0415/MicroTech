@@ -376,6 +376,29 @@
           "single_line": [],
           "allow_disabled": [],
           "no_golden": true
+        },
+        {
+          "name": "populated",
+          "seed": [
+            {"cmd": "set_time", "epoch": 1785888100},
+            {"cmd": "set_wifi", "state": "connected"},
+            {"cmd": "set_weather", "endpoint": "location", "file": "sim/ci/fixtures/weather_location.json"},
+            {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
+            {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
+            {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
+            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts_active.json"},
+            {"cmd": "sleep_ms", "ms": 9000},
+            {"cmd": "step", "times": 80},
+            {"cmd": "wait_idle"}
+          ],
+          "expect_visible": [
+            "新界·北区",
+            "Cloudy",
+            "72%",
+            "条气象预警"
+          ],
+          "single_line": [],
+          "allow_disabled": []
         }
       ]
     },
@@ -383,6 +406,31 @@
       "app": "weather",
       "page": "forecast",
       "states": [
+        {
+          "name": "current",
+          "seed": [
+            {"cmd": "set_time", "epoch": 1785888100},
+            {"cmd": "set_wifi", "state": "connected"},
+            {"cmd": "set_weather", "endpoint": "location", "file": "sim/ci/fixtures/weather_location.json"},
+            {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
+            {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
+            {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
+            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts_active.json"},
+            {"cmd": "sleep_ms", "ms": 9000},
+            {"cmd": "step", "times": 80},
+            {"cmd": "wait_idle"}
+          ],
+          "expect_visible": [
+            "详细预报",
+            "35.6°C",
+            "1004 hPa"
+          ],
+          "single_line": [
+            "35.6°C",
+            "1004 hPa"
+          ],
+          "allow_disabled": []
+        },
         {
           "name": "hourly",
           "seed": [
@@ -392,7 +440,7 @@
             {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
             {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
             {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
-            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts.json"},
+            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts_active.json"},
             {"cmd": "sleep_ms", "ms": 9000},
             {"cmd": "step", "times": 80},
             {"cmd": "wait_idle"},
@@ -407,6 +455,100 @@
             "降水 10%"
           ],
           "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "daily",
+          "seed": [
+            {"cmd": "set_time", "epoch": 1785888100},
+            {"cmd": "set_wifi", "state": "connected"},
+            {"cmd": "set_weather", "endpoint": "location", "file": "sim/ci/fixtures/weather_location.json"},
+            {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
+            {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
+            {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
+            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts_active.json"},
+            {"cmd": "sleep_ms", "ms": 9000},
+            {"cmd": "step", "times": 80},
+            {"cmd": "wait_idle"},
+            {"cmd": "touch", "action": "down", "x": 287, "y": 99},
+            {"cmd": "step", "ms": 66},
+            {"cmd": "touch", "action": "up", "x": 287, "y": 99},
+            {"cmd": "step", "times": 20},
+            {"cmd": "wait_idle"}
+          ],
+          "expect_visible": [
+            "详细预报",
+            "Sunny / Clear",
+            "34° / 27°"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "weather",
+      "page": "alerts",
+      "states": [
+        {
+          "name": "active",
+          "seed": [
+            {"cmd": "set_time", "epoch": 1785888100},
+            {"cmd": "set_wifi", "state": "connected"},
+            {"cmd": "set_weather", "endpoint": "location", "file": "sim/ci/fixtures/weather_location.json"},
+            {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
+            {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
+            {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
+            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts_active.json"},
+            {"cmd": "sleep_ms", "ms": 9000},
+            {"cmd": "step", "times": 80},
+            {"cmd": "wait_idle"}
+          ],
+          "expect_visible": [
+            "气象预警",
+            "深圳市暴雨黄色预警",
+            "中等 · 预警中"
+          ],
+          "single_line": [
+            "深圳市暴雨黄色预警"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "weather",
+      "page": "alert-detail",
+      "states": [
+        {
+          "name": "active",
+          "seed": [
+            {"cmd": "set_time", "epoch": 1785888100},
+            {"cmd": "set_wifi", "state": "connected"},
+            {"cmd": "set_weather", "endpoint": "location", "file": "sim/ci/fixtures/weather_location.json"},
+            {"cmd": "set_weather", "endpoint": "current", "file": "sim/ci/fixtures/weather_current.json"},
+            {"cmd": "set_weather", "endpoint": "hourly", "file": "sim/ci/fixtures/weather_hourly.json"},
+            {"cmd": "set_weather", "endpoint": "daily", "file": "sim/ci/fixtures/weather_daily.json"},
+            {"cmd": "set_weather", "endpoint": "alerts", "file": "sim/ci/fixtures/weather_alerts_active.json"},
+            {"cmd": "sleep_ms", "ms": 9000},
+            {"cmd": "step", "times": 80},
+            {"cmd": "wait_idle"},
+            {"cmd": "navigate", "app": "weather", "page": "alerts"},
+            {"cmd": "step", "times": 20},
+            {"cmd": "touch", "action": "down", "x": 184, "y": 150},
+            {"cmd": "step", "ms": 66},
+            {"cmd": "touch", "action": "up", "x": 184, "y": 150},
+            {"cmd": "step", "times": 40},
+            {"cmd": "wait_idle"}
+          ],
+          "expect_visible": [
+            "预警详情",
+            "深圳市暴雨黄色预警",
+            "有效时段"
+          ],
+          "single_line": [
+            "深圳市暴雨黄色预警"
+          ],
           "allow_disabled": []
         }
       ]
