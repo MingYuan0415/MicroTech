@@ -1529,7 +1529,7 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("逐小时"));
     assert(_ui_has_text("7 天"));
     assert(_ui_has_text("35.6°C"));
-    assert(_ui_has_text("数据来源：maxmind"));
+    assert(_ui_has_text("数据来源：和风天气"));
     assert(_ui_text_has_font("实况", &s_theme_fonts[APP_THEME_FONT_SMALL]));
     assert(_ui_text_has_font("35.6°C",
                              &s_theme_fonts[APP_THEME_FONT_BODY]));
