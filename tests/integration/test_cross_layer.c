@@ -1569,6 +1569,12 @@ static void _test_real_app_navigation(void)
     assert(hourly_details_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(hourly_details_layout.height == LV_SIZE_CONTENT);
     assert(hourly_details_layout.parent_height == LV_SIZE_CONTENT);
+    /* The two-line "MM-DD\nHH:MM" column must size to its content and never
+     * wrap; a fixed 58 px box rewrapped "08-05" into four lines. */
+    const label_layout_query_t hourly_time_layout =
+        _ui_label_layout("08-05\n09:00", &s_theme_fonts[APP_THEME_FONT_BODY]);
+    assert(hourly_time_layout.long_mode == LV_LABEL_LONG_CLIP);
+    assert(hourly_time_layout.width == LV_SIZE_CONTENT);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("湿度 65% · 10 km/h"));
