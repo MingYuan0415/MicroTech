@@ -300,6 +300,14 @@ static lv_obj_t *_host_lv_allocate_object(host_lv_object_kind_t kind,
                 object->flags = LV_OBJ_FLAG_CLICKABLE;
             }
             object->flags |= LV_OBJ_FLAG_SCROLLABLE;
+            if (parent != NULL)
+            {
+                /* LVGL turns scroll chaining on for every parented object; the
+                 * fake must match, or the scroll-owner search stops at the
+                 * first non-scrollable widget instead of climbing to the list
+                 * scroller. */
+                object->flags |= LV_OBJ_FLAG_SCROLL_CHAIN;
+            }
             object->scroll_dir = LV_DIR_HOR | LV_DIR_VER;
             if (kind == HOST_LV_OBJECT_SCREEN)
             {

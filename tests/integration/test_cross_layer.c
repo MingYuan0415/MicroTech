@@ -3233,6 +3233,25 @@ static void _test_system_task_switcher(void)
         assert(tasks[1].icon_id == APP_IMAGE_WEATHER_APP);
     }
 
+    /* A horizontal swipe that stays on a card must scroll the card list, not
+     * activate the card: the card has to hand the horizontal scroll up to the
+     * list scroller. Regression for cards that cleared BOTH scroll-chain axes
+     * and so blocked the list swipe entirely. */
+    {
+        const unsigned takeovers_before = host_lv_scroll_takeover_count();
+        int32_t scroll_x = 0;
+        int32_t target_x = 0;
+        bool animating = false;
+        assert(host_lv_swipe_left_action("天气"));
+        assert(host_lv_scroll_takeover_count() > takeovers_before);
+        assert(host_lv_scroll_snapshot_by_title("天气", &scroll_x, &target_x,
+                                                &animating));
+        /* The swipe must neither activate nor dismiss: the switcher stays up
+         * on the same foreground task. */
+        assert(_switcher_visible());
+        assert(_wait_for_active(APP_MANAGER_ID_MENU));
+    }
+
     /* Tapping a background card restores that task and closes the switcher. */
     _click_action("天气");
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
