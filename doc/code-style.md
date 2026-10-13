@@ -16,7 +16,7 @@ AStyle 只处理布局（缩进、空格、换行），不覆盖命名、Doxygen
 
 ### 1.2 宏与常量
 
-【必须】宏与枚举常量（含函数式宏）全大写蛇形：`TRUE`、`DBG_ERROR`、`MT_ERROR_HANDLE`。
+【必须】宏与枚举常量（含函数式宏）全大写蛇形：`TRUE`、`DBG_ERROR`、`LOG_E`。
 
 ### 1.3 类型
 
@@ -173,31 +173,43 @@ esp_err_t bsp_audio_configure(const bsp_audio_config_t *config);
 static esp_err_t _handle_something(void)
 {
     esp_err_t err = ESP_OK;
-    uint32_t line = 0;
+    bool acquired = false;
+
+    err = acquire_resource();
+    if (err != ESP_OK)
+    {
+        LOG_E("acquire resource fail. %#X", err);
+        goto exit;
+    }
+    acquired = true;
 
     err = do_something();
-    MT_ERROR_HANDLE(err, line);
+    if (err != ESP_OK)
+    {
+        LOG_E("do something fail. %#X", err);
+        goto exit;
+    }
     /* 更多操作以同样方式检查 */
 
 exit:
-    if (err != ESP_OK)
+    if (acquired)
     {
-        LOG_E("handle something fail. %u:%#X", line, err);
+        release_resource();
     }
-
     return err;
 }
 ```
 
 【必须】无清理义务的参数校验与普通失败分支直接 `return`，不得为形式上的单一返回点引入 `goto`。
 
-`MT_ERROR_HANDLE`（定义于 `mt_log.h`）的约束：
+统一出口的约束：
 
-- `err` 必须是当前函数内的错误变量，跳转前已保存失败结果；`line` 须在函数入口初始化。
-- 宏只适用于含 `exit` 标签的函数；不得跨越变长数组作用域或跳转到其他标签；标签名冲突时定义局部等价宏或直接写 `goto`。
+- `err` 必须是当前函数内的错误变量，跳转前已保存失败结果。
+- 跳转目标须是本函数内的 `exit` 标签；不得跨越变长数组作用域或跳转到其他标签，标签名冲突时改用局部等价标签或直接写 `goto`。
 - `exit` 中清理按获取逆序执行；清理失败时保留首个业务错误，除非接口明确要求返回清理错误。
 - 采用统一出口的函数，成功路径自然落入 `exit`；单一返回点不是普遍要求。
-- 错误来自表达式时，先赋给 `err` 再调宏，避免重复求值并保证日志错误码与判断一致。
+- 错误来自表达式时，先赋给 `err` 再判断，避免重复求值并保证日志错误码与判断一致。
+- 记录错误时带业务语义（操作名与错误码或 `esp_err_to_name`），同一错误只在最合适的抽象层记录一次；无记录义务的失败直接传播给调用方。
 
 ## 7. 函数
 
