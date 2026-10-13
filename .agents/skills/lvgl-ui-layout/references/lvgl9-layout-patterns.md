@@ -8,8 +8,15 @@ headers.
 - [Geometry Budget](#geometry-budget)
 - [Adaptive Row](#adaptive-row)
 - [Content-Sized Prose](#content-sized-prose)
+- [Cap Content-Sized Containers](#cap-content-sized-containers)
 - [Inseparable Values and Units](#inseparable-values-and-units)
 - [One-Screen Fit vs Scroll](#one-screen-fit-vs-scroll)
+- [Fill the Viewport with the Grid](#fill-the-viewport-with-the-grid)
+- [Reflow by Size Class](#reflow-by-size-class)
+- [Measured Overlays and SIZE_CHANGED](#measured-overlays-and-size_changed)
+- [Decor Overlays Out of Flow](#decor-overlays-out-of-flow)
+- [Align an Axis to Its Plot](#align-an-axis-to-its-plot)
+- [Density and Units](#density-and-units)
 - [Input and Scroll Topology](#input-and-scroll-topology)
 - [Acceptable Fixed Geometry](#acceptable-fixed-geometry)
 
@@ -87,6 +94,22 @@ Do not set a fixed paragraph height unless the product explicitly defines a
 scrolling viewport. If it does, make that viewport the scroll owner and keep
 the label content-sized inside it.
 
+## Cap Content-Sized Containers
+
+A `LV_SIZE_CONTENT` container that holds dynamic text, a chart, or user data
+can grow past its intended share of the page. Cap the axis that must not run
+away, and treat the value as a documented contract rather than a guess:
+
+```c
+lv_obj_set_style_max_height(card, 300, 0);   /* no taller than its slot */
+lv_obj_set_style_max_width(tile, 160, 0);    /* keep a two-up grid two-up */
+```
+
+Cap a card that should not exceed a fraction of the viewport, a chart that
+would otherwise stretch on a short page, or a tile sized from unbounded data.
+A cap is required only where the content is unbounded; do not add one to a
+container whose maximum is already implied by the layout.
+
 ## Inseparable Values and Units
 
 Prefer a single label for values that must read atomically:
@@ -135,6 +158,123 @@ lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 On a fixed panel an exact one-screen grid may use explicit pixel budgets
 (for example 12 + 3 x 136 + 2 x 8 + 12 = 448); keep the invariant in named
 layout constants instead of scattering magic numbers.
+
+## Fill the Viewport with the Grid
+
+When a page must end exactly on the viewport edge, let fractional spacer rows
+absorb the leftover instead of guessing gaps between children:
+
+```c
+static const int32_t row_dsc[] = {
+    LV_GRID_CONTENT,   /* Header block */
+    LV_GRID_FR(1),     /* Slack above */
+    LV_GRID_CONTENT,   /* Primary block */
+    LV_GRID_FR(3),     /* Weighted slack */
+    LV_GRID_CONTENT,   /* Actions */
+    LV_GRID_TEMPLATE_LAST
+};
+lv_obj_set_grid_dsc_array(page, NULL, row_dsc);
+lv_obj_set_style_grid_row_align(page, LV_GRID_ALIGN_SPACE_BETWEEN, 0);
+```
+
+`LV_GRID_FR(n)` rows share the remaining height by weight; `SPACE_BETWEEN`
+pushes the content-sized rows to the edges. This lands on the exact viewport
+for any content height that fits, and unlike hand-added pixel gaps it degrades
+gracefully when a font or string changes. Give the page one grid, not a stack
+of absolute offsets. If the content can overflow, use
+[One-Screen Fit vs Scroll](#one-screen-fit-vs-scroll) instead and keep the
+overflow as a deliberate scroll.
+
+## Reflow by Size Class
+
+MicroTech drives one fixed 368 x 448 panel, so most pages need no reflow. When a
+layout must serve more than one width (a second panel, a split view, or a
+future density), change the structure in named steps instead of scaling
+coordinates:
+
+```c
+lv_obj_set_flex_flow(cards, LV_FLEX_FLOW_ROW);
+...
+lv_obj_set_flex_in_new_track(card, true); /* start the next flex line here */
+```
+
+`lv_obj_set_flex_in_new_track()` starts a new flex line before that child, so a
+single `LV_FLEX_FLOW_ROW` container lays out as one row when wide and several
+rows when narrow without declaring wrap; pick the `new_track` calls and the
+whole grid descriptor set per size class, and switch fonts and icon sizes as
+discrete buckets. Do not interpolate a font size or drag every coordinate.
+Reach for `LV_DPX()` or a `disp_size`-style tier only per
+[Density and Units](#density-and-units).
+
+## Measured Overlays and SIZE_CHANGED
+
+Geometry that must be drawn relative to a resolved box — a dial needle, a
+canvas annotation, a centered overlay — cannot be expressed with Flex or Grid.
+Resolve it after layout and recompute it on size change instead of hardcoding:
+
+```c
+lv_obj_update_layout(scale);
+lv_obj_add_event_cb(scale, size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
+```
+
+```c
+static void size_changed_cb(lv_event_t *e)
+{
+    lv_obj_t *scale = lv_event_get_target(e);
+    int32_t half = LV_MIN(lv_obj_get_width(scale),
+                          lv_obj_get_height(scale)) / 2;
+    lv_obj_align(needle, LV_ALIGN_TOP_LEFT, half, half);
+}
+```
+
+Base the position on the current content rectangle and the measured child
+size, never on literals that suit one size. Call `lv_obj_update_layout()`
+before reading geometry outside the normal layout pass (diagnostics, tests, or
+a draw callback that must place a child).
+
+## Decor Overlays Out of Flow
+
+An overlay that should not move with scrolling or contribute to its parent's
+size — a floating action button, a pull hint, a scrim, a badge — is excluded
+explicitly rather than positioned around the flow:
+
+```c
+lv_obj_set_ignore_layout(overlay, true); /* parent layout skips it */
+lv_obj_set_floating(overlay, true);      /* parent scroll does not move it */
+lv_obj_align(overlay, LV_ALIGN_BOTTOM_RIGHT, -pad, -pad);
+```
+
+`ignore_layout` removes the object from its parent's Flex/Grid, and `floating`
+keeps it fixed while the parent scrolls. Alignment, not coordinates, owns its
+position. Verify the overlay cannot swallow input meant for the content
+beneath it; see [Input and Scroll Topology](#input-and-scroll-topology).
+
+## Align an Axis to Its Plot
+
+A chart or scale and its axis labels share a plotting region; derive the label
+padding from the resolved plot so they line up at any width:
+
+```c
+lv_obj_set_style_pad_hor(hor_axis,
+                         lv_obj_get_style_pad_left(plot, LV_PART_MAIN), 0);
+lv_obj_set_style_pad_ver(ver_axis,
+                         lv_obj_get_style_pad_top(plot, LV_PART_MAIN), 0);
+```
+
+To show more data than fits, give the plot `lv_pct(200)` inside a wrapper that
+owns `LV_DIR_HOR` scroll and no other axis, and keep the axis on the wrapper's
+track so it tracks the plot rather than the viewport.
+
+## Density and Units
+
+This board is a single 368 x 448 panel at fixed density, so raw pixels are the
+correct unit and `LV_DPX()` or `LV_HOR_RES`-based tiering are not needed. Do
+not copy the demos' density code in blindly. Introduce `LV_DPX()` (and a small
+size-class helper) only when a second density or panel width actually exists,
+and then use it for gaps, radii, and control sizes — never to proportionally
+scale a whole design. Content-driven sizing (`LV_SIZE_CONTENT`,
+`lv_obj_set_flex_grow()`, `LV_GRID_FR()`) carries the rest without a density
+factor.
 
 ## Input and Scroll Topology
 

@@ -50,7 +50,29 @@ fixing visible symptoms with additional coordinates.
    scroll owner, distribute rows with a uniform gap, and end the first screen
    on a whole-row boundary so no control is sliced by the viewport edge.
    Disable accidental horizontal scrolling and avoid nested scrollables unless
-   their handoff is specified.
+   their handoff is specified. When a page must land exactly on the viewport,
+   let fractional grid rows (`LV_GRID_FR`) with
+   `LV_GRID_ALIGN_SPACE_BETWEEN` absorb the slack instead of guessed gaps.
+
+## Adapt Within a Fixed Panel
+
+MicroTech drives one 368 x 448 panel at a single density, so raw pixels plus
+`lv_pct()`/`LV_GRID_FR()` are the correct units; do not port the demos'
+`LV_DPX()`, `LV_HOR_RES`, or size-class tiering without a second density that
+needs them. When a layout must still survive a changed size:
+
+- Let content-driven sizing carry the design (`LV_SIZE_CONTENT`,
+  `lv_obj_set_flex_grow()`, fractional grid tracks), and cap a content-sized
+  card or chart with `lv_obj_set_style_max_*()` when its content is unbounded.
+- For geometry Flex/Grid cannot express (a dial needle, canvas annotation, or
+  centered overlay), resolve it after `lv_obj_update_layout()` and recompute it
+  in an `LV_EVENT_SIZE_CHANGED` handler instead of writing literals.
+- Exclude decorative overlays from the flow with `lv_obj_set_ignore_layout()`
+  and keep them fixed under scroll with `lv_obj_set_floating()`, then position
+  by alignment. Confirm they do not intercept input meant for the content.
+
+See [references/lvgl9-layout-patterns.md](references/lvgl9-layout-patterns.md)
+for the concrete patterns.
 
 ## Give Every Label a Policy
 
@@ -78,11 +100,12 @@ Select sizing by semantics:
 - Give frequently changing bounded values a stable width based on their
   worst-case formatted text to prevent layout jitter.
 - Use scrolling text only where motion is acceptable and the user can wait to
-  read it. Do not use `LV_LABEL_LONG_DOT` for required information. Remember
-  that a `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow animates forever: the page
-  never goes idle, which breaks simulator `wait_idle` coverage and burns
-  refresh cycles. Prefer `DOT` for secondary text and size required text to
-  its measured worst case instead.
+  read it. Do not use `LV_LABEL_LONG_DOT` for required information; today
+  `app_ui` row titles and summaries still use `DOT`, so treat this as the target
+  when you touch them. Remember that a `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow
+  animates forever: the page never goes idle, which breaks simulator `wait_idle`
+  coverage and burns refresh cycles. Prefer `DOT` for secondary text and size
+  required text to its measured worst case instead.
 - Measure actual fonts and strings with current LVGL APIs when a tight bound is
   unavoidable. Include Chinese glyphs, fallback fonts, negative values, units,
   and line spacing; do not infer geometry from nominal font size.
