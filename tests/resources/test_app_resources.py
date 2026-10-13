@@ -16,6 +16,7 @@ APP_DIRS = (
     "clock_app",
     "recorder_app",
     "level_app",
+    "calendar_app",
     "diagnostics_app",
 )
 

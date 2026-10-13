@@ -879,6 +879,30 @@
       ]
     },
     {
+      "app": "calendar",
+      "page": "root",
+      "states": [
+        {
+          "name": "august",
+          "seed": [
+            {
+              "cmd": "set_time",
+              "epoch": 1785888100
+            }
+          ],
+          "expect_visible": [
+            "日历",
+            "2026年8月",
+            "今天"
+          ],
+          "single_line": [
+            "8月5日"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
       "app": "menu",
       "page": "root",
       "states": [

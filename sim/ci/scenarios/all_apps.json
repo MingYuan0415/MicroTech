@@ -564,6 +564,50 @@
   },
   {
    "cmd": "navigate",
+   "app": "calendar"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "日历"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "2026年8月"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "8月5日 周三 · 第32周 · 第217天"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_obj",
+    "coords.y": 64,
+    "flags.scrollable": false
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_calendar.png"
+  },
+  {
+   "cmd": "navigate",
    "app": "diagnostics"
   },
   {
