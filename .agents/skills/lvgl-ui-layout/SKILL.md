@@ -21,9 +21,13 @@ fixing visible symptoms with additional coordinates.
    or changing event and scroll propagation.
 4. Optionally run `scripts/audit_lvgl_layout.py <paths>` to locate suspicious
    absolute positioning, truncation, label setup order, and clickable labels.
-   Treat findings as review prompts, not proof of defects. Trace dynamic font,
-   symbol, and object-helper arguments manually when the script reports an
-   indirect role or cannot see the call site.
+   Treat findings as review prompts, not proof of defects. The script does not
+   see through project helpers: `BUTTON_CHILD_INPUT` is usually cleared by
+   `app_ui_make_passive()`, and `FONT_ROLE_REVIEW`/`MISSING_EXPLICIT_FONT` are
+   usually satisfied by the `app_ui_*` label constructors' explicit font
+   binding, so confirm against the helper before acting on those two codes.
+   Trace dynamic font, symbol, and object-helper arguments manually when the
+   script reports an indirect role or cannot see the call site.
 
 ## Design Outside In
 
@@ -105,7 +109,12 @@ Select sizing by semantics:
   when you touch them. Remember that a `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow
   animates forever: the page never goes idle, which breaks simulator `wait_idle`
   coverage and burns refresh cycles. Prefer `DOT` for secondary text and size
-  required text to its measured worst case instead.
+  required text to its measured worst case instead. A *locked product decision*
+  to keep long text fully readable is a deliberate exception: MicroTech's
+  weather header city and status stay `SCROLL_CIRCULAR` and are asserted in
+  `tests/integration/test_cross_layer.c`; do not downgrade them to `DOT`
+  without updating that contract. Treat the no-idle cost as a review flag, not
+  an automatic edit.
 - Measure actual fonts and strings with current LVGL APIs when a tight bound is
   unavoidable. Include Chinese glyphs, fallback fonts, negative values, units,
   and line spacing; do not infer geometry from nominal font size.
@@ -152,7 +161,11 @@ Select sizing by semantics:
   slides off before release. Call `app_ui_click_only()` (drops `PRESS_LOCK`) on
   every click-activated button, row, chip, and switch so leaving the control
   sends `PRESS_LOST` and cancels activation; verify with a simulator `drag` that
-  starts on the control and ends outside it, asserting no navigation.
+  starts on the control and ends outside it, asserting no navigation. App
+  Manager and other code that cannot include `app_ui` must drop the flag
+  directly with `lv_obj_set_press_lock(obj, false)`; every click-activated
+  control in the app_manager system layer (control-center tiles and power
+  buttons, task-switcher buttons) needs the same treatment.
 
 ## Validate Before Declaring the Layout Fixed
 

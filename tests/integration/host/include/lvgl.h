@@ -293,6 +293,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_LOOP      "loop"
 #define LV_SYMBOL_MUTE      "mute"
 #define LV_SYMBOL_OK        "ok"
+#define LV_SYMBOL_PAUSE     "pause"
 #define LV_SYMBOL_PLAY      "play"
 #define LV_SYMBOL_POWER     "power"
 #define LV_SYMBOL_REFRESH   "refresh"
@@ -776,6 +777,7 @@ HOST_LV_NOOP_3(lv_obj_set_style_transform_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_align, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_max_height, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_4(lv_obj_align, lv_obj_t *, int, int32_t, int32_t)
 HOST_LV_NOOP_4(lv_obj_set_flex_align, lv_obj_t *, int, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_hor, lv_obj_t *, int32_t, int)
