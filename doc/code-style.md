@@ -153,11 +153,10 @@ esp_err_t bsp_audio_configure(const bsp_audio_config_t *config);
 
 ## 5. 日志
 
-【必须】日志统一走 `mt_log.h` 的 `LOG_E`、`LOG_W`、`LOG_I`、`LOG_D`、`LOG_V`。每个 `.c` 顶部定义 `DBG_TAG` 并设置 `DBG_LVL`：
+【必须】日志统一走 `mt_log.h` 的 `LOG_E`、`LOG_W`、`LOG_I`、`LOG_D`、`LOG_V`。每个 `.c` 顶部定义 `DBG_TAG`；`DBG_LVL` 可选，未定义时使用 Kconfig 全局默认 `CONFIG_MT_LOG_DEFAULT_LEVEL`，仅在需要低于全局上限的文件（如 BLE 运行时）显式设置：
 
 ```c
 #define DBG_TAG "app_runtime"
-#define DBG_LVL DBG_INFO
 #include "mt_log.h"
 ```
 

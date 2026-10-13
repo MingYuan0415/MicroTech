@@ -1,5 +1,4 @@
 #define DBG_TAG "app_runtime_pm"
-#define DBG_LVL DBG_INFO
 #include "mt_log.h"
 
 #include "app_runtime_pm.h"

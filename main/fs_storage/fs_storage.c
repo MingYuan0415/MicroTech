@@ -1,5 +1,4 @@
 #define DBG_TAG "fs_storage"
-#define DBG_LVL DBG_INFO
 #include "mt_log.h"
 
 #include "fs_storage.h"

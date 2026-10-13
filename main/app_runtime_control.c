@@ -1,5 +1,4 @@
 #define DBG_TAG "app_runtime_control"
-#define DBG_LVL DBG_INFO
 #include "mt_log.h"
 
 #include "app_runtime_control.h"
