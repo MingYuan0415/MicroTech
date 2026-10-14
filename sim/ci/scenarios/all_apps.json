@@ -608,6 +608,152 @@
   },
   {
    "cmd": "navigate",
+   "app": "calculator"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "计算器"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_obj",
+    "coords.y": 64,
+    "flags.scrollable": false
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 56,
+   "y": 247
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 56,
+   "y": 247
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 311,
+   "y": 247
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 311,
+   "y": 247
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 141,
+   "y": 247
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 141,
+   "y": 247
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 311,
+   "y": 407
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 311,
+   "y": 407
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "7 × 8 ="
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "56"
+   }
+  },
+  {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 400,
+   "x1": 184,
+   "y1": 190
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "56"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_obj",
+    "coords.y": 64,
+    "flags.scrollable": false
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "apps_calculator.png"
+  },
+  {
+   "cmd": "navigate",
    "app": "diagnostics"
   },
   {

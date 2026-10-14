@@ -903,6 +903,313 @@
       ]
     },
     {
+      "app": "calculator",
+      "page": "root",
+      "states": [
+        {
+          "name": "idle",
+          "seed": [],
+          "expect_visible": [
+            "计算器",
+            "0"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "product",
+          "seed": [
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 56,
+              "y": 190
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 56,
+              "y": 190
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 56,
+              "y": 247
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 56,
+              "y": 247
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 311,
+              "y": 247
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 311,
+              "y": 247
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 141,
+              "y": 247
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 141,
+              "y": 247
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 311,
+              "y": 407
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 311,
+              "y": 407
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            }
+          ],
+          "expect_visible": [
+            "计算器",
+            "7 × 8 =",
+            "56"
+          ],
+          "single_line": [
+            "7 × 8 ="
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "division_error",
+          "seed": [
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 56,
+              "y": 190
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 56,
+              "y": 190
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 141,
+              "y": 284
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 141,
+              "y": 284
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 311,
+              "y": 190
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 311,
+              "y": 190
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 141,
+              "y": 407
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 141,
+              "y": 407
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 311,
+              "y": 407
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 311,
+              "y": 407
+            },
+            {
+              "cmd": "step",
+              "times": 5
+            }
+          ],
+          "expect_visible": [
+            "错误",
+            "除数不能为零"
+          ],
+          "single_line": [
+            "除数不能为零"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "wide_value",
+          "seed": [
+            {"cmd": "touch", "action": "down", "x": 56, "y": 190},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 56, "y": 190},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "down", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3},
+            {"cmd": "touch", "action": "up", "x": 218, "y": 247},
+            {"cmd": "step", "times": 3}
+          ],
+          "expect_visible": [
+            "999999999999"
+          ],
+          "single_line": [
+            "999999999999"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
       "app": "menu",
       "page": "root",
       "states": [
@@ -912,9 +1219,12 @@
           "expect_visible": [
             "系统设置",
             "水平仪",
-            "录音"
+            "录音",
+            "计算器"
           ],
-          "single_line": [],
+          "single_line": [
+            "计算器"
+          ],
           "allow_disabled": []
         }
       ]

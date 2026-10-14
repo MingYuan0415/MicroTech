@@ -31,7 +31,7 @@
 
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
-#define BUILTIN_APP_COUNT 10U
+#define BUILTIN_APP_COUNT 11U
 #define LIFECYCLE_OBSERVATION_CAPACITY 1536U
 #define LIFECYCLE_ID_BYTES 32U
 
@@ -1768,6 +1768,7 @@ static void _test_real_app_navigation(void)
     } product_apps[] =
     {
         {"时钟", APP_MANAGER_ID_CLOCK, "时钟"},
+        {"计算器", APP_MANAGER_ID_CALCULATOR, "计算器"},
         {"录音", APP_MANAGER_ID_RECORDER, "录音服务不可用"},
         {"水平仪", APP_MANAGER_ID_LEVEL, "水平仪"},
     };
@@ -2236,6 +2237,7 @@ static void _assert_real_page_start_contract(void)
         {APP_MANAGER_ID_CLOCK, "root"},
         {APP_MANAGER_ID_RECORDER, "root"},
         {APP_MANAGER_ID_LEVEL, "root"},
+        {APP_MANAGER_ID_CALCULATOR, "root"},
         {APP_MANAGER_ID_DIAGNOSTICS, "root"},
         {APP_MANAGER_ID_SETTINGS, "root"},
         {APP_MANAGER_ID_SETTINGS, "display"},
@@ -2413,11 +2415,14 @@ static void _test_other_real_app_screen_lifecycles(void)
         const char *action;
         const char *app_id;
         const char *visible_text;
+        size_t timers;
     } product_apps[] =
     {
-        {"时钟", APP_MANAGER_ID_CLOCK, "时钟"},
-        {"录音", APP_MANAGER_ID_RECORDER, "录音"},
-        {"水平仪", APP_MANAGER_ID_LEVEL, "水平仪"},
+        {"时钟", APP_MANAGER_ID_CLOCK, "时钟", 1U},
+        /* The calculator is a static page: it owns no timer or subscription. */
+        {"计算器", APP_MANAGER_ID_CALCULATOR, "计算器", 0U},
+        {"录音", APP_MANAGER_ID_RECORDER, "录音", 1U},
+        {"水平仪", APP_MANAGER_ID_LEVEL, "水平仪", 1U},
     };
     for (size_t index = 0U; index < sizeof(product_apps) /
             sizeof(product_apps[0]); ++index)
@@ -2426,7 +2431,8 @@ static void _test_other_real_app_screen_lifecycles(void)
         assert(_wait_for_active(product_apps[index].app_id));
         _exercise_real_page_screen_lifecycle(
             product_apps[index].app_id, "root",
-            product_apps[index].visible_text, 1U, 0U, 0U, 0U);
+            product_apps[index].visible_text, product_apps[index].timers,
+            0U, 0U, 0U);
         assert(_navigate(APP_MANAGER_NAV_OP_EXIT, product_apps[index].app_id,
                          NULL) == ESP_OK);
         assert(_wait_for_active(APP_MANAGER_ID_MENU));
