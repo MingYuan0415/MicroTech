@@ -12,6 +12,18 @@ get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(APP_CORE "${PROJECT_ROOT}/layers/app_manager/app_core")
 set(APP_THEME "${PROJECT_ROOT}/layers/app_manager/app_theme")
 set(APPS "${PROJECT_ROOT}/layers/apps")
+# The app layer's single source list; do not re-declare app sources here.
+include("${APPS}/app_sources.cmake")
+set(INTEGRATION_APP_SOURCES "")
+foreach(_app_src IN LISTS APP_SRCS)
+    list(APPEND INTEGRATION_APP_SOURCES "${APPS}/${_app_src}")
+endforeach()
+unset(_app_src)
+set(INTEGRATION_APP_INCLUDE_DIRS "")
+foreach(_app_include IN LISTS APP_SRC_INCLUDE_DIRS)
+    list(APPEND INTEGRATION_APP_INCLUDE_DIRS "${APPS}/${_app_include}")
+endforeach()
+unset(_app_include)
 set(MIDDLEWARE "${PROJECT_ROOT}/layers/middleware/components")
 
 add_executable(test_cross_layer
@@ -39,40 +51,7 @@ add_executable(test_cross_layer
     "${APP_THEME}/src/app_theme.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
     "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"
-    "${APPS}/common/src/app_ui.c"
-    "${APPS}/common/src/app_ui_pull_refresh.c"
-    "${APPS}/common/src/app_weather_ui.c"
-    "${APPS}/common/src/apps_persistence.c"
-    "${APPS}/home_app/src/home_app.c"
-    "${APPS}/weather_app/src/weather_app.c"
-    "${APPS}/weather_app/src/weather_ui.c"
-    "${APPS}/weather_app/src/weather_root_page.c"
-    "${APPS}/weather_app/src/weather_forecast_page.c"
-    "${APPS}/weather_app/src/weather_alert_pages.c"
-    "${APPS}/menu_app/src/menu_app.c"
-    "${APPS}/clock_app/src/clock_app.c"
-    "${APPS}/clock_app/src/clock_countdown_page.c"
-    "${APPS}/clock_app/src/clock_duration_page.c"
-    "${APPS}/clock_app/src/clock_focus_page.c"
-    "${APPS}/clock_app/src/clock_stopwatch_page.c"
-    "${APPS}/recorder_app/src/recorder_app.c"
-    "${APPS}/recorder_app/src/recorder_files_page.c"
-    "${APPS}/level_app/src/level_app.c"
-    "${APPS}/level_app/src/level_app_persistence.c"
-    "${APPS}/level_app/src/level_math.c"
-    "${APPS}/calendar_app/src/calendar_app.c"
-    "${APPS}/calendar_app/src/calendar_math.c"
-    "${APPS}/calculator_app/src/calculator_app.c"
-    "${APPS}/calculator_app/src/calculator_math.c"
-    "${APPS}/diagnostics_app/src/diagnostics_app.c"
-    "${APPS}/settings_app/src/settings_app.c"
-    "${APPS}/settings_app/src/settings_display_page.c"
-    "${APPS}/settings_app/src/settings_wifi_page.c"
-    "${APPS}/settings_app/src/settings_bluetooth_page.c"
-    "${APPS}/settings_app/src/settings_device_page.c"
-    "${APPS}/settings_app/src/settings_factory_reset_page.c"
-    "${APPS}/setup_app/src/setup_app.c"
-    "${APPS}/setup_app/src/setup_wifi_adapter.c"
+    ${INTEGRATION_APP_SOURCES}
     "${MIDDLEWARE}/timer_service/src/timer_service.c"
 )
 
@@ -105,16 +84,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${APP_CORE}/src"
     "${APP_THEME}/include"
     "${APPS}/common/include"
-    "${APPS}/weather_app/src"
-    "${APPS}/menu_app/src"
-    "${APPS}/settings_app/src"
-    "${APPS}/setup_app/src"
-    "${APPS}/clock_app/src"
-    "${APPS}/recorder_app/src"
-    "${APPS}/level_app/src"
-    "${APPS}/calendar_app/src"
-    "${APPS}/calculator_app/src"
-    "${APPS}/diagnostics_app/src"
+    ${INTEGRATION_APP_INCLUDE_DIRS}
     "${MIDDLEWARE}/event_bus/include"
     "${MIDDLEWARE}/power_service/include"
     "${MIDDLEWARE}/imu_service/include"

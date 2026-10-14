@@ -31,7 +31,6 @@
 
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
-#define BUILTIN_APP_COUNT 11U
 #define LIFECYCLE_OBSERVATION_CAPACITY 1536U
 #define LIFECYCLE_ID_BYTES 32U
 
@@ -39,6 +38,28 @@ EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
 
 extern const app_manager_app_desc_t _app_manager_apps_start[];
 extern const app_manager_app_desc_t _app_manager_apps_end[];
+
+/* Product App inventory: one entry per registered descriptor. The expected
+ * count is derived from this list, and the list itself is checked against the
+ * linked `.app_manager_apps` section, so adding an App is one entry here rather
+ * than a numeric edit in two places. */
+static const char *const s_expected_app_ids[] =
+{
+    APP_MANAGER_ID_HOME,
+    APP_MANAGER_ID_MENU,
+    APP_MANAGER_ID_SETTINGS,
+    APP_MANAGER_ID_SETUP,
+    APP_MANAGER_ID_WEATHER,
+    APP_MANAGER_ID_CLOCK,
+    APP_MANAGER_ID_CALENDAR,
+    APP_MANAGER_ID_CALCULATOR,
+    APP_MANAGER_ID_RECORDER,
+    APP_MANAGER_ID_LEVEL,
+    APP_MANAGER_ID_DIAGNOSTICS,
+};
+
+#define BUILTIN_APP_COUNT \
+    (sizeof(s_expected_app_ids) / sizeof(s_expected_app_ids[0]))
 
 static atomic_uint s_noop_count;
 static atomic_uint s_fifo_completion_count;
@@ -1358,6 +1379,20 @@ static void _initialize_stack(void)
     const ptrdiff_t app_descriptor_count =
         _app_manager_apps_end - _app_manager_apps_start;
     assert(app_descriptor_count == (ptrdiff_t)BUILTIN_APP_COUNT);
+    for (size_t index = 0U; index < BUILTIN_APP_COUNT; ++index)
+    {
+        bool found = false;
+        for (ptrdiff_t slot = 0; slot < app_descriptor_count; ++slot)
+        {
+            if (strcmp(_app_manager_apps_start[slot].id,
+                       s_expected_app_ids[index]) == 0)
+            {
+                found = true;
+                break;
+            }
+        }
+        assert(found);
+    }
     assert(app_manager_register_builtin_descriptors(
                _app_manager_apps_start,
                (size_t)app_descriptor_count) == ESP_OK);

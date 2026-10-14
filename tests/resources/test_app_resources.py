@@ -8,18 +8,29 @@ import xml.etree.ElementTree as ET
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APPS_DIR = PROJECT_ROOT / "layers" / "apps"
-APP_DIRS = (
-    "home_app",
-    "menu_app",
-    "settings_app",
-    "setup_app",
-    "clock_app",
-    "recorder_app",
-    "level_app",
-    "calendar_app",
-    "calculator_app",
-    "diagnostics_app",
-)
+SHARED_APP_SOURCES = APPS_DIR / "app_sources.cmake"
+
+
+def _app_dir_names():
+    """App directories, derived from the layer's single source list.
+
+    The list used to be hand-maintained here and had already lost `weather_app`,
+    which carries its icon under a different semantic token.
+    """
+    text = SHARED_APP_SOURCES.read_text(encoding="utf-8")
+    lines = text[text.index("set(APP_SRCS"):].splitlines()
+    dirs = set()
+    for line in lines[1:]:
+        source = line.strip().strip('"')
+        if source and source != ")":
+            dirs.add(source.split("/")[0])
+        if line.rstrip().endswith(")"):
+            break
+    dirs.discard("common")
+    return sorted(dirs)
+
+
+APP_DIRS = _app_dir_names()
 
 
 COMMON_GLYPHS = (
@@ -46,9 +57,21 @@ def _assert_final_colored_svg(path: Path) -> None:
 
 class AppResourceTest(unittest.TestCase):
     def test_app_icons_are_svg_sources(self) -> None:
+        """Every App declares exactly one SVG app icon."""
+        self.assertGreater(len(APP_DIRS), 5)
         for app in APP_DIRS:
             with self.subTest(app=app):
-                icon = APPS_DIR / app / "assets" / "icon.svg"
+                manifest = APPS_DIR / app / "resource_manifest.cmake"
+                self.assertTrue(manifest.is_file(), manifest)
+                records = re.findall(
+                    r'"([^|"]+)\|([^|"]+)\|([A-Z0-9_]+)\|(\d+)\|(\d+)\|SVG"',
+                    manifest.read_text(encoding="utf-8"))
+                icons = [source.replace("${CMAKE_CURRENT_LIST_DIR}/", "")
+                         for source, _output, semantic, _w, _h in records
+                         if semantic.endswith("_ICON") or
+                         semantic == "APP_IMAGE_WEATHER_APP"]
+                self.assertEqual(len(icons), 1, f"{app} icon records: {icons}")
+                icon = manifest.parent / icons[0]
                 self.assertTrue(icon.is_file(), icon)
                 _assert_final_colored_svg(icon)
 

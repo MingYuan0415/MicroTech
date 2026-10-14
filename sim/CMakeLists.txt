@@ -172,40 +172,20 @@ set(SIM_LAYER_SOURCES
 # apps + fakes must land in the executable as sources (or whole-archive):
 # with only the .ld fragment, GNU ld drops unreferenced objects and the
 # .app_manager_apps section stays empty (app_manager_builtin.c gate).
-set(SIM_APP_SOURCES
-    "${APPS}/common/src/app_ui.c"
-    "${APPS}/common/src/app_ui_pull_refresh.c"
-    "${APPS}/common/src/app_weather_ui.c"
-    "${APPS}/home_app/src/home_app.c"
-    "${APPS}/clock_app/src/clock_app.c"
-    "${APPS}/clock_app/src/clock_countdown_page.c"
-    "${APPS}/clock_app/src/clock_duration_page.c"
-    "${APPS}/clock_app/src/clock_stopwatch_page.c"
-    "${APPS}/clock_app/src/clock_focus_page.c"
-    "${APPS}/recorder_app/src/recorder_app.c"
-    "${APPS}/recorder_app/src/recorder_files_page.c"
-    "${APPS}/level_app/src/level_app.c"
-    "${APPS}/level_app/src/level_app_persistence.c"
-    "${APPS}/level_app/src/level_math.c"
-    "${APPS}/calendar_app/src/calendar_app.c"
-    "${APPS}/calendar_app/src/calendar_math.c"
-    "${APPS}/calculator_app/src/calculator_app.c"
-    "${APPS}/calculator_app/src/calculator_math.c"
-    "${APPS}/diagnostics_app/src/diagnostics_app.c"
-    "${APPS}/weather_app/src/weather_app.c"
-    "${APPS}/weather_app/src/weather_ui.c"
-    "${APPS}/weather_app/src/weather_root_page.c"
-    "${APPS}/weather_app/src/weather_forecast_page.c"
-    "${APPS}/weather_app/src/weather_alert_pages.c"
-    "${APPS}/menu_app/src/menu_app.c"
-    "${APPS}/settings_app/src/settings_app.c"
-    "${APPS}/settings_app/src/settings_display_page.c"
-    "${APPS}/settings_app/src/settings_wifi_page.c"
-    "${APPS}/settings_app/src/settings_bluetooth_page.c"
-    "${APPS}/settings_app/src/settings_device_page.c"
-    "${APPS}/settings_app/src/settings_factory_reset_page.c"
-    "${APPS}/setup_app/src/setup_app.c"
-    "${APPS}/setup_app/src/setup_wifi_adapter.c"
+#
+# The app layer's own files come from its single source list; this file must not
+# re-declare them. `apps_persistence.c` is firmware-only (it serves
+# main/app_runtime.c), so the sim skips it.
+include("${APPS}/app_sources.cmake")
+set(SIM_APP_SOURCES "")
+foreach(_app_src IN LISTS APP_SRCS)
+    if(_app_src STREQUAL "common/src/apps_persistence.c")
+        continue()
+    endif()
+    list(APPEND SIM_APP_SOURCES "${APPS}/${_app_src}")
+endforeach()
+unset(_app_src)
+list(APPEND SIM_APP_SOURCES
     "ports/fakes/sim_fakes_services.c"
     "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"
     "ports/fakes/sim_fakes_device_link.c"
@@ -213,6 +193,13 @@ set(SIM_APP_SOURCES
     "ports/fakes/sim_connectivity_digest.c"
     "ports/sim_network_runtime.c"
     "${MIDDLEWARE}/recorder_service/src/recorder_service.c")
+
+# app-private headers, derived from the shared source list.
+set(SIM_APP_INCLUDE_DIRS "")
+foreach(_app_include IN LISTS APP_SRC_INCLUDE_DIRS)
+    list(APPEND SIM_APP_INCLUDE_DIRS "${APPS}/${_app_include}")
+endforeach()
+unset(_app_include)
 
 set(SIM_PORT_SOURCES
     "apps/main_sim.c"
@@ -252,16 +239,7 @@ target_include_directories(microtech_sim PRIVATE
     "${APP_CORE}/src"
     "${APP_THEME}/include"
     "${APPS}/common/include"
-    "${APPS}/weather_app/src"
-    "${APPS}/menu_app/src"
-    "${APPS}/settings_app/src"
-    "${APPS}/setup_app/src"
-    "${APPS}/clock_app/src"
-    "${APPS}/recorder_app/src"
-    "${APPS}/level_app/src"
-    "${APPS}/calendar_app/src"
-    "${APPS}/calculator_app/src"
-    "${APPS}/diagnostics_app/src"
+    ${SIM_APP_INCLUDE_DIRS}
     "${MIDDLEWARE}/mt_log/include"
     "${MIDDLEWARE}/event_bus/include"
     "${MIDDLEWARE}/power_service/include"

@@ -105,13 +105,14 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
 
 ## 编译进 sim 的真实源码
 
-- app_manager：app_core 16 个 `.c` + app_theme（`app_manager_persistence.c`
+- app_manager：app_core 全部运行时 `.c` + app_theme（`app_manager_persistence.c`
   未编，工厂重置不清理持久化按键）；`HOST_TEST` 不定义，mailbox 在
   LVGL worker 的 `lv_timer` 上排空（与真机一致）。
-- apps：11 个 app + app_ui/app_ui_pull_refresh/app_weather_ui 共 34 个 `.c`
-  （`apps_persistence.c` 除外，它只被 `main/app_runtime.c` 使用），全部作为可执行
-  文件的源文件编译，配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住
-  `.app_manager_apps` 链接段（注册表发现 11 个 app）。
+- apps：内置 App 与共享 UI 源（清单见 `layers/apps/app_sources.cmake`，sim 与
+  交叉层套件共用同一份，不各自复制）全部作为可执行文件的源文件编译，
+  配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住
+  `.app_manager_apps` 链接段（注册表发现全部内置 App；`apps_persistence.c` 只被
+  `main/app_runtime.c` 使用，sim 不编）。
 - middleware：mt_log、event_bus、nv_storage（文件后端 `sim_nvs`）、timer_service、
   power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder
   业务真源；audio/sd 与 device_link 留 `ports/fakes/`——SD 由 `--sd-dir` 指定的
@@ -265,8 +266,9 @@ sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review �
 门禁生效。
 
 每个场景独立 sim 进程 + 独立 NVS 目录（resident-app 策略与冷启动一致）。
-场景位于 `sim/ci/scenarios/`：`all_apps.json`（11 app 主页面文本断言 + 截图）、
-`smoke_pages.json`（导航/手势/多页）、`weather_flow.json`（真 weather 管线：
+场景位于 `sim/ci/scenarios/`（`run_ci.sh` 遍历该目录，无单独清单）：`all_apps.json`
+（每个内置 App 主页面文本断言 + 截图）、`smoke_pages.json`（导航/手势/多页）、
+`weather_flow.json`（真 weather 管线：
 `sim_http` 脚本层灌入 `sim/ci/fixtures/*.json`，验证 location→current/hourly/
 daily 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）和
 `agent_contract.json`（参数错误、暂停和截图契约）。树断言为主门禁。
