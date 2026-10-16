@@ -482,6 +482,17 @@ void lv_obj_set_width(lv_obj_t *object, int32_t width);
 void lv_obj_set_height(lv_obj_t *object, int32_t height);
 /** @brief Return a fake object's width. */
 int32_t lv_obj_get_width(const lv_obj_t *object);
+/** @brief Return a fake object's content width (its width). */
+int32_t lv_obj_get_content_width(const lv_obj_t *object);
+/** @brief Coarse glyph advance: nine pixels per glyph, as lv_text_get_size. */
+int32_t lv_font_get_glyph_width(const lv_font_t *font, uint32_t letter,
+                                uint32_t letter_next);
+/** @brief Return the font recorded for a fake object. */
+const lv_font_t *lv_obj_get_style_text_font(const lv_obj_t *object,
+        lv_style_selector_t selector);
+/** @brief Return a fake object's text letter spacing (always zero). */
+int32_t lv_obj_get_style_text_letter_space(const lv_obj_t *object,
+        lv_style_selector_t selector);
 /** @brief Return a fake object's height. */
 int32_t lv_obj_get_height(const lv_obj_t *object);
 /** @brief Set a fake object's inherited opacity. */

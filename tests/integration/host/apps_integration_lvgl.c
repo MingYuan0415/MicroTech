@@ -1651,6 +1651,41 @@ int32_t lv_obj_get_width(const lv_obj_t *object)
     return object == NULL || !object->live ? 0 : object->width;
 }
 
+int32_t lv_obj_get_content_width(const lv_obj_t *object)
+{
+    return lv_obj_get_width(object);
+}
+
+int32_t lv_font_get_glyph_width(const lv_font_t *font, uint32_t letter,
+                                uint32_t letter_next)
+{
+    (void)font;
+    (void)letter;
+    (void)letter_next;
+    /* Matches the coarse model of lv_text_get_size below. */
+    return 9;
+}
+
+const lv_font_t *lv_obj_get_style_text_font(const lv_obj_t *object,
+        lv_style_selector_t selector)
+{
+    (void)selector;
+    if (object == NULL || !object->live)
+    {
+        return NULL;
+    }
+    return object->text_font != NULL ? object->text_font :
+           &host_lv_default_font;
+}
+
+int32_t lv_obj_get_style_text_letter_space(const lv_obj_t *object,
+        lv_style_selector_t selector)
+{
+    (void)object;
+    (void)selector;
+    return 0;
+}
+
 int32_t lv_obj_get_height(const lv_obj_t *object)
 {
     return object == NULL || !object->live ? 0 : object->height;
