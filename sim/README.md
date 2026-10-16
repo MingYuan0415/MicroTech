@@ -41,8 +41,8 @@ python3 sim/dev.py
 数字菜单只保留人类日常几件事：启动窗口（可选直达某页，联网/离线默认离线）、
 截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。退出（0 或 Ctrl+C）统一先停止模拟器会话。全部路径
 自动注入（`build/sim/dev_nvs`、`build/sim/shots`、端口 5002），零参数；
-无图形显示环境时启动自动转无头驻留。无头驱动、控件树、CI 回归与金样不再进菜单，
-直接用 `sim/tools/simctl.py` 与 `sh sim/ci/run_ci.sh [--update]`。开发入口会校验
+无图形显示环境时启动自动转无头驻留。无头驱动、控件树、CI 回归与金样直接用
+`sim/tools/simctl.py` 与 `sh sim/ci/run_ci.sh [--update]`。开发入口会校验
 会话 PID 和 Agent 响应，端口 5002 被其他 Agent 占用时拒绝启动。
 联网会话使用宿主机真实 HTTP/HTTPS；离线无头会话使用 CI 时钟，不会发起天气请求。
 
@@ -264,6 +264,21 @@ sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review �
 **tree_assert 基线约定**：场景文本断言代表当前固件 UI 快照。GUI 调整期
 `run_ci.sh` FAIL 是回归信号——有意改动在同一提交里更新场景断言；意外改动即
 门禁生效。
+
+**全页基线（`review_pages.py`）**：页面滚动容器到达视口底部（内容被屏幕下沿裁掉）
+时，harness 分段拖动取条带（`sim.touch` 拖动 + `sim.tree` 的 `scroll.top`/`bottom`
+真值），拼接为 `368 x (448 + 可达滚动量)` 的全页图：基线尺寸即页面真实高度
+（如 `settings/about` 为 `368x674`），前 448 行与同状态的单帧截图逐字节一致
+（页面 chrome 保留）。滚动容器整体落在视口内（如 `recorder/files` 的列表），或
+尾部不超过 LVGL 拖动阈值（`MIN_REACHABLE_TRAVEL`）的页面，输出单帧 `368x448`。
+折叠线以下（`flags.visible` 为 false）的内容同样参与检查：lint 走
+`_walk_on_screen`（只跳过 `flags.hidden` 子树），`single_line`、`expect_visible`、
+`expect_image` 和基线都覆盖折叠线以下的行。
+
+同一页面的各状态共享一个 sim 会话，`set_*` 状态会跨状态留存（例如 Wi-Fi 扫描
+列表不会因切换到下一个状态而清空），因此每个状态都要自足：`home/root` 的控制
+中心状态显式 `set_bluetooth {enabled:false}`，蓝牙磁贴才不依赖前序状态遗留的
+`bound` 值。
 
 每个场景独立 sim 进程 + 独立 NVS 目录（resident-app 策略与冷启动一致）。
 场景位于 `sim/ci/scenarios/`（`run_ci.sh` 遍历该目录，无单独清单）：`all_apps.json`

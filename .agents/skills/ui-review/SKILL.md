@@ -111,10 +111,11 @@ and move to the on-device checklist instead of being silently skipped.
 
 ## Baselines Are For Layout And Color, Not Text
 
-Volatile regions (clock seconds, battery %, scan rows, countdown text) are
-listed as `masks` in the spec so the pixel gate ignores them; text and geometry
-correctness come from the lint, not the image. Re-run `--update` only after you
-have looked at the new screenshot and judged it correct.
+Volatile regions (clock seconds, battery %, scan rows, countdown text) belong in
+that state's `masks` so the pixel gate ignores them; text and geometry
+correctness come from the lint, not the image. A page whose whole content is
+volatile is marked `no_golden` instead. Re-run `--update` only after you have
+looked at the new screenshot and judged it correct.
 
 ## Gate Order Before "Done"
 
@@ -157,8 +158,8 @@ host/sim-only and adds no hardware or full-CI burden.
 - Wi-Fi scan lists are seedable end to end: `sim.set_wifi_scan` with
   `request` (start a real scan through the connectivity manager), then
   `trigger` + `wait_scan` to inject `SCAN_DONE` inside the port's scan
-  window; the scan section sits below the fold, so finish the seed with a
-  `drag` to scroll it into view (see `settings/wifi scan_list` in the spec).
+  window; the scan section sits below the fold, which the full-page capture and
+  `expect_visible` both cover (see `settings/wifi scan_list` in the spec).
 - The SD card is a real host directory (`--sd-dir`, kept short: the service
   stores full paths in a 64-byte buffer and silently skips deeper ones).
   `sim.sd` writes silent WAVs, clears, remounts, and reads the service's

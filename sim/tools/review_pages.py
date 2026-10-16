@@ -7,6 +7,11 @@ This is the gate the `ui-review` skill describes: it catches wrapped text,
 off-screen/unreachable controls, washed-out disabled states, and fallback icons
 that structure-only assertions and single happy-path screenshots miss.
 
+Capture is page-wide, not viewport-wide: a page taller than the viewport is
+stitched from scroll stripes, so nothing below the fold is exempt. The lint
+likewise walks every on-screen node, not only the folded-in ones: `flags.visible`
+is LVGL's on-clip test and reads false for content inside a scroll container.
+
 Spec schema (JSON):
   {
     "viewport": {"w": 368, "h": 448},          # optional; else read from tree
@@ -90,16 +95,218 @@ def _descendant_texts(node):
 
 
 def _visible_labels(tree):
-    return [n for n in _walk_visible(tree)
+    return [n for n in _walk_on_screen(tree)
             if n.get('type') == 'lv_label' and n.get('text')]
 
 
-def _walk_visible(node):
-    if not (node.get('flags') or {}).get('visible', True):
-        return
-    yield node
-    for child in node.get('children') or []:
-        yield from _walk_visible(child)
+def _walk_on_screen(node):
+    """Yield every node outside a hidden subtree, folded-in or not.
+
+    `flags.visible` is LVGL's on-clip test (`lv_obj_area_is_visible`): a node
+    inside a scroll container reports `false` once it sits past the fold, so a
+    visible-only walk silently drops exactly the content this review exists to
+    check. Only `flags.hidden` marks a genuinely hidden subtree.
+    """
+    for node, _ancestors, in_hidden in _walk_annotated(node):
+        if not in_hidden:
+            yield node
+
+
+MIN_OWNER_SIDE = 64
+MIN_OWNER_SPAN = 128
+# LVGL treats a drag shorter than its scroll limit as a tap, so a tail at or
+# below that limit cannot be brought on screen by a stripe drag.
+# Keep in step with LV_INDEV_DEF_SCROLL_LIMIT (sim/lv_conf.h).
+MIN_REACHABLE_TRAVEL = 10
+
+
+def _scroll_owner(tree, vw, vh):
+    """Pick the page scroller whose content is clipped by the viewport bottom.
+
+    Prefers a node that starts at the fold (a page content area) over one
+    nested inside it, so the outermost page scroller wins; ties break on the
+    longest travel. Only a node whose own box reaches the viewport bottom
+    qualifies: that is the case where content is cut off by the screen, which a
+    scroll stripe can recover. A list whose box sits inside the viewport clips
+    its rows by itself, and appending them under the page would misrepresent it.
+
+    Returns `(coords, above, below)`: the current offset and how far the content
+    extends above and below the viewport. Below is needed even when it is 0: a
+    page seeded at the very bottom reports `below == 0` while still being taller
+    than the viewport.
+    """
+    candidates = []
+    for node, _ancestors, in_hidden in _walk_annotated(tree):
+        if in_hidden:
+            continue
+        flags = node.get('flags') or {}
+        scroll = node.get('scroll') or {}
+        coords = node.get('coords') or {}
+        if not flags.get('scrollable'):
+            continue
+        if not scroll.get('dir', 0) & 12:  # LV_DIR_VER
+            continue
+        wide, tall = coords.get('w', 0), coords.get('h', 0)
+        if min(wide, tall) < MIN_OWNER_SIDE:
+            continue
+        if max(wide, tall) < MIN_OWNER_SPAN:
+            continue
+        if (coords.get('y', 0) + tall) < vh:
+            # Only a box that fully reaches the viewport bottom leaves no canvas
+            # row unpainted.
+            continue
+        below = max(0, scroll.get('bottom', 0))
+        above = max(0, scroll.get('top', 0))
+        if (below + above) <= 0:
+            continue
+        anchor = 0 if coords.get('y', 0) >= vh * 0.05 else 1
+        candidates.append((anchor, -(below + above), coords, above, below))
+    if not candidates:
+        return None
+    best = min(candidates, key=lambda c: c[:2])
+    return best[2], best[3], best[4]
+
+
+def _capture_full_page(runner, name, vw, vh):
+    """Screenshot the whole scrollable page, stitching past-the-fold rows.
+
+    Each stripe is pasted at `offset + box.y`, so the content band always lands
+    on the same canvas rows and later stripes fill only rows no earlier stripe
+    reached. Returns (path, note); `note` is None when the capture was a plain
+    screenshot.
+    """
+    from PIL import Image
+    owner = _scroll_owner(runner.call('sim.tree')['tree'], vw, vh)
+    if owner is None:
+        return runner.call('sim.screenshot', {'name': name + '.png'})['path'], None
+    box, _offset, below = owner
+
+    def _plain():
+        return runner.call('sim.screenshot', {'name': name + '.png'})['path'], None
+
+    if below <= MIN_REACHABLE_TRAVEL and _offset <= 0:
+        # Content fits, or its whole tail is within LVGL's scroll limit and so
+        # is unreachable by construction: keep the faithful single frame.
+        return _plain()
+    remaining = below
+    if _offset > 0:
+        # Anchor at the top so the canvas has no unpainted rows. Skipped when
+        # already at the top: a pointless downward drag just bounces off the
+        # elastic edge, and reading the tree mid-settle reports `below == 0`.
+        anchored = _scroll_to_top(runner, box, vw, vh)
+        if anchored is None:
+            # Without a verified top anchor a composite would be misaligned;
+            # the single frame is the honest artifact instead.
+            frame, _ = _plain()
+            return frame, 'full-page skipped: page top not reachable'
+        remaining = anchored[2]
+
+    stripes = []
+    y_off = 0
+    for index in range(40):
+        stripes.append((y_off, runner.call(
+            'sim.screenshot', {'name': '%s__%02d.png' % (name, index)})['path']))
+        if remaining <= 0:
+            break
+        # Over-drag on purpose: lv_obj_scroll_by_bounded clamps to the real
+        # bottom, while a hop under LVGL's 10 px scroll limit would be swallowed
+        # as a tap and leave the last few pixels uncaptured.
+        _scroll_owner_drag(runner, box, max(40, box['h'] - 24))
+        runner.call('sim.wait_idle', {'timeout_ms': 4000})
+        fresh = _scroll_owner(runner.call('sim.tree')['tree'], vw, vh)
+        if fresh is None or fresh[1] <= y_off:
+            break
+        remaining, y_off = fresh[2], fresh[1]
+    else:
+        raise RuntimeError('full-page capture did not settle after 40 stripes')
+    if remaining > MIN_REACHABLE_TRAVEL:
+        # The stripe loop stopped with content still reachable; a shorter canvas
+        # would silently drop it.
+        raise RuntimeError('full-page capture stopped %d px short of the bottom'
+                           % remaining)
+
+    canvas = Image.new('RGB', (vw, vh + y_off), (0, 0, 0))
+    canvas.paste(Image.open(stripes[0][1]).convert('RGB'), (0, 0))
+    reached = vh
+    for offset, path in stripes[1:]:
+        # Frame row (top - offset) shows the content row that belongs on canvas
+        # row `top`; rows the first stripe already covered are left untouched.
+        first = offset + box['y']
+        if first > reached:
+            # A stripe that advanced more than the box height would leave the
+            # rows between them unpainted, and that hole would be baked into the
+            # baseline as black.
+            raise RuntimeError('full-page capture left %d canvas rows unpainted'
+                               % (first - reached))
+        top = max(first, reached)
+        bottom = offset + box['y'] + box['h']
+        if top < bottom:
+            canvas.paste(Image.open(path).convert('RGB').crop(
+                (0, top - offset, vw, bottom - offset)), (0, top))
+            reached = bottom
+    if reached != vh + y_off:
+        raise RuntimeError('full-page capture painted %d of %d canvas rows'
+                           % (reached, vh + y_off))
+    out = os.path.join(os.path.dirname(stripes[0][1]), name + '_full.png')
+    canvas.save(out)
+    for _offset, path in stripes:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    return out, ('page content %d px in a %d px viewport (+%d px folded)'
+                 % (box['h'] + y_off, box['h'], y_off))
+
+
+def _scroll_owner_drag(runner, box, distance):
+    """Drag the owner's content by `distance` panel pixels (positive scrolls up).
+
+    The finger travels the long way inside the panel for the given direction:
+    scrolling the content up starts near the panel bottom, scrolling it back to
+    the top starts near the panel top. Starting at the far end for a negative
+    distance would leave `start == end`, which LVGL reads as a tap and never
+    scrolls. The press x sits inside the content rows: a press in the page's
+    side padding does not start a scroll at all (measured: x >= 340 on a
+    368-wide page leaves `scroll.y` unchanged), and the left edge strip belongs
+    to the edge-back gesture. Rows are inset from the box, so their horizontal
+    middle is off any trailing switch or chevron.
+    """
+    x = box['x'] + box['w'] // 2
+    if distance >= 0:
+        start = min(box['y'] + box['h'] - 12, 440)
+        end = start - distance
+    else:
+        start = max(box['y'] + 12, 8)
+        end = start - distance
+    start = max(8, min(440, start))
+    end = max(8, min(440, end))
+    moves = max(4, min(12, abs(distance) // 24))
+    runner.call('sim.touch', {'action': 'down', 'x': x, 'y': start})
+    for i in range(1, moves + 1):
+        runner.call('sim.touch', {'action': 'move', 'x': x,
+                                  'y': start + (end - start) * i // moves})
+        runner.call('sim.step', {'ms': 33})
+    runner.call('sim.touch', {'action': 'up', 'x': x, 'y': end})
+    runner.call('sim.step', {'ms': 33 * 4})
+
+
+def _scroll_to_top(runner, box, vw, vh):
+    """Anchor the page scroller at its top, undoing any mid-scroll seed.
+
+    The finger can only travel one panel height per drag, so a deep seed needs
+    several passes; over-dragging is safe because the scroll clamps at the top.
+    Returns the owner reading once offset 0 is reached, else None: a caller that
+    assumed 0 anyway would misalign every stripe.
+    """
+    for _ in range(6):
+        fresh = _scroll_owner(runner.call('sim.tree')['tree'], vw, vh)
+        if fresh is None:
+            return None
+        if fresh[1] <= 0:
+            return fresh
+        _scroll_owner_drag(runner, box, -box['h'])
+        runner.call('sim.wait_idle', {'timeout_ms': 4000})
+    return None
 
 
 def _walk_annotated(node, ancestors=(), in_hidden=False):
@@ -190,18 +397,24 @@ def _lint(tree, page, state, vw, vh):
                 v.append('unexpected disabled control %s %r'
                          % (node.get('type'), texts[:1]))
 
-    for node in _walk_visible(tree):
+    for node in _walk_on_screen(tree):
         if node.get('type') == 'lv_image':
             sid = node.get('image_semantic_id')
             if sid == 'unknown':
                 v.append('fallback/unknown image node visible')
 
-    present_images = {n.get('image_semantic_id') for n in _walk_visible(tree)
+    present_images = {n.get('image_semantic_id') for n in _walk_on_screen(tree)
                       if n.get('type') == 'lv_image'}
     for want in state.get('expect_image', []):
         if want not in present_images:
             v.append('expected image %s not shown' % want)
     return v
+
+
+def _png_size(path):
+    from PIL import Image
+    with Image.open(path) as image:
+        return image.size
 
 
 def _masked_diff(a, b, masks, tol=24):
@@ -318,10 +531,11 @@ def _run_spec(runner, spec, args, proc):
                                       for l in _visible_labels(tree))
                     if all(w in have for w in want):
                         break
-                shot = runner.call('sim.screenshot', {'name': name + '.png'})
-                path = shot['path']
+                path, folded = _capture_full_page(runner, name, vw, vh)
                 for viol in _lint(tree, page, state, vw, vh):
                     failures.append('%s: %s' % (name, viol))
+                if folded is not None:
+                    print('  %s: %s' % (name, folded))
                 if state.get('no_golden'):
                     geometry_only.append(name)
                     continue
@@ -330,11 +544,21 @@ def _run_spec(runner, spec, args, proc):
                     shutil.copyfile(path, golden)
                 elif os.path.exists(golden):
                     visual_checked += 1
-                    frac = _masked_diff(path, golden, state.get('masks', []))
-                    if frac > args.max_diff:
-                        failures.append('%s: baseline diff %.3f%% > %.3f%%'
-                                        % (name, frac * 100,
-                                           args.max_diff * 100))
+                    capture_size, golden_size = _png_size(path), _png_size(golden)
+                    if capture_size != golden_size:
+                        # A full-page baseline changes height with the page, so
+                        # say so instead of reporting it as a pixel diff.
+                        failures.append(
+                            '%s: baseline %sx%s != capture %sx%s (run --update)'
+                            % (name, capture_size[0], capture_size[1],
+                               golden_size[0], golden_size[1]))
+                    else:
+                        frac = _masked_diff(path, golden,
+                                            state.get('masks', []))
+                        if frac > args.max_diff:
+                            failures.append('%s: baseline diff %.3f%% > %.3f%%'
+                                            % (name, frac * 100,
+                                               args.max_diff * 100))
                 else:
                     failures.append('%s: no baseline (run --update)' % name)
             except Exception as exc:  # noqa: BLE001

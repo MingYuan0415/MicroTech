@@ -1,16 +1,90 @@
 """Regressions for false-success cases in simulator review tooling."""
 import importlib.util
+import os
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import Mock
+
+from PIL import Image
 
 SPEC = importlib.util.spec_from_file_location(
     'review_pages', Path(__file__).parent / 'tools/review_pages.py')
 review = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(review)
 
+BOX_Y, BOX_H, VH = 64, 384, 448
+CHROME = (0, 0, 200)
+
+
+def _content_color(row):
+    return (row % 256, row // 256, 7)
+
+
+class FakePageRunner:
+    """Agent whose frames encode which page-content row each panel row shows.
+
+    Row `y` of the panel carries the colour of content row
+    `offset + y - BOX_Y`, and rows above the scroller carry CHROME. A stitched
+    canvas is then checkable row by row without any simulator.
+    """
+
+    def __init__(self, travel, stuck=False, initial_offset=0, advance=None):
+        self.travel = travel
+        self.stuck = stuck
+        self.offset = initial_offset
+        self.advance = advance
+        self.press_y = None
+        self.frames = 0
+        self.dir = tempfile.TemporaryDirectory()
+
+    def _frame(self):
+        image = Image.new('RGB', (368, VH))
+        pixels = image.load()
+        for y in range(VH):
+            color = CHROME if y < BOX_Y else _content_color(
+                self.offset + y - BOX_Y)
+            for x in range(4):
+                pixels[x, y] = color
+        path = os.path.join(self.dir.name, 'f%d.png' % self.frames)
+        self.frames += 1
+        image.save(path)
+        return path
+
+    def call(self, method, params=None):
+        if method == 'sim.tree':
+            return {'tree': {
+                'type': 'lv_obj',
+                'coords': {'x': 0, 'y': BOX_Y, 'w': 368, 'h': BOX_H},
+                'flags': {'scrollable': True, 'hidden': False},
+                'scroll': {'dir': 12, 'top': self.offset,
+                           'bottom': max(0, self.travel - self.offset),
+                           'y': self.offset}}}
+        if method == 'sim.screenshot':
+            return {'path': self._frame()}
+        if method == 'sim.wait_idle':
+            return {'idle': True}
+        if method == 'sim.step':
+            return {}
+        if method == 'sim.touch':
+            action = (params or {}).get('action')
+            if action == 'down':
+                self.press_y = params['y']
+            elif action == 'up' and not self.stuck:
+                step = (self.advance if self.advance is not None
+                        else self.press_y - params['y'])
+                # The content follows the finger, clamped like scroll_by_bounded.
+                self.offset = max(0, min(self.travel, self.offset + step))
+            return {}
+        raise AssertionError(method)
+
 
 class ReviewPagesTest(unittest.TestCase):
+    def _fake_page(self, travel, **kwargs):
+        runner = FakePageRunner(travel, **kwargs)
+        self.addCleanup(runner.dir.cleanup)
+        return runner
+
     def test_selection_must_include_executable_states(self):
         spec = {'pages': [{'app': 'settings', 'page': 'wifi',
                            'states': [{'name': 'idle'}]}]}
@@ -46,3 +120,111 @@ class ReviewPagesTest(unittest.TestCase):
         self.assertTrue(review._lint(owner, {}, {}, 368, 448))
         owner['flags']['hidden'] = True
         self.assertFalse(review._lint(owner, {}, {}, 368, 448))
+
+    def test_folded_in_content_is_still_linted(self):
+        """`flags.visible` is false below the fold; the lint must not skip it."""
+        label = {'type': 'lv_label',
+                 'coords': {'x': 12, 'y': 420, 'w': 300, 'h': 60},
+                 'flags': {'visible': False},
+                 'styles': {'line_height': 24}, 'text': '恢复出厂设置'}
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True, 'visible': True},
+                'scroll': {'dir': 12, 'bottom': 226, 'y': 0},
+                'children': [label]}
+        self.assertEqual(review._visible_labels(tree), [label])
+        violations = review._lint(tree, {}, {'single_line': ['恢复出厂设置']},
+                                  368, 448)
+        self.assertTrue(any('wrapped single-line' in v for v in violations))
+
+    def test_scroll_owner_prefers_page_over_nested_list(self):
+        page = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True},
+                'scroll': {'dir': 12, 'bottom': 474, 'y': 0}}
+        nested = {'type': 'lv_obj', 'coords': {'x': 18, 'y': 74, 'w': 332, 'h': 259},
+                  'flags': {'scrollable': True},
+                  'scroll': {'dir': 12, 'bottom': 245, 'y': 0}}
+        page['children'] = [nested]
+        owner = review._scroll_owner(page, 368, 448)
+        self.assertEqual(owner[0]['w'], 368)
+        self.assertEqual(owner[1], 0)
+        self.assertEqual(owner[2], 474)
+
+    def test_stitched_canvas_maps_every_row_to_its_page_content(self):
+        """Pins the row mapping: canvas row R shows content row R - box.y, and
+        the rows above the scroller keep the first frame's chrome."""
+        for travel in (72, 226, 527):
+            with self.subTest(travel=travel):
+                runner = self._fake_page(travel)
+                path, note = review._capture_full_page(runner, 'page', 368, VH)
+                with Image.open(path) as handle:
+                    image = handle.convert('RGB')
+                self.assertEqual(image.size, (368, VH + travel))
+                self.assertIn('page content %d px' % (BOX_H + travel), note)
+                pixels = image.load()
+                for y in range(BOX_Y):
+                    self.assertEqual(pixels[0, y], CHROME,
+                                     'row %d lost the page chrome' % y)
+                for row in range(BOX_H + travel):
+                    self.assertEqual(
+                        pixels[0, BOX_Y + row], _content_color(row),
+                        'canvas row %d must show content row %d'
+                        % (BOX_Y + row, row))
+
+    def test_tail_shorter_than_one_scroll_step_stays_a_single_frame(self):
+        """A tail below LVGL's drag limit is unreachable, so the faithful
+        artifact is the plain frame, not a composite with a missing strip."""
+        runner = self._fake_page(review.MIN_REACHABLE_TRAVEL)
+        path, note = review._capture_full_page(runner, 'page', 368, VH)
+        with Image.open(path) as handle:
+            self.assertEqual(handle.size, (368, VH))
+        self.assertIsNone(note)
+
+    def test_unscrollable_page_never_yields_a_short_canvas(self):
+        """If the drag cannot advance, a truncated composite must fail loudly."""
+        runner = self._fake_page(200, stuck=True)
+        with self.assertRaises(RuntimeError):
+            review._capture_full_page(runner, 'page', 368, VH)
+
+    def test_page_seeded_mid_scroll_is_anchored_before_stitching(self):
+        """A page that opens part-scrolled must be captured from its top, or
+        every stripe lands on the wrong canvas rows."""
+        runner = self._fake_page(226, initial_offset=150)
+        path, _note = review._capture_full_page(runner, 'page', 368, VH)
+        with Image.open(path) as handle:
+            image = handle.convert('RGB')
+        self.assertEqual(image.size, (368, VH + 226))
+        pixels = image.load()
+        for row in range(BOX_H + 226):
+            self.assertEqual(pixels[0, BOX_Y + row], _content_color(row))
+
+    def test_unreachable_page_top_falls_back_to_a_single_frame(self):
+        """The fallback must hand back a usable path, not a nested tuple."""
+        runner = self._fake_page(226, stuck=True, initial_offset=150)
+        path, note = review._capture_full_page(runner, 'page', 368, VH)
+        self.assertIsInstance(path, str)
+        self.assertIn('page top not reachable', note)
+        with Image.open(path) as handle:
+            self.assertEqual(handle.size, (368, VH))
+
+    def test_stripe_that_skips_rows_fails_instead_of_baking_a_hole(self):
+        runner = self._fake_page(600, advance=500)
+        with self.assertRaises(RuntimeError):
+            review._capture_full_page(runner, 'page', 368, VH)
+
+    def test_baselines_of_different_heights_never_compare_equal(self):
+        with tempfile.TemporaryDirectory() as workdir:
+            tall = os.path.join(workdir, 'tall.png')
+            short = os.path.join(workdir, 'short.png')
+            Image.new('RGB', (368, VH + 226), (1, 2, 3)).save(tall)
+            Image.new('RGB', (368, VH), (1, 2, 3)).save(short)
+            self.assertEqual(review._png_size(tall), (368, VH + 226))
+            self.assertEqual(review._png_size(short), (368, VH))
+            self.assertEqual(review._masked_diff(tall, short, []), 1.0)
+
+    def test_scroller_inside_the_viewport_is_not_stitched(self):
+        """Content clipped by its own box is not screen-clipped: leave it."""
+        tree = {'type': 'lv_obj',
+                'coords': {'x': 18, 'y': 74, 'w': 332, 'h': 259},
+                'flags': {'scrollable': True},
+                'scroll': {'dir': 12, 'top': 0, 'bottom': 245, 'y': 0}}
+        self.assertIsNone(review._scroll_owner(tree, 368, VH))

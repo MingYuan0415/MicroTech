@@ -420,6 +420,12 @@
           "name": "control_center",
           "seed": [
             {
+              "cmd": "set_bluetooth",
+              "enabled": false,
+              "bound": false,
+              "active": false
+            },
+            {
               "cmd": "set_power",
               "voltage": 3900,
               "pct": 82,
