@@ -104,7 +104,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         expected = {
             "CONFIG_BT_ENABLED": "y",
             "CONFIG_BT_NIMBLE_ENABLED": "y",
-            "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "y",
+            "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL": "y",
             "CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE": "6144",
             "CONFIG_BT_NIMBLE_ROLE_CENTRAL": "n",
             "CONFIG_BT_NIMBLE_ROLE_PERIPHERAL": "y",

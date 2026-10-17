@@ -86,12 +86,8 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
         message(FATAL_ERROR
             "The production TLS profile requires default allocation and dynamic buffers")
     endif()
-    if(NOT CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL OR
-            CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL OR
-            CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_DEFAULT)
-        message(FATAL_ERROR
-            "The production NimBLE profile requires external allocation")
-    endif()
+    # NimBLE host buffers must survive cache-disabled flash operations, so the
+    # production defaults keep them in internal RAM; no build gate enforces it.
     if(NOT CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY)
         message(FATAL_ERROR
             "The Waveshare ESP32-S3 profile requires external BSS in PSRAM")
