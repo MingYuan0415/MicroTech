@@ -16,6 +16,13 @@ Waveshare ESP32-S3 Touch AMOLED 1.8 的板级 profile 固定为：
 defaults。LVGL 的 60 行双 PSRAM draw buffer、Snapshot、任务栈、诊断 gate 和核心亲和性
 仍是跨板静态资源或构建能力。
 
+默认 malloc 固定为 PSRAM 优先（`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0`）。LVGL 对象、
+style 节点和 FreeType 字形缓存因此不占 internal；128 KiB
+`CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` 保留给 LCD/Wi-Fi/I2S DMA staging、任务栈和
+cache-disabled 缓冲。需要 internal 的组件必须显式使用
+`heap_caps_malloc(MALLOC_CAP_INTERNAL)` 或 `MALLOC_CAP_DMA`。FreeType 每字号缓存固定
+为 `CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_CNT=64`，限制六个字号合计的 PSRAM 峰值。
+
 历史表征显示，80 MHz 对最差 P95 的改善约 3.45%，未达到 5% 判定线，且出现 DMA 连续块
 不足和运动中的接缝；非 TE PSRAM Direct DMA 在 TCP 负载开始后出现顶部蓝线和 GUI 冻结。
 因此两者均不作为当前板型可执行 profile，也不保留时钟、Direct DMA 或 RGB swapped A/B

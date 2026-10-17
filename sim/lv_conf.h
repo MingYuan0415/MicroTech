@@ -144,7 +144,7 @@
 #define LV_USE_QRCODE                                1
 #define LV_USE_FREETYPE                              1
 #define LV_FREETYPE_USE_LVGL_PORT                    1
-#define LV_FREETYPE_CACHE_FT_GLYPH_CNT               256
+#define LV_FREETYPE_CACHE_FT_GLYPH_CNT               64
 #define LV_USE_SNAPSHOT                              1
 #define LV_USE_OBSERVER                              1
 
