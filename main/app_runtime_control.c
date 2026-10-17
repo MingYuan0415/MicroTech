@@ -7,6 +7,7 @@
 #include "device_link_service.h"
 #include "time_service.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -92,6 +93,14 @@ static esp_err_t _control_set_bluetooth(bool enabled)
     return device_link_service_set_enabled(enabled, 0U);
 }
 
+static bool _control_bluetooth_transitioning(void)
+{
+    device_link_service_status_t status;
+
+    return device_link_service_get_status(&status) == ESP_OK &&
+           status.transitioning;
+}
+
 static esp_err_t _control_get_clock(const char **time_text,
                                     const char **date_text)
 {
@@ -133,6 +142,7 @@ app_manager_control_center_ops_t app_runtime_control_get_ops(void)
         .set_wifi = _control_set_wifi,
         .get_bluetooth = _control_get_bluetooth,
         .set_bluetooth = _control_set_bluetooth,
+        .get_bluetooth_transitioning = _control_bluetooth_transitioning,
         .get_clock = _control_get_clock,
     };
     return ops;

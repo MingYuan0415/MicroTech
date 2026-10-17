@@ -162,6 +162,9 @@ esp_err_t device_link_service_set_enabled(bool enabled, uint32_t timeout_ms)
     (void)timeout_ms;
     (void)pthread_mutex_lock(&s_device_link.lock);
     s_device_link.status.enabled = enabled;
+    s_device_link.status.desired_enabled = enabled;
+    s_device_link.status.transitioning = false;
+    s_device_link.status.policy_error = ESP_OK;
     if (!enabled)
     {
         s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_DISABLED;

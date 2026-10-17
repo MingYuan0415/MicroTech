@@ -162,7 +162,8 @@ class Runner:
         elif cmd == 'set_bluetooth':
             self.call('sim.set_bluetooth',
                       {k: step[k] for k in
-                       ('enabled', 'bound', 'active', 'client_connected',
+                       ('enabled', 'desired_enabled', 'transitioning',
+                        'policy_error', 'bound', 'active', 'client_connected',
                         'window_remaining_ms') if k in step})
         elif cmd == 'offer_pairing':
             self.call('sim.offer_pairing',

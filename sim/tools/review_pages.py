@@ -18,6 +18,7 @@ Spec schema (JSON):
           "expect_visible": ["Wi-Fi 开关", "忘记网络"],
           "single_line":    ["IP 地址", "状态"],
           "allow_disabled": ["忘记网络"],
+          "allow_disabled_types": ["lv_switch"],   # unlabeled intentional
           "expect_image":   [],
           "masks": [[x, y, w, h], ...],                  # volatile regions
           "hardware_only": false}
@@ -170,6 +171,7 @@ def _lint(tree, page, state, vw, vh):
                              % (selector, h, lh, lab['text']))
 
     allow_disabled = state.get('allow_disabled', [])
+    allow_disabled_types = state.get('allow_disabled_types', [])
     for node, ancestors, in_hidden in _walk_annotated(tree):
         flags = node.get('flags') or {}
         coords = node.get('coords') or {}
@@ -182,7 +184,9 @@ def _lint(tree, page, state, vw, vh):
             v.append('unreachable control %s at %r' % (node.get('type'), coords))
         if state_flags.get('disabled'):
             texts = _descendant_texts(node)
-            if not any(any(a in t for a in allow_disabled) for t in texts):
+            if (node.get('type') not in allow_disabled_types and
+                    not any(any(a in t for a in allow_disabled)
+                            for t in texts)):
                 v.append('unexpected disabled control %s %r'
                          % (node.get('type'), texts[:1]))
 

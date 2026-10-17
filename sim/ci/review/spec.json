@@ -171,6 +171,84 @@
           ]
         },
         {
+          "name": "transitioning_on",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": false,
+              "desired_enabled": true,
+              "transitioning": true,
+              "policy_error": 0,
+              "bound": false,
+              "active": false
+            }
+          ],
+          "expect_visible": [
+            "蓝牙开关",
+            "切换中"
+          ],
+          "single_line": [
+            "切换中"
+          ],
+          "allow_disabled": [
+            "配对手机"
+          ],
+          "allow_disabled_types": [
+            "lv_switch"
+          ]
+        },
+        {
+          "name": "transitioning_off",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": true,
+              "desired_enabled": false,
+              "transitioning": true,
+              "policy_error": 0,
+              "bound": false,
+              "active": false
+            }
+          ],
+          "expect_visible": [
+            "蓝牙开关",
+            "切换中"
+          ],
+          "single_line": [
+            "切换中"
+          ],
+          "allow_disabled": [
+            "配对手机"
+          ],
+          "allow_disabled_types": [
+            "lv_switch"
+          ]
+        },
+        {
+          "name": "error",
+          "seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": false,
+              "desired_enabled": false,
+              "transitioning": false,
+              "policy_error": 263,
+              "bound": false,
+              "active": false
+            }
+          ],
+          "expect_visible": [
+            "蓝牙开关",
+            "切换失败"
+          ],
+          "single_line": [
+            "切换失败"
+          ],
+          "allow_disabled": [
+            "配对手机"
+          ]
+        },
+        {
           "name": "bound",
           "seed": [
             {
@@ -346,6 +424,47 @@
               "voltage": 3900,
               "pct": 82,
               "charging": false
+            },
+            {
+              "cmd": "set_bluetooth",
+              "enabled": true,
+              "desired_enabled": true,
+              "transitioning": false,
+              "policy_error": 0,
+              "bound": false,
+              "active": false
+            },
+            {
+              "cmd": "call",
+              "method": "sim.control_center",
+              "params": {"action": "show"}
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "control_center_transitioning",
+          "seed": [
+            {
+              "cmd": "set_power",
+              "voltage": 3900,
+              "pct": 82,
+              "charging": false
+            },
+            {
+              "cmd": "set_bluetooth",
+              "enabled": true,
+              "desired_enabled": false,
+              "transitioning": true,
+              "policy_error": 0,
+              "bound": false,
+              "active": false
             },
             {
               "cmd": "call",

@@ -755,6 +755,12 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(params,
                                "enabled");
+        const cJSON *desired = cJSON_GetObjectItemCaseSensitive(params,
+                               "desired_enabled");
+        const cJSON *transitioning = cJSON_GetObjectItemCaseSensitive(
+                                         params, "transitioning");
+        const cJSON *policy_error = cJSON_GetObjectItemCaseSensitive(
+                                        params, "policy_error");
         const cJSON *bound = cJSON_GetObjectItemCaseSensitive(params, "bound");
         const cJSON *active = cJSON_GetObjectItemCaseSensitive(params, "active");
         const cJSON *connected = cJSON_GetObjectItemCaseSensitive(
@@ -762,9 +768,24 @@ static cJSON *_handle(cJSON *request, bool *ok)
         const cJSON *remaining = cJSON_GetObjectItemCaseSensitive(
                                      params, "window_remaining_ms");
         status.available = true;
+        status.transitioning = false;
+        status.policy_error = ESP_OK;
         if (cJSON_IsBool(enabled))
         {
             status.enabled = cJSON_IsTrue(enabled);
+        }
+        status.desired_enabled = status.enabled;
+        if (cJSON_IsBool(desired))
+        {
+            status.desired_enabled = cJSON_IsTrue(desired);
+        }
+        if (cJSON_IsBool(transitioning))
+        {
+            status.transitioning = cJSON_IsTrue(transitioning);
+        }
+        if (cJSON_IsNumber(policy_error))
+        {
+            status.policy_error = (int32_t)policy_error->valuedouble;
         }
         if (cJSON_IsBool(bound))
         {

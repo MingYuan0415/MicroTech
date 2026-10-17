@@ -131,6 +131,14 @@ static esp_err_t _cc_set_bluetooth(bool enabled)
     return device_link_service_set_enabled(enabled, 0U);
 }
 
+static bool _cc_bluetooth_transitioning(void)
+{
+    device_link_service_status_t status;
+
+    return device_link_service_get_status(&status) == ESP_OK &&
+           status.transitioning;
+}
+
 static esp_err_t _cc_get_clock(const char **time_text, const char **date_text)
 {
     static const char *const weekdays[] =
@@ -326,6 +334,7 @@ esp_err_t sim_runtime_boot(void)
             .set_wifi = _cc_set_wifi,
             .get_bluetooth = _cc_get_bluetooth,
             .set_bluetooth = _cc_set_bluetooth,
+            .get_bluetooth_transitioning = _cc_bluetooth_transitioning,
             .get_clock = _cc_get_clock,
         },
         .max_resident_apps = product->app_max_resident_apps,

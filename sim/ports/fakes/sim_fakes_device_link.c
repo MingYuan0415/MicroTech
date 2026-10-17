@@ -41,6 +41,7 @@ void host_device_link_service_reset(void)
     s_device_link.status.state = DEVICE_LINK_SERVICE_STATE_ADVERTISING;
     s_device_link.status.available = true;
     s_device_link.status.enabled = true;
+    s_device_link.status.desired_enabled = true;
     s_device_link.open_count = 0U;
     s_device_link.close_count = 0U;
     s_device_link.confirm_result = ESP_OK;
@@ -145,6 +146,9 @@ esp_err_t device_link_service_set_enabled(bool enabled, uint32_t timeout_ms)
     (void)timeout_ms;
     (void)pthread_mutex_lock(&s_device_link.lock);
     s_device_link.status.enabled = enabled;
+    s_device_link.status.desired_enabled = enabled;
+    s_device_link.status.transitioning = false;
+    s_device_link.status.policy_error = ESP_OK;
     s_device_link.status.last_error = ESP_OK;
     s_device_link.status.state = enabled ?
                                  DEVICE_LINK_SERVICE_STATE_ADVERTISING :
