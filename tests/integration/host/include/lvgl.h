@@ -93,6 +93,13 @@ typedef struct lv_font_t
 {
     uint8_t marker;
 } lv_font_t;
+/** @brief Fake LVGL style; models the background opacity used by snapshots. */
+typedef struct lv_style_t
+{
+    uint32_t marker;
+    uint8_t bg_opa;
+    bool has_bg_opa;
+} lv_style_t;
 
 typedef uint32_t lv_color_t;
 typedef int32_t lv_event_code_t;
@@ -799,6 +806,43 @@ HOST_LV_NOOP_3(lv_roller_set_selected, lv_obj_t *, uint32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_line_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_2(lv_obj_set_ext_click_area, lv_obj_t *, int32_t)
 HOST_LV_NOOP_3(lv_obj_scroll_to_y, lv_obj_t *, int32_t, int)
+/** @brief Apply the modelled subset of a shared style to a fake object. */
+void lv_obj_add_style(lv_obj_t *object, const lv_style_t *style,
+                      lv_style_selector_t selector);
+static inline void lv_style_init(lv_style_t *style)
+{
+    if (style != NULL)
+    {
+        style->bg_opa = 0U;
+        style->has_bg_opa = false;
+    }
+}
+HOST_LV_NOOP_2(lv_style_set_bg_color, lv_style_t *, lv_color_t)
+static inline void lv_style_set_bg_opa(lv_style_t *style, int opacity)
+{
+    if (style != NULL)
+    {
+        style->bg_opa = (uint8_t)opacity;
+        style->has_bg_opa = true;
+    }
+}
+HOST_LV_NOOP_2(lv_style_set_border_color, lv_style_t *, lv_color_t)
+HOST_LV_NOOP_2(lv_style_set_border_opa, lv_style_t *, int)
+HOST_LV_NOOP_2(lv_style_set_border_width, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_all, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_bottom, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_column, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_gap, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_left, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_right, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_row, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_pad_top, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_radius, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_shadow_width, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_text_align, lv_style_t *, int)
+HOST_LV_NOOP_2(lv_style_set_text_color, lv_style_t *, lv_color_t)
+HOST_LV_NOOP_2(lv_style_set_text_font, lv_style_t *, const lv_font_t *)
+HOST_LV_NOOP_2(lv_style_set_text_line_space, lv_style_t *, int32_t)
 lv_obj_t *lv_arc_create(lv_obj_t *parent);
 lv_obj_t *lv_line_create(lv_obj_t *parent);
 lv_obj_t *lv_roller_create(lv_obj_t *parent);

@@ -1656,6 +1656,17 @@ int32_t lv_obj_get_height(const lv_obj_t *object)
     return object == NULL || !object->live ? 0 : object->height;
 }
 
+void lv_obj_add_style(lv_obj_t *object, const lv_style_t *style,
+                      lv_style_selector_t selector)
+{
+    if (object == NULL || style == NULL || selector != 0U ||
+            !style->has_bg_opa)
+    {
+        return;
+    }
+    lv_obj_set_style_bg_opa(object, style->bg_opa, selector);
+}
+
 void lv_obj_set_style_opa(lv_obj_t *object, lv_opa_t opacity,
                           lv_style_selector_t selector)
 {
