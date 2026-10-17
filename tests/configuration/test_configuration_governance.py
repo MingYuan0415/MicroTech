@@ -119,7 +119,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_BT_NIMBLE_NVS_PERSIST": "y",
             "CONFIG_BT_NIMBLE_MAX_BONDS": "1",
             "CONFIG_BT_NIMBLE_MAX_CONNECTIONS": "1",
-            "CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU": "498",
+            "CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU": "256",
             "CONFIG_BT_CTRL_BLE_MAX_ACT": "2",
             "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0": "y",
             "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1": "y",
