@@ -7,7 +7,8 @@
   {
    "cmd": "set_bluetooth",
    "enabled": true,
-   "bound": true
+   "bound": true,
+   "client_connected": true
   },
   {
    "cmd": "assert_result",
@@ -58,6 +59,21 @@
    "cmd": "tree_assert",
    "params": {"include_layers": true},
    "contains": {"type": "lv_label", "text": "已连接"}
+  },
+  {
+   "cmd": "set_bluetooth",
+   "enabled": true,
+   "bound": true,
+   "client_connected": false
+  },
+  {
+   "cmd": "step",
+   "ms": 1056
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "已开启"}
   },
   {
    "cmd": "touch",

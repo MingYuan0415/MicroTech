@@ -77,7 +77,7 @@ static esp_err_t _control_get_bluetooth(app_manager_radio_state_t *state)
     {
         *state = APP_MANAGER_RADIO_OFF;
     }
-    else if (status.bound)
+    else if (status.client_connected)
     {
         *state = APP_MANAGER_RADIO_CONNECTED;
     }
