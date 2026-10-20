@@ -2,8 +2,8 @@
 
 LVGL draws a plain `lv_image` at its natural size inside the object box and
 clips the overflow, so a record exported larger than the object a consumer
-creates is silently cropped. The launcher and the home dock draw app icons in a
-40 px window while the manifests export them at 64 px / 52 px.
+creates is silently cropped. The launcher draws app icons in its 72 px well and
+the task switcher in a 56 px window; the home cards draw their glyphs at 40 px.
 
 The window sizes are read from the consumers' own constants, not restated here:
 changing a consumer's size re-derives this table and fails the icons that no
@@ -23,9 +23,10 @@ SHARED_APP_SOURCES = APPS_DIR / "app_sources.cmake"
 APP_CORE_SRC = PROJECT_ROOT / "layers" / "app_manager" / "app_core" / "src"
 
 # Which draw sites each icon record appears in. Sizes come from the code below.
-#   launcher_tile - `app_ui_add_icon_tile` image inside the 52 px chip
+#   launcher_tile - `app_ui_add_icon_tile` image inside the launcher well
 #   switcher      - task-switcher card icon
-#   ring_glyph    - home clock card glyph inside the 48 px progress ring
+#   home_card     - home complication glyph (`_home_card_glyph`)
+#   ring_glyph    - home clock card glyph inside the progress ring
 APP_ICON = ("launcher_tile", "switcher")
 HOME_ICON_ROLES = {
     "APP_IMAGE_HOME_ICON": APP_ICON,
@@ -39,11 +40,9 @@ HOME_ICON_ROLES = {
     "APP_IMAGE_CALCULATOR_ICON": APP_ICON,
     "APP_IMAGE_DIAGNOSTICS_ICON": APP_ICON,
     "APP_IMAGE_WEATHER_APP": APP_ICON,
-    # Dock tiles appear only in the same launcher/dock helper.
-    "APP_IMAGE_HOME_CLOCK": ("launcher_tile",),
-    "APP_IMAGE_HOME_RECORDER": ("launcher_tile",),
-    "APP_IMAGE_HOME_LEVEL": ("launcher_tile",),
-    "APP_IMAGE_HOME_SETTINGS": ("launcher_tile",),
+    # Complication glyphs appear only on their home card.
+    "APP_IMAGE_HOME_RECORDER": ("home_card",),
+    "APP_IMAGE_HOME_LEVEL": ("home_card",),
     # The 28 px ring glyph is the one record authored for a single small use.
     "APP_IMAGE_HOME_RING_CLOCK": ("ring_glyph",),
 }
@@ -74,6 +73,17 @@ def _switcher_icon_px() -> int:
     return int(match.group(1))
 
 
+def _home_card_px() -> int:
+    """Glyph size `_home_card_glyph` passes to `app_ui_image`."""
+    text = (APPS_DIR / "home_app" / "src" / "home_app.c").read_text(
+        encoding="utf-8")
+    start = text.index("static void _home_card_glyph(")
+    match = re.search(r"app_ui_image\(row, image_id, fallback_symbol, (\d+)\)",
+                      text[start:])
+    assert match, "_home_card_glyph no longer sizes its glyph"
+    return int(match.group(1))
+
+
 def _ring_glyph_px() -> int:
     text = (APPS_DIR / "home_app" / "src" / "home_app.c").read_text(
         encoding="utf-8")
@@ -87,6 +97,7 @@ def _draw_windows() -> dict:
     sizes = {
         "launcher_tile": _launcher_tile_image_px(),
         "switcher": _switcher_icon_px(),
+        "home_card": _home_card_px(),
         "ring_glyph": _ring_glyph_px(),
     }
     return {token: tuple(sizes[role] for role in roles)

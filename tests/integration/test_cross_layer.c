@@ -1452,13 +1452,13 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("72%"));
     assert(_ui_has_text("1.8 mm"));
     assert(_ui_visible_text_count(LV_SYMBOL_IMAGE) >= 5U);
-    assert(_ui_text_has_font("Shenzhen", &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    assert(_ui_text_has_font("Shenzhen", &s_theme_fonts[APP_THEME_FONT_BIGL]));
     assert(_ui_text_has_font("31°", &s_theme_fonts[APP_THEME_FONT_TITLE]));
     assert(_ui_text_has_font("多云", &s_theme_fonts[APP_THEME_FONT_HEAD]));
     assert(_ui_text_has_font("08-05 08:00 更新",
                              &s_theme_fonts[APP_THEME_FONT_BODY]));
-    assert(_ui_text_has_font("72%", &s_theme_fonts[APP_THEME_FONT_BODY]));
-    assert(_ui_text_has_font("09:00", &s_theme_fonts[APP_THEME_FONT_BODY]));
+    assert(_ui_text_has_font("72%", &s_theme_fonts[APP_THEME_FONT_HEAD]));
+    assert(_ui_text_has_font("09:00", &s_theme_fonts[APP_THEME_FONT_SMALL]));
     assert(_ui_text_has_font(LV_SYMBOL_REFRESH, LV_FONT_DEFAULT));
     assert(_ui_text_has_font(LV_SYMBOL_IMAGE, LV_FONT_DEFAULT));
     assert(_ui_text_has_font(LV_SYMBOL_RIGHT, LV_FONT_DEFAULT));
@@ -1467,7 +1467,7 @@ static void _test_real_app_navigation(void)
     assert(host_weather_publish(false) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     const label_layout_query_t city_layout = _ui_label_layout(
-            "Shenzhen", &s_theme_fonts[APP_THEME_FONT_HEAD]);
+            "Shenzhen", &s_theme_fonts[APP_THEME_FONT_BIGL]);
     const label_layout_query_t hero_layout = _ui_label_layout(
             "31°", &s_theme_fonts[APP_THEME_FONT_TITLE]);
     const label_layout_query_t range_layout = _ui_label_layout(
@@ -1476,36 +1476,36 @@ static void _test_real_app_navigation(void)
         _ui_label_layout("08-05 08:00 更新",
                          &s_theme_fonts[APP_THEME_FONT_BODY]);
     const label_layout_query_t metric_layout = _ui_label_layout(
-            "72%", &s_theme_fonts[APP_THEME_FONT_BODY]);
+            "72%", &s_theme_fonts[APP_THEME_FONT_HEAD]);
     const label_layout_query_t hourly_layout = _ui_label_layout(
-            "09:00", &s_theme_fonts[APP_THEME_FONT_BODY]);
+            "09:00", &s_theme_fonts[APP_THEME_FONT_SMALL]);
     const label_layout_query_t detail_layout =
         _ui_label_layout("查看详细预报",
-                         &s_theme_fonts[APP_THEME_FONT_SMALL]);
+                         &s_theme_fonts[APP_THEME_FONT_BODY]);
+    /* The city rides in the single-line page title; the header sizes it. */
     assert(city_layout.long_mode == LV_LABEL_LONG_SCROLL_CIRCULAR);
-    assert(city_layout.height == 32);
     assert(hero_layout.parent_height == LV_SIZE_CONTENT);
     assert(hero_layout.grandparent_height == LV_SIZE_CONTENT);
     assert(range_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(range_layout.parent_height == LV_SIZE_CONTENT);
     assert(status_layout.long_mode == LV_LABEL_LONG_SCROLL_CIRCULAR);
     assert(status_layout.height == LV_SIZE_CONTENT);
-    assert(metric_layout.parent_height == 58);
+    assert(metric_layout.long_mode == LV_LABEL_LONG_WRAP);
+    assert(metric_layout.parent_height == LV_SIZE_CONTENT);
     assert(metric_layout.grandparent_height == LV_SIZE_CONTENT);
-    assert(hourly_layout.parent_height == 88);
-    assert(hourly_layout.grandparent_height == 88);
-    assert(detail_layout.parent_height == 44);
+    assert(hourly_layout.parent_height == LV_SIZE_CONTENT);
+    assert(hourly_layout.grandparent_height == LV_SIZE_CONTENT);
+    assert(detail_layout.parent_height == 56);
 
     host_weather_set_city("Shenzhen-Guangdong-Weather-Location");
     assert(host_weather_publish(false) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     const label_layout_query_t long_city_layout =
         _ui_label_layout("Shenzhen-Guangdong-Weather-Location",
-                         &s_theme_fonts[APP_THEME_FONT_HEAD]);
+                         &s_theme_fonts[APP_THEME_FONT_BIGL]);
     assert(long_city_layout.long_mode == LV_LABEL_LONG_SCROLL_CIRCULAR);
-    assert(long_city_layout.height == 32);
     assert(_ui_text_has_font("Shenzhen-Guangdong-Weather-Location",
-                             &s_theme_fonts[APP_THEME_FONT_HEAD]));
+                             &s_theme_fonts[APP_THEME_FONT_BIGL]));
 
     host_weather_set_city("Shenzhen");
     host_weather_set_district("Nanshan");
@@ -1513,7 +1513,7 @@ static void _test_real_app_navigation(void)
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("Shenzhen·Nanshan"));
     assert(_ui_text_has_font("Shenzhen·Nanshan",
-                             &s_theme_fonts[APP_THEME_FONT_HEAD]));
+                             &s_theme_fonts[APP_THEME_FONT_BIGL]));
     host_weather_set_district(NULL);
     assert(host_weather_publish(false) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
@@ -1534,13 +1534,13 @@ static void _test_real_app_navigation(void)
             "体感-100°  高100°  低-100°",
             &s_theme_fonts[APP_THEME_FONT_SMALL]);
     const label_layout_query_t extreme_metric_layout = _ui_label_layout(
-            "1000 km/h", &s_theme_fonts[APP_THEME_FONT_BODY]);
+            "1000 km/h", &s_theme_fonts[APP_THEME_FONT_HEAD]);
     assert(long_condition_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(long_condition_layout.parent_height == LV_SIZE_CONTENT);
     assert(extreme_range_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(extreme_range_layout.parent_height == LV_SIZE_CONTENT);
     assert(extreme_metric_layout.long_mode == LV_LABEL_LONG_WRAP);
-    assert(extreme_metric_layout.parent_height == 58);
+    assert(extreme_metric_layout.parent_height == LV_SIZE_CONTENT);
     assert(extreme_metric_layout.grandparent_height == LV_SIZE_CONTENT);
     host_weather_set_layout_extremes(false);
     host_weather_set_city("Shenzhen");
@@ -1590,9 +1590,9 @@ static void _test_real_app_navigation(void)
     assert(_ui_has_text("降水 0%"));
     assert(_ui_has_text("湿度 65% · 10 km/h"));
     assert(_ui_text_has_font("湿度 65% · 10 km/h",
-                             &s_theme_fonts[APP_THEME_FONT_BODY]));
+                             &s_theme_fonts[APP_THEME_FONT_SMALL]));
     const label_layout_query_t hourly_temperature_layout =
-        _ui_label_layout("32°", &s_theme_fonts[APP_THEME_FONT_SMALL]);
+        _ui_label_layout("32°", &s_theme_fonts[APP_THEME_FONT_HEAD]);
     assert(hourly_temperature_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(hourly_temperature_layout.width == LV_SIZE_CONTENT);
     assert(hourly_temperature_layout.height == LV_SIZE_CONTENT);
@@ -1600,14 +1600,14 @@ static void _test_real_app_navigation(void)
     assert(hourly_temperature_layout.grandparent_height == LV_SIZE_CONTENT);
     const label_layout_query_t hourly_details_layout =
         _ui_label_layout("湿度 65% · 10 km/h",
-                         &s_theme_fonts[APP_THEME_FONT_BODY]);
+                         &s_theme_fonts[APP_THEME_FONT_SMALL]);
     assert(hourly_details_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(hourly_details_layout.height == LV_SIZE_CONTENT);
     assert(hourly_details_layout.parent_height == LV_SIZE_CONTENT);
     /* The two-line "MM-DD\nHH:MM" column must size to its content and never
      * wrap; a fixed 58 px box rewrapped "08-05" into four lines. */
     const label_layout_query_t hourly_time_layout =
-        _ui_label_layout("08-05\n09:00", &s_theme_fonts[APP_THEME_FONT_BODY]);
+        _ui_label_layout("08-05\n09:00", &s_theme_fonts[APP_THEME_FONT_SMALL]);
     assert(hourly_time_layout.long_mode == LV_LABEL_LONG_CLIP);
     assert(hourly_time_layout.width == LV_SIZE_CONTENT);
     assert(host_weather_publish(true) == ESP_OK);
@@ -1622,7 +1622,7 @@ static void _test_real_app_navigation(void)
     const label_layout_query_t extreme_scale_layout = _ui_label_layout(
             "-101°C", &s_theme_fonts[APP_THEME_FONT_BODY]);
     const label_layout_query_t extreme_hour_layout = _ui_label_layout(
-            "-100°", &s_theme_fonts[APP_THEME_FONT_SMALL]);
+            "-100°", &s_theme_fonts[APP_THEME_FONT_HEAD]);
     assert(extreme_scale_layout.long_mode == LV_LABEL_LONG_WRAP);
     assert(extreme_scale_layout.width == LV_SIZE_CONTENT);
     assert(extreme_hour_layout.long_mode == LV_LABEL_LONG_WRAP);
@@ -2172,7 +2172,7 @@ static void _test_optional_services_unavailable(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
-    assert(_wait_for_text_with_timers("电池未知 · SD 未挂载"));
+    assert(_wait_for_text_with_timers("SD 未挂载"));
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
@@ -2204,10 +2204,16 @@ static void _test_optional_services_unavailable(void)
         assert(_wait_for_active(APP_MANAGER_ID_MENU));
     }
 
-    _click_action("网络设置");
+    /* Setup is hidden from the launcher and entered from settings. */
+    _click_action("系统设置");
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    _click_action("连接向导");
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("Wi-Fi 不可用"));
     _click_back();
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     host_optional_services_set_available(true);
@@ -2751,7 +2757,7 @@ static void _test_setup_screen_lifecycle(void)
     assert(_wait_for_page_active(APP_MANAGER_ID_SETUP, "provisioning"));
     assert(_wait_for_text("等待手机连接"));
     assert(_ui_text_has_font(
-               "手机绑定", &s_theme_fonts[APP_THEME_FONT_HEAD]));
+               "手机绑定", &s_theme_fonts[APP_THEME_FONT_BIGL]));
     assert(_ui_text_has_font(
                "MT", &s_theme_fonts[APP_THEME_FONT_BIGL]));
     assert(_ui_text_has_font(

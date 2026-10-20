@@ -48,8 +48,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 184,
-   "y": 214
+   "x": 96,
+   "y": 252
   },
   {
    "cmd": "step",
@@ -58,8 +58,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 184,
-   "y": 214
+   "x": 96,
+   "y": 252
   },
   {
    "cmd": "step",
@@ -89,8 +89,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 56,
-   "y": 385
+   "x": 271,
+   "y": 252
   },
   {
    "cmd": "step",
@@ -99,8 +99,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 56,
-   "y": 385
+   "x": 271,
+   "y": 252
   },
   {
    "cmd": "step",
@@ -113,7 +113,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "时间与计时"
+    "text": "秒表"
    }
   },
   {
@@ -165,7 +165,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "时间与计时"
+    "text": "秒表"
    }
   },
   {
@@ -179,14 +179,14 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "时间与计时"
+    "text": "秒表"
    }
   },
   {
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 246
+   "y": 228
   },
   {
    "cmd": "step",
@@ -196,7 +196,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 246
+   "y": 228
   },
   {
    "cmd": "step",
@@ -232,7 +232,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 336
+   "y": 333
   },
   {
    "cmd": "step",
@@ -242,7 +242,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 336
+   "y": 333
   },
   {
    "cmd": "step",
@@ -258,8 +258,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -268,8 +268,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -289,8 +289,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -299,8 +299,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -316,8 +316,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 269,
-   "y": 392
+   "x": 271,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -326,8 +326,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 269,
-   "y": 392
+   "x": 271,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -343,8 +343,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 320,
-   "y": 336
+   "x": 316,
+   "y": 333
   },
   {
    "cmd": "step",
@@ -353,8 +353,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 320,
-   "y": 336
+   "x": 316,
+   "y": 333
   },
   {
    "cmd": "step",
@@ -373,8 +373,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 248,
-   "y": 164
+   "x": 245,
+   "y": 176
   },
   {
    "cmd": "step",
@@ -383,8 +383,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 248,
-   "y": 164
+   "x": 245,
+   "y": 176
   },
   {
    "cmd": "step",
@@ -405,7 +405,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 250
+   "y": 278
   },
   {
    "cmd": "step",
@@ -415,7 +415,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 250
+   "y": 278
   },
   {
    "cmd": "step",
@@ -434,8 +434,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -444,8 +444,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -461,8 +461,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -471,8 +471,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 99,
-   "y": 392
+   "x": 97,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -481,8 +481,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 269,
-   "y": 392
+   "x": 271,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -491,8 +491,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 269,
-   "y": 392
+   "x": 271,
+   "y": 399
   },
   {
    "cmd": "step",
@@ -961,8 +961,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 141,
-   "y": 265
+   "x": 143,
+   "y": 268
   },
   {
    "cmd": "step",
@@ -971,8 +971,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 141,
-   "y": 265
+   "x": 143,
+   "y": 268
   },
   {
    "cmd": "step",
@@ -994,7 +994,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "100%·熄屏 1 分钟·待机 从不"
+    "text": "100% · 1 分钟"
    }
   },
   {
@@ -1013,8 +1013,8 @@
   {
    "cmd": "touch",
    "action": "down",
-   "x": 311,
-   "y": 265
+   "x": 308,
+   "y": 268
   },
   {
    "cmd": "step",
@@ -1023,8 +1023,8 @@
   {
    "cmd": "touch",
    "action": "up",
-   "x": 311,
-   "y": 265
+   "x": 308,
+   "y": 268
   },
   {
    "cmd": "step",
@@ -1046,7 +1046,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "100%·熄屏 从不·待机 从不"
+    "text": "100% · 从不"
    }
   },
   {
@@ -1133,7 +1133,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 356
+   "y": 402
   },
   {
    "cmd": "step",
@@ -1143,7 +1143,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 356
+   "y": 402
   },
   {
    "cmd": "step",
@@ -1160,7 +1160,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 344
+   "y": 326
   },
   {
    "cmd": "step",
@@ -1170,7 +1170,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 344
+   "y": 326
   },
   {
    "cmd": "step",

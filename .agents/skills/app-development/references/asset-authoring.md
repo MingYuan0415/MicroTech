@@ -9,10 +9,10 @@ RGB565A8 BIN → res 分区(mmap)`,固件与 sim 共用同一规则。
 
 - **Art 必须落在消费者实际绘制的窗口内。** LVGL 的普通 `lv_image` 按原尺寸
   绘制并在对象框内**居中裁剪**,不缩放:record 导出尺寸大于绘制尺寸时,边缘被静默
-  切掉。App 图标 record 为 64,而启动器 `app_ui_add_icon_tile` 的画布只给 40
-  (`lv_obj_set_size(image, 40, 40)`)、任务切换器给 56,因此所有元素必须落在
-  居中的 `x,y = 13..50`(40 px 窗口 + 1 px 余量)内;主页瓦片只在 dock 的 40 px
-  窗口出现,故按 40 导出;`home_ring_clock.svg` 只在 28 px 环内出现,按 28 导出。
+  切掉。App 图标以 64 单位设计框绘制、按 72 导出:启动器 `app_ui_add_icon_tile`
+  的画布给 72(`lv_obj_set_size(image, 72, 72)`)、任务切换器给 56,所有元素须落在
+  设计框居中的 `x,y = 13..50` 内;主页信息卡字形只在 40 px 窗口出现,故按 40 导出;
+  `home_ring_clock.svg` 只在 28 px 环内出现,按 28 导出。
   新增/改动图标后跑 `tests/resources/test_icon_fit.py`(按 token 记录每个绘制
   窗口,栅格化后校验墨迹框不得触窗)。
 - 终色写入文件:`fill`/`stroke` 必须是显式 hex(取自

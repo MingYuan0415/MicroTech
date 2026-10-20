@@ -241,6 +241,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_LABEL_LONG_WRAP            1
 #define LV_LABEL_LONG_SCROLL_CIRCULAR 2
 #define LV_LABEL_LONG_CLIP            3
+#define LV_BORDER_SIDE_TOP            0x02
 #define LV_ROLLER_MODE_NORMAL         0
 #define LV_ROLLER_MODE_INFINITE       1
 #define LV_OBJ_FLAG_HIDDEN            (1U << 0)
@@ -485,6 +486,12 @@ int32_t lv_obj_get_width(const lv_obj_t *object);
 /** @brief Return a fake object's content width (its width). */
 int32_t lv_obj_get_content_width(const lv_obj_t *object);
 /** @brief Coarse glyph advance: nine pixels per glyph, as lv_text_get_size. */
+/** @brief Fake line height; matches the coarse lv_text_get_size model. */
+static inline int32_t lv_font_get_line_height(const lv_font_t *font)
+{
+    (void)font;
+    return 28;
+}
 int32_t lv_font_get_glyph_width(const lv_font_t *font, uint32_t letter,
                                 uint32_t letter_next);
 /** @brief Return the font recorded for a fake object. */
@@ -796,6 +803,9 @@ HOST_LV_NOOP_3(lv_obj_set_style_text_align, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_max_height, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_max_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_min_height, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_arc_rounded, lv_obj_t *, bool, int)
 HOST_LV_NOOP_4(lv_obj_align, lv_obj_t *, int, int32_t, int32_t)
 HOST_LV_NOOP_4(lv_obj_set_flex_align, lv_obj_t *, int, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_hor, lv_obj_t *, int32_t, int)
@@ -840,6 +850,7 @@ static inline void lv_style_set_bg_opa(lv_style_t *style, int opacity)
 HOST_LV_NOOP_2(lv_style_set_border_color, lv_style_t *, lv_color_t)
 HOST_LV_NOOP_2(lv_style_set_border_opa, lv_style_t *, int)
 HOST_LV_NOOP_2(lv_style_set_border_width, lv_style_t *, int32_t)
+HOST_LV_NOOP_2(lv_style_set_border_side, lv_style_t *, int)
 HOST_LV_NOOP_2(lv_style_set_pad_all, lv_style_t *, int32_t)
 HOST_LV_NOOP_2(lv_style_set_pad_bottom, lv_style_t *, int32_t)
 HOST_LV_NOOP_2(lv_style_set_pad_column, lv_style_t *, int32_t)
