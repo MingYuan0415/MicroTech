@@ -12,7 +12,8 @@ Scenario JSON:
       {"cmd": "screenshot", "name": "clock.png"},
       {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "时钟"}},
       {"cmd": "touch", "action": "down", "x": 20, "y": 30},
-      {"cmd": "drag", "x0": 184, "y0": 300, "x1": 184, "y1": 160}
+      {"cmd": "drag", "x0": 184, "y0": 300, "x1": 184, "y1": 160,
+       "hold_steps": 1}   # hold the press one frame so it lands at (x0, y0)
     ]
   }
 
@@ -140,6 +141,11 @@ class Runner:
             moves = max(int(step.get('steps', 10)), 1)
             pause_ms = int(step.get('ms_per_move', 33))
             self.call('sim.touch', {'action': 'down', 'x': x0, 'y': y0})
+            # The press is processed on the next LVGL step, so without a hold
+            # the press point is the first move rather than (x0, y0) and
+            # press-area assertions silently test the wrong coordinate.
+            for _ in range(int(step.get('hold_steps', 0))):
+                self.call('sim.step', {'ms': 33})
             for i in range(1, moves + 1):
                 self.call('sim.touch', {
                     'action': 'move',

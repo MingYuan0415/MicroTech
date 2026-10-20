@@ -24,7 +24,8 @@
    "y1": 130,
    "steps": 12,
    "ms_per_move": 33,
-   "settle_ms": 495
+   "settle_ms": 495,
+   "hold_steps": 1
   },
   {
    "cmd": "wait_idle"
@@ -129,6 +130,26 @@
    "method": "sim.control_center",
    "params": {"get": true},
    "expect": {"visible": false}
+  },
+  {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 32,
+   "x1": 184,
+   "y1": 132,
+   "steps": 12,
+   "ms_per_move": 33,
+   "settle_ms": 495,
+   "hold_steps": 1
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": true}
   },
   {
    "cmd": "call",
