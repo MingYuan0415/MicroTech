@@ -78,6 +78,36 @@
   {
    "cmd": "touch",
    "action": "down",
+   "x": 292,
+   "y": 190
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 292,
+   "y": 190
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "已关闭"}
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": true}
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
    "x": 184,
    "y": 388
   },
