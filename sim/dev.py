@@ -29,6 +29,8 @@ LOG_FILE = os.path.join(BUILD, 'dev_session.log')
 PORT = 5002
 DISPLAY_ENV_KEYS = ('DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
                     'SDL_VIDEODRIVER')
+EXEC_RETRY_ATTEMPTS = 5
+EXEC_RETRY_DELAY = 0.01
 LAST_NETWORK_ONLINE = False
 APPS = ['home', 'menu', 'clock', 'level', 'diagnostics', 'recorder',
         'settings', 'setup', 'weather']
@@ -65,9 +67,8 @@ def _pid_argv(pid):
             return []
 
 
-def _pid_is_simulator(pid):
+def _argv_is_simulator(argv):
     """Return True only for our binary with the expected Agent port."""
-    argv = _pid_argv(pid)
     if not argv or os.path.realpath(argv[0]) != os.path.realpath(BINARY):
         return False
     try:
@@ -76,6 +77,11 @@ def _pid_is_simulator(pid):
         return False
     return (port_index + 1 < len(argv) and
             argv[port_index + 1] == str(PORT))
+
+
+def _pid_is_simulator(pid):
+    """Return True only for our binary with the expected Agent port."""
+    return _argv_is_simulator(_pid_argv(pid))
 
 
 def _display_environment(environment=None):
@@ -115,17 +121,19 @@ def session_pid():
         with open(PID_FILE) as handle:
             pid = int(handle.read().strip())
     except (OSError, ValueError):
-        try:
-            os.remove(PID_FILE)
-        except OSError:
-            pass
+        _clear_pid_file()
         return None
-    if _pid_alive(pid) and _pid_is_simulator(pid):
-        return pid
-    try:
-        os.remove(PID_FILE)
-    except OSError:
-        pass
+    if _pid_alive(pid):
+        for _ in range(EXEC_RETRY_ATTEMPTS):
+            argv = _pid_argv(pid)
+            if _argv_is_simulator(argv):
+                return pid
+            # 命令行为空说明子进程尚未完成 exec（刚 fork 出的窗口），重试；
+            # 已能看到其他命令行则确认不是本程序，直接按陈旧 PID 处理。
+            if argv:
+                break
+            time.sleep(EXEC_RETRY_DELAY)
+    _clear_pid_file()
     return None
 
 
@@ -292,6 +300,10 @@ def start_session(navigate=None, headless=False, online=False):
     log.close()
     open(PID_FILE, 'w').write(str(proc.pid))
     if not _wait_socket(60, proc):
+        # 子进程的 stdout 是重定向文件（全缓冲）：先让它退出，已产生的
+        # 日志才会落盘，否则“日志末尾”永远是空。
+        if proc.poll() is None:
+            _terminate_process(proc.pid)
         print('  会话未就绪，日志末尾：')
         _dump_log()
         _stop_started_process(proc)
@@ -327,15 +339,16 @@ def start_session(navigate=None, headless=False, online=False):
 
 
 def _wait_socket(seconds, proc=None):
+    """等待新会话的 Agent 就绪；进程句柄是唯一判死依据。
+
+    PID 文件在 exec 完成前无法确认身份，不能据此提前判定启动失败。
+    """
     deadline = time.time() + seconds
     while time.time() < deadline:
         if proc is not None and proc.poll() is not None:
             return False
         if agent_ready():
             return True
-        pid = session_pid()
-        if pid is None:
-            return False
         time.sleep(0.5)
     return False
 

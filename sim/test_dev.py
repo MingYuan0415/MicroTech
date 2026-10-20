@@ -24,9 +24,28 @@ class DevSessionTests(unittest.TestCase):
                 handle.write('123')
             try:
                 with mock.patch.object(dev, '_pid_alive', return_value=True), \
-                        mock.patch.object(dev, '_pid_is_simulator', return_value=False):
+                        mock.patch.object(dev, '_pid_argv',
+                                         return_value=['/usr/bin/python3']):
                     self.assertIsNone(dev.session_pid())
                 self.assertFalse(os.path.exists(dev.PID_FILE))
+            finally:
+                try:
+                    os.remove(dev.PID_FILE)
+                except OSError:
+                    pass
+
+    def test_pid_identity_retries_while_exec_is_pending(self):
+        pending = [[], [dev.BINARY, '--agent-port', '5002']]
+        with mock.patch.object(dev, 'PID_FILE', '/tmp/mt-dev-exec.pid'):
+            with open(dev.PID_FILE, 'w') as handle:
+                handle.write('123')
+            try:
+                with mock.patch.object(dev, '_pid_alive', return_value=True), \
+                        mock.patch.object(dev, '_pid_argv', side_effect=pending), \
+                        mock.patch.object(dev, 'time') as fake_time:
+                    self.assertEqual(dev.session_pid(), 123)
+                self.assertGreater(fake_time.sleep.call_count, 0)
+                self.assertTrue(os.path.exists(dev.PID_FILE))
             finally:
                 try:
                     os.remove(dev.PID_FILE)
@@ -80,6 +99,14 @@ class DevSessionTests(unittest.TestCase):
         with mock.patch.object(dev, 'agent_ready') as ready:
             self.assertFalse(dev._wait_socket(60, proc))
         ready.assert_not_called()
+
+    def test_wait_socket_ignores_exec_pending_pid_file(self):
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        with mock.patch.object(dev, 'session_pid') as session_pid, \
+                mock.patch.object(dev, 'agent_ready', return_value=True):
+            self.assertTrue(dev._wait_socket(60, proc))
+        session_pid.assert_not_called()
 
     def test_stop_session_cleans_up_after_rpc_failure(self):
         with mock.patch.object(dev, 'session_pid', return_value=123), \
