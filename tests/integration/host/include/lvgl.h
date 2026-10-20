@@ -116,6 +116,8 @@ typedef void (*lv_timer_cb_t)(lv_timer_t *timer);
 typedef void (*lv_anim_exec_xcb_t)(void *variable, int32_t value);
 /** @brief Fake LVGL animation completion callback. */
 typedef void (*lv_anim_completed_cb_t)(lv_anim_t *animation);
+/** @brief Fake LVGL animation path callback: returns the value for act_time. */
+typedef int32_t (*lv_anim_path_cb_t)(const lv_anim_t *animation);
 
 /** @brief Minimal public LVGL animation descriptor used for fast-forwarding. */
 struct _lv_anim_t
@@ -128,6 +130,7 @@ struct _lv_anim_t
     int32_t duration;
     int32_t act_time;
     lv_anim_completed_cb_t completed_cb;
+    lv_anim_path_cb_t path_cb;
     bool early_apply;
 };
 
@@ -634,6 +637,14 @@ void lv_anim_set_completed_cb(lv_anim_t *animation,
                               lv_anim_completed_cb_t completed_callback);
 /** @brief Select whether a generic animation applies its initial value. */
 void lv_anim_set_early_apply(lv_anim_t *animation, bool enabled);
+/** @brief Select the interpolation path of a generic fake animation. */
+void lv_anim_set_path_cb(lv_anim_t *animation, lv_anim_path_cb_t path_callback);
+/** @brief Linear fake animation path. */
+int32_t lv_anim_path_linear(const lv_anim_t *animation);
+/** @brief Ease-in fake animation path. */
+int32_t lv_anim_path_ease_in(const lv_anim_t *animation);
+/** @brief Ease-out fake animation path. */
+int32_t lv_anim_path_ease_out(const lv_anim_t *animation);
 /** @brief Start a generic fake animation or return NULL on injected failure. */
 lv_anim_t *lv_anim_start(const lv_anim_t *animation);
 /** @brief Refresh and complete fake animations whose active time elapsed. */

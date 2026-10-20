@@ -132,6 +132,10 @@
    "expect": {"visible": false}
   },
   {
+   "cmd": "step",
+   "times": 7
+  },
+  {
    "cmd": "drag",
    "x0": 184,
    "y0": 32,

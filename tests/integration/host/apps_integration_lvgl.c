@@ -2320,6 +2320,76 @@ void lv_anim_set_early_apply(lv_anim_t *animation, bool enabled)
     }
 }
 
+void lv_anim_set_path_cb(lv_anim_t *animation, lv_anim_path_cb_t path_callback)
+{
+    if (animation != NULL)
+    {
+        animation->path_cb = path_callback;
+    }
+}
+
+/* Interpolate as if the animation had run scaled_time out of its duration;
+ * the path callbacks below only reshape that time. */
+static int32_t _host_lv_anim_value(const lv_anim_t *animation,
+                                   int32_t scaled_time)
+{
+    if (animation->duration <= 0)
+    {
+        return animation->end_value;
+    }
+    return animation->start_value +
+           (int32_t)(((int64_t)(animation->end_value - animation->start_value) *
+                      scaled_time) / animation->duration);
+}
+
+int32_t lv_anim_path_linear(const lv_anim_t *animation)
+{
+    if (animation == NULL)
+    {
+        return 0;
+    }
+    const int32_t duration = animation->duration;
+    const int32_t elapsed = animation->act_time > duration ?
+                            duration : animation->act_time;
+    return _host_lv_anim_value(animation, elapsed);
+}
+
+int32_t lv_anim_path_ease_in(const lv_anim_t *animation)
+{
+    if (animation == NULL)
+    {
+        return 0;
+    }
+    const int32_t duration = animation->duration;
+    if (duration <= 0)
+    {
+        return animation->end_value;
+    }
+    const int32_t elapsed = animation->act_time > duration ?
+                            duration : animation->act_time;
+    return _host_lv_anim_value(
+               animation, (int32_t)(((int64_t)elapsed * elapsed) / duration));
+}
+
+int32_t lv_anim_path_ease_out(const lv_anim_t *animation)
+{
+    if (animation == NULL)
+    {
+        return 0;
+    }
+    const int32_t duration = animation->duration;
+    if (duration <= 0)
+    {
+        return animation->end_value;
+    }
+    const int32_t elapsed = animation->act_time > duration ?
+                            duration : animation->act_time;
+    const int64_t remaining = (int64_t)duration - elapsed;
+    return _host_lv_anim_value(
+               animation,
+               (int32_t)(duration - (remaining * remaining) / duration));
+}
+
 lv_anim_t *lv_anim_start(const lv_anim_t *animation)
 {
     if (animation == NULL || animation->var == NULL ||
@@ -2450,11 +2520,9 @@ static void _host_lv_refresh_generic_animations(void)
         const int32_t duration = animation->duration;
         const int32_t elapsed = animation->act_time > duration ?
                                 duration : animation->act_time;
-        const int32_t value = duration == 0 ? animation->end_value :
-                              animation->start_value +
-                              (int32_t)(((int64_t)(animation->end_value -
-                                         animation->start_value) *
-                                         elapsed) / duration);
+        const int32_t value = animation->path_cb != NULL ?
+                              animation->path_cb(animation) :
+                              _host_lv_anim_value(animation, elapsed);
         animation->current_value = value;
         animation->exec_cb(animation->var, value);
         if (animation->act_time >= duration)
