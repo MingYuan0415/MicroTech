@@ -301,7 +301,14 @@ static void _test_wipe_data(void)
     (void)unlink(long_path);
     (void)rmdir(FS_DATA_MOUNT_PATH "/nested");
     (void)rmdir(FS_DATA_MOUNT_PATH);
-    assert(mkdir(FS_DATA_MOUNT_PATH, 0700) == 0);
+    if (mkdir(FS_DATA_MOUNT_PATH, 0700) != 0)
+    {
+        /* Another process owns this path: fail loudly instead of wiping a
+           tree this test does not own. */
+        fprintf(stderr, "fs_storage: %s is unavailable: %s\n",
+                FS_DATA_MOUNT_PATH, strerror(errno));
+        abort();
+    }
     assert(snprintf(nested, sizeof(nested), "%s/nested",
                     FS_DATA_MOUNT_PATH) > 0);
     assert(mkdir(nested, 0700) == 0);

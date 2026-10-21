@@ -747,14 +747,6 @@ app_manager_standby_ops_t app_runtime_pm_get_standby_ops(void)
     };
 }
 
-app_manager_control_center_ops_t app_runtime_control_get_ops(void)
-{
-    return (app_manager_control_center_ops_t)
-    {
-        0
-    };
-}
-
 esp_err_t app_runtime_pm_prepare_power(bsp_capabilities_t capabilities)
 {
     assert(capabilities == s_test.capabilities);
@@ -1066,6 +1058,30 @@ esp_err_t connectivity_manager_deinit(uint32_t timeout_ms)
     return _test_result(TEST_EVENT_CONNECTIVITY_DEINIT);
 }
 
+esp_err_t connectivity_manager_request_disconnect(
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    assert(out_operation_id != NULL);
+    *out_operation_id = 1U;
+    return ESP_OK;
+}
+
+esp_err_t connectivity_manager_request_reconnect_saved(
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    assert(out_operation_id != NULL);
+    *out_operation_id = 1U;
+    return ESP_OK;
+}
+
+esp_err_t connectivity_manager_request_scan(
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    assert(out_operation_id != NULL);
+    *out_operation_id = 1U;
+    return ESP_OK;
+}
+
 esp_err_t connectivity_manager_get_status(
     connectivity_manager_status_snapshot_t *snapshot)
 {
@@ -1115,6 +1131,21 @@ esp_err_t device_link_service_init(
     s_test.device_link_started_gated = config->startup_mode ==
                                        DEVICE_LINK_SERVICE_STARTUP_FACTORY_RESET_GATED;
     return _test_result(TEST_EVENT_BLE_INIT);
+}
+
+esp_err_t device_link_service_get_status(
+    device_link_service_status_t *status)
+{
+    assert(status != NULL);
+    memset(status, 0, sizeof(*status));
+    return ESP_OK;
+}
+
+esp_err_t device_link_service_set_enabled(bool enabled, uint32_t timeout_ms)
+{
+    assert(!enabled);
+    assert(timeout_ms == 0U);
+    return ESP_OK;
 }
 
 esp_err_t device_link_service_release_startup_gate(void)
@@ -1629,4 +1660,16 @@ int main(void)
     _test_imu_init_cleanup_retry_keeps_bridge();
     _test_sd_mount_error_exposes_cleanup_handle();
     return 0;
+}
+
+esp_err_t time_service_get_local(struct tm *local_time)
+{
+    assert(local_time != NULL);
+    memset(local_time, 0, sizeof(*local_time));
+    return ESP_ERR_INVALID_STATE;
+}
+
+time_service_quality_t time_service_get_quality(void)
+{
+    return TIME_SERVICE_QUALITY_INVALID;
 }

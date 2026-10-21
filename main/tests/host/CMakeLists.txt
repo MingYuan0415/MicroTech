@@ -70,6 +70,7 @@ add_executable(app_runtime_test
     app_runtime_test.c
     ../../app_product_config.c
     ../../app_runtime.c
+    ../../app_runtime_control.c
     timer_service_fake.c
 )
 
@@ -136,6 +137,25 @@ target_include_directories(app_runtime_pm_test PRIVATE
 target_link_libraries(app_runtime_pm_test PRIVATE Threads::Threads)
 configure_main_host_target(app_runtime_pm_test)
 add_main_host_test(app_runtime_pm_test app_runtime_pm_test)
+
+add_executable(app_runtime_control_test
+    app_runtime_control_test.c
+    ../../app_runtime_control.c
+)
+target_include_directories(app_runtime_control_test PRIVATE
+    fakes
+    ../..
+    ../../../layers/app_manager/app_core/include
+    ../../../layers/middleware/components/connectivity_manager/include
+    ../../../layers/middleware/components/device_link/include
+    ../../../layers/middleware/components/device_link_service/include
+    ../../../layers/middleware/components/ble_runtime/include
+    ../../../layers/middleware/components/event_bus/include
+    ../../../layers/middleware/components/mt_log/include
+    ../../../layers/middleware/components/time_service/include
+)
+configure_main_host_target(app_runtime_control_test)
+add_main_host_test(app_runtime_control_test app_runtime_control_test)
 
 function(add_display_benchmark_test target port stress characterization
          load_full load_audio_only load_tcp_only snapshot_animation os_none)
@@ -223,6 +243,10 @@ function(add_display_benchmark_test target port stress characterization
     target_link_libraries(${target} PRIVATE Threads::Threads)
     configure_main_host_target(${target})
     add_main_host_test(${target} ${target})
+    # Each variant binds its own loopback port. CTest may schedule unrelated
+    # tests concurrently, but two benchmark binaries must never overlap: a
+    # reused port would abort the second one with a bind error.
+    set_tests_properties(${target} PROPERTIES RESOURCE_LOCK benchmark_tcp_port)
 endfunction()
 
 set(DISPLAY_BENCHMARK_STRESS_PORT 55001)
@@ -279,13 +303,22 @@ function(add_fs_storage_test target mmap_enabled)
         ../..
         ../../../layers/middleware/components/mt_log/include
     )
+    # The mount path is a compile-time constant of the production source, so
+    # the fixture cannot pick a unique directory at run time. Derive it from
+    # the build tree instead: two checkouts building concurrently no longer
+    # share a path, and RESOURCE_LOCK below serializes the two variants.
+    string(MD5 build_tag "${CMAKE_BINARY_DIR}")
+    string(SUBSTRING "${build_tag}" 0 8 build_tag)
     target_compile_definitions(${target} PRIVATE
         CONFIG_ESP_LVGL_ADAPTER_ENABLE_FS=${mmap_enabled}
         FS_STORAGE_TEST_MMAP=${mmap_enabled}
-        FS_DATA_MOUNT_PATH="/tmp/mt-${target}-data"
+        FS_DATA_MOUNT_PATH="/tmp/mt-${target}-${build_tag}-data"
     )
     configure_main_host_target(${target})
     add_main_host_test(${target} ${target})
+    # Both variants mount the same compile-time data path; overlapping them
+    # would let one test wipe the other's tree.
+    set_tests_properties(${target} PROPERTIES RESOURCE_LOCK fs_storage_data)
 endfunction()
 
 add_fs_storage_test(fs_storage_vfs_test 0)

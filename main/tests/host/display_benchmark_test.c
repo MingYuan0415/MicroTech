@@ -10,6 +10,7 @@
 
 #include <arpa/inet.h>
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -1327,18 +1328,38 @@ static void _echo_server_start(echo_server_t *server, bool corrupt,
     atomic_store(&server->first_response_delay_us, first_response_delay_us);
     atomic_store(&server->connection_count, 0U);
     const int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    assert(listener >= 0);
+    if (listener < 0)
+    {
+        fprintf(stderr, "echo server: socket failed: %s\n", strerror(errno));
+        abort();
+    }
     const int reuse = 1;
-    assert(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse,
-                      sizeof(reuse)) == 0);
+    if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse,
+                   sizeof(reuse)) != 0)
+    {
+        fprintf(stderr, "echo server: SO_REUSEADDR failed: %s\n",
+                strerror(errno));
+        abort();
+    }
     const struct sockaddr_in address =
     {
         .sin_family = AF_INET,
         .sin_port = htons(TEST_DISPLAY_BENCHMARK_TCP_PORT),
         .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
     };
-    assert(bind(listener, (const struct sockaddr *)&address,
-                sizeof(address)) == 0);
+    if (bind(listener, (const struct sockaddr *)&address,
+             sizeof(address)) != 0)
+    {
+        /* Every benchmark variant owns a distinct port, so a busy port means a
+           stale process or a duplicated binary invocation, not flakiness. */
+        fprintf(stderr,
+                "echo server: bind 127.0.0.1:%d failed: %s\n"
+                "free the port (or stop the stale benchmark process) and "
+                "rerun\n",
+                TEST_DISPLAY_BENCHMARK_TCP_PORT, strerror(errno));
+        (void)close(listener);
+        abort();
+    }
     assert(listen(listener, 1) == 0);
     atomic_store(&server->listener, listener);
     assert(pthread_create(&server->thread, NULL, _echo_server_task, server) ==
