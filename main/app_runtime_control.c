@@ -14,6 +14,9 @@
 
 static char s_clock_time[8];
 static char s_clock_date[32];
+/* The caller renders the SSID after this callback returns, so the text must
+ * outlive the status snapshot it came from. */
+static char s_wifi_ssid[CONNECTIVITY_MANAGER_SSID_MAX_BYTES + 1U];
 
 static esp_err_t _control_get_wifi(app_manager_radio_state_t *state,
                                    const char **ssid)
@@ -41,7 +44,16 @@ static esp_err_t _control_get_wifi(app_manager_radio_state_t *state,
     }
     if (ssid != NULL)
     {
-        *ssid = *state == APP_MANAGER_RADIO_CONNECTED ? status.ssid : NULL;
+        if (*state == APP_MANAGER_RADIO_CONNECTED)
+        {
+            (void)snprintf(s_wifi_ssid, sizeof(s_wifi_ssid), "%s",
+                           status.ssid);
+            *ssid = s_wifi_ssid;
+        }
+        else
+        {
+            *ssid = NULL;
+        }
     }
     return ESP_OK;
 }
