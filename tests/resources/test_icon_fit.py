@@ -41,8 +41,8 @@ HOME_ICON_ROLES = {
     "APP_IMAGE_DIAGNOSTICS_ICON": APP_ICON,
     "APP_IMAGE_WEATHER_APP": APP_ICON,
     # Complication glyphs appear only on their home card.
-    "APP_IMAGE_HOME_RECORDER": ("home_card",),
-    "APP_IMAGE_HOME_LEVEL": ("home_card",),
+    "APP_IMAGE_HOME_CALCULATOR": ("home_card",),
+    "APP_IMAGE_HOME_CALENDAR": ("home_card",),
     # The 28 px ring glyph is the one record authored for a single small use.
     "APP_IMAGE_HOME_RING_CLOCK": ("ring_glyph",),
 }

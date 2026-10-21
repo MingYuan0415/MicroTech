@@ -25,7 +25,7 @@ RGB565A8 BIN → res 分区(mmap)`,固件与 sim 共用同一规则。
 
 ## Registering the asset
 
-1. 源文件放到 owning App 的 `assets/`(语义名,如 `tile_recorder.svg`)。
+1. 源文件放到 owning App 的 `assets/`(语义名,如 `tile_calculator.svg`)。
 2. 在该 App 的 `resource_manifest.cmake` 逐条登记 6 字段记录:
    `"${CMAKE_CURRENT_LIST_DIR}/assets/<name>.svg|<staged输出名>.png|APP_IMAGE_<X>|W|H|SVG"`;
    同一源需要多个尺寸时登记多条,输出名互不相同。
