@@ -318,7 +318,6 @@ esp_err_t sim_runtime_boot(void)
             .is_suspend_committed = screen->is_suspend_committed,
             .set_brightness = screen->set_brightness,
             .set_brightness_temp = screen->set_brightness_temp,
-            .get_brightness = screen->get_brightness,
         },
         .input_ops = {
             .register_handler = _input_register,

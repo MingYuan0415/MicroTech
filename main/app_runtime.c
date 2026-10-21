@@ -965,7 +965,6 @@ static esp_err_t _app_runtime_start_app_services(
             .is_suspend_committed = context->screen->is_suspend_committed,
             .set_brightness = context->screen->set_brightness,
             .set_brightness_temp = context->screen->set_brightness_temp,
-            .get_brightness = context->screen->get_brightness,
         },
         .input_ops = app_runtime_pm_get_input_ops(),
         .standby_ops = app_runtime_pm_get_standby_ops(),

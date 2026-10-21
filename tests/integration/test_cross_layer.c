@@ -3,6 +3,7 @@
 #include "app_manager.h"
 #include "app_manager_back_gesture.h"
 #include "app_manager_builtin.h"
+#include "app_manager_control_center.h"
 #include "app_manager_lifecycle.h"
 #include "app_manager_mailbox.h"
 #include "app_manager_navigation.h"
@@ -3454,6 +3455,167 @@ static void _test_pull_refresh_hold(void)
     assert(!s_pull_refresh.refreshing);
 }
 
+typedef struct cc_band_bounds
+{
+    int32_t x;
+    int32_t y;
+    int32_t width;
+    int32_t height;
+    bool found;
+} cc_band_bounds_t;
+
+static esp_err_t _cc_band_query_on_ui(void *arg)
+{
+    cc_band_bounds_t *bounds = arg;
+    lv_obj_t *system_layer = lv_display_get_layer_sys(
+                                 lv_display_get_default());
+    const uint32_t child_count = lv_obj_get_child_count(system_layer);
+    for (uint32_t index = 0U; index < child_count; ++index)
+    {
+        lv_obj_t *child = lv_obj_get_child(system_layer, index);
+        if (lv_obj_get_height(child) == 40 && lv_obj_get_width(child) > 0)
+        {
+            bounds->x = lv_obj_get_x(child);
+            bounds->y = lv_obj_get_y(child);
+            bounds->width = lv_obj_get_width(child);
+            bounds->height = lv_obj_get_height(child);
+            bounds->found = true;
+            break;
+        }
+    }
+    return bounds->found ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _control_center_init_on_ui(void *arg)
+{
+    (void)arg;
+    return app_manager_control_center_init(lv_display_get_default(),
+                                           host_lv_pointer_indev());
+}
+
+static esp_err_t _control_center_deinit_on_ui(void *arg)
+{
+    (void)arg;
+    return app_manager_control_center_deinit();
+}
+
+typedef struct cc_show_twice_result
+{
+    esp_err_t first;
+    esp_err_t second;
+    bool visible_after_first;
+    bool visible_after_second;
+} cc_show_twice_result_t;
+
+static esp_err_t _cc_show_twice_on_ui(void *arg)
+{
+    cc_show_twice_result_t *result = arg;
+    result->first = app_manager_control_center_show();
+    result->visible_after_first = app_manager_control_center_is_visible();
+    result->second = app_manager_control_center_show();
+    result->visible_after_second = app_manager_control_center_is_visible();
+    return ESP_OK;
+}
+
+typedef struct cc_probe
+{
+    lv_obj_t *button;
+    unsigned clicks;
+} cc_probe_t;
+
+static cc_probe_t s_cc_probe;
+
+static void _cc_probe_event(lv_event_t *event)
+{
+    if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+    {
+        s_cc_probe.clicks++;
+    }
+}
+
+/* Stand-in for a page-header action button: app_ui_page_set_action() places a
+ * 42 px button at the bottom-right of the header, which reaches into the band's
+ * rows. lv_obj_align() is a no-op in the host fake, so place it explicitly at
+ * the same geometry the real button occupies.
+ */
+static esp_err_t _cc_probe_create_on_ui(void *arg)
+{
+    (void)arg;
+    const int32_t width = lv_display_get_horizontal_resolution(
+                              lv_display_get_default());
+    lv_obj_t *button = lv_button_create(lv_screen_active());
+    if (button == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    lv_obj_set_pos(button, width - 58, 20);
+    lv_obj_set_size(button, 42, 42);
+    lv_obj_add_event_cb(button, _cc_probe_event, LV_EVENT_CLICKED, NULL);
+    s_cc_probe.button = button;
+    s_cc_probe.clicks = 0U;
+    return ESP_OK;
+}
+
+static esp_err_t _cc_probe_delete_on_ui(void *arg)
+{
+    (void)arg;
+    if (s_cc_probe.button != NULL)
+    {
+        lv_obj_delete(s_cc_probe.button);
+        s_cc_probe.button = NULL;
+    }
+    return ESP_OK;
+}
+
+static void _test_control_center_band_and_entering_toggle(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    const int32_t display_width = lv_display_get_horizontal_resolution(
+                                      lv_display_get_default());
+    const int32_t edge_width = app_manager_back_gesture_edge_width();
+    assert(edge_width > 0);
+
+    /* The band starts at the edge-back width and stops 58 px before the
+     * right edge: 42 px page action button + 16 px page margin. */
+    cc_band_bounds_t band = {0};
+    assert(app_manager_ui_call(_cc_band_query_on_ui, &band,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(band.y == 0);
+    assert(band.height == 40);
+    assert(band.x == edge_width);
+    assert(band.x + band.width == display_width - 58);
+
+    /* A tap inside the reserved action-button area must reach the page, not
+     * be swallowed by the armed band. */
+    assert(app_manager_ui_call(_cc_probe_create_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_touch(TOUCH_ACTION_PRESS, display_width - 54, 24));
+    assert(_touch(TOUCH_ACTION_RELEASE, display_width - 54, 24));
+    assert(s_cc_probe.clicks == 1U);
+    assert(app_manager_ui_call(_cc_probe_delete_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    /* A second show while the first slide-in is still running closes it. */
+    cc_show_twice_result_t toggle = {0};
+    assert(app_manager_ui_call(_cc_show_twice_on_ui, &toggle,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(toggle.first == ESP_OK);
+    assert(toggle.visible_after_first);
+    assert(toggle.second == ESP_OK);
+    assert(!toggle.visible_after_second);
+
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+}
+
 int main(void)
 {
     _initialize_stack();
@@ -3472,6 +3634,7 @@ int main(void)
     _test_system_edge_back_gesture();
     _test_system_task_switcher();
     _test_pull_refresh_hold();
+    _test_control_center_band_and_entering_toggle();
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
     assert(app_manager_navigation_deinit() == ESP_OK);
