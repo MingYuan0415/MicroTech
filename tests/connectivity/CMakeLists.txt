@@ -26,6 +26,7 @@ add_executable(test_connectivity_pipeline
     host/nv_storage_fake.c
     host/wifi_service_port_fake.c
     "${CONNECTIVITY_MANAGER}/src/connectivity_manager.c"
+    "${CONNECTIVITY_MANAGER}/src/connectivity_manager_digest.c"
     "${IDF_BT}/common/tinycrypt/src/sha256.c"
     "${IDF_BT}/common/tinycrypt/src/utils.c"
     "${WIFI_SERVICE}/src/wifi_service.c"
@@ -53,6 +54,7 @@ target_compile_definitions(test_connectivity_pipeline PRIVATE
 )
 target_include_directories(test_connectivity_pipeline PRIVATE
     host/include
+    host/idf/include
     "${CONNECTIVITY_MANAGER}/include"
     "${CONNECTIVITY_MANAGER}/src"
     "${IDF_BT}/common/tinycrypt/include"
@@ -74,6 +76,29 @@ target_compile_options(test_connectivity_pipeline PRIVATE
     -UNDEBUG
 )
 target_link_libraries(test_connectivity_pipeline PRIVATE Threads::Threads)
+
+add_executable(test_connectivity_digest
+    test_connectivity_digest.c
+    host/connectivity_manager_digest_fake.c
+    "${CONNECTIVITY_MANAGER}/src/connectivity_manager_digest.c"
+    "${IDF_BT}/common/tinycrypt/src/sha256.c"
+    "${IDF_BT}/common/tinycrypt/src/utils.c"
+)
+target_compile_features(test_connectivity_digest PRIVATE c_std_11)
+target_include_directories(test_connectivity_digest PRIVATE
+    host/include
+    host/idf/include
+    "${CONNECTIVITY_MANAGER}/src"
+    "${IDF_BT}/common/tinycrypt/include"
+)
+target_compile_options(test_connectivity_digest PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
+    -Wall
+    -Wextra
+    -Werror
+    -Wpedantic
+    -UNDEBUG
+)
 
 add_executable(test_wifi_service_idf_port
     test_wifi_service_idf_port.c
@@ -99,6 +124,16 @@ target_compile_options(test_wifi_service_idf_port PRIVATE
 )
 
 if(CONNECTIVITY_SANITIZER STREQUAL "address")
+    target_compile_options(test_connectivity_digest PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -fno-sanitize-recover=all
+    )
+    target_link_options(test_connectivity_digest PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -fno-sanitize-recover=all
+    )
     target_compile_options(test_connectivity_pipeline PRIVATE
         -fsanitize=address,undefined
         -fno-omit-frame-pointer
@@ -110,6 +145,14 @@ if(CONNECTIVITY_SANITIZER STREQUAL "address")
         -fno-sanitize-recover=all
     )
 elseif(CONNECTIVITY_SANITIZER STREQUAL "thread")
+    target_compile_options(test_connectivity_digest PRIVATE
+        -fsanitize=thread
+        -fno-omit-frame-pointer
+    )
+    target_link_options(test_connectivity_digest PRIVATE
+        -fsanitize=thread
+        -fno-omit-frame-pointer
+    )
     target_compile_options(test_connectivity_pipeline PRIVATE
         -fsanitize=thread
         -fno-omit-frame-pointer
@@ -132,5 +175,7 @@ else()
     add_test(NAME connectivity_pipeline COMMAND test_connectivity_pipeline)
 endif()
 set_tests_properties(connectivity_pipeline PROPERTIES TIMEOUT 40)
+add_test(NAME connectivity_digest COMMAND test_connectivity_digest)
+set_tests_properties(connectivity_digest PROPERTIES TIMEOUT 10)
 add_test(NAME wifi_service_idf_port COMMAND test_wifi_service_idf_port)
 set_tests_properties(wifi_service_idf_port PROPERTIES TIMEOUT 10)
