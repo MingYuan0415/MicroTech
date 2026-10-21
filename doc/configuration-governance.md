@@ -41,7 +41,7 @@
 ## 4. 校验入口
 
 ```sh
-python3 tests/run_python_tests.py configuration
+python3 tests/run_python_tests.py configuration contracts
 ```
 
-该 group 同时覆盖配置规则、Kconfig 符号集、连接性基线、依赖 pin。它是本地/审查用测试入口，不新增 CMake `FATAL_ERROR` 或 CI 闸。
+`configuration` group 覆盖配置规则、Kconfig 符号集、连接性基线、依赖 pin；`contracts` group 运行契约子模块自身的协议与向量测试（宿主实现与 golden 向量的一致性由 `layers/middleware/components/device_link/tests/host` 覆盖）。它们是本地/审查用测试入口，不新增 CMake `FATAL_ERROR` 或 CI 闸。

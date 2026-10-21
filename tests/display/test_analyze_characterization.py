@@ -4,12 +4,14 @@ import unittest
 from pathlib import Path
 
 import analyze_characterization as analyzer
-from test_analyze_c_ext_stress import CExtStressAnalyzerTest
+# Import the module, not the class: binding a TestCase in this module's
+# namespace makes unittest discover collect it a second time.
+import test_analyze_c_ext_stress as stress_fixture
 
 
 class CharacterizationTest(unittest.TestCase):
     def test_effect_matrix_and_numeric_floor(self):
-        lines = CExtStressAnalyzerTest._valid_lines()
+        lines = stress_fixture.CExtStressAnalyzerTest._valid_lines()
         lines = [line for line in lines if "display profile " not in line]
         for load in ("display-only", "full"):
             for effect in ("fade", "push-left", "push-right", "cover-left", "reveal-right"):

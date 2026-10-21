@@ -45,6 +45,7 @@ idf.py -p <PORT> flash monitor
 ```sh
 python3 tests/run_python_tests.py configuration resources
 python3 tests/run_python_tests.py display-tools sim-tools
+python3 tests/run_python_tests.py contracts
 ```
 
 ## 功能

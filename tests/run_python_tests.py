@@ -12,18 +12,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# name -> (source directory, pattern, working directory). The working directory
+# is what the group's tests import their modules relative to: the contract
+# submodule exposes `tooling.check` from its own root.
 GROUPS = {
-    "configuration": (ROOT / "tests" / "configuration", "test_*.py"),
-    "docs": (ROOT / "tests" / "docs", "test_*.py"),
-    "resources": (ROOT / "tests" / "resources", "test_*.py"),
-    "display-tools": (ROOT / "tests" / "display", "test_*.py"),
-    "sim-tools": (ROOT / "sim", "test_*.py"),
+    "configuration": (ROOT / "tests" / "configuration", "test_*.py", ROOT),
+    "contracts": (ROOT / "contracts" / "device_link" / "tests", "test_*.py",
+                  ROOT / "contracts" / "device_link"),
+    "docs": (ROOT / "tests" / "docs", "test_*.py", ROOT),
+    "resources": (ROOT / "tests" / "resources", "test_*.py", ROOT),
+    "display-tools": (ROOT / "tests" / "display", "test_*.py", ROOT),
+    "sim-tools": (ROOT / "sim", "test_*.py", ROOT),
+    "skill-tools": (ROOT / ".agents" / "skills" / "lvgl-ui-layout" / "tests",
+                    "test_*.py", ROOT),
 }
 
 
 def _run_group(name: str) -> int:
     start = time.monotonic()
-    source, pattern = GROUPS[name]
+    source, pattern, working_directory = GROUPS[name]
     command = [
         sys.executable,
         "-m",
@@ -35,7 +42,7 @@ def _run_group(name: str) -> int:
         pattern,
         "-v",
     ]
-    result = subprocess.run(command, cwd=ROOT, check=False)
+    result = subprocess.run(command, cwd=working_directory, check=False)
     elapsed = time.monotonic() - start
     status = "PASS" if result.returncode == 0 else "FAIL"
     print(f"[{status}] {name} duration={elapsed:.2f}s")

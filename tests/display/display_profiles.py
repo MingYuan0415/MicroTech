@@ -33,8 +33,8 @@ PRODUCTION_EXPECTED = {
     "CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE": "32768",
     "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1": "y",
     "CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0": "y",
-    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "y",
-    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL": "n",
+    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL": "n",
+    "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL": "y",
     "CONFIG_ESP_LVGL_ADAPTER_FREETYPE_SMALL_RENDER_POOL": "n",
 }
 
@@ -130,8 +130,8 @@ def prepare(root: Path, output: Path, names: list[str], reset: bool) -> list[str
         defaults = paths.root / "sdkconfig.defaults"
         defaults.write_text(
             "CONFIG_LV_OS_NONE=y\n"
-            "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
-            "# CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL is not set\n"
+            "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL=y\n"
+            "# CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL is not set\n"
             "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1\n"
             "CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE=32768\n"
             "CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1=y\n"

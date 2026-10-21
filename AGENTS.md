@@ -41,7 +41,7 @@ cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名>
 | `layers/apps/`（页面、app_ui） | `layers/apps/tests/host`、`tests/integration` |
 | `layers/app_manager/`（app_core、app_theme） | `layers/app_manager/app_core/tests/host`、`tests/integration` |
 | 网络 runtime/连接性 | `tests/connectivity` |
-| Kconfig/契约边界、资源 manifest/资产 | `python3 tests/run_python_tests.py configuration resources` |
+| Kconfig/契约边界、资源 manifest/资产 | `python3 tests/run_python_tests.py configuration resources`；改契约子模块再加 `contracts` |
 
 `tests/integration` 默认 none profile；sanitizer（`-D<套件>_SANITIZER=address|thread`）仅在改动涉及内存所有权或并发时启用，通常选择与风险匹配的一种。宿主测试不覆盖驱动时序、射频、DMA、功耗，需要时上板并记录验证范围。
 

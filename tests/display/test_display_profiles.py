@@ -20,7 +20,7 @@ CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
 CONFIG_APP_MANAGER_LVGL_WORKER_STACK_SIZE=32768
 CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1=y
 CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0=y
-CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL=y
 """
 
 
@@ -32,7 +32,7 @@ class DisplayProfilesTest(unittest.TestCase):
             values = profiles.utils.parse_config(path)
             profiles.validate_config(values)
             for key, value in (
-                    ("CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL", "y"),
+                    ("CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL", "y"),
                     ("CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1", "n"),
                     ("CONFIG_LV_DRAW_THREAD_STACK_SIZE", "32768")):
                 with self.subTest(key=key), self.assertRaises(profiles.utils.ProfileError):
