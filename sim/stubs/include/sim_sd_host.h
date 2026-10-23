@@ -8,7 +8,7 @@
 
 #include "esp_err.h"
 
-/** @brief Maximum stored recording name length, matching the service. */
+/** @brief Maximum basename bytes including NUL for simulator WAV files. */
 #define SIM_SD_NAME_MAX 64
 
 /** @brief Create the absolute backing directory and mount it as the volume. */

@@ -21,7 +21,9 @@ Spec schema (JSON):
          {"name": "idle_no_profile",
           "seed": [ {"cmd": "set_power", ...}, ... ],   # run_scenarios cmds
           "expect_visible": ["Wi-Fi 开关", "忘记网络"],
-          "single_line":    ["IP 地址", "状态"],
+          "single_line":    ["IP 地址", "状态"],   # must render as one line
+          "balanced_prose": ["预计未来6小时内"],   # multi-line: no orphan tail
+          "allow_truncation": ["SSID: "],          # deliberate DOTS prefixes
           "allow_disabled": ["忘记网络"],
           "allow_disabled_types": ["lv_switch"],   # unlabeled intentional
           "expect_image":   [],
@@ -92,6 +94,31 @@ def _descendant_texts(node):
     for child in node.get('children') or []:
         out.extend(_descendant_texts(child))
     return out
+
+
+# Kinsoku sets mirrored from app_ui_wrap_prose(): a line must not start with
+# closing punctuation and must not end with an opener.
+FORBIDDEN_START = '，。、；：！？）】」』…'
+FORBIDDEN_END = '（【「『《'
+
+LONG_MODE_WRAP = 0
+
+
+def _lines(lab):
+    return [ln['text'] for ln in (lab.get('lines') or []) if ln.get('text')]
+
+
+def _line_count(lab):
+    lines = _lines(lab)
+    if lines:
+        return len(lines)
+    lh = (lab.get('styles') or {}).get('line_height')
+    h = (lab.get('coords') or {}).get('h', 0)
+    return 2 if (lh and h > lh * 1.5 + 2) else 1
+
+
+def _clusters(text):
+    return sum(1 for b in text.encode('utf-8') if (b & 0xC0) != 0x80)
 
 
 def _visible_labels(tree):
@@ -359,6 +386,77 @@ def _wait_idle(runner):
         raise RuntimeError('sim.wait_idle timed out: %r' % result)
 
 
+def _lint_labels(tree, state):
+    """Label display rules: one-line identity, clipping, truncation, prose.
+
+    Every rule reads the rendered structure (long mode, line count, per-line
+    text) rather than the raw string, because LVGL's wrap never touches
+    `text` and DOTS rewrites it in place.
+    """
+    v = []
+    allow_truncation = tuple(state.get('allow_truncation', []))
+    balanced = state.get('balanced_prose', [])
+    single_line = state.get('single_line', [])
+
+    for node, ancestors, in_hidden in _walk_annotated(tree):
+        if in_hidden or (node.get('type') != 'lv_label' or not node.get('text')):
+            continue
+        text = node['text']
+        long_mode = node.get('long_mode', LONG_MODE_WRAP)
+        lines = _lines(node)
+        count = _line_count(node)
+
+        for selector in single_line:
+            if selector in text and count != 1:
+                v.append('wrapped single-line %r (%d lines): %r'
+                         % (selector, count, text))
+
+        if 'lines_complete' not in node or node['lines_complete'] is not True:
+            v.append('incomplete rendered lines %r' % text)
+
+        if long_mode == LONG_MODE_WRAP:
+            if node.get('content_h') is None:
+                v.append('missing label content_h %r' % text)
+            elif lines:
+                lh = (node.get('styles') or {}).get('line_height') or 0
+                ls = node.get('line_space') or 0
+                content_h = node['content_h']
+                need = len(lines) * lh + (len(lines) - 1) * ls if lh else 0
+                if lh and len(lines) > 1 and need > content_h + 2:
+                    v.append('clipped text %r: %d lines need %d px, content is %d px'
+                             % (text, len(lines), need, content_h))
+            coords = node.get('coords') or {}
+            for parent in reversed(ancestors):
+                flags = parent.get('flags') or {}
+                scroll = parent.get('scroll') or {}
+                if flags.get('scrollable') and scroll.get('dir', 0) & 12:
+                    break
+                box = parent.get('coords') or {}
+                if (box.get('y', 0) + box.get('h', 0)
+                        < coords.get('y', 0) + coords.get('h', 0) - 2):
+                    v.append('clipped by parent %r: label ends at %d, parent '
+                             'ends at %d'
+                             % (text,
+                                coords.get('y', 0) + coords.get('h', 0),
+                                box.get('y', 0) + box.get('h', 0)))
+                    break
+        if text.endswith('...') and not text.startswith(allow_truncation):
+            v.append('truncated text %r' % text)
+
+        for selector in balanced:
+            if selector not in text or count < 2 or not lines:
+                continue
+            last = lines[-1]
+            if _clusters(last) < 3:
+                v.append('orphan tail %r on %r' % (last, selector))
+            for i, line in enumerate(lines):
+                if i > 0 and line[0] in FORBIDDEN_START:
+                    v.append('line opens with %r: %r' % (line[0], line))
+                if i < len(lines) - 1 and line[-1] in FORBIDDEN_END:
+                    v.append('line ends with %r: %r' % (line[-1], line))
+    return v
+
+
 def _lint(tree, page, state, vw, vh):
     v = []
     labels = _visible_labels(tree)
@@ -368,14 +466,7 @@ def _lint(tree, page, state, vw, vh):
         if want not in joined:
             v.append('missing expected text %r' % want)
 
-    for selector in state.get('single_line', []):
-        for lab in labels:
-            if selector in lab.get('text', ''):
-                lh = (lab.get('styles') or {}).get('line_height')
-                h = (lab.get('coords') or {}).get('h', 0)
-                if lh and h > lh * 1.5 + 2:
-                    v.append('wrapped single-line %r (h=%d line_height=%d): %r'
-                             % (selector, h, lh, lab['text']))
+    v.extend(_lint_labels(tree, state))
 
     allow_disabled = state.get('allow_disabled', [])
     allow_disabled_types = state.get('allow_disabled_types', [])

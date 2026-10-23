@@ -126,7 +126,10 @@ class ReviewPagesTest(unittest.TestCase):
         label = {'type': 'lv_label',
                  'coords': {'x': 12, 'y': 420, 'w': 300, 'h': 60},
                  'flags': {'visible': False},
-                 'styles': {'line_height': 24}, 'text': '恢复出厂设置'}
+                 'styles': {'line_height': 24}, 'content_h': 60,
+                 'lines': [{'text': '恢复出厂', 'w': 200},
+                           {'text': '设置', 'w': 48}],
+                 'lines_complete': True, 'text': '恢复出厂设置'}
         tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
                 'flags': {'scrollable': True, 'visible': True},
                 'scroll': {'dir': 12, 'bottom': 226, 'y': 0},
@@ -228,3 +231,109 @@ class ReviewPagesTest(unittest.TestCase):
                 'flags': {'scrollable': True},
                 'scroll': {'dir': 12, 'top': 0, 'bottom': 245, 'y': 0}}
         self.assertIsNone(review._scroll_owner(tree, 368, VH))
+
+    # --- label display policy ------------------------------------------------
+
+    def _label(self, text, lines, h=96, long_mode=0, line_space=0, y=80,
+               content_h=None):
+        return {'type': 'lv_label',
+                'coords': {'x': 16, 'y': y, 'w': 336, 'h': h},
+                'flags': {'hidden': False},
+                'long_mode': long_mode, 'line_space': line_space,
+                'styles': {'line_height': 24, 'pad_left': 0, 'pad_right': 0},
+                'content_h': h if content_h is None else content_h,
+                'lines_complete': True,
+                'text': text,
+                'lines': [{'text': line, 'w': 200} for line in lines]}
+
+    def test_single_line_uses_rendered_lines(self):
+        """A three-line label reports the line count even when the box height
+        was stretched to fit, which the height heuristic alone would accept."""
+        label = self._label('网络设置', ['网络设', '置'], h=72)
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True}, 'children': [label]}
+        violations = review._lint(tree, {}, {'single_line': ['网络设置']},
+                                  368, VH)
+        self.assertTrue(any('wrapped single-line' in v for v in violations))
+
+    def test_wrap_clipping_uses_content_height_after_padding(self):
+        label = self._label('第一行第二行', ['第一行', '第二行'], h=55,
+                            line_space=5, content_h=47)
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True}, 'children': [label]}
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('clipped text' in v for v in violations))
+        label['content_h'] = 53
+        self.assertFalse(any('clipped text' in v
+                             for v in review._lint(tree, {}, {}, 368, VH)))
+
+    def test_missing_label_geometry_and_incomplete_lines_fail_lint(self):
+        label = self._label('两行文本', ['两行', '文本'])
+        del label['content_h']
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True}, 'children': [label]}
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('missing label content_h' in v for v in violations))
+        label['content_h'] = 96
+        del label['lines_complete']
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('incomplete rendered lines' in v for v in violations))
+        label['lines_complete'] = False
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('incomplete rendered lines' in v for v in violations))
+
+    def test_clipped_wrap_is_reported(self):
+        lines = ['一', '二', '三', '四']
+        label = self._label('一二三四', lines, h=60)
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True}, 'children': [label]}
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('clipped text' in v for v in violations))
+        label['coords']['h'] = 96
+        label['content_h'] = 96
+        self.assertFalse(any('clipped text' in v
+                             for v in review._lint(tree, {}, {}, 368, VH)))
+
+    def test_wrap_clipped_by_fixed_parent_is_reported(self):
+        label = self._label('一二三四', ['一', '二', '三', '四'], h=96, y=100)
+        parent = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 60},
+                  'flags': {'scrollable': False}, 'children': [label]}
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 0, 'w': 368, 'h': 448},
+                'flags': {'scrollable': False}, 'children': [parent]}
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('clipped by parent' in v for v in violations))
+        parent['flags'] = {'scrollable': True}
+        parent['scroll'] = {'dir': 3}
+        self.assertTrue(any('clipped by parent' in v
+                            for v in review._lint(tree, {}, {}, 368, VH)))
+        parent['scroll']['dir'] = 12
+        self.assertFalse(any('clipped by parent' in v
+                             for v in review._lint(tree, {}, {}, 368, VH)))
+
+    def test_dots_truncation_is_reported(self):
+        label = self._label('a very long neigh...', ['a very long neigh...'],
+                            long_mode=1)
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True}, 'children': [label]}
+        violations = review._lint(tree, {}, {}, 368, VH)
+        self.assertTrue(any('truncated text' in v for v in violations))
+        self.assertFalse(any(
+            'truncated text' in v
+            for v in review._lint(tree, {}, {'allow_truncation': ['a very long']},
+                                  368, VH)))
+
+    def test_balanced_prose_flags_short_tail(self):
+        label = self._label('大风预警。注意防范。', ['大风预警。', '注意防范。'],
+                            line_space=5, h=53)
+        tree = {'type': 'lv_obj', 'coords': {'x': 0, 'y': 64, 'w': 368, 'h': 384},
+                'flags': {'scrollable': True}, 'children': [label]}
+        state = {'balanced_prose': ['大风预警']}
+        self.assertFalse(review._lint(tree, {}, state, 368, VH))
+        label['lines'] = [{'text': '大风预警。', 'w': 200},
+                          {'text': '。', 'w': 24}]
+        self.assertTrue(any('orphan tail' in v
+                            for v in review._lint(tree, {}, state, 368, VH)))
+        label['lines'] = [{'text': '大风预警。', 'w': 200},
+                          {'text': '，注意', 'w': 96}]
+        self.assertTrue(any('line opens with' in v
+                            for v in review._lint(tree, {}, state, 368, VH)))

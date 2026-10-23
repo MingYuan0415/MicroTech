@@ -1,6 +1,6 @@
 ---
 name: lvgl-ui-layout
-description: Design, implement, review, and repair adaptive LVGL 9 user interfaces in MicroTech, with emphasis on Flex/Grid sizing, content-driven containers, text measurement and wrapping, clipping and overlap prevention, scroll ownership, touch propagation, and efficient label construction. Use when an LVGL page or widget clips text, overlaps controls, scrolls incorrectly, loses touch gestures over children, relies on absolute coordinates, uses truncating label modes, or needs responsive layout and host-test coverage.
+description: Design, implement, review, and repair adaptive LVGL 9.6 user interfaces in MicroTech, with emphasis on Flex/Grid sizing, content-driven containers, per-class text display policy (one-line identifiers, wrapped prose, external input), text measurement and wrapping, clipping and overlap prevention, scroll ownership, touch propagation, and efficient label construction. Use when an LVGL page or widget clips text, ellipsizes required information, wraps a title, leaves an orphaned punctuation tail, overlaps controls, scrolls incorrectly, loses touch gestures over children, relies on absolute coordinates, uses truncating label modes, or needs responsive layout and host-test coverage.
 ---
 
 # LVGL UI Layout
@@ -26,8 +26,11 @@ fixing visible symptoms with additional coordinates.
    `app_ui_make_passive()`, and `FONT_ROLE_REVIEW`/`MISSING_EXPLICIT_FONT` are
    usually satisfied by the `app_ui_*` label constructors' explicit font
    binding, so confirm against the helper before acting on those two codes.
-   Trace dynamic font, symbol, and object-helper arguments manually when the
-   script reports an indirect role or cannot see the call site.
+   `DOT_WITHOUT_WIDTH` means a `DOT` label in this file never received a width,
+   so the ellipsis can never appear and the text is silently cut by the parent
+   instead; give it a width or flex share, or pick another long mode. Trace
+   dynamic font, symbol, and object-helper arguments manually when the script
+   reports an indirect role or cannot see the call site.
 
 ## Design Outside In
 
@@ -94,43 +97,83 @@ to the appropriate `APP_THEME_FONT_*` role. Bind every `LV_SYMBOL_*` label to
 and available glyph set; treat a missing explicit binding as a defect even when
 the current theme happens to render correctly.
 
-Select sizing by semantics:
+Select sizing by text class. Pick the class first; the class decides the long
+mode, not the other way round.
+
+**T1: fixed-shape labels.** Page titles, section headings, row titles, status
+words, chip and button captions, values with units. The app authors this text,
+so it must render as one line: bounded width (or content width) plus
+`LV_LABEL_LONG_WRAP` with a content-driven height. When it does not fit,
+condense the copy first (drop separators, the least essential segment, or
+trailing punctuation) and only then change the layout (wider container, split
+the fact onto its own row, delete what the selection state already shows).
+Never "fix" a T1 overflow by switching to `DOT` or by squeezing a sibling.
+Verification: the simulator tree reports `len(lines) == 1`.
+
+**T2: authored prose.** Explanations, warnings, empty states, sheet messages,
+`app_ui_add_body_label` bodies. Give it its own region: `LV_PCT(100)` width,
+`LV_LABEL_LONG_WRAP`, `LV_SIZE_CONTENT` height, and a page that can scroll or
+that fits its worst case. A multi-line paragraph must not end on a 1–2 cluster
+tail (a lone character or punctuation mark): widen the label by 8–24 px inside
+its own layout first, then shorten the copy, then split it into two paragraphs.
+For self-wrapped prose these are all one knob — `pad_left`/`pad_right` — because
+`app_ui_wrap_prose()` breaks lines from `lv_obj_get_content_width(label)`.
+Never hand-insert `\n` to fake a break; `app_ui_set_prose_text()` is the one
+sanctioned wrapper because it applies the 行首/行末禁则 sets
+(`layers/apps/common/src/app_ui_text.c`). LVGL's own wrap has no kinsoku rules:
+it breaks at `LV_TXT_BREAK_CHARS` and anywhere inside CJK, so free-form prose
+that matters must go through that helper.
+
+**T3: external input.** SSID (≤32 B), recording file names (≤64 B), weather
+city/alert title/body, app `display_name`, mount paths. Length is not yours to
+choose, so pick the treatment by position:
+
+| Position | Treatment | Why |
+| --- | --- | --- |
+| Primary identifier of a list row (SSID, file name, alert title) | Row height `LV_SIZE_CONTENT` with `min_height APP_UI_ROW_HEIGHT`; identifier `LV_LABEL_LONG_WRAP` on the full row width | The user picks from it and must read it whole |
+| Passive header identifier (weather city) | `LV_LABEL_LONG_SCROLL_CIRCULAR` | Locked decision, asserted in `tests/integration/test_cross_layer.c` |
+| Value in a compact summary row (settings "网络" SSID, Bluetooth name) | `LV_LABEL_LONG_DOT` allowed, but only if the complete value is readable on the owning detail page or confirm sheet | The summary is not the decision surface |
+| Unbounded block text (alert body and advice) | Own `WRAP` region plus `app_ui_set_prose_text()`; overlong text is flagged by `content_truncated` | Already implemented in `weather_alert_pages.c` |
+
+Two hard constraints close this class. Never cap required text with
+`lv_label_set_max_lines()`: in `WRAP` mode it only clamps the computed height
+and adds no ellipsis, which is silent clipping. A `DOT` label is only
+acceptable when its full value is reachable in one step; an ellipsis on a
+primary identifier is a defect, not a style choice.
+
+The rest of the policy:
 
 - Keep short numeric values, symbols, and fixed units content-sized. Keep a
   value and inseparable unit in one label, or in a non-wrapping content-sized
   row whose worst-case width is proven.
-- Give prose and localized dynamic text a bounded width,
-  `LV_LABEL_LONG_WRAP`, and content-driven height.
 - Give frequently changing bounded values a stable width based on their
   worst-case formatted text to prevent layout jitter.
-- Use scrolling text only where motion is acceptable and the user can wait to
-  read it. Do not use `LV_LABEL_LONG_DOT` for required information; today
-  `app_ui` row titles and summaries still use `DOT`, so treat this as the target
-  when you touch them. Remember that a `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow
-  animates forever: the page never goes idle, which breaks simulator `wait_idle`
-  coverage and burns refresh cycles. Prefer `DOT` for secondary text and size
-  required text to its measured worst case instead. A *locked product decision*
-  to keep long text fully readable is a deliberate exception: MicroTech's
-  weather header city and status stay `SCROLL_CIRCULAR` and are asserted in
-  `tests/integration/test_cross_layer.c`; do not downgrade them to `DOT`
-  without updating that contract. Treat the no-idle cost as a review flag, not
-  an automatic edit.
-- Measure actual fonts and strings with current LVGL APIs when a tight bound is
-  unavoidable. Include Chinese glyphs, fallback fonts, negative values, units,
-  and line spacing; do not infer geometry from nominal font size.
-- Keep single-line text on one line. A status summary, row value, chip caption,
-  or hint that wraps inside a fixed-height row is a defect: condense the copy
-  (shorter words, drop separators or the least essential segment, remove
-  trailing punctuation) or change the layout (wider container, split the fact
-  onto its own row, drop redundant text the selection state already shows).
-  Never accept a wrap, ellipsis, or orphaned punctuation for text that can fit
-  in one line after refinement; verify the worst-case string renders at one
-  line's height in the simulator tree.
+- `LV_LABEL_LONG_SCROLL_CIRCULAR` animates forever: the page never goes idle,
+  which breaks simulator `wait_idle` coverage and burns refresh cycles. Reserve
+  it for a single prominent header or status label, never for repeated list
+  rows. A *locked product decision* to keep long text fully readable is a
+  deliberate exception: MicroTech's weather header city and status stay
+  `SCROLL_CIRCULAR` and are asserted in `tests/integration/test_cross_layer.c`;
+  do not downgrade them without updating that contract. Treat the no-idle cost
+  as a review flag, not an automatic edit.
+- `app_ui` row titles and summaries still use `DOT`. They are the target of this
+  policy, not an example of it: change them together with their row height the
+  next time you touch those rows.
+- Measure actual fonts and strings with `lv_text_get_size()` and
+  `lv_font_get_line_height()` when a tight bound is unavoidable. Include
+  Chinese glyphs, fallback fonts, negative values, units, and line spacing; do
+  not infer geometry from nominal font size.
+- Read the fit verdict from the simulator, not from the box height: `sim.tree`
+  reports `long_mode`, `max_lines`, `line_space` and a `lines` array with each
+  rendered line's text and pixel width. A `WRAP` label clipped by a fixed height
+  still reports its full `text`, so `expect_visible` alone can never prove it
+  fits — the `clipped text`, `clipped by parent` and `truncated text` lints are
+  the detectors.
 
 ## Define Input Ownership
 
 - Let the nearest interactive ancestor own an ordinary tap whenever possible.
-  LVGL 9.5 generic objects start clickable, while labels remove `CLICKABLE` in
+  LVGL 9.6 generic objects start clickable, while labels remove `CLICKABLE` in
   their constructor. Inspect each widget class rather than assuming defaults.
 - Remove `LV_OBJ_FLAG_CLICKABLE` from passive generic containers and overlays.
   Do not add it to decorative labels or symbols. Remember that
@@ -147,16 +190,16 @@ Select sizing by semantics:
   the switch on the row's `CLICKED`, and emit `LV_EVENT_VALUE_CHANGED`
   explicitly because a programmatic state flip never fires it; guard the
   handler with `lv_event_get_target(event) !=
-  lv_event_get_current_target(event)`, since 9.5 propagates a child's
+  lv_event_get_current_target(event)`, since 9.6 propagates a child's
   `CLICKED` up to clickable ancestors and an unguarded forward double-toggles
-  a direct switch tap. There is no `lv_obj_toggle()` in 9.5; use
+  a direct switch tap. There is no `lv_obj_toggle()` in LVGL 9.6; use
   `lv_obj_has_state()` with add/remove.
-- An `lv_async_call` cannot be cancelled (no `lv_async_call_delete` in 9.5),
-  so deferred work — such as rebuilding a list from inside a clicked row's
-  own callback — must re-validate its page root in the callback and no-op
-  when the page is gone.
+- An `lv_async_call` cannot be cancelled (no `lv_async_call_delete` in LVGL
+  9.6), so deferred work — such as rebuilding a list from inside a clicked
+  row's own callback — must re-validate its page root in the callback and
+  no-op when the page is gone.
 - A control that activates on tap must bind only `LV_EVENT_CLICKED`; never fire
-  on `PRESSED`, `PRESS_LOST`, or `RELEASED`. In LVGL 9.5 clickable objects
+  on `PRESSED`, `PRESS_LOST`, or `RELEASED`. In LVGL 9.6 clickable objects
   inherit `LV_OBJ_FLAG_PRESS_LOCK`, so `CLICKED` still fires when the finger
   slides off before release. Call `app_ui_click_only()` (drops `PRESS_LOCK`) on
   every click-activated button, row, chip, and switch so leaving the control

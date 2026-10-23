@@ -1,5 +1,6 @@
 #include "apps_integration_runtime.h"
 #include "sim_sd_host.h"
+#include "recorder_service.h"
 
 #include "app_manager.h"
 #include "audio_service.h"
@@ -513,12 +514,13 @@ esp_err_t host_sd_boot(const char *dir)
         return ESP_ERR_INVALID_SIZE;
     }
     s_sd_mounted = true;
-    if (strlen(s_sd_recordings) + 22U >= SIM_SD_NAME_MAX)
+    if (strlen(s_sd_recordings) + SIM_SD_NAME_MAX >=
+            RECORDER_SERVICE_PATH_MAX)
     {
         fprintf(stderr,
-                "sim: sd dir too deep for recorder name buffer (%zu + names "
-                "must fit %d bytes); recordings will not list\n",
-                strlen(s_sd_recordings), SIM_SD_NAME_MAX);
+                "sim: recording names exceed the recorder path buffer (%zu "
+                "+ names must fit %u bytes); recordings will not list\n",
+                strlen(s_sd_recordings), RECORDER_SERVICE_PATH_MAX);
     }
     return ESP_OK;
 }

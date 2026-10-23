@@ -93,6 +93,9 @@ capacities in the owning headers instead of copying them from this skill.
 - Do not call LVGL from NEWINTENT or any other worker-thread callback.
 - Do not apply label APIs to non-label objects; a button caption is its child
   label.
+- Do not use DOT for an external-input primary identifier in a fixed-height
+  row. A compact T3 summary row may use DOT only when the complete value is
+  reachable in one step on its owning detail page or confirmation sheet.
 - Do not create runtime Pages outside the owning App route table.
 - Do not clear a subscription, worker, or service handle after failed cleanup.
 - Do not add another LVGL task, tick source, Screen manager, or direct hardware

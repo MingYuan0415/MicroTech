@@ -117,9 +117,8 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
   power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder
   业务真源；audio/sd 与 device_link 留 `ports/fakes/`——SD 由 `--sd-dir` 指定的
   宿主目录真实承载（挂载语义用目录 rename 模拟，容量走 `statvfs`），recorder 的
-  WAV 读写、rename、删除都落在该真实文件系统上。注意服务内部文件名为 64 字节
-  全路径缓冲，`--sd-dir` 需保持足够浅（如 `/tmp/...`），过深时 boot 会打印告警
-  且录音不会入列。
+  WAV 读写、rename、删除都落在该真实文件系统上。录音服务使用 128 字节完整路径缓冲，
+  `--sd-dir` 需保持足够浅；路径过长时 boot 会打印告警且录音不会入列。
 - 不编：`system_pm`、`ble_runtime`、`wifi_service_idf_port.c`、
   `time_service_port.c`、`connectivity_manager_digest.c`（sim 用真 tinycrypt
   SHA-256 替代）、bsp 真源码（sim_bsp 提供 `bsp_hal.h` 三契约与
@@ -240,9 +239,16 @@ generation）、`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
 | `styles` | `LV_PART_MAIN` 的颜色、透明度、圆角、padding、行高 |
 | `children` | 子节点数组 |
 
-label 提供 `text`；image 提供 `image_semantic_id`；slider/bar/arc 提供
-`value`/`min`/`max`；switch/checkbox 提供 `checked`；dropdown/roller 提供
-`selected`。场景的 `tree_assert.contains` 对节点字段做超集匹配。
+label 额外提供 `long_mode`（`0 WRAP / 1 DOTS / 2 SCROLL / 3 SCROLL_CIRCULAR /
+4 CLIP`）、`max_lines`、`line_space`、`content_h`、`lines_complete` 和 `lines`。
+`content_h` 是扣除 LVGL 样式间距后的文本可用高度。`lines` 按渲染结果切分，元素为
+`{"text", "w"}`：`text` 是该行原文，`w` 是该行像素宽。`lines_complete` 为 `false`
+表示渲染行证据不完整（例如超过导出上限或分配失败），不表示源文本被截断。
+`lines_complete: true` 表示行数组完整；空 label 对应 `lines: []` 和 `true`。
+`text` 仍是未自动断行的原文；DOTS 模式下已被 LVGL 原地替换的尾部 `...` 会同时
+出现在 `text` 和 `lines` 中（这是检测截断的依据）。image 提供 `image_semantic_id`；
+slider/bar/arc 提供 `value`/`min`/`max`；switch/checkbox 提供 `checked`；
+dropdown/roller 提供 `selected`。场景的 `tree_assert.contains` 对节点字段做超集匹配。
 
 锁纪律：tree/screenshot/hash 持 `esp_lv_adapter_lock` 只读/拷贝；step/navigate 不持锁；
 touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停期间 `wait_idle`
@@ -274,6 +280,13 @@ sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review �
 折叠线以下（`flags.visible` 为 false）的内容同样参与检查：lint 走
 `_walk_on_screen`（只跳过 `flags.hidden` 子树），`single_line`、`expect_visible`、
 `expect_image` 和基线都覆盖折叠线以下的行。
+
+label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines`），不看原始
+字符串：`single_line` 要求 `len(lines) == 1`；WRAP 文本所需行高超过 `content_h + 2`
+报 `clipped text`，行证据缺失或不完整时报 lint 错误；被未纵向滚动的祖先截断报
+`clipped by parent`，文本以 `...` 结尾报 `truncated text`（状态可用 `allow_truncation`
+前缀放行）；`balanced_prose` 命中的多行段落末行不得少于 3 簇，且不得以收尾标点
+开行、以起首标点收行。
 
 同一页面的各状态共享一个 sim 会话，`set_*` 状态会跨状态留存（例如 Wi-Fi 扫描
 列表不会因切换到下一个状态而清空），因此每个状态都要自足：`home/root` 的控制

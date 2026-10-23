@@ -1,6 +1,6 @@
 # LVGL 9 Layout Patterns
 
-Use these patterns after confirming the APIs in the project's locked LVGL 9.5
+Use these patterns after confirming the APIs in the project's locked LVGL 9.6
 headers.
 
 ## Contents
@@ -8,6 +8,7 @@ headers.
 - [Geometry Budget](#geometry-budget)
 - [Adaptive Row](#adaptive-row)
 - [Content-Sized Prose](#content-sized-prose)
+- [Text Fit Classes](#text-fit-classes)
 - [Cap Content-Sized Containers](#cap-content-sized-containers)
 - [Inseparable Values and Units](#inseparable-values-and-units)
 - [One-Screen Fit vs Scroll](#one-screen-fit-vs-scroll)
@@ -94,6 +95,92 @@ Do not set a fixed paragraph height unless the product explicitly defines a
 scrolling viewport. If it does, make that viewport the scroll owner and keep
 the label content-sized inside it.
 
+## Text Fit Classes
+
+Pick the class from who owns the string, then apply its pattern. The long mode
+follows from the class; adding `DOT` to make a class fit is not an option.
+
+### T1 pattern: one-line identity
+
+Titles, row names, status words, chip captions, and values with units must
+render as one line. Size them and prove the worst case:
+
+```c
+lv_obj_set_width(title, LV_PCT(100));      /* or LV_SIZE_CONTENT */
+lv_obj_set_height(title, LV_SIZE_CONTENT);
+lv_label_set_long_mode(title, LV_LABEL_LONG_WRAP);
+lv_obj_set_style_text_font(title, title_font, 0);
+lv_label_set_text(title, copy);
+```
+
+```c
+lv_point_t size;
+lv_text_get_size(&size, worst_case, title_font, letter_space, 0,
+                 LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+if (size.x > lv_obj_get_content_width(title))
+{
+    /* condense the copy, widen the container, or split the fact */
+}
+```
+
+In the simulator, the same verdict is `len(lines) == 1` for the label node.
+
+### T2 pattern: authored prose in its own region
+
+```c
+lv_obj_set_width(body, LV_PCT(100));
+lv_obj_set_height(body, LV_SIZE_CONTENT);
+lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+lv_obj_set_style_text_font(body, body_font, 0);
+lv_obj_set_style_text_line_space(body, 5, 0);
+char prose[WEATHER_SERVICE_ALERT_TEXT_BYTES + 128U];
+app_ui_set_prose_text(body, text, prose, sizeof(prose));
+```
+
+`app_ui_set_prose_text()` measures the label's own content width, so the label
+must already have its bounded width and `WRAP` mode. It needs a scratch buffer
+sized for the worst field plus slack; `weather_alert_pages.c` uses
+`WEATHER_SERVICE_ALERT_TEXT_BYTES + 128U` because the wrapper inserts `\n`
+characters. When the buffer is too small the helper leaves the label untouched
+and the prose falls back to plain wrapping with no kinsoku rules.
+
+Adjusting the break points means changing the measured width: `pad_left` and
+`pad_right` on the label move the wrap boundary by the same amount. Do not
+insert `\n` by hand; the wrapper is the only sanctioned source of explicit
+breaks.
+
+The acceptance check is the `balanced_prose` lint: for a multi-line label, the
+last rendered line must carry at least three clusters, no line may open with
+`，。、；：！？）】」』…`, and no non-final line may end with `（【「『《`.
+
+### T3 pattern: external identifiers own their row
+
+An SSID, file name, or alert title has an unknown length, so the row must yield
+vertical space to it instead of clipping:
+
+```c
+lv_obj_set_width(row, LV_PCT(100));
+lv_obj_set_height(row, LV_SIZE_CONTENT);
+lv_obj_set_style_min_height(row, APP_UI_ROW_HEIGHT, 0);
+lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                      LV_FLEX_ALIGN_CENTER);
+
+lv_obj_set_width(name, LV_PCT(100));
+lv_label_set_long_mode(name, LV_LABEL_LONG_WRAP);
+lv_obj_set_style_text_font(name, small_font, 0);
+lv_label_set_text(name, record->ssid);
+```
+
+Put the secondary line (security, RSSI, duration) below the identifier with
+`LV_PCT(100)` width so both share the row's inner width. A fixed row height
+plus `DOT` is the old pattern; do not copy it for external identifiers.
+
+Keep `DOT` only where the value is a compact summary whose complete text is
+readable on the owning detail page, and never cap required text with
+`lv_label_set_max_lines()`: in `WRAP` mode it clamps the computed height without
+adding an ellipsis, so the text is silently cut.
+
 ## Cap Content-Sized Containers
 
 A `LV_SIZE_CONTENT` container that holds dynamic text, a chart, or user data
@@ -124,6 +211,22 @@ lv_label_set_text_fmt(value, "%d °C", temperature);
 If value and unit require different fonts, place two content-sized labels in a
 content-sized non-wrapping row. Measure the worst-case pair and do not let the
 row shrink below that width.
+
+A value-with-unit is a T1 label: it must stay on one line and must not ellipsize.
+Size the label from the widest formatted value rather than the current one, so a
+reading growing from `9 °C` to `-18 °C` or `100 %` does not push the unit onto a
+second line:
+
+```c
+lv_point_t size;
+lv_text_get_size(&size, "-18 °C", value_font, letter_space, 0,
+                 LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+lv_obj_set_width(value, size.x);
+lv_label_set_long_mode(value, LV_LABEL_LONG_WRAP);
+```
+
+`home_app.c` already pins the battery percentage this way by measuring `"100%"`.
+Do not use `DOT` here: a truncated unit (`1...`) reads as a different value.
 
 ## One-Screen Fit vs Scroll
 
@@ -278,7 +381,7 @@ factor.
 
 ## Input and Scroll Topology
 
-In the locked LVGL 9.5 implementation:
+In the locked LVGL 9.6 implementation:
 
 - A generic `lv_obj` constructor adds `CLICKABLE`, `SCROLLABLE`, scroll-chain,
   and gesture-bubble flags.
@@ -287,7 +390,7 @@ In the locked LVGL 9.5 implementation:
 - `GESTURE_BUBBLE` forwards recognized gestures to a parent.
 - `SCROLL_CHAIN_HOR` and `SCROLL_CHAIN_VER` let a scrollable child hand
   remaining movement to a scrollable ancestor on the named axis.
-- LVGL 9.5 resolves the scroll target by hit-testing the press point for the
+- LVGL 9.6 resolves the scroll target by hit-testing the press point for the
   deepest `CLICKABLE` object and then walking up ancestors only: a
   non-scrollable object without the chain bit for the current direction stops
   the search, and the walk never descends. Keep the scroll owner `CLICKABLE`

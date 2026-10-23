@@ -45,6 +45,144 @@ static char *_color_hex(lv_color_t color)
     return text;
 }
 
+/** Record the byte offset of each UTF-8 code point into offsets[0..cap-1].
+ *  offsets[count] receives the byte offset where the next code point starts,
+ *  i.e. the end of the last recorded one.
+ *  @return number of recorded code points (<= cap) */
+static uint32_t _utf8_offsets(const char *text, uint32_t *offsets,
+                              uint32_t cap)
+{
+    uint32_t count = 0;
+    uint32_t i = 0;
+
+    while (text[i] != '\0' && count < cap)
+    {
+        if (((unsigned char)text[i] & 0xC0U) != 0x80U)
+        {
+            offsets[count] = i;
+            count++;
+        }
+        i++;
+    }
+    /* The cap may stop us inside a multi-byte sequence; the tail must start
+     * at the next code point (or at the terminator) to stay valid UTF-8. */
+    while (text[i] != '\0' && ((unsigned char)text[i] & 0xC0U) == 0x80U)
+    {
+        i++;
+    }
+    offsets[count] = i;
+    return count;
+}
+
+static bool _add_line_entry(cJSON *lines, lv_obj_t *obj, const char *text,
+                            uint32_t begin, uint32_t end)
+{
+    lv_point_t size;
+    const lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
+    const int32_t letter_space = lv_obj_get_style_text_letter_space(obj,
+        LV_PART_MAIN);
+    char *line;
+    cJSON *entry;
+
+    while (end > begin && (text[end - 1U] == '\n' || text[end - 1U] == '\r'))
+    {
+        end--;
+    }
+    if (end == begin)
+    {
+        return true;
+    }
+    line = malloc((size_t)(end - begin) + 1U);
+    if (line == NULL)
+    {
+        return false;
+    }
+    memcpy(line, &text[begin], (size_t)(end - begin));
+    line[end - begin] = '\0';
+    lv_text_get_size(&size, line, font, letter_space, 0, LV_COORD_MAX,
+                     LV_TEXT_FLAG_EXPAND);
+    entry = cJSON_CreateObject();
+    if (entry == NULL)
+    {
+        free(line);
+        return false;
+    }
+    if (cJSON_AddStringToObject(entry, "text", line) == NULL ||
+            cJSON_AddNumberToObject(entry, "w", size.x) == NULL ||
+            !cJSON_AddItemToArray(lines, entry))
+    {
+        cJSON_Delete(entry);
+        free(line);
+        return false;
+    }
+    free(line);
+    return true;
+}
+
+/* Ask LVGL where each code point lands and cut the text at every y change.
+ * SCROLL / SCROLL_CIRCULAR / CLIP set LV_TEXT_FLAG_EXPAND inside the label,
+ * so for those this returns the explicit "\n" lines only. */
+static void _add_label_lines(cJSON *node, lv_obj_t *obj)
+{
+    enum { MAX_LINES = 64 };
+    const char *text = lv_label_get_text(obj);
+    const size_t byte_len = strlen(text);
+    uint32_t *offsets;
+    uint32_t leads;
+    uint32_t line_start = 0;
+    uint32_t emitted = 0;
+    int32_t line_y;
+    cJSON *lines = cJSON_AddArrayToObject(node, "lines");
+    cJSON *complete = cJSON_AddBoolToObject(node, "lines_complete", false);
+    lv_point_t pos;
+
+    if (lines == NULL || complete == NULL)
+    {
+        return;
+    }
+    if (byte_len == 0U)
+    {
+        cJSON_SetBoolValue(complete, true);
+        return;
+    }
+    /* Code points never outnumber bytes, so this also fits the terminator. */
+    offsets = malloc(sizeof(uint32_t) * (byte_len + 1U));
+    if (offsets == NULL)
+    {
+        return;
+    }
+    leads = _utf8_offsets(text, offsets, (uint32_t)byte_len);
+
+    lv_label_get_letter_pos(obj, 0, &pos);
+    line_y = pos.y;
+    for (uint32_t k = 1; k < leads; k++)
+    {
+        lv_label_get_letter_pos(obj, k, &pos);
+        if (pos.y == line_y)
+        {
+            continue;
+        }
+        if (emitted == MAX_LINES ||
+                !_add_line_entry(lines, obj, text, line_start, offsets[k]))
+        {
+            free(offsets);
+            return;
+        }
+        line_start = offsets[k];
+        line_y = pos.y;
+        emitted++;
+    }
+    if (emitted == MAX_LINES ||
+            !_add_line_entry(lines, obj, text, line_start, offsets[leads]))
+    {
+        free(offsets);
+        return;
+    }
+    free(offsets);
+    cJSON_SetBoolValue(complete, true);
+}
+
+
 static void _add_style(cJSON *node, lv_obj_t *obj)
 {
     cJSON *styles = cJSON_AddObjectToObject(node, "styles");
@@ -102,7 +240,24 @@ static void _add_type_value(cJSON *node, lv_obj_t *obj,
 
     if (cls == &lv_label_class)
     {
+        const lv_label_long_mode_t long_mode = lv_label_get_long_mode(obj);
+        lv_area_t text_area;
+
         cJSON_AddStringToObject(node, "text", lv_label_get_text(obj));
+        cJSON_AddNumberToObject(node, "long_mode", (double)long_mode);
+        cJSON_AddNumberToObject(node, "max_lines",
+                                (double)lv_label_get_max_lines(obj));
+        cJSON_AddNumberToObject(node, "line_space",
+                                (double)lv_obj_get_style_text_line_space(obj,
+                                        LV_PART_MAIN));
+        /* Text set since the last layout pass leaves size/content stale; the
+         * dump is a debug path, so settle it before measuring. */
+        lv_obj_update_layout(obj);
+
+        lv_obj_get_content_coords(obj, &text_area);
+        cJSON_AddNumberToObject(node, "content_h",
+                                lv_area_get_height(&text_area));
+        _add_label_lines(node, obj);
         return;
     }
     if (cls == &lv_image_class)

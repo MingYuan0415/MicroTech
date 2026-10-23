@@ -132,7 +132,8 @@
           ],
           "expect_visible": [
             "HomeNet",
-            "发现 3 个网络"
+            "发现 3 个网络",
+            "a very long neighbour guest netw"
           ],
           "single_line": [
             "可用网络"
@@ -677,6 +678,9 @@
           "single_line": [
             "深圳市暴雨黄色预警"
           ],
+          "balanced_prose": [
+            "预计未来6小时内"
+          ],
           "allow_disabled": []
         }
       ]
@@ -850,6 +854,31 @@
           "expect_visible": [
             "删除录音",
             "取消"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "long_filename",
+          "seed": [
+            {
+              "cmd": "sd",
+              "action": "clear"
+            },
+            {
+              "cmd": "sd",
+              "action": "write",
+              "name": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.wav",
+              "seconds": 2
+            },
+            {
+              "cmd": "navigate",
+              "app": "recorder",
+              "page": "files"
+            }
+          ],
+          "expect_visible": [
+            "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
           ],
           "single_line": [],
           "allow_disabled": []

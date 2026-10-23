@@ -7,7 +7,7 @@ description: Adversarial simulator UI review protocol for MicroTech layers/apps.
 
 Reviewing a UI change means proving every page looks and behaves right in every
 state it can reach, not that a scenario's text assertions pass. The simulator
-(SDL, real fonts, real LVGL 9.5 layout) is the primary review surface; hardware
+(SDL, real fonts, real LVGL 9.6 layout) is the primary review surface; hardware
 only adds RF, touch feel, and AMOLED color. Treat "host green + one screenshot"
 as NOT reviewed.
 
@@ -19,8 +19,8 @@ doing a gesture, because the review was confirmatory, not adversarial:
 - Scroll chain stripped by a passive helper: `tree_assert` text still passed.
 - Buttons firing on `PRESS_LOST`: only a press-and-drag-off gesture reveals it.
 - Wrapped hub summary, wrapped storage value, wrapped PM chip, orphaned `。`:
-  present in the screenshot, missed by eye; a `coords.h` vs `line_height` check
-  catches them mechanically.
+  present in the screenshot, missed by eye; reading the rendered line count
+  from the tree catches them mechanically.
 - Oversized slider knob, reviewed against a stale binary (ninja did not rebuild
   the edited file) and by eyeballing the PNG instead of measuring.
 - Broken-image glyph, off-center no-data text, English city after a payload
@@ -43,8 +43,10 @@ already-reviewed page costs minutes, not a full pass:
   (`review_pages.py --pages app/page[,app/page]`), screenshot and read just the
   states the fix can touch, and replay only the gestures involved. Baselines
   move only when mask-free pixels legitimately changed.
-- **Copy-only change**: lint (single-line invariant) plus the touched states'
-  screenshots; no gesture set.
+- **Copy-only change**: lint (all label rules: single line, clipping,
+  truncation, prose balance) plus the touched states' screenshots; no gesture
+  set. Shortening a string can move a wrap point, so the lint is not optional
+  here.
 - **New/re-laid-out page or new state**: full protocol, and add the page/state
   to `sim/ci/review/spec.json` in the same task.
 
@@ -55,7 +57,9 @@ already-reviewed page costs minutes, not a full pass:
    interactive-transient (pressed, two-step armed, pairing passkey). A bug in an
    un-screenshotted state is a bug you shipped.
 2. **Geometry lint.** Do not eyeball; read it from `sim.tree`. Run
-   `sim/tools/review_pages.py` (see below) and drive it clean.
+   `sim/tools/review_pages.py` (see below) and drive it clean. It now includes
+   line-count, clipping, truncation, and prose-balance rules, so a green run
+   means the label policy holds too, not only that boxes stay on screen.
 3. **Gesture tests.** Exercise input the way a finger does, via the agent:
    press-and-drag-off a control must NOT activate it; a scroll page must move
    `scroll.y` when dragged over labels/rows/gaps and a pinned page must stay at
@@ -68,10 +72,25 @@ already-reviewed page costs minutes, not a full pass:
 
 ## Geometry Invariants To Enforce (what review_pages.py checks)
 
-- **Single line stays single line.** A label intended for one line (row value,
-  summary, chip caption, section title) must have `coords.h <= line_height*1.5`.
-  If it can wrap, shorten the copy or widen the container; never accept a wrap
-  or an orphaned trailing punctuation mark.
+- **Single line stays single line.** A label listed in `single_line` must
+  render as one line (`len(lines) == 1` in the tree dump); a two-line render is
+  a violation regardless of height. Fix by condensing the copy or widening the
+  container; never accept a wrap or an orphaned trailing punctuation mark.
+- **Nothing is clipped or dotted away by accident.** `clipped text` fires when
+  the rendered line count needs more height than the label box;
+  `clipped by parent` fires when a non-scrollable ancestor cuts the box;
+  `truncated text` fires on any label ending in `...` (LVGL's DOTS mode rewrites
+  the text in place, so the ellipsis is observable in the tree). A deliberate
+  summary ellipsis must be listed in the state's `allow_truncation` prefixes and
+  its complete value must be reachable on the owning detail page.
+  `SCROLL_CIRCULAR` headers and `CLIP` labels are exempt because clipping is
+  their chosen policy.
+- **Prose ends on a whole line.** A label listed in `balanced_prose` must not
+  leave a 1–2 cluster tail, open a line with `，。、；：！？）】」』…`, or close one
+  with `（【「『《`; widen the label within its layout or rewrite the copy.
+- **Row height follows external identifiers.** A row whose primary text is
+  external input (SSID, file name) uses `LV_SIZE_CONTENT` height with
+  `min_height`, never a fixed height.
 - **No unreachable control.** A visible interactive node (button/switch/slider/
   roller, or `flags.clickable`) with `coords.y + h > viewport_h` (or x overflow)
   inside a page whose content is NOT a scroll owner is clipped and dead. Either
@@ -160,6 +179,9 @@ host/sim-only and adds no hardware or full-CI burden.
   `trigger` + `wait_scan` to inject `SCAN_DONE` inside the port's scan
   window; the scan section sits below the fold, which the full-page capture and
   `expect_visible` both cover (see `settings/wifi scan_list` in the spec).
+  The service clamps an SSID to `CONNECTIVITY_MANAGER_SSID_MAX_BYTES` (32), so
+  a longer seed string is cut before it reaches the label; assert the surviving
+  prefix, not the original literal.
 - The SD card is a real host directory (`--sd-dir`, kept short: the service
   stores full paths in a 64-byte buffer and silently skips deeper ones).
   `sim.sd` writes silent WAVs, clears, remounts, and reads the service's

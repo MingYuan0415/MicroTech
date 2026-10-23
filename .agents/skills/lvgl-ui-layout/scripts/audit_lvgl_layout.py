@@ -24,6 +24,12 @@ EXCLUDED_PARTS = {
 
 ABSOLUTE_POSITION_RE = re.compile(r"\blv_obj_set_(?:pos|x|y)\s*\(")
 DOT_MODE_RE = re.compile(r"\bLV_LABEL_(?:LONG_)?(?:MODE_)?DOTS?\b")
+DOT_SET_RE = re.compile(r"\blv_label_set_long_mode\s*\(")
+DOT_ARG_RE = re.compile(r",\s*LV_LABEL_(?:LONG_)?(?:MODE_)?DOTS?\b")
+MAX_WIDTH_BINDING_RE = re.compile(r"\blv_obj_set_style_max_width\s*\(")
+WIDTH_CALL_RE = re.compile(
+    r"\blv_obj_set_(?P<setter>width|size|flex_grow|grid_cell)\s*\("
+)
 LABEL_CREATE_RE = re.compile(
     r"(?P<var>[A-Za-z_]\w*(?:(?:->|\.)[A-Za-z_]\w*)*)\s*=\s*"
     r"lv_label_create\s*\("
@@ -309,6 +315,35 @@ def _call_var(statement: Statement,
     return target.group("var") if target is not None else None
 
 
+def _call_arguments(statement: Statement,
+                    pattern: re.Pattern[str]) -> list[str]:
+    match = pattern.search(statement.code)
+    if match is None:
+        return []
+    depth = 1
+    start = match.end()
+    arguments: list[str] = []
+    for index in range(start, len(statement.code)):
+        char = statement.code[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                arguments.append(statement.code[start:index].strip())
+                return arguments
+        elif char == "," and depth == 1:
+            arguments.append(statement.code[start:index].strip())
+            start = index + 1
+    return []
+
+
+def _positive_number(expression: str) -> bool:
+    if not re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)[uUlLfF]*", expression):
+        return False
+    return float(re.sub(r"[uUlLfF]+$", "", expression)) > 0
+
+
 def _widget_kind(statement: Statement) -> str:
     if LABEL_CREATE_RE.search(statement.code):
         return "label"
@@ -406,6 +441,8 @@ def _audit_text(path: Path, source: str,
     label_audits: dict[int, LabelAudit] = {}
     pending_button_children: dict[int, Finding] = {}
     fixed_lines: dict[tuple[int, ...], list[int]] = defaultdict(list)
+    bounded: dict[int, bool] = defaultdict(bool)
+    dot_statements: dict[int, Statement] = {}
     next_binding_id = 1
 
     for statement in statements:
@@ -421,8 +458,47 @@ def _audit_text(path: Path, source: str,
                 path,
                 statement.line,
                 "DOT_TRUNCATION",
-                "required text must wrap, scroll, or be made fully accessible",
+                "DOT rewrites the text with an ellipsis; keep it only for "
+                "secondary summaries whose complete value stays reachable",
             ))
+            dot_var = _call_var(statement, DOT_SET_RE)
+            dot_binding = (
+                _lookup_binding(bindings, statement.scope, dot_var)
+                if dot_var is not None and DOT_ARG_RE.search(statement.code)
+                else None
+            )
+            if dot_binding is not None and dot_binding.kind == "label":
+                dot_statements.setdefault(dot_binding.binding_id, statement)
+        width_call = WIDTH_CALL_RE.search(statement.code)
+        if width_call is not None:
+            args = _call_arguments(statement, WIDTH_CALL_RE)
+            if args:
+                width_binding = _lookup_binding(bindings, statement.scope,
+                                                args[0])
+                if (width_binding is not None
+                        and width_binding.kind == "label"):
+                    setter = width_call.group("setter")
+                    if setter == "grid_cell":
+                        bounded[width_binding.binding_id] = True
+                    elif setter == "flex_grow":
+                        if len(args) > 1 and _positive_number(args[1]):
+                            bounded[width_binding.binding_id] = True
+                    elif len(args) > 1:
+                        width = args[1].strip()
+                        if width != "LV_SIZE_CONTENT" and not re.fullmatch(
+                                r"0+[uUlL]*", width):
+                            bounded[width_binding.binding_id] = True
+
+        max_width_var = _call_var(statement, MAX_WIDTH_BINDING_RE)
+        if max_width_var is not None:
+            args = _call_arguments(statement, MAX_WIDTH_BINDING_RE)
+            max_width_binding = _lookup_binding(bindings, statement.scope,
+                                                max_width_var)
+            if (max_width_binding is not None
+                    and max_width_binding.kind == "label"
+                    and len(args) > 1
+                    and args[1] not in {"LV_SIZE_CONTENT", "LV_COORD_MAX"}):
+                bounded[max_width_binding.binding_id] = True
         if fixed_clusters and FIXED_GEOMETRY_RE.search(statement.code):
             fixed_lines[statement.scope[:1]].append(statement.line)
 
@@ -522,6 +598,16 @@ def _audit_text(path: Path, source: str,
                 ))
 
     findings.extend(pending_button_children.values())
+    for binding_id, statement in dot_statements.items():
+        if not bounded.get(binding_id):
+            findings.append(Finding(
+                path,
+                statement.line,
+                "DOT_WITHOUT_WIDTH",
+                "DOT long mode without a bounded width: this label never "
+                "ellipsizes; give it a width or flex share, or use a "
+                "non-truncating mode",
+            ))
     for audit in label_audits.values():
         findings.extend(_font_findings(path, audit))
 

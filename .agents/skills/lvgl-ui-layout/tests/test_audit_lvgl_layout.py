@@ -276,6 +276,80 @@ void build(void)
         self.assertIn("DOT_TRUNCATION", codes)
         self.assertIn("FIXED_GEOMETRY_CLUSTER", codes)
 
+    def test_dot_without_width_is_reported(self) -> None:
+        source = """
+void build(void)
+{
+    lv_obj_t *name = lv_label_create(row);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+}
+"""
+        self.assertIn("DOT_WITHOUT_WIDTH", _codes(source))
+        self.assertIn("DOT_TRUNCATION", _codes(source))
+
+    def test_content_width_does_not_bound_dot_label(self) -> None:
+        for setter in (
+                "lv_obj_set_width(name, LV_SIZE_CONTENT);",
+                "lv_obj_set_size(name, LV_SIZE_CONTENT, LV_SIZE_CONTENT);"):
+            with self.subTest(setter=setter):
+                source = f"""
+void build(void)
+{{
+    lv_obj_t *name = lv_label_create(row);
+    {setter}
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+}}
+"""
+                self.assertIn("DOT_WITHOUT_WIDTH", _codes(source))
+
+    def test_fixed_and_percentage_widths_bound_dot_label(self) -> None:
+        for width in ("72", "LV_PCT(80)"):
+            with self.subTest(width=width):
+                source = f"""
+void build(void)
+{{
+    lv_obj_t *name = lv_label_create(row);
+    lv_obj_set_width(name, {width});
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+}}
+"""
+                self.assertNotIn("DOT_WITHOUT_WIDTH", _codes(source))
+
+    def test_zero_width_requires_positive_flex_growth(self) -> None:
+        source = """
+void build(void)
+{
+    lv_obj_t *name = lv_label_create(row);
+    lv_obj_set_width(name, 0);
+    lv_obj_set_flex_grow(name, 0);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+}
+"""
+        self.assertIn("DOT_WITHOUT_WIDTH", _codes(source))
+
+    def test_finite_max_width_bounds_dot_label(self) -> None:
+        source = """
+void build(void)
+{
+    lv_obj_t *name = lv_label_create(row);
+    lv_obj_set_style_max_width(name, LV_PCT(80), 0);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+}
+"""
+        self.assertNotIn("DOT_WITHOUT_WIDTH", _codes(source))
+
+    def test_dot_with_flex_grow_is_accepted(self) -> None:
+        source = """
+void build(void)
+{
+    lv_obj_t *name = lv_label_create(row);
+    lv_obj_set_width(name, 0);
+    lv_obj_set_flex_grow(name, 1);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+}
+"""
+        self.assertNotIn("DOT_WITHOUT_WIDTH", _codes(source))
+
     def test_fixed_geometry_clusters_do_not_cross_functions(self) -> None:
         source = """
 void first(void)
