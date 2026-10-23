@@ -264,8 +264,8 @@ static void (*s_input_cb)(app_manager_key_t key, app_manager_key_event_t event,
 static void *s_input_user;
 
 esp_err_t sim_bsp_input_register(void (*cb)(app_manager_key_t key,
-                                 app_manager_key_event_t event,
-                                 void *user_data),
+        app_manager_key_event_t event,
+        void *user_data),
                                  void *user_data)
 {
     if (cb == NULL)

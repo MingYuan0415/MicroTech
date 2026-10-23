@@ -508,7 +508,7 @@ static void _display_benchmark_update_maximum(
     atomic_uint_fast64_t *maximum, uint64_t value)
 {
     uint_fast64_t observed = atomic_load_explicit(maximum,
-                             memory_order_relaxed);
+        memory_order_relaxed);
     while (value > observed &&
             !atomic_compare_exchange_weak_explicit(
                 maximum, &observed, value,
@@ -622,7 +622,7 @@ static uint64_t _display_benchmark_tcp_mark_connected(int64_t now_us)
         return 0U;
     }
     const uint64_t interruption_us = (uint64_t)(now_us -
-                                     disconnected_since_us);
+        disconnected_since_us);
     atomic_fetch_add_explicit(&s_tcp_interruption_us, interruption_us,
                               memory_order_relaxed);
     return interruption_us;
@@ -1668,7 +1668,7 @@ static void _display_benchmark_observe_wifi(bool ready)
         return;
     }
     const bool was_ready = atomic_exchange_explicit(&s_wifi_was_ready, ready,
-                           memory_order_relaxed);
+        memory_order_relaxed);
     if (!ready && was_ready)
     {
         atomic_fetch_add_explicit(&s_wifi_disconnect_count, 1U,
@@ -2121,13 +2121,13 @@ static void _display_benchmark_log_final(
     bool completed, bool aborted)
 {
     const esp_err_t workload_error = atomic_load_explicit(&s_workload_error,
-                                     memory_order_relaxed);
+        memory_order_relaxed);
     const esp_err_t control_error = atomic_load_explicit(&s_control_error,
-                                    memory_order_relaxed);
+        memory_order_relaxed);
     const esp_err_t audio_error = atomic_load_explicit(&s_audio_error,
-                                  memory_order_relaxed);
+        memory_order_relaxed);
     const esp_err_t tcp_error = atomic_load_explicit(&s_tcp_error,
-                                memory_order_relaxed);
+        memory_order_relaxed);
     const bool heap_passed = summary->heap_sampled &&
                              summary->minimum_internal_free > 0U &&
                              summary->minimum_internal_largest > 0U &&
@@ -2596,9 +2596,9 @@ static esp_err_t _display_benchmark_start_load(display_benchmark_load_t load,
         *audio_started = true;
 
         result = _display_benchmark_worker_start(&s_audio_worker,
-                 _display_benchmark_audio_task, "display_audio",
-                 DISPLAY_BENCHMARK_AUDIO_STACK,
-                 DISPLAY_BENCHMARK_AUDIO_PRIORITY);
+            _display_benchmark_audio_task, "display_audio",
+            DISPLAY_BENCHMARK_AUDIO_STACK,
+            DISPLAY_BENCHMARK_AUDIO_PRIORITY);
         if (result != ESP_OK)
         {
             _display_benchmark_record_error(&s_control_error, result);
@@ -2610,9 +2610,9 @@ static esp_err_t _display_benchmark_start_load(display_benchmark_load_t load,
     {
         const int64_t started_us = esp_timer_get_time();
         result = _display_benchmark_worker_start(&s_tcp_worker,
-                 _display_benchmark_tcp_task, "display_tcp",
-                 DISPLAY_BENCHMARK_TCP_STACK,
-                 DISPLAY_BENCHMARK_TCP_PRIORITY);
+            _display_benchmark_tcp_task, "display_tcp",
+            DISPLAY_BENCHMARK_TCP_STACK,
+            DISPLAY_BENCHMARK_TCP_PRIORITY);
         if (result != ESP_OK)
         {
             _display_benchmark_record_error(&s_control_error, result);

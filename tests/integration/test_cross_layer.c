@@ -232,7 +232,7 @@ static void _sleep_one_ms(void)
 static void _fifo_navigation_completed(esp_err_t result, void *context)
 {
     const unsigned index = atomic_load_explicit(&s_fifo_completion_count,
-                           memory_order_relaxed);
+        memory_order_relaxed);
 
     assert(index < sizeof(s_fifo_completion_order) /
            sizeof(s_fifo_completion_order[0]));
@@ -650,7 +650,7 @@ static esp_err_t _query_label_layout_on_ui(void *arg)
     label_layout_query_t *query = arg;
     host_lv_system_object_snapshot_t snapshot;
     query->found = host_lv_visible_label_snapshot(query->text, query->font,
-                   &snapshot);
+        &snapshot);
     if (!query->found)
     {
         return ESP_OK;
@@ -670,7 +670,7 @@ static esp_err_t _query_label_input_on_ui(void *arg)
     label_input_query_t *query = arg;
     host_lv_system_object_snapshot_t snapshot;
     query->found = host_lv_visible_label_snapshot(query->text, query->font,
-                   &snapshot);
+        &snapshot);
     if (!query->found)
     {
         return ESP_OK;
@@ -1067,7 +1067,7 @@ static void _click_action(const char *title)
 static void _click_back(void)
 {
     const esp_err_t result = app_manager_ui_call(_click_back_on_ui, NULL,
-                             UI_TIMEOUT_MS);
+        UI_TIMEOUT_MS);
     if (result == ESP_ERR_NOT_FOUND)
     {
         /* Pages without a title button use the same left-edge gesture as the

@@ -60,7 +60,7 @@ cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名>
 
 ## 编码风格
 
-遵循 [`doc/code-style.md`](doc/code-style.md)：4 空格、Allman、大写蛇形宏、小写蛇形函数、静态函数 `_` 前缀、头文件 API 写 Doxygen，用 AStyle 3.6.9 格式化。性能优先；避免非必要防御代码，不为形式统一而加锁、加检查或加单一返回点——无清理义务的失败直接返回，`goto` 单一出口只用于确有释放/解锁/回滚义务的函数。
+遵循 [`doc/code-style.md`](doc/code-style.md)：4 空格、Allman、大写蛇形宏、小写蛇形函数、静态函数 `_` 前缀、头文件 API 写 Doxygen，用 AStyle 3.6.19 格式化。性能优先；避免非必要防御代码，不为形式统一而加锁、加检查或加单一返回点——无清理义务的失败直接返回，`goto` 单一出口只用于确有释放/解锁/回滚义务的函数。
 
 ## 文档风格
 

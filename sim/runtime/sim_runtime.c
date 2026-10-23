@@ -172,8 +172,8 @@ static esp_err_t _cc_get_clock(const char **time_text, const char **date_text)
 }
 
 static esp_err_t _input_register(void (*cb)(app_manager_key_t,
-                                 app_manager_key_event_t,
-                                 void *),
+        app_manager_key_event_t,
+        void *),
                                  void *user_data)
 {
     return sim_bsp_input_register(cb, user_data);

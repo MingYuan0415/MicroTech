@@ -48,8 +48,8 @@ bsp_capabilities_t sim_bsp_capabilities(void);
 esp_err_t sim_bsp_key(sim_key_t key, sim_key_action_t action);
 /** @brief Register the app-manager input callback bridge (once). */
 esp_err_t sim_bsp_input_register(void (*cb)(app_manager_key_t key,
-                                 app_manager_key_event_t event,
-                                 void *user_data),
+        app_manager_key_event_t event,
+        void *user_data),
                                  void *user_data);
 /** @brief Suspend screen state observer for standby fake data. */
 bool sim_bsp_screen_is_suspended(void);

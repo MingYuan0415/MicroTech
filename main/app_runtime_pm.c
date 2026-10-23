@@ -266,7 +266,7 @@ static esp_err_t _app_runtime_pm_prepare_failed(
     esp_err_t primary_error)
 {
     const esp_err_t recovery_result = _app_runtime_pm_complete_sleep(timeout_ms,
-                                      sleep);
+        sleep);
     if (recovery_result != ESP_OK)
     {
         LOG_E("sleep rollback failed: %s", esp_err_to_name(recovery_result));

@@ -103,6 +103,8 @@ default:
 }
 ```
 
+【必须】续行缩进以 AStyle 输出为准，不手工调整：括号内换行时续行对齐到左括号后的首字符；该对齐缩进超过 44 列时，退化为语句缩进 + 4 空格。
+
 【必须】连续空行不超过两行。
 
 ### 3.2 空格
@@ -220,7 +222,7 @@ exit:
 
 ### 8.1 AStyle
 
-【必须】格式化基线为 AStyle 3.6.9，覆盖工程自有 `.c`/`.h`。命令幂等：已符合格式的文件不重写，直接运行即完成格式化与自检，无需先做 dry-run：
+【必须】格式化基线为 AStyle 3.6.19，覆盖工程自有 `.c`/`.h`。命令幂等：已符合格式的文件不重写，直接运行即完成格式化与自检，无需先做 dry-run：
 
 ```sh
 astyle --style=allman --indent=spaces=4 --indent-preproc-block --pad-oper \
@@ -230,6 +232,8 @@ astyle --style=allman --indent=spaces=4 --indent-preproc-block --pad-oper \
 ```
 
 只读自检（不改文件，供 CI 或复查）：追加 `--dry-run --error-on-changes`。
+
+【必须】发行版包通常滞后（Debian/Arch 仍为 3.6.12），3.6.19 需从上游源码构建后安装：`cmake -S astyle-3.6.19 -B build -G Ninja && ninja`，产物 `build/AStyle/astyle`。不可用 3.6.15–3.6.18 替代，这些版本对 `extern "C"` 块内续行有缩进回归。
 
 【必须】排除构建生成文件（如 `main/mmap_generate_*.h`）与第三方代码：ESP-IDF、`managed_components/`、`layers/bsp/XPowersLib/`。不得为绕过稳定的格式化结果添加文件级排除或 `INDENT-OFF` 标记。
 

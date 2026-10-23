@@ -2564,7 +2564,7 @@ void lv_anim_refr_now(void)
             const int32_t value = duration == 0 ? new_animation->end_value :
                                   new_animation->start_value +
                                   (int32_t)(((int64_t)(new_animation->end_value -
-                                             new_animation->start_value) *
+                                      new_animation->start_value) *
                                              time) / duration);
             new_animation->current_value = value;
             new_animation->exec_cb(new_animation->var, value);

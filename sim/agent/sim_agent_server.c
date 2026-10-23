@@ -754,9 +754,9 @@ static cJSON *_handle(cJSON *request, bool *ok)
             status.generation = 0U;
         }
         const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(params,
-                               "enabled");
+            "enabled");
         const cJSON *desired = cJSON_GetObjectItemCaseSensitive(params,
-                               "desired_enabled");
+            "desired_enabled");
         const cJSON *transitioning = cJSON_GetObjectItemCaseSensitive(
                                          params, "transitioning");
         const cJSON *policy_error = cJSON_GetObjectItemCaseSensitive(
@@ -815,19 +815,19 @@ static cJSON *_handle(cJSON *request, bool *ok)
     {
         const cJSON *token = cJSON_GetObjectItemCaseSensitive(params, "token");
         const cJSON *passkey = cJSON_GetObjectItemCaseSensitive(params,
-                               "passkey");
+            "passkey");
         const device_link_confirmation_token_t use_token =
             cJSON_IsNumber(token) ? (device_link_confirmation_token_t)
             token->valuedouble : 0x1234U;
         const uint32_t use_passkey = cJSON_IsNumber(passkey) ?
                                      (uint32_t)passkey->valuedouble : 482913U;
         *ok = (host_device_link_service_offer_numeric_comparison(use_token,
-               use_passkey) == ESP_OK);
+            use_passkey) == ESP_OK);
     }
     else if (strcmp(method, "sim.set_wifi_scan") == 0)
     {
         const cJSON *records = cJSON_GetObjectItemCaseSensitive(params,
-                               "records");
+            "records");
         wifi_service_port_scan_record_t port_records[WIFI_SERVICE_MAX_SCAN_RECORDS];
         size_t count = 0U;
         bool valid = cJSON_IsArray(records);
@@ -842,7 +842,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
                     break;
                 }
                 const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(item,
-                                    "ssid");
+                    "ssid");
                 const char *text = cJSON_GetStringValue(ssid);
                 if (text == NULL)
                 {
@@ -858,15 +858,15 @@ static cJSON *_handle(cJSON *request, bool *ok)
                 memcpy(port_records[count].ssid, text, length);
                 port_records[count].ssid_length = (uint8_t)length;
                 const cJSON *rssi = cJSON_GetObjectItemCaseSensitive(item,
-                                    "rssi");
+                    "rssi");
                 port_records[count].rssi = cJSON_IsNumber(rssi) ?
                                            (int8_t)rssi->valuedouble : (int8_t) -55;
                 const cJSON *channel = cJSON_GetObjectItemCaseSensitive(item,
-                                       "channel");
+                    "channel");
                 port_records[count].channel = cJSON_IsNumber(channel) ?
                                               (uint8_t)channel->valuedouble : 6U;
                 const cJSON *security = cJSON_GetObjectItemCaseSensitive(item,
-                                        "security");
+                    "security");
                 const char *sec = cJSON_GetStringValue(security);
                 port_records[count].security =
                     (sec != NULL && strcmp(sec, "open") == 0) ?
@@ -875,7 +875,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
             }
         }
         if (valid && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(params,
-                                  "request")))
+                "request")))
         {
             connectivity_manager_operation_id_t op = 0U;
             const esp_err_t request_result =
@@ -894,14 +894,14 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                             cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
                                                     params, "truncated")));
             const cJSON *trigger = cJSON_GetObjectItemCaseSensitive(params,
-                                   "trigger");
+                "trigger");
             esp_err_t scan_result = ESP_OK;
             if (cJSON_IsTrue(trigger))
             {
                 const cJSON *status = cJSON_GetObjectItemCaseSensitive(params,
-                                      "status");
+                    "status");
                 if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(params,
-                                 "wait_scan")))
+                        "wait_scan")))
                 {
                     /* The connectivity worker picks the request up on its own
                      * cadence; keep delivering SCAN_DONE while a port scan
@@ -1066,9 +1066,9 @@ static cJSON *_handle(cJSON *request, bool *ok)
         else if (verb != NULL && strcmp(verb, "write") == 0)
         {
             const cJSON *name = cJSON_GetObjectItemCaseSensitive(params,
-                                "name");
+                "name");
             const cJSON *seconds = cJSON_GetObjectItemCaseSensitive(params,
-                                   "seconds");
+                "seconds");
             esp_err_t result_sd = ESP_ERR_INVALID_ARG;
             if (cJSON_IsString(name) && cJSON_IsNumber(seconds) &&
                     seconds->valuedouble >= 0.0 &&
@@ -1096,7 +1096,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
             memset(&snap, 0, sizeof(snap));
             const esp_err_t snap_result = recorder_service_get_snapshot(&snap);
             const esp_err_t list_result = recorder_service_list(files, 16U,
-                                          &count);
+                &count);
             cJSON_AddNumberToObject(result, "snap", (double)snap_result);
             cJSON_AddNumberToObject(result, "list", (double)list_result);
             cJSON_AddNumberToObject(result, "generation",
@@ -1144,7 +1144,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
         if (verb != NULL && text != NULL && strcmp(verb, "set") == 0)
         {
             const cJSON *value = cJSON_GetObjectItemCaseSensitive(params,
-                                 "value");
+                "value");
             *ok = cJSON_IsString(value) &&
                   nv_storage_set_str(text, value->valuestring) == ESP_OK;
         }

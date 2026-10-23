@@ -158,7 +158,7 @@ static void _flush_cb(lv_display_t *display, const lv_area_t *area,
     const int width = lv_area_get_width(area);
     const int height = lv_area_get_height(area);
     const size_t stride = lv_draw_buf_width_to_stride((uint32_t)width,
-                          lv_display_get_color_format(display));
+        lv_display_get_color_format(display));
     const size_t packed = (size_t)width * 2U;
     uint8_t *buffer = px_map;
 
