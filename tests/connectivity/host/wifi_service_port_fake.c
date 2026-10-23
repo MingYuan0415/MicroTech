@@ -34,6 +34,9 @@ typedef struct host_wifi_port_state
     bool leave_scan_owned_after_next_finish;
     bool preserve_scan_on_next_stop;
     bool leave_partial_after_next_start_failure;
+    bool clear_requires_stopped;
+    bool leave_stopped_after_next_stop_failure;
+    bool leave_started_after_next_start_failure;
     uint64_t epoch;
     uint8_t scan_id;
     wifi_service_port_credentials_t current_credentials;
@@ -116,6 +119,9 @@ void host_wifi_port_reset(void)
     s_port.leave_scan_owned_after_next_finish = false;
     s_port.preserve_scan_on_next_stop = false;
     s_port.leave_partial_after_next_start_failure = false;
+    s_port.clear_requires_stopped = true;
+    s_port.leave_stopped_after_next_stop_failure = false;
+    s_port.leave_started_after_next_start_failure = false;
     s_port.epoch = 0;
     s_port.scan_id = 0;
     memset(&s_port.current_credentials, 0,
@@ -180,6 +186,36 @@ void host_wifi_port_leave_partial_after_next_start_failure(void)
     (void)pthread_mutex_lock(&s_port.lock);
     s_port.leave_partial_after_next_start_failure = true;
     (void)pthread_mutex_unlock(&s_port.lock);
+}
+
+void host_wifi_port_set_clear_requires_stopped(bool required)
+{
+    (void)pthread_mutex_lock(&s_port.lock);
+    s_port.clear_requires_stopped = required;
+    (void)pthread_mutex_unlock(&s_port.lock);
+}
+
+void host_wifi_port_leave_stopped_after_next_stop_failure(void)
+{
+    (void)pthread_mutex_lock(&s_port.lock);
+    s_port.leave_stopped_after_next_stop_failure = true;
+    (void)pthread_mutex_unlock(&s_port.lock);
+}
+
+void host_wifi_port_leave_started_after_next_start_failure(void)
+{
+    (void)pthread_mutex_lock(&s_port.lock);
+    s_port.leave_started_after_next_start_failure = true;
+    (void)pthread_mutex_unlock(&s_port.lock);
+}
+
+bool host_wifi_port_credentials_are_zero(void)
+{
+    const wifi_service_port_credentials_t empty = { 0 };
+    (void)pthread_mutex_lock(&s_port.lock);
+    const bool zero = memcmp(&s_port.current_credentials, &empty, sizeof(empty)) == 0;
+    (void)pthread_mutex_unlock(&s_port.lock);
+    return zero;
 }
 
 void host_wifi_port_gate(host_wifi_port_operation_t operation, bool enabled)
@@ -441,7 +477,12 @@ esp_err_t wifi_service_port_start(void)
     {
         s_port.port_state = WIFI_SERVICE_PORT_STATE_PARTIAL;
     }
+    else if (s_port.leave_started_after_next_start_failure)
+    {
+        s_port.port_state = WIFI_SERVICE_PORT_STATE_STARTED;
+    }
     s_port.leave_partial_after_next_start_failure = false;
+    s_port.leave_started_after_next_start_failure = false;
     (void)pthread_mutex_unlock(&s_port.lock);
     return result;
 }
@@ -450,7 +491,7 @@ esp_err_t wifi_service_port_stop(void)
 {
     (void)pthread_mutex_lock(&s_port.lock);
     esp_err_t result = _host_wifi_port_begin_locked(HOST_WIFI_PORT_STOP);
-    if (result == ESP_OK)
+    if (result == ESP_OK || s_port.leave_stopped_after_next_stop_failure)
     {
         s_port.port_state = WIFI_SERVICE_PORT_STATE_STOPPED;
         if (!s_port.preserve_scan_on_next_stop)
@@ -459,6 +500,7 @@ esp_err_t wifi_service_port_stop(void)
         }
         s_port.preserve_scan_on_next_stop = false;
     }
+    s_port.leave_stopped_after_next_stop_failure = false;
     (void)pthread_mutex_unlock(&s_port.lock);
     return result;
 }
@@ -548,6 +590,11 @@ esp_err_t wifi_service_port_clear_credentials(void)
     (void)pthread_mutex_lock(&s_port.lock);
     esp_err_t result = _host_wifi_port_begin_locked(
                            HOST_WIFI_PORT_CLEAR_CREDENTIALS);
+    if (result == ESP_OK && s_port.clear_requires_stopped &&
+            s_port.port_state != WIFI_SERVICE_PORT_STATE_STOPPED)
+    {
+        result = ESP_ERR_INVALID_STATE;
+    }
     if (result == ESP_OK)
     {
         memset(&s_port.current_credentials, 0,

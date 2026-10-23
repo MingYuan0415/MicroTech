@@ -45,6 +45,14 @@ void host_wifi_port_leave_scan_owned_after_next_finish(void);
 void host_wifi_port_preserve_scan_on_next_stop(void);
 /** @brief Leave partial ownership after the next start failure. */
 void host_wifi_port_leave_partial_after_next_start_failure(void);
+/** @brief Require STOPPED for clear_credentials; reset enables this check. */
+void host_wifi_port_set_clear_requires_stopped(bool required);
+/** @brief Model an error return after the next stop physically succeeded. */
+void host_wifi_port_leave_stopped_after_next_stop_failure(void);
+/** @brief Model an error return after start physically reached STARTED. */
+void host_wifi_port_leave_started_after_next_start_failure(void);
+/** @brief Observe active driver credential erasure, not the historical copy. */
+bool host_wifi_port_credentials_are_zero(void);
 
 /** @brief Gate one port operation. */
 void host_wifi_port_gate(host_wifi_port_operation_t operation, bool enabled);

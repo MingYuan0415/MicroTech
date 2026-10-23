@@ -641,15 +641,15 @@ static bool _test_wifi_cancel_dispositions(void)
           ESP_OK);
     CHECK(disposition == WIFI_SERVICE_CANCEL_NOT_FOUND);
 
-    host_wifi_port_gate(HOST_WIFI_PORT_DISCONNECT, true);
+    host_wifi_port_gate(HOST_WIFI_PORT_STOP, true);
     CHECK(wifi_service_request_disconnect(session_id, &disconnect_id) ==
           ESP_OK);
-    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_DISCONNECT,
+    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_STOP,
                                    TEST_TIMEOUT_MS));
     CHECK(wifi_service_cancel(session_id, disconnect_id, &disposition) ==
           ESP_OK);
     CHECK(disposition == WIFI_SERVICE_CANCEL_TERMINAL_ALREADY_CLAIMED);
-    host_wifi_port_release_gate(HOST_WIFI_PORT_DISCONNECT);
+    host_wifi_port_release_gate(HOST_WIFI_PORT_STOP);
 
     bool disconnect_complete = false;
     for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
@@ -657,9 +657,9 @@ static bool _test_wifi_cancel_dispositions(void)
         wifi_service_status_snapshot_t snapshot;
 
         if (wifi_service_get_status(&snapshot) == ESP_OK &&
-                snapshot.operation_id == disconnect_id &&
-                snapshot.state == WIFI_SERVICE_STATE_IDLE &&
-                snapshot.last_error == ESP_OK)
+                snapshot.operation_id == disconnect_id && snapshot.operation_complete &&
+                snapshot.operation_result == ESP_OK &&
+                snapshot.operation_failure == WIFI_SERVICE_FAILURE_NONE)
         {
             CHECK(!snapshot.operation_canceled);
             disconnect_complete = true;
@@ -875,9 +875,13 @@ static bool _test_cancel_failure_terminal(void)
 
     /* Queue admission is not a cancellation acknowledgement.  Force the
      * worker's credential cleanup to fail and require a failed terminal. */
-    host_wifi_port_fail_next(HOST_WIFI_PORT_CLEAR_CREDENTIALS, 1U, ESP_FAIL);
+    host_wifi_port_gate(HOST_WIFI_PORT_STOP, true);
     CHECK(connectivity_manager_cancel(operation_id) == ESP_OK);
-    CHECK(_wait_terminal(operation_id, ESP_FAIL, false));
+    CHECK(host_wifi_port_wait_gate(HOST_WIFI_PORT_STOP, TEST_TIMEOUT_MS));
+    host_wifi_port_fail_next(HOST_WIFI_PORT_CLEAR_CREDENTIALS, 1U, ESP_FAIL);
+    host_wifi_port_release_gate(HOST_WIFI_PORT_STOP);
+    const bool cancel_terminal = _wait_terminal(operation_id, ESP_FAIL, false);
+    CHECK(cancel_terminal);
 
     terminal_record_t terminal;
     CHECK(_terminal_observer_copy(operation_id, false, &terminal));
@@ -1296,13 +1300,8 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(_complete_connection(UINT32_C(0x0250a8c0)));
     CHECK(_wait_auto_connect(false));
 
-    const unsigned disconnect_before =
-        host_wifi_port_call_count(HOST_WIFI_PORT_DISCONNECT);
     CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
                         WIFI_SERVICE_FAILURE_LINK_LOST, 0U) == ESP_OK);
-    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_DISCONNECT,
-                                    disconnect_before + 1U,
-                                    TEST_TIMEOUT_MS));
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
     CHECK(!status.auto_connect);
 
@@ -1330,13 +1329,8 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(retained_size == *saved_size);
     CHECK(memcmp(retained, saved_record, retained_size) == 0);
 
-    const unsigned candidate_disconnect_before =
-        host_wifi_port_call_count(HOST_WIFI_PORT_DISCONNECT);
     CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
                         WIFI_SERVICE_FAILURE_LINK_LOST, 0U) == ESP_OK);
-    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_DISCONNECT,
-                                    candidate_disconnect_before + 1U,
-                                    TEST_TIMEOUT_MS));
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
     CHECK(strcmp(status.ssid, "Current AP") == 0);
     CHECK(status.saved_profile);
@@ -1487,6 +1481,10 @@ static bool _test_boot_retry_timeouts(const uint8_t saved_record[],
     }
     CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) ==
           suspend_connects + 1U);
+    CHECK(_wait_status_operation(operation_id, false));
+    CHECK(_terminal_observer_count(operation_id, ESP_OK, false) == 0U);
+    printf("retry recovery: id=%llu deadline crossed in suspend, exactly one resumed attempt\n",
+           (unsigned long long)operation_id);
     CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
                         WIFI_SERVICE_FAILURE_AUTHENTICATION, 0U) == ESP_OK);
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
@@ -1523,6 +1521,7 @@ static bool _test_active_radio_failure_terminal(const uint8_t saved_record[],
     _terminal_observer_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
     CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
                         WIFI_SERVICE_FAILURE_AUTHENTICATION, 0U) == ESP_OK);
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
@@ -1530,9 +1529,8 @@ static bool _test_active_radio_failure_terminal(const uint8_t saved_record[],
                                NULL));
 
     connectivity_manager_operation_id_t reconnect = 0U;
-    CHECK(connectivity_manager_request_reconnect_saved(&reconnect) == ESP_OK);
-    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
     host_wifi_port_fail_next(HOST_WIFI_PORT_START, 1U, ESP_FAIL);
+    CHECK(connectivity_manager_request_reconnect_saved(&reconnect) == ESP_OK);
     CHECK(_wait_terminal(reconnect, ESP_FAIL, false));
     connectivity_manager_status_snapshot_t status;
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
@@ -1564,6 +1562,10 @@ static bool _test_scan_resume_guards(const uint8_t saved_record[],
     CHECK(_wait_terminal(scan, ESP_ERR_NOT_FINISHED, true));
     CHECK(_wait_terminal(disconnect, ESP_OK, false));
     connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(status.manual_hold);
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
     CHECK(status.manual_hold);
     const unsigned disconnect_connects =
@@ -1618,6 +1620,9 @@ static bool _test_scan_resume_guards(const uint8_t saved_record[],
     CHECK(_wait_terminal(scan, ESP_OK, true));
     const unsigned disabled_connects =
         host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
     for (unsigned attempt = 0U; attempt < 200U; ++attempt)
     {
         _sleep_one_ms();
@@ -2234,6 +2239,478 @@ static bool _test_control_completion_generation(void)
     return true;
 }
 
+static bool _test_pending_sync_profile(bool active_connect, bool block_outbox)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_operation_id_t first = 0U;
+    if (active_connect)
+    {
+        CHECK(_request_personal_connect("Preempt A", "password1", &first));
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    }
+    else
+    {
+        CHECK(connectivity_manager_request_scan(&first) == ESP_OK);
+        CHECK(_wait_scan_operation(first, true));
+    }
+    atomic_store_explicit(&s_block_ui_dispatch, block_outbox, memory_order_release);
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = "Pending sync B", .ssid_length = 14U,
+        .password = "password2", .password_length = 9U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t sync = 0U;
+    CHECK(connectivity_manager_request_sync_profile(&credentials, UINT64_C(0x6789),
+            false, &sync) == ESP_OK);
+    if (block_outbox)
+    {
+        CHECK(_wait_scan_operation(first, false));
+        CHECK(_terminal_observer_count(first, ESP_ERR_NOT_FINISHED, true) == 0U);
+        CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == 0U);
+        atomic_store_explicit(&s_block_ui_dispatch, false, memory_order_release);
+    }
+    CHECK(_wait_terminal(first, ESP_ERR_NOT_FINISHED, !active_connect));
+    /* No new command/event may be needed to start B after terminal drain. */
+    CHECK(_wait_driver_ssid("Pending sync B"));
+    CHECK(host_nv_storage_set_count() == 0U);
+    CHECK(_complete_connection(UINT32_C(0x0A020304)));
+    CHECK(_wait_terminal(sync, ESP_OK, false));
+    CHECK(_terminal_observer_count(first, ESP_ERR_NOT_FINISHED, !active_connect) == 1U);
+    CHECK(_terminal_observer_count(sync, ESP_OK, false) == 1U);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.applied_client_sync_id == UINT64_C(0x6789) && !status.auto_connect);
+    CHECK(host_nv_storage_set_count() == 1U);
+    const unsigned connects = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    connectivity_manager_operation_id_t repeat = 0U;
+    CHECK(connectivity_manager_request_sync_profile(&credentials, UINT64_C(0x6789),
+            false, &repeat) == ESP_OK);
+    CHECK(_wait_terminal(repeat, ESP_OK, false));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+    CHECK(host_nv_storage_set_count() == 1U);
+    CHECK(connectivity_manager_deinit(CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    printf("pending sync: preempt=%s outbox=%u id=%llu committed once with sync identity\n",
+           active_connect ? "CONNECT" : "SCAN", block_outbox,
+           (unsigned long long)sync);
+    return true;
+}
+
+static bool _wait_radio_terminal(wifi_service_operation_id_t operation,
+                                 wifi_service_status_snapshot_t *output)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_status_snapshot_t snapshot;
+        if (wifi_service_get_status(&snapshot) == ESP_OK &&
+                snapshot.operation_id == operation && snapshot.operation_complete)
+        {
+            *output = snapshot;
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _wait_radio_connecting_with_new_operation(
+    wifi_service_operation_id_t previous_operation,
+    wifi_service_status_snapshot_t *output)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_status_snapshot_t snapshot;
+        if (wifi_service_get_status(&snapshot) == ESP_OK &&
+                snapshot.state == WIFI_SERVICE_STATE_CONNECTING &&
+                snapshot.operation_id != 0U &&
+                snapshot.operation_id != previous_operation)
+        {
+            if (output != NULL)
+            {
+                *output = snapshot;
+            }
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _test_radio_transition_failures(void)
+{
+    const wifi_service_config_t config = { .task_priority = 4U };
+    const wifi_service_credentials_t credentials =
+    {
+        .ssid = "Transition AP", .ssid_length = 13U,
+        .password = "password1", .password_length = 9U,
+        .security = WIFI_SERVICE_SECURITY_PERSONAL,
+    };
+    for (unsigned mode = 0U; mode < 6U; ++mode)
+    {
+        host_wifi_port_reset();
+        CHECK(wifi_service_init(&config) == ESP_OK);
+        wifi_service_session_id_t session = 0U;
+        wifi_service_operation_id_t operation = 0U;
+        CHECK(wifi_service_session_open(&session) == ESP_OK);
+        if (mode == 0U || mode == 4U)
+        {
+            host_wifi_port_fail_next(HOST_WIFI_PORT_STOP, 1U, ESP_FAIL);
+            if (mode == 4U)
+            {
+                host_wifi_port_leave_stopped_after_next_stop_failure();
+            }
+        }
+        else if (mode == 1U)
+        {
+            host_wifi_port_fail_next(HOST_WIFI_PORT_CLEAR_CREDENTIALS, 1U, ESP_FAIL);
+        }
+        else
+        {
+            host_wifi_port_fail_next(HOST_WIFI_PORT_START, 1U, ESP_FAIL);
+            if (mode == 3U)
+            {
+                host_wifi_port_leave_partial_after_next_start_failure();
+            }
+            else if (mode == 5U)
+            {
+                host_wifi_port_leave_started_after_next_start_failure();
+            }
+        }
+        CHECK(wifi_service_request_connect(session, &credentials, &operation) == ESP_OK);
+        wifi_service_status_snapshot_t terminal;
+        CHECK(_wait_radio_terminal(operation, &terminal));
+        CHECK(terminal.session_id == session);
+        CHECK(terminal.operation_result == ESP_FAIL &&
+              terminal.operation_failure == WIFI_SERVICE_FAILURE_DRIVER &&
+              !terminal.operation_canceled && terminal.ipv4_address == 0U);
+        CHECK(terminal.available == (mode >= 4U));
+        CHECK(terminal.state == (mode >= 4U ? WIFI_SERVICE_STATE_IDLE :
+                                 WIFI_SERVICE_STATE_OFFLINE));
+        CHECK(wifi_service_test_credentials_are_zero());
+        CHECK(wifi_service_deinit(WIFI_SERVICE_WAIT_FOREVER) == ESP_OK);
+        CHECK(host_wifi_port_credentials_are_zero());
+        printf("radio transition mode=%u operation=%llu failed=%d available=%u\n",
+               mode, (unsigned long long)operation, terminal.operation_result,
+               terminal.available);
+    }
+    return true;
+}
+
+static bool _test_radio_suspend_releases_without_terminal(void)
+{
+    host_wifi_port_reset();
+    const wifi_service_config_t config = { .task_priority = 4U };
+    const wifi_service_credentials_t credentials =
+    {
+        .ssid = "Suspend AP", .ssid_length = 10U,
+        .password = "password1", .password_length = 9U,
+        .security = WIFI_SERVICE_SECURITY_PERSONAL,
+    };
+    CHECK(wifi_service_init(&config) == ESP_OK);
+    wifi_service_session_id_t session = 0U;
+    wifi_service_operation_id_t operation = 0U;
+    CHECK(wifi_service_session_open(&session) == ESP_OK);
+    CHECK(wifi_service_request_connect(session, &credentials, &operation) == ESP_OK);
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    host_wifi_port_fail_next(HOST_WIFI_PORT_STOP, 1U, ESP_FAIL);
+    host_wifi_port_leave_stopped_after_next_stop_failure();
+    CHECK(wifi_service_suspend(TEST_TIMEOUT_MS) == ESP_FAIL);
+    wifi_service_status_snapshot_t suspended;
+    CHECK(wifi_service_get_status(&suspended) == ESP_OK);
+    CHECK(suspended.state == WIFI_SERVICE_STATE_SUSPENDED &&
+          suspended.ipv4_address == 0U && !suspended.operation_complete);
+    CHECK(wifi_service_test_credentials_are_zero());
+    CHECK(host_wifi_port_credentials_are_zero());
+    CHECK(wifi_service_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_IDLE));
+    CHECK(wifi_service_request_connect(session, &credentials, &operation) == ESP_OK);
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    wifi_service_cancel_disposition_t disposition;
+    CHECK(wifi_service_cancel(session, operation, &disposition) == ESP_OK);
+    CHECK(disposition == WIFI_SERVICE_CANCEL_ACCEPTED);
+    wifi_service_status_snapshot_t terminal;
+    CHECK(_wait_radio_terminal(operation, &terminal));
+    CHECK(terminal.operation_canceled && terminal.operation_result == ESP_ERR_INVALID_STATE &&
+          terminal.operation_failure == WIFI_SERVICE_FAILURE_NONE);
+    CHECK(wifi_service_test_credentials_are_zero());
+    CHECK(host_wifi_port_credentials_are_zero());
+    CHECK(wifi_service_deinit(WIFI_SERVICE_WAIT_FOREVER) == ESP_OK);
+    puts("radio suspend: physical SUSPENDED retains original error, release-only; cancel erases credentials");
+    return true;
+}
+
+static bool _wait_ipv4(uint32_t address, wifi_service_state_t radio_state)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        wifi_service_status_snapshot_t radio;
+        connectivity_manager_status_snapshot_t manager;
+        if (wifi_service_get_status(&radio) == ESP_OK &&
+                connectivity_manager_get_status(&manager) == ESP_OK &&
+                radio.ipv4_address == address && manager.ipv4_address == address &&
+                radio.state == radio_state)
+        {
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+static bool _test_ipv4_renewal_preserves_operation(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_operation_id_t connect = 0U;
+    CHECK(_request_personal_connect("Renew AP", "password1", &connect));
+    CHECK(_complete_connection(UINT32_C(0x01020304)));
+    CHECK(_wait_terminal(connect, ESP_OK, false));
+    const unsigned writes = host_nv_storage_set_count();
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_GOT_IP,
+                        WIFI_SERVICE_FAILURE_NONE, UINT32_C(0x05060708)) == ESP_OK);
+    CHECK(_wait_ipv4(UINT32_C(0x05060708), WIFI_SERVICE_STATE_IP_READY));
+    CHECK(_terminal_observer_count(connect, ESP_OK, false) == 1U);
+    CHECK(host_nv_storage_set_count() == writes);
+    _set_scan_record("Renew AP", WIFI_SERVICE_SECURITY_PERSONAL);
+    connectivity_manager_operation_id_t scan = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan_operation(scan, true));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_GOT_IP,
+                        WIFI_SERVICE_FAILURE_NONE, UINT32_C(0x090A0B0C)) == ESP_OK);
+    CHECK(_wait_ipv4(UINT32_C(0x090A0B0C), WIFI_SERVICE_STATE_SCANNING));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_terminal(scan, ESP_OK, true));
+    CHECK(_wait_ipv4(UINT32_C(0x090A0B0C), WIFI_SERVICE_STATE_IP_READY));
+    CHECK(_terminal_observer_count(connect, ESP_OK, false) == 1U);
+    CHECK(host_nv_storage_set_count() == writes);
+    CHECK(connectivity_manager_deinit(CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("IPv4 renewal: connected and scanning update IP without new terminal/profile write");
+    return true;
+}
+
+static bool _test_candidate_restart_failure_preserves_profile(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_operation_id_t first = 0U;
+    CHECK(_request_personal_connect("Durable A", "password1", &first));
+    CHECK(_complete_connection(UINT32_C(0x01020304)));
+    CHECK(_wait_terminal(first, ESP_OK, false));
+    uint8_t saved[256];
+    size_t saved_size = 0U;
+    CHECK(host_nv_storage_copy(saved, sizeof(saved), &saved_size));
+    const unsigned writes = host_nv_storage_set_count();
+    host_wifi_port_fail_next(HOST_WIFI_PORT_STOP, 1U, ESP_FAIL);
+    connectivity_manager_operation_id_t second = 0U;
+    CHECK(_request_personal_connect("Candidate B", "password2", &second));
+    CHECK(_wait_terminal(second, ESP_FAIL, false));
+    CHECK(_terminal_observer_count(second, ESP_OK, false) == 0U);
+    CHECK(_terminal_observer_count(second, ESP_FAIL, false) == 1U);
+    CHECK(host_nv_storage_set_count() == writes);
+    uint8_t retained[256];
+    size_t retained_size = 0U;
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == saved_size && memcmp(retained, saved, saved_size) == 0);
+    CHECK(wifi_service_test_credentials_are_zero());
+    CHECK(connectivity_manager_deinit(CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("candidate restart failure: unique failure, durable A unchanged, no false B success");
+    return true;
+}
+
+/* Exercise the public manager contract, retaining only hardware-boundary IDs. */
+static bool _test_candidate_suspend_resume(bool sync, bool waiting_ip,
+        bool stop_error, bool resume_error)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    host_wifi_port_set_clear_requires_stopped(true);
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = "Parked candidate", .ssid_length = 16U,
+        .password = "password1", .password_length = 9U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t operation = 0U;
+    if (sync)
+    {
+        CHECK(connectivity_manager_request_sync_profile(&credentials,
+                UINT64_C(0x987654), false, &operation) == ESP_OK);
+    }
+    else
+    {
+        CHECK(connectivity_manager_request_connect(&credentials, &operation) == ESP_OK);
+    }
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    if (waiting_ip)
+    {
+        CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_CONNECTED,
+                            WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_WAITING_IP, NULL));
+    }
+    wifi_service_status_snapshot_t old_radio;
+    CHECK(wifi_service_get_status(&old_radio) == ESP_OK);
+    const uint64_t old_epoch = host_wifi_port_epoch();
+    const unsigned connects = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    if (stop_error)
+    {
+        host_wifi_port_fail_next(HOST_WIFI_PORT_STOP, 1U, ESP_FAIL);
+        host_wifi_port_leave_stopped_after_next_stop_failure();
+    }
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) ==
+          (stop_error ? ESP_FAIL : ESP_OK));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(wifi_service_test_credentials_are_zero());
+    CHECK(host_wifi_port_credentials_are_zero());
+    CHECK(host_nv_storage_set_count() == 0U);
+    CHECK(_terminal_observer_count(operation, ESP_OK, false) == 0U);
+    if (resume_error)
+    {
+        host_wifi_port_fail_next(HOST_WIFI_PORT_START, 1U, ESP_FAIL);
+        CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_FAIL);
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+        CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+        CHECK(host_nv_storage_set_count() == 0U);
+    }
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_driver_ssid("Parked candidate"));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT, connects + 1U,
+                                    TEST_TIMEOUT_MS));
+    wifi_service_status_snapshot_t new_radio;
+    CHECK(_wait_radio_connecting_with_new_operation(old_radio.operation_id,
+            &new_radio));
+    CHECK(host_wifi_port_epoch() != old_epoch);
+    CHECK(_wait_status_operation(operation, false));
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    const wifi_service_port_event_t stale =
+    {
+        .type = WIFI_SERVICE_PORT_EVENT_GOT_IP, .epoch = old_epoch,
+        .status = ESP_OK, .ipv4_address = UINT32_C(0x01020304),
+    };
+    CHECK(wifi_service_port_submit_event(&stale) == ESP_OK);
+    /* A current association event is a FIFO barrier behind the stale IP. */
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_CONNECTED,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_WAITING_IP, NULL));
+    CHECK(_wait_status_operation(operation, false));
+    CHECK(host_nv_storage_set_count() == 0U);
+    CHECK(_terminal_observer_count(operation, ESP_OK, false) == 0U);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_GOT_IP,
+                        WIFI_SERVICE_FAILURE_NONE, UINT32_C(0x05060708)) == ESP_OK);
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_terminal_observer_count(operation, ESP_OK, false) == 1U);
+    CHECK(host_nv_storage_set_count() == 1U);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects + 1U);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.saved_profile && strcmp(status.ssid, "Parked candidate") == 0);
+    if (sync)
+    {
+        CHECK(status.applied_client_sync_id == UINT64_C(0x987654));
+        CHECK(!status.auto_connect);
+        connectivity_manager_operation_id_t repeat = 0U;
+        CHECK(connectivity_manager_request_sync_profile(&credentials,
+                UINT64_C(0x987654), false, &repeat) == ESP_OK);
+        CHECK(_wait_terminal(repeat, ESP_OK, false));
+        CHECK(host_nv_storage_set_count() == 1U);
+        CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects + 1U);
+    }
+    CHECK(connectivity_manager_deinit(CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    if (sync)
+    {
+        CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+        CHECK(status.saved_profile && !status.auto_connect);
+        CHECK(status.applied_client_sync_id == UINT64_C(0x987654));
+        connectivity_manager_operation_id_t persisted_repeat = 0U;
+        CHECK(connectivity_manager_request_sync_profile(&credentials,
+                UINT64_C(0x987654), false, &persisted_repeat) == ESP_OK);
+        CHECK(_wait_terminal(persisted_repeat, ESP_OK, false));
+        CHECK(host_nv_storage_set_count() == 1U);
+        CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects + 1U);
+        CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+        CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+        CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects + 1U);
+        CHECK(connectivity_manager_deinit(CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    }
+    printf("candidate recovery: %s/%s id=%llu radio=%llu->%llu stop_error=%u resume_error=%u unique success, one commit\n",
+           sync ? "SYNC" : "CONNECT", waiting_ip ? "WAITING_IP" : "CONNECTING",
+           (unsigned long long)operation, (unsigned long long)old_radio.operation_id,
+           (unsigned long long)new_radio.operation_id, stop_error, resume_error);
+    return true;
+}
+
+static bool _test_suspended_candidate_preemption(bool cancel, bool forget)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    connectivity_manager_operation_id_t first = 0U;
+    CHECK(_request_personal_connect("Parked A", "password1", &first));
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+    const unsigned connects = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    connectivity_manager_operation_id_t replacement = 0U;
+    if (cancel)
+    {
+        CHECK(connectivity_manager_cancel(first) == ESP_OK);
+    }
+    else if (forget)
+    {
+        CHECK(connectivity_manager_request_forget(&replacement) == ESP_OK);
+    }
+    else
+    {
+        CHECK(_request_personal_connect("Replacement B", "password2", &replacement));
+    }
+    CHECK(_wait_terminal(first, ESP_ERR_NOT_FINISHED, false));
+    CHECK(_terminal_observer_count(first, ESP_ERR_NOT_FINISHED, false) == 1U);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_SUSPENDED, NULL));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+    CHECK(host_nv_storage_set_count() == 0U);
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    if (!cancel && !forget)
+    {
+        CHECK(_wait_driver_ssid("Replacement B"));
+        CHECK(_complete_connection(UINT32_C(0x09080706)));
+        CHECK(_wait_terminal(replacement, ESP_OK, false));
+        CHECK(_terminal_observer_count(replacement, ESP_OK, false) == 1U);
+        CHECK(host_nv_storage_set_count() == 1U);
+    }
+    else
+    {
+        if (forget)
+        {
+            CHECK(_wait_terminal(replacement, ESP_ERR_NOT_FOUND, false));
+        }
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+        CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+        CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+        CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+        CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+        CHECK(_terminal_observer_count(first, ESP_OK, false) == 0U);
+    }
+    CHECK(connectivity_manager_deinit(CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    printf("suspended candidate: id=%llu %s, unique local cancellation, no retired attempt revival\n",
+           (unsigned long long)first, cancel ? "cancel" : forget ? "forget" : "replace");
+    return true;
+}
+
 static bool _run_pipeline(void)
 {
     host_freertos_reset_controls();
@@ -2268,6 +2745,22 @@ static bool _run_pipeline(void)
     CHECK(_run_on_ui(_ui_capture_worker, NULL));
 
     CHECK(_test_wifi_cancel_dispositions());
+    CHECK(_test_radio_transition_failures());
+    CHECK(_test_radio_suspend_releases_without_terminal());
+    CHECK(_test_ipv4_renewal_preserves_operation());
+    CHECK(_test_candidate_restart_failure_preserves_profile());
+    CHECK(_test_pending_sync_profile(false, false));
+    CHECK(_test_pending_sync_profile(true, false));
+    CHECK(_test_pending_sync_profile(false, true));
+    CHECK(_test_candidate_suspend_resume(false, false, false, false));
+    CHECK(_test_candidate_suspend_resume(false, true, false, false));
+    CHECK(_test_candidate_suspend_resume(true, false, false, false));
+    CHECK(_test_candidate_suspend_resume(true, true, false, false));
+    CHECK(_test_candidate_suspend_resume(false, false, true, false));
+    CHECK(_test_candidate_suspend_resume(true, true, false, true));
+    CHECK(_test_suspended_candidate_preemption(true, false));
+    CHECK(_test_suspended_candidate_preemption(false, false));
+    CHECK(_test_suspended_candidate_preemption(false, true));
     CHECK(_test_clear_persisted_profile_lifecycle());
     CHECK(_test_manager_init_resource_failures());
     CHECK(_test_operation_arbitration());

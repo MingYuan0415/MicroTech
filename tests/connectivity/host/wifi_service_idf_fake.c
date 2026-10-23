@@ -29,11 +29,15 @@ static esp_netif_t s_netif;
 static bool s_netif_owned;
 static bool s_wifi_initialized;
 static bool s_wifi_started;
+static bool s_wifi_connecting;
 static bool s_init_nvs_enabled;
 static unsigned s_sequence;
 static unsigned s_init_sequence;
 static unsigned s_storage_sequence;
 static unsigned s_mode_sequence;
+static unsigned s_stop_sequence;
+static unsigned s_config_sequence;
+static esp_err_t s_next_set_config_result;
 static wifi_storage_t s_storage;
 static TickType_t s_ticks;
 static bool s_submitted_event_valid;
@@ -55,11 +59,15 @@ void host_wifi_idf_reset(void)
     s_netif_owned = false;
     s_wifi_initialized = false;
     s_wifi_started = false;
+    s_wifi_connecting = false;
     s_init_nvs_enabled = false;
     s_sequence = 0U;
     s_init_sequence = 0U;
     s_storage_sequence = 0U;
     s_mode_sequence = 0U;
+    s_stop_sequence = 0U;
+    s_config_sequence = 0U;
+    s_next_set_config_result = ESP_OK;
     s_storage = WIFI_STORAGE_FLASH;
     s_ticks = 0U;
     s_submitted_event_valid = false;
@@ -148,6 +156,30 @@ bool host_wifi_idf_last_config(wifi_config_t *config)
     }
     *config = s_last_config;
     return true;
+}
+void host_wifi_idf_fail_next_set_config(esp_err_t result)
+{
+    s_next_set_config_result = result;
+}
+
+bool host_wifi_idf_is_initialized(void)
+{
+    return s_wifi_initialized;
+}
+
+bool host_wifi_idf_is_connecting(void)
+{
+    return s_wifi_connecting;
+}
+
+unsigned host_wifi_idf_stop_sequence(void)
+{
+    return s_stop_sequence;
+}
+
+unsigned host_wifi_idf_config_sequence(void)
+{
+    return s_config_sequence;
 }
 
 esp_err_t esp_event_handler_instance_register(
@@ -265,6 +297,8 @@ esp_err_t esp_wifi_deinit(void)
         return ESP_ERR_WIFI_NOT_INIT;
     }
     s_wifi_initialized = false;
+    s_wifi_started = false;
+    s_wifi_connecting = false;
     return ESP_OK;
 }
 
@@ -306,6 +340,8 @@ esp_err_t esp_wifi_stop(void)
         return ESP_ERR_WIFI_NOT_INIT;
     }
     s_wifi_started = false;
+    s_wifi_connecting = false;
+    s_stop_sequence = ++s_sequence;
     return ESP_OK;
 }
 
@@ -367,9 +403,20 @@ esp_err_t esp_wifi_scan_get_ap_records(uint16_t *number,
 esp_err_t esp_wifi_set_config(wifi_interface_t interface,
                               const wifi_config_t *config)
 {
+    s_config_sequence = ++s_sequence;
     if (!s_wifi_initialized || interface != WIFI_IF_STA || config == NULL)
     {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (s_next_set_config_result != ESP_OK)
+    {
+        const esp_err_t result = s_next_set_config_result;
+        s_next_set_config_result = ESP_OK;
+        return result;
+    }
+    if (s_wifi_connecting)
+    {
+        return ESP_ERR_WIFI_STATE;
     }
     s_last_config = *config;
     s_last_config_valid = true;
@@ -378,12 +425,22 @@ esp_err_t esp_wifi_set_config(wifi_interface_t interface,
 
 esp_err_t esp_wifi_connect(void)
 {
-    return s_wifi_started ? ESP_OK : ESP_ERR_WIFI_NOT_STARTED;
+    if (!s_wifi_started)
+    {
+        return ESP_ERR_WIFI_NOT_STARTED;
+    }
+    s_wifi_connecting = true;
+    return ESP_OK;
 }
 
 esp_err_t esp_wifi_disconnect(void)
 {
-    return s_wifi_started ? ESP_OK : ESP_ERR_WIFI_NOT_STARTED;
+    if (!s_wifi_started)
+    {
+        return ESP_ERR_WIFI_NOT_STARTED;
+    }
+    s_wifi_connecting = false;
+    return ESP_OK;
 }
 
 esp_err_t wifi_service_port_submit_event(

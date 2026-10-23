@@ -30,5 +30,15 @@ void host_wifi_idf_set_scan_records(const wifi_ap_record_t *records,
 unsigned host_wifi_idf_scan_clear_count(void);
 /** @brief Copy the most recent station configuration. */
 bool host_wifi_idf_last_config(wifi_config_t *config);
+/** @brief Fail the next station configuration call with the supplied result. */
+void host_wifi_idf_fail_next_set_config(esp_err_t result);
+/** @brief Return whether the fake Wi-Fi driver is initialized. */
+bool host_wifi_idf_is_initialized(void);
+/** @brief Return whether a connect request is still in progress. */
+bool host_wifi_idf_is_connecting(void);
+/** @brief Return the sequence of the most recent stop call. */
+unsigned host_wifi_idf_stop_sequence(void);
+/** @brief Return the sequence of the most recent station configuration call. */
+unsigned host_wifi_idf_config_sequence(void);
 
 #endif /* __CONNECTIVITY_HOST_WIFI_IDF_H__ */

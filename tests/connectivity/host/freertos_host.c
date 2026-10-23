@@ -131,13 +131,13 @@ static SemaphoreHandle_t _host_create_semaphore(StaticSemaphore_t *storage,
     storage->initialized = true;
     storage->is_binary = is_binary;
     storage->recursive = false;
-    storage->depth = 0U;
     (void)pthread_mutex_lock(&s_control_lock);
     ++s_live_semaphores;
     ++s_total_semaphore_creates;
     (void)pthread_mutex_unlock(&s_control_lock);
     return storage;
 }
+
 
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage)
 {
@@ -299,6 +299,7 @@ void vSemaphoreDelete(SemaphoreHandle_t semaphore)
     --s_live_semaphores;
     (void)pthread_cond_broadcast(&s_control_changed);
     (void)pthread_mutex_unlock(&s_control_lock);
+
 }
 
 QueueHandle_t xQueueCreateStatic(UBaseType_t length, UBaseType_t item_size,

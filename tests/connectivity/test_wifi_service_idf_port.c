@@ -138,6 +138,45 @@ static void _test_credentials_policy_and_ascii_psk(void)
     assert(memcmp(config.sta.password, psk64, sizeof(psk64)) == 0);
 }
 
+static void _test_stop_before_clear_and_deinit_retry(void)
+{
+    assert(wifi_service_port_connect() == ESP_OK);
+    assert(host_wifi_idf_is_connecting());
+
+    wifi_service_port_credentials_t credentials =
+    {
+        .ssid = {'n', 'e', 't'},
+        .ssid_length = 3U,
+        .password = {'p', 'a', 's', 's', 'w', 'o', 'r', 'd'},
+        .password_length = 8U,
+        .security = WIFI_SERVICE_SECURITY_PERSONAL,
+    };
+    assert(wifi_service_port_set_credentials(&credentials) ==
+           ESP_ERR_WIFI_STATE);
+    assert(wifi_service_port_disconnect() == ESP_OK);
+    assert(!host_wifi_idf_is_connecting());
+    assert(wifi_service_port_clear_credentials() == ESP_ERR_INVALID_STATE);
+
+    assert(wifi_service_port_stop() == ESP_OK);
+    assert(wifi_service_port_get_state() == WIFI_SERVICE_PORT_STATE_STOPPED);
+    assert(wifi_service_port_clear_credentials() == ESP_OK);
+    assert(host_wifi_idf_stop_sequence() <
+           host_wifi_idf_config_sequence());
+    assert(wifi_service_port_start() == ESP_OK);
+
+    host_wifi_idf_fail_next_set_config(ESP_FAIL);
+    assert(wifi_service_port_deinit() == ESP_FAIL);
+    assert(wifi_service_port_get_state() == WIFI_SERVICE_PORT_STATE_STOPPED);
+    assert(host_wifi_idf_is_initialized());
+    assert(!wifi_service_port_is_clean());
+    assert(host_wifi_idf_stop_sequence() <
+           host_wifi_idf_config_sequence());
+
+    assert(wifi_service_port_deinit() == ESP_OK);
+    assert(wifi_service_port_is_clean());
+    assert(!host_wifi_idf_is_initialized());
+}
+
 int main(void)
 {
     host_wifi_idf_reset();
@@ -163,8 +202,7 @@ int main(void)
     _test_scan_normalization();
     _test_credentials_policy_and_ascii_psk();
 
-    assert(wifi_service_port_deinit() == ESP_OK);
-    assert(wifi_service_port_is_clean());
+    _test_stop_before_clear_and_deinit_retry();
     puts("wifi_service ESP-IDF port configuration regression passed");
     return 0;
 }
