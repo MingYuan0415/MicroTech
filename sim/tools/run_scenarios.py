@@ -182,6 +182,19 @@ class Runner:
             self.call('sim.step', {'ms': 330})
         elif cmd == 'touch':
             self.call('sim.touch', {k: step[k] for k in ('action', 'x', 'y')})
+        elif cmd == 'long_press':
+            # A long press is a hold, not a click: LVGL reports LONG_PRESSED
+            # once long_press_time (400 ms) elapses and still reports CLICKED on
+            # release, so the hold must outlast the threshold before lifting.
+            self.call('sim.touch', {'action': 'down',
+                                    'x': step['x'], 'y': step['y']})
+            held = 0
+            while held < int(step.get('ms', 700)):
+                self.call('sim.step', {'ms': 33})
+                held += 33
+            self.call('sim.touch', {'action': 'up',
+                                    'x': step['x'], 'y': step['y']})
+            self.call('sim.step', {'ms': int(step.get('settle_ms', 330))})
         elif cmd == 'drag':
             x0, y0 = int(step['x0']), int(step['y0'])
             x1, y1 = int(step['x1']), int(step['y1'])

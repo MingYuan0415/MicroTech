@@ -1269,12 +1269,12 @@ static cJSON *_handle(cJSON *request, bool *ok)
         else if (verb != NULL && strcmp(verb, "svc") == 0)
         {
             recorder_service_snapshot_t snap;
-            recorder_service_file_t files[16];
+            recorder_service_file_t files[RECORDER_SERVICE_MAX_FILES];
             size_t count = 0U;
             memset(&snap, 0, sizeof(snap));
             const esp_err_t snap_result = recorder_service_get_snapshot(&snap);
-            const esp_err_t list_result = recorder_service_list(files, 16U,
-                &count);
+            const esp_err_t list_result = recorder_service_list(files,
+                RECORDER_SERVICE_MAX_FILES, &count);
             cJSON_AddNumberToObject(result, "snap", (double)snap_result);
             cJSON_AddNumberToObject(result, "list", (double)list_result);
             cJSON_AddNumberToObject(result, "generation",

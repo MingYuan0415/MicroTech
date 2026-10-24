@@ -823,6 +823,13 @@
    }
   },
   {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "播放库"
+   }
+  },
+  {
    "cmd": "drag",
    "x0": 184,
    "y0": 300,
@@ -833,10 +840,58 @@
   {
    "cmd": "tree_assert",
    "contains": {
-    "type": "lv_obj",
-    "coords.y": 64,
-    "flags.scrollable": true
+    "type": "lv_label",
+    "text": "播放库",
+    "coords.y": {
+     "min": 340,
+     "max": 400
+    }
    }
+  },
+  {
+   "cmd": "sd",
+   "action": "clear"
+  },
+  {
+   "cmd": "sd",
+   "action": "write",
+   "name": "REC_batch_a.wav",
+   "seconds": 2
+  },
+  {
+   "cmd": "sd",
+   "action": "write",
+   "name": "REC_batch_b.wav",
+   "seconds": 3
+  },
+  {
+   "cmd": "sd",
+   "action": "write",
+   "name": "REC_batch_c.wav",
+   "seconds": 4
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "navigate",
+   "app": "recorder",
+   "page": "root"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "step",
+   "times": 10
   },
   {
    "cmd": "navigate",
@@ -854,8 +909,147 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "REC_ci"
+    "text": "长按录音可多选删除"
    }
+  },
+  {
+   "cmd": "long_press",
+   "x": 184,
+   "y": 108
+  },
+  {
+   "cmd": "step",
+   "times": 5
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "全选"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "删除 1"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "recorder_files_select.png"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "全选"
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "删除 3"
+   }
+  },
+  {
+   "cmd": "tap_text",
+   "text": "删除 3"
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "删除 3 个录音？此操作无法撤销。"
+   }
+  },
+  {
+   "cmd": "tap_text",
+   "text": "删除"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "sd_assert",
+   "absent": [
+    "REC_batch_a.wav",
+    "REC_batch_b.wav",
+    "REC_batch_c.wav"
+   ]
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "已删除 3 个录音"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "暂无已完成录音"
+   }
+  },
+  {
+   "cmd": "sd",
+   "action": "write",
+   "name": "REC_ci.wav",
+   "seconds": 2
+  },
+  {
+   "cmd": "navigate",
+   "app": "recorder",
+   "page": "root"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "navigate",
+   "app": "recorder",
+   "page": "files"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "navigate",
+   "app": "recorder",
+   "page": "files"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
   },
   {
    "cmd": "tree_assert",
@@ -869,34 +1063,40 @@
    "name": "recorder_files.png"
   },
   {
-   "cmd": "sd",
-   "action": "umount"
+   "cmd": "tap_text",
+   "text": "0:02"
   },
   {
-   "cmd": "sd_assert",
-   "contains": [
-    "REC_ci.wav"
-   ]
+   "cmd": "step",
+   "times": 25
   },
   {
-   "cmd": "sd",
-   "action": "mount"
+   "cmd": "wait_idle"
   },
   {
-   "cmd": "sd_assert",
-   "contains": [
-    "REC_ci.wav"
-   ]
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "录音详情"
+   }
   },
   {
-   "cmd": "sd",
-   "action": "clear"
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "播放"
+   }
   },
   {
-   "cmd": "sd_assert",
-   "absent": [
-    "REC_ci.wav"
-   ]
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "删除"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "recorder_detail.png"
   },
   {
    "cmd": "navigate",

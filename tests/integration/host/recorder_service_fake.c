@@ -39,6 +39,11 @@ esp_err_t recorder_service_list(recorder_service_file_t *files,
     return ESP_OK;
 }
 
+esp_err_t recorder_service_refresh(void)
+{
+    return ESP_OK;
+}
+
 bool recorder_service_is_busy(void)
 {
     return false;

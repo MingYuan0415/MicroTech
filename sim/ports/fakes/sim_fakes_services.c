@@ -23,6 +23,8 @@
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <time.h>
 #include <limits.h>
 #include <ftw.h>
 #include <stdatomic.h>
@@ -688,6 +690,14 @@ esp_err_t host_sd_write_wav(const char *name, uint32_t seconds)
         (void)remove(path);
         return ESP_FAIL;
     }
+    /* One fixed stamp keeps the seeded library order and the goldens stable
+     * across hosts; the recorder sorts by this value. */
+    const struct timespec stamps[2] =
+    {
+        {.tv_sec = 1792446000, .tv_nsec = 0},
+        {.tv_sec = 1792446000, .tv_nsec = 0},
+    };
+    (void)utimensat(AT_FDCWD, path, stamps, 0);
     return ESP_OK;
 }
 

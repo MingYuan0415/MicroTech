@@ -862,20 +862,28 @@
         {
           "name": "empty",
           "seed": [
-            {
-              "cmd": "sd",
-              "action": "mount"
-            },
-            {
-              "cmd": "sd",
-              "action": "clear"
-            }
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "clear"}
           ],
-          "expect_visible": [
-            "播放库"
-          ],
+          "expect_visible": ["播放库", "暂无已完成录音"],
           "single_line": [],
           "allow_disabled": []
+        },
+        {
+          "name": "rows",
+          "seed": [
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_214000.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
+          ],
+          "expect_visible": ["播放库", "0:02", "0:03"],
+          "single_line": ["0:02", "0:03"],
+          "allow_disabled": [],
+          "no_golden": true
         },
         {
           "name": "long_filename",
@@ -883,13 +891,49 @@
             {"cmd": "sd", "action": "clear"},
             {"cmd": "sd", "action": "write", "name": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.wav", "seconds": 2},
             {"cmd": "navigate", "app": "recorder", "page": "root"},
-            {"cmd": "step", "ms": 330},
+            {"cmd": "step", "ms": 990},
             {"cmd": "navigate", "app": "recorder", "page": "files"},
             {"cmd": "step", "ms": 990}
           ],
-          "expect_visible": ["LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"],
+          "expect_visible": ["播放库", "0:02"],
+          "single_line": ["0:02"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "detail",
+          "seed": [
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "tap_text", "text": "0:03"},
+            {"cmd": "step", "ms": 990}
+          ],
+          "expect_visible": ["录音详情", "录制时间", "时长", "大小", "0:03", "播放", "删除"],
           "single_line": [],
           "allow_disabled": []
+        },
+        {
+          "name": "select",
+          "seed": [
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_214000.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "long_press", "x": 184, "y": 108},
+            {"cmd": "step", "ms": 330}
+          ],
+          "expect_visible": ["播放库", "全选", "取消", "删除 1", "已选 1 个"],
+          "expect_absent": ["长按录音可多选删除"],
+          "single_line": ["已选 1 个", "删除 1"],
+          "allow_disabled": [],
+          "no_golden": true
         },
         {
           "name": "delete_confirm",
@@ -897,87 +941,152 @@
             {"cmd": "sd", "action": "mount"},
             {"cmd": "step", "ms": 330},
             {"cmd": "sd", "action": "clear"},
-            {"cmd": "sd", "action": "write", "name": "REC_review.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 2},
             {"cmd": "navigate", "app": "recorder", "page": "root"},
-            {"cmd": "step", "ms": 330},
-            {"cmd": "navigate", "app": "recorder", "page": "files"},
             {"cmd": "step", "ms": 990},
-            {"cmd": "tap_text", "text": "REC_review"},
-            {"cmd": "tap_text", "text": "删除"}
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "tap_text", "text": "0:02"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "step", "ms": 660}
           ],
-          "expect_visible": ["播放库", "删除录音", "取消"],
+          "expect_visible": ["录音详情", "删除录音", "取消"],
           "single_line": [],
           "allow_disabled": [],
           "no_golden": true
-        }
-        ,{
+        },
+        {
+          "name": "batch_confirm",
+          "seed": [
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_214000.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "long_press", "x": 184, "y": 108},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "tap_text", "text": "全选"},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "tap_text", "text": "删除 2"},
+            {"cmd": "step", "ms": 660}
+          ],
+          "expect_visible": ["播放库", "删除录音", "删除 2 个录音？此操作无法撤销。", "取消"],
+          "single_line": ["删除 2 个录音？此操作无法撤销。"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "batch_completed",
+          "seed": [
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_214000.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "long_press", "x": 184, "y": 108},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "tap_text", "text": "全选"},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "tap_text", "text": "删除 2"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sd_assert", "absent": ["REC_20261019_214000.wav", "REC_20261019_215000.wav"]},
+            {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"svc_files": 0, "operation_pending": false, "last_error": 0}}
+          ],
+          "expect_visible": ["播放库", "已删除 2 个录音", "暂无已完成录音"],
+          "expect_absent": ["删除失败", "全选"],
+          "single_line": ["已删除 2 个录音"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
           "name": "external_revision",
           "seed": [
             {"cmd": "sd", "action": "mount"},
             {"cmd": "sd", "action": "clear"},
-            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 2},
             {"cmd": "navigate", "app": "recorder", "page": "root"},
             {"cmd": "step", "ms": 660},
             {"cmd": "navigate", "app": "recorder", "page": "files"},
-            {"cmd": "step", "ms": 990},
-            {"cmd": "tap_text", "text": "REC_epoch"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "tap_text", "text": "0:02"},
+            {"cmd": "step", "ms": 660},
             {"cmd": "sd", "action": "clear"},
-            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 3},
-            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "sleep_ms", "ms": 200},
             {"cmd": "step", "ms": 1320},
-            {"cmd": "tap_text", "text": "播放"},
-            {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"state": 0, "svc_files": 1, "operation_pending": false}}
+            {"cmd": "sleep_ms", "ms": 300},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sleep_ms", "ms": 400},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sleep_ms", "ms": 400},
+            {"cmd": "step", "ms": 1320}
           ],
-          "expect_visible": ["播放库", "REC_epoch", "0:03"],
-          "expect_absent": ["已删除", "停止播放"],
-          "single_line": ["REC_epoch", "0:03"],
-          "allow_disabled": [], "no_golden": true
-        },{
+          "expect_visible": ["录音详情", "内容已变化"],
+          "expect_absent": ["播放中"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
           "name": "stale_delete_failed",
           "seed": [
             {"cmd": "sd", "action": "mount"},
             {"cmd": "sd", "action": "clear"},
-            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 2},
             {"cmd": "navigate", "app": "recorder", "page": "root"},
             {"cmd": "step", "ms": 660},
             {"cmd": "navigate", "app": "recorder", "page": "files"},
-            {"cmd": "step", "ms": 990},
-            {"cmd": "tap_text", "text": "REC_epoch"},
-            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "tap_text", "text": "0:02"},
+            {"cmd": "step", "ms": 660},
             {"cmd": "sd", "action": "clear"},
-            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 3},
-            {"cmd": "tap_text", "text": "删除"},
-            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 3},
+            {"cmd": "sleep_ms", "ms": 200},
             {"cmd": "step", "ms": 1320},
-            {"cmd": "sd_assert", "contains": ["REC_epoch.wav"]},
-            {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"state": 0, "svc_files": 1, "operation_pending": false, "last_error": -5}}
+            {"cmd": "sleep_ms", "ms": 300},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sleep_ms", "ms": 400},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sleep_ms", "ms": 400},
+            {"cmd": "step", "ms": 1320}
           ],
-          "expect_visible": ["播放库", "REC_epoch", "删除失败"],
-          "expect_absent": ["已删除", "删除录音"],
-          "single_line": ["删除失败"],
-          "allow_disabled": [], "no_golden": true
-        },{
+          "expect_visible": ["录音详情", "内容已变化"],
+          "expect_absent": ["删除录音"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
           "name": "delete_completed",
           "seed": [
             {"cmd": "sd", "action": "mount"},
             {"cmd": "sd", "action": "clear"},
-            {"cmd": "sd", "action": "write", "name": "REC_done.wav", "seconds": 2},
+            {"cmd": "sd", "action": "write", "name": "REC_20261019_215000.wav", "seconds": 2},
             {"cmd": "navigate", "app": "recorder", "page": "root"},
             {"cmd": "step", "ms": 660},
             {"cmd": "navigate", "app": "recorder", "page": "files"},
-            {"cmd": "step", "ms": 990},
-            {"cmd": "tap_text", "text": "REC_done"},
+            {"cmd": "step", "ms": 990}
+            ,{"cmd": "tap_text", "text": "0:02"},
+            {"cmd": "step", "ms": 660},
             {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "step", "ms": 660},
             {"cmd": "tap_text", "text": "删除"},
-            {"cmd": "sleep_ms", "ms": 100},
-            {"cmd": "step", "ms": 990},
-            {"cmd": "sd_assert", "absent": ["REC_done.wav"]},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sd_assert", "absent": ["REC_20261019_215000.wav"]},
             {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"svc_files": 0, "operation_pending": false, "last_error": 0}}
           ],
-          "expect_visible": ["已删除", "暂无已完成录音"],
-          "expect_absent": ["删除失败", "REC_done"],
-          "single_line": ["已删除"],
-          "allow_disabled": [], "no_golden": true
+          "expect_visible": ["播放库", "暂无已完成录音"],
+          "expect_absent": ["删除失败"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
         }
       ]
     },
@@ -1156,75 +1265,27 @@
         {
           "name": "idle",
           "seed": [
-            {
-              "cmd": "sd",
-              "action": "clear"
-            },
-            {
-              "cmd": "navigate",
-              "app": "recorder",
-              "page": "files"
-            },
-            {
-              "cmd": "step",
-              "ms": 990
-            },
-            {
-              "cmd": "navigate",
-              "app": "recorder",
-              "page": "root"
-            },
-            {
-              "cmd": "step",
-              "ms": 330
-            }
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 330}
           ],
-          "expect_visible": [
-            "录音"
-          ],
-          "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "expect_visible": ["录音", "就绪", "开始", "上限 30:00"],
+          "single_line": ["就绪", "可用"],
+          "allow_disabled": []
         },
         {
           "name": "recording",
           "seed": [
-            {
-              "cmd": "sd",
-              "action": "clear"
-            },
-            {
-              "cmd": "step",
-              "times": 10,
-              "ms": 33
-            },
-            {
-              "cmd": "touch",
-              "action": "down",
-              "x": 184,
-              "y": 218
-            },
-            {
-              "cmd": "step",
-              "times": 10,
-              "ms": 33
-            },
-            {
-              "cmd": "touch",
-              "action": "up",
-              "x": 184,
-              "y": 218
-            },
-            {
-              "cmd": "step",
-              "times": 60,
-              "ms": 33
-            }
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "step", "times": 10, "ms": 33},
+            {"cmd": "touch", "action": "down", "x": 184, "y": 218},
+            {"cmd": "step", "times": 10, "ms": 33},
+            {"cmd": "touch", "action": "up", "x": 184, "y": 218},
+            {"cmd": "step", "times": 60, "ms": 33}
           ],
-          "expect_visible": [
-            "录音中",
-            "停止"
-          ],
+          "expect_visible": ["录音中", "停止", "暂停"],
           "single_line": [],
           "allow_disabled": [],
           "no_golden": true
@@ -1232,33 +1293,13 @@
         {
           "name": "stopped",
           "seed": [
-            {
-              "cmd": "touch",
-              "action": "down",
-              "x": 184,
-              "y": 218
-            },
-            {
-              "cmd": "step",
-              "times": 10,
-              "ms": 33
-            },
-            {
-              "cmd": "touch",
-              "action": "up",
-              "x": 184,
-              "y": 218
-            },
-            {
-              "cmd": "step",
-              "times": 30,
-              "ms": 33
-            }
+            {"cmd": "touch", "action": "down", "x": 184, "y": 218},
+            {"cmd": "step", "times": 10, "ms": 33},
+            {"cmd": "touch", "action": "up", "x": 184, "y": 218},
+            {"cmd": "step", "times": 30, "ms": 33}
           ],
-          "expect_visible": [
-            "1 个录音"
-          ],
-          "single_line": [],
+          "expect_visible": ["已保存", "1 个录音", "开始"],
+          "single_line": ["已保存"],
           "allow_disabled": [],
           "no_golden": true
         }

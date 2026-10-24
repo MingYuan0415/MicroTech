@@ -296,6 +296,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_BACKSPACE "backspace"
 #define LV_SYMBOL_BLUETOOTH "bluetooth"
 #define LV_SYMBOL_CLOSE     "close"
+#define LV_SYMBOL_DUMMY     " "
 #define LV_SYMBOL_EDIT      "edit"
 #define LV_SYMBOL_GPS       "gps"
 #define LV_SYMBOL_HOME      "home"
