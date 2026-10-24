@@ -27,6 +27,7 @@
 #include "ble_nimble_port.h"
 #include "device_link_service.h"
 #include "factory_reset_service.h"
+#include "file_service.h"
 #include "sd_storage_service.h"
 #include "system_pm.h"
 #include "time_service.h"
@@ -74,6 +75,7 @@ typedef struct app_runtime_ownership
     bool audio_attempted;
     bool timer_attempted;
     bool recorder_attempted;
+    bool file_attempted;
     bool onboarding_attempted;
     bool sd_attempted;
     bool connectivity_owned;
@@ -311,6 +313,35 @@ static bool _app_runtime_sd_is_mounted(void *context, void *handle)
     return ops != NULL && handle == ops && ops->is_mounted();
 }
 
+static esp_err_t _app_runtime_sd_format(void *context, void *handle,
+                                        const sd_storage_service_config_t *config)
+{
+    const bsp_sd_ops_t *ops = context;
+    if (ops == NULL || handle != ops || config == NULL || ops->format == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const bsp_sd_config_t board_config =
+    {
+        .mount_point = config->mount_path,
+        .format_if_mount_failed = false,
+        .max_files = config->max_files,
+        .allocation_unit_size = config->allocation_unit_size,
+    };
+    return ops->format(&board_config);
+}
+
+static esp_err_t _app_runtime_sd_get_space(void *context, void *handle,
+        uint64_t *total_bytes, uint64_t *free_bytes)
+{
+    const bsp_sd_ops_t *ops = context;
+    if (ops == NULL || handle != ops || ops->get_space == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ops->get_space(total_bytes, free_bytes);
+}
+
 static bool _app_runtime_has_owned_resources(void)
 {
     bool owned = s_ownership.nv_attempted ||
@@ -327,6 +358,7 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.power_attempted || s_ownership.imu_attempted ||
                  s_ownership.audio_attempted || s_ownership.sd_attempted ||
                  s_ownership.timer_attempted || s_ownership.recorder_attempted ||
+                 s_ownership.file_attempted ||
                  s_ownership.onboarding_attempted ||
                  s_ownership.connectivity_owned ||
                  s_ownership.connectivity_subscription !=
@@ -365,6 +397,7 @@ static bool _app_runtime_required_apps_present(void)
         APP_MANAGER_ID_WEATHER,
         APP_MANAGER_ID_CLOCK,
         APP_MANAGER_ID_RECORDER,
+        APP_MANAGER_ID_FILES,
         APP_MANAGER_ID_LEVEL,
         APP_MANAGER_ID_DIAGNOSTICS,
     };
@@ -490,6 +523,16 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.connectivity_subscription =
             EVENT_BUS_SUB_HANDLE_INVALID;
+    }
+    if (s_ownership.file_attempted)
+    {
+        result = file_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.file_attempted = false;
+        app_runtime_pm_set_file_participant(false);
     }
     if (s_ownership.sd_attempted)
     {
@@ -1106,31 +1149,30 @@ static esp_err_t _app_runtime_start_app_services(
             .mount = _app_runtime_sd_mount,
             .unmount = _app_runtime_sd_unmount,
             .is_mounted = _app_runtime_sd_is_mounted,
+            .format = _app_runtime_sd_format,
+            .get_space = _app_runtime_sd_get_space,
         };
         result = sd_storage_service_register_mount_ops(&sd_ops);
         if (result != ESP_OK)
         {
             return result;
         }
+        /* The adapter stays registered even when this mount fails, so a retry
+         * from Settings does not need a reboot. */
         s_ownership.sd_attempted = true;
         result = sd_storage_service_init(&context->product->sd);
         if (result != ESP_OK)
         {
-            const esp_err_t cleanup_result = sd_storage_service_deinit();
-            s_ownership.sd_attempted = cleanup_result != ESP_OK;
-            s_runtime_sd = NULL;
-            if (cleanup_result != ESP_OK)
-            {
-                return cleanup_result;
-            }
             LOG_W("SD card unavailable: %s", esp_err_to_name(result));
         }
     }
-    if (s_ownership.audio_attempted && s_ownership.sd_attempted)
+    if (s_ownership.audio_attempted)
     {
+        /* Recording exists whenever audio does. Without a card it simply
+         * cannot start; its directory is created after the next mount. */
         const recorder_service_config_t recorder_config =
         {
-            .directory = "/sdcard/MicroTech/Recordings",
+            .directory = "MicroTech/Recordings",
             .max_duration_seconds = 30U * 60U,
             .minimum_free_bytes = 8U * 1024U * 1024U,
         };
@@ -1140,6 +1182,26 @@ static esp_err_t _app_runtime_start_app_services(
             return result;
         }
         s_ownership.recorder_attempted = true;
+    }
+    if (s_ownership.sd_attempted)
+    {
+        const file_service_config_t file_config =
+        {
+            .mount_path = context->product->sd.mount_path,
+            .root_relative_path = NULL,
+            .max_files = context->product->sd.max_files,
+            .allocation_unit_size = context->product->sd.allocation_unit_size,
+        };
+        result = file_service_init(&file_config);
+        if (result != ESP_OK)
+        {
+            LOG_W("file service unavailable: %s", esp_err_to_name(result));
+        }
+        else
+        {
+            s_ownership.file_attempted = true;
+            app_runtime_pm_set_file_participant(true);
+        }
     }
     return ESP_OK;
 }

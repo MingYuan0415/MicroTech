@@ -11,8 +11,8 @@
 /** @brief Maximum basename bytes including NUL for simulator WAV files. */
 #define SIM_SD_NAME_MAX 64
 
-/** @brief Create the absolute backing directory and mount it as the volume. */
-esp_err_t host_sd_boot(const char *dir);
+/** @brief Use a host directory; format is permitted only for a fresh owned sandbox. */
+esp_err_t host_sd_boot(const char *dir, bool owned_sandbox);
 /** @brief Rename the backing directory in/out to fake mount transitions. */
 bool host_sd_set_mounted(bool mounted);
 /** @brief Report whether the SD volume currently resolves. */
@@ -34,5 +34,17 @@ size_t host_sd_clear_recordings(void);
 size_t host_sd_list_recordings(char names[][SIM_SD_NAME_MAX], size_t capacity);
 /** @brief Toggle the audio service availability reported to the UI. */
 void host_audio_set_available(bool available);
+
+/** @brief Script the next mount attempt to fail without formatting. */
+void host_sd_set_mount_failure(bool fail);
+/** @brief Script the next format attempt to fail after erasing nothing. */
+void host_sd_set_format_failure(bool fail);
+/** @brief Inject a capacity-query failure without changing free space to zero. */
+void host_sd_set_space_failure(bool fail);
+/** @brief Count capacity-query failures the adapter reported. */
+uint64_t host_sd_space_error_count(void);
+/** @brief Return the host adapter registered with sd_storage_service. */
+struct sd_storage_service_mount_ops;
+const struct sd_storage_service_mount_ops *sim_sd_mount_ops(void);
 
 #endif /* __SIM_SD_HOST_H__ */

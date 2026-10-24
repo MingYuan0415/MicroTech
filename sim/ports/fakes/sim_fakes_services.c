@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+#define _DEFAULT_SOURCE
 #include "apps_integration_runtime.h"
 #include "sim_sd_host.h"
 #include "recorder_service.h"
@@ -22,6 +24,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <ftw.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -453,11 +456,19 @@ esp_err_t audio_service_set_pa(bool enabled)
 
 
 static char s_sd_dir[PATH_MAX];
+static char s_sd_mount_dir[PATH_MAX];
 static char s_sd_recordings[PATH_MAX];
+static char s_sd_unmounted_dir[PATH_MAX];
 static bool s_sd_mounted;
 static bool s_sd_report_fixed;
+static atomic_bool s_sd_force_mount_failure;
+static atomic_bool s_sd_force_format_failure;
+static atomic_bool s_sd_force_space_failure;
+static bool s_sd_format_allowed;
 static uint64_t s_sd_report_total;
 static uint64_t s_sd_report_free;
+static bool s_sd_adapter_handle;
+static atomic_uint_fast64_t s_sd_space_error_count;
 
 void host_sd_set_report_capacity(bool deterministic, uint64_t total_bytes,
                                  uint64_t free_bytes)
@@ -465,6 +476,26 @@ void host_sd_set_report_capacity(bool deterministic, uint64_t total_bytes,
     s_sd_report_total = total_bytes;
     s_sd_report_free = free_bytes;
     s_sd_report_fixed = deterministic;
+}
+
+void host_sd_set_mount_failure(bool fail)
+{
+    s_sd_force_mount_failure = fail;
+}
+
+void host_sd_set_format_failure(bool fail)
+{
+    s_sd_force_format_failure = fail;
+}
+
+void host_sd_set_space_failure(bool fail)
+{
+    s_sd_force_space_failure = fail;
+}
+
+uint64_t host_sd_space_error_count(void)
+{
+    return s_sd_space_error_count;
 }
 
 static esp_err_t _host_sd_ensure_directory(const char *directory)
@@ -491,7 +522,7 @@ static esp_err_t _host_sd_ensure_directory(const char *directory)
     return mkdir(path, 0775) == 0 || errno == EEXIST ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t host_sd_boot(const char *dir)
+esp_err_t host_sd_boot(const char *dir, bool owned_sandbox)
 {
     if (dir == NULL || dir[0] != '/')
     {
@@ -507,40 +538,41 @@ esp_err_t host_sd_boot(const char *dir)
         return ESP_FAIL;
     }
     memcpy(s_sd_dir, dir, length + 1U);
+    s_sd_format_allowed = owned_sandbox;
+    memcpy(s_sd_mount_dir, dir, length + 1U);
     if (snprintf(s_sd_recordings, sizeof(s_sd_recordings),
                  "%s/MicroTech/Recordings", s_sd_dir) >=
             (int)sizeof(s_sd_recordings))
     {
         return ESP_ERR_INVALID_SIZE;
     }
+    if (snprintf(s_sd_unmounted_dir, sizeof(s_sd_unmounted_dir),
+                 "%s.umounted", s_sd_dir) >= (int)sizeof(s_sd_unmounted_dir))
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
     s_sd_mounted = true;
     if (strlen(s_sd_recordings) + SIM_SD_NAME_MAX >=
-            RECORDER_SERVICE_PATH_MAX)
+            RECORDER_SERVICE_PATH_BYTES)
     {
         fprintf(stderr,
                 "sim: recording names exceed the recorder path buffer (%zu "
                 "+ names must fit %u bytes); recordings will not list\n",
-                strlen(s_sd_recordings), RECORDER_SERVICE_PATH_MAX);
+                strlen(s_sd_recordings), RECORDER_SERVICE_PATH_BYTES);
     }
     return ESP_OK;
 }
 
 bool host_sd_set_mounted(bool mounted)
 {
-    char hidden[PATH_MAX];
     bool changed;
 
     if (s_sd_dir[0] == '\0' || mounted == s_sd_mounted)
     {
         return s_sd_mounted == mounted && s_sd_dir[0] != '\0';
     }
-    if (snprintf(hidden, sizeof(hidden), "%s.umounted", s_sd_dir) >=
-            (int)sizeof(hidden))
-    {
-        return false;
-    }
-    changed = mounted ? rename(hidden, s_sd_dir) == 0 :
-              rename(s_sd_dir, hidden) == 0;
+    changed = mounted ? rename(s_sd_unmounted_dir, s_sd_mount_dir) == 0 :
+              rename(s_sd_mount_dir, s_sd_unmounted_dir) == 0;
     if (!mounted && changed)
     {
         s_sd_mounted = false;
@@ -549,7 +581,7 @@ bool host_sd_set_mounted(bool mounted)
     {
         s_sd_mounted = true;
     }
-    else if (mounted && _host_sd_ensure_directory(s_sd_dir) == ESP_OK)
+    else if (mounted && _host_sd_ensure_directory(s_sd_mount_dir) == ESP_OK)
     {
         /* an empty volume was never renamed out: restore it by creation */
         s_sd_mounted = true;
@@ -565,7 +597,7 @@ bool host_sd_is_mounted(void)
 
 const char *host_sd_directory(void)
 {
-    return host_sd_is_mounted() ? s_sd_dir : NULL;
+    return host_sd_is_mounted() ? s_sd_mount_dir : NULL;
 }
 
 const char *host_sd_recordings_dir(void)
@@ -586,6 +618,10 @@ esp_err_t host_sd_write_wav(const char *name, uint32_t seconds)
             strstr(name, "..") != NULL)
     {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (_host_sd_ensure_directory(directory) != ESP_OK)
+    {
+        return ESP_FAIL;
     }
     if (snprintf(path, sizeof(path), "%s/%s", directory, name) >=
             (int)sizeof(path))
@@ -721,14 +757,123 @@ size_t host_sd_list_recordings(char names[][SIM_SD_NAME_MAX], size_t capacity)
     return count;
 }
 
-bool sd_storage_service_is_mounted(void)
+/* Real SD service host adapter. Safe unmount never moves or deletes backing
+ * data. Destructive formatting is restricted to a newly created sim sandbox. */
+
+static esp_err_t _host_sd_adapter_mount(void *context,
+                                        const sd_storage_service_config_t *config,
+                                        sd_storage_service_mount_mode_t mode,
+                                        void **out_handle)
 {
-    return host_sd_is_mounted();
+    (void)context;
+    (void)mode;
+    if (config == NULL || out_handle == NULL || config->mount_path == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    /* A simulated card extraction and a scripted failure both make the mount
+     * fail; neither ever formats. */
+    if (s_sd_force_mount_failure || !host_sd_is_mounted())
+    {
+        return ESP_FAIL;
+    }
+    if (strcmp(s_sd_mount_dir, config->mount_path) != 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    /* The card became available again: restore the backing directory if a
+     * previous simulated unmount renamed it away. */
+    if (_host_sd_ensure_directory(s_sd_mount_dir) != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
+    *out_handle = &s_sd_adapter_handle;
+    return ESP_OK;
 }
 
-const char *sd_storage_service_get_mount_path(void)
+static esp_err_t _host_sd_adapter_unmount(void *context, void *handle)
 {
-    return host_sd_directory();
+    (void)context;
+    /* Only the service's own handle is released. The backing directory stays:
+     * a safe unmount removes no user data. */
+    return handle == &s_sd_adapter_handle ? ESP_OK : ESP_ERR_INVALID_ARG;
+}
+
+static bool _host_sd_adapter_is_mounted(void *context, void *handle)
+{
+    (void)context;
+    return handle == &s_sd_adapter_handle && host_sd_is_mounted();
+}
+
+static int _host_sd_remove_entry(const char *path, const struct stat *info,
+                                 int type, struct FTW *position)
+{
+    (void)info;
+    if (position->level == 0)
+    {
+        return 0;
+    }
+    return type == FTW_DP ? rmdir(path) : unlink(path);
+}
+
+static esp_err_t _host_sd_adapter_format(void *context, void *handle,
+        const sd_storage_service_config_t *config)
+{
+    (void)context;
+    (void)config;
+    if (!s_sd_format_allowed)
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (handle != &s_sd_adapter_handle || !host_sd_is_mounted() ||
+            s_sd_force_format_failure)
+    {
+        return ESP_FAIL;
+    }
+    return nftw(s_sd_mount_dir, _host_sd_remove_entry, 16, FTW_DEPTH | FTW_PHYS) == 0 ?
+           ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t _host_sd_adapter_get_space(void *context, void *handle,
+        uint64_t *total_bytes, uint64_t *free_bytes)
+{
+    (void)context;
+    if (handle != &s_sd_adapter_handle || total_bytes == NULL ||
+            free_bytes == NULL || !host_sd_is_mounted())
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_sd_force_space_failure)
+    {
+        ++s_sd_space_error_count;
+        return ESP_FAIL;
+    }
+    if (s_sd_report_fixed)
+    {
+        *total_bytes = s_sd_report_total;
+        *free_bytes = s_sd_report_free;
+        return ESP_OK;
+    }
+    if (esp_vfs_fat_info(s_sd_mount_dir, total_bytes, free_bytes) != ESP_OK)
+    {
+        ++s_sd_space_error_count;
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+const sd_storage_service_mount_ops_t *sim_sd_mount_ops(void)
+{
+    static const sd_storage_service_mount_ops_t ops =
+    {
+        .context = NULL,
+        .mount = _host_sd_adapter_mount,
+        .unmount = _host_sd_adapter_unmount,
+        .is_mounted = _host_sd_adapter_is_mounted,
+        .format = _host_sd_adapter_format,
+        .get_space = _host_sd_adapter_get_space,
+    };
+    return &ops;
 }
 
 esp_err_t esp_vfs_fat_info(const char *base_path, uint64_t *total_bytes,

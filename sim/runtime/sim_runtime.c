@@ -25,7 +25,9 @@
 #include "imu_service.h"
 #include "nv_storage.h"
 #include "power_service.h"
+#include "file_service.h"
 #include "recorder_service.h"
+#include "sd_storage_service.h"
 #include "sim_sd_host.h"
 #include "time_service.h"
 #include "lvgl.h"
@@ -265,9 +267,29 @@ esp_err_t sim_runtime_boot(void)
         fprintf(stderr, "sim boot: chore_service_init failed %s\n", esp_err_to_name(result));
         return result;
     }
+    /* The real SD service owns the volume; its host adapter maps the mount
+     * point onto the --sd-dir directory. */
+    esp_err_t sd_result = sd_storage_service_register_mount_ops(
+                              sim_sd_mount_ops());
+    if (sd_result == ESP_OK)
+    {
+        const sd_storage_service_config_t sd_config =
+        {
+            .mount_path = host_sd_directory() != NULL ?
+            host_sd_directory() : "/tmp/mt_sim_sdcard",
+            .max_files = 5,
+            .allocation_unit_size = 16U * 1024U,
+        };
+        sd_result = sd_storage_service_init(&sd_config);
+    }
+    if (sd_result != ESP_OK)
+    {
+        fprintf(stderr, "sim boot: sd mount failed %s\n",
+                esp_err_to_name(sd_result));
+    }
     const recorder_service_config_t recorder_config =
     {
-        .directory = host_sd_recordings_dir(),
+        .directory = "MicroTech/Recordings",
         .max_duration_seconds = 30U * 60U,
         .minimum_free_bytes = 8U * 1024U * 1024U,
     };
@@ -275,6 +297,22 @@ esp_err_t sim_runtime_boot(void)
     if (result != ESP_OK)
     {
         fprintf(stderr, "sim boot: recorder_service_init failed %s\n", esp_err_to_name(result));
+    }
+    if (host_sd_directory() != NULL)
+    {
+        const file_service_config_t file_config =
+        {
+            .mount_path = host_sd_directory(),
+            .root_relative_path = NULL,
+            .max_files = 5,
+            .allocation_unit_size = 16U * 1024U,
+        };
+        const esp_err_t file_result = file_service_init(&file_config);
+        if (file_result != ESP_OK)
+        {
+            fprintf(stderr, "sim boot: file_service_init failed %s\n",
+                    esp_err_to_name(file_result));
+        }
     }
     result = power_service_register_power_ops(&sim_power_ops);
     if (result == ESP_OK)

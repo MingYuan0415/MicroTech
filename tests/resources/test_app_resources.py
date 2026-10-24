@@ -45,6 +45,8 @@ COMMON_GLYPHS = (
     "ui_power",
     "ui_standby",
     "ui_chevron_right",
+    "ui_folder",
+    "ui_file",
 )
 
 

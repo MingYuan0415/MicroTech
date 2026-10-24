@@ -353,6 +353,7 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
                               lv_obj_is_clickable(obj));
         cJSON_AddBoolToObject(flags, "scrollable",
                               lv_obj_is_scrollable(obj));
+        cJSON_AddBoolToObject(flags, "floating", lv_obj_is_floating(obj));
     }
     cJSON *states = cJSON_AddObjectToObject(node, "state");
     if (states != NULL)

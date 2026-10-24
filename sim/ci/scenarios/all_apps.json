@@ -874,7 +874,7 @@
   },
   {
    "cmd": "sd_assert",
-   "absent": [
+   "contains": [
     "REC_ci.wav"
    ]
   },
@@ -1099,6 +1099,71 @@
   {
    "cmd": "screenshot",
    "name": "apps_settings_wifi.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "storage"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "存储管理"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "挂载状态"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "总容量"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "重新挂载"
+   }
+  },
+  {
+   "cmd": "navigate",
+   "app": "files"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "文件管理"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "上级"
+   }
   },
   {
    "cmd": "navigate",

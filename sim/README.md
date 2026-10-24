@@ -114,11 +114,11 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
   `.app_manager_apps` 链接段（注册表发现全部内置 App；`apps_persistence.c` 只被
   `main/app_runtime.c` 使用，sim 不编）。
 - middleware：mt_log、event_bus、nv_storage（文件后端 `sim_nvs`）、timer_service、
-  power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder
-  业务真源；audio/sd 与 device_link 留 `ports/fakes/`——SD 由 `--sd-dir` 指定的
-  宿主目录真实承载（挂载语义用目录 rename 模拟，容量走 `statvfs`），recorder 的
-  WAV 读写、rename、删除都落在该真实文件系统上。录音服务使用 128 字节完整路径缓冲，
-  `--sd-dir` 需保持足够浅；路径过长时 boot 会打印告警且录音不会入列。
+  power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder、
+  `sd_storage_service` 和 `file_service` 业务真源。audio、SD 板级 adapter 与
+  device_link 保留 `ports/fakes/`；SD 文件真实存放于宿主目录，普通卸载不移动或
+  删除目录，容量来自 `statvfs`（CI 可固定）。录音命令由真实宿主 worker 异步执行，
+  列表查询只读取缓存；共享 SD revision 驱动重扫，不重启录音服务。
 - 不编：`system_pm`、`ble_runtime`、`wifi_service_idf_port.c`、
   `time_service_port.c`、`connectivity_manager_digest.c`（sim 用真 tinycrypt
   SHA-256 替代）、bsp 真源码（sim_bsp 提供 `bsp_hal.h` 三契约与
@@ -182,8 +182,15 @@ LVGL 侧仍四方核对并强制 CANVAS/SNAPSHOT/IMAGE/FREETYPE PORT/FS_POSIX=0 
 
 ## Agent 桥
 
-`--sd-dir DIR` 缺省 `/tmp/mt_sim_sdcard`；与 `--nvs-dir` 一样是纯宿主目录，
-删除即重置设备 SD 状态。
+不传 `--sd-dir` 时，每次启动创建独立的 `/tmp/mt-sd-XXXXXX` 沙箱，只有该实例
+拥有的沙箱允许模拟格式化。显式 `--sd-dir DIR` 仍可浏览、录音和删除，但格式化
+返回不支持；普通工作目录不会被格式化。录音完整路径预算为 192 字节（含 NUL），
+文件管理的完整后端路径预算为 1024 字节。
+
+`sim.sd` 的 mount/umount/format 经真实文件 worker，维护请求绑定提交时的代次。
+fail_mount/fail_format/fail_space 注入失败；fault 报告介质故障用于恢复验证。
+fixture 在卷内创建有界中文目录与多页长名称文件，供 UI 审查；write/clear 修改录音
+目录时持 MAINTENANCE 并发布 SD revision，录音占用期间拒绝执行。
 
 `--agent-port N`（默认 5002，仅绑 127.0.0.1；5001 留给真机基准）。协议为逐行
 JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
@@ -206,7 +213,9 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 落在扫描中，`request` 先经 connectivity_manager 发起一次扫描）、
 `sim.sd {action: mount|umount|write|clear|list|svc, name?, seconds?}`（挂载/
 卸载宿主目录卷、合成静音 WAV、清空、列目录、读 recorder 服务缓存索引与
-generation）、`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
+generation；`svc` 同时返回目标路径列表、operation_id/pending/last_error、
+当前存储及已发布索引的 generation/revision，用于核对异步终态和同路径替换保护）、
+`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
 字符串键）、`sim.connectivity`（connectivity_manager 与 wifi_service 状态、
 扫描缓存快照）、`sim.switcher {get?|action?}`（任务切换器可见性/显示/清空）、
  `sim.control_center {get?|action: show|hide}`（控制中心可见性/打开/关闭；顶部下拉手势
@@ -266,6 +275,8 @@ sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review �
 默认只跑树断言；显式 `SIM_PNG_GOLDEN=1` 时会真正比对，**缺基线即 FAIL**（生成用
 `run_ci.sh --update`，人工 review 后入库）。
 `review_pages.py --check` 独立负责页面状态矩阵、几何 lint 和 UI 基线比对。
+状态可用 `expect_absent` 断言错误成功提示或旧目录行不存在；录音状态结合
+`sim.sd svc` 的终态和目标路径列表校验同路径替换文件仍在索引中。
 
 **tree_assert 基线约定**：场景文本断言代表当前固件 UI 快照。GUI 调整期
 `run_ci.sh` FAIL 是回归信号——有意改动在同一提交里更新场景断言；意外改动即

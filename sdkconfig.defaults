@@ -101,3 +101,12 @@ CONFIG_LV_USE_ASSERT_NULL=y
 # #warning that the GCC 15 toolchain promotes to an error. Suppress only that
 # deprecation; the assert handler include itself is unchanged.
 CONFIG_LV_DISABLE_ASSERT_HANDLER_INCLUDE_WARNING=y
+
+# UTF-8 file names: user files on the SD card may carry Chinese names, so the
+# FatFs VFS converts between UTF-8 and the on-disk 16-bit long file names.
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+# CONFIG_FATFS_API_ENCODING_ANSI_OEM is not set
+CONFIG_FATFS_LFN_HEAP=y
+# CONFIG_FATFS_LFN_NONE is not set
+# CONFIG_FATFS_LFN_STACK is not set
+CONFIG_FATFS_MAX_LFN=255

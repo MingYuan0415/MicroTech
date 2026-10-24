@@ -32,7 +32,9 @@
 #include "sim_agent.h"
 #include "sim_agent_tree.h"
 #include "sim_backends.h"
+#include "file_service.h"
 #include "sim_sd_host.h"
+#include "sd_storage_service.h"
 #include "recorder_service.h"
 #include "nv_storage.h"
 #include "connectivity_manager.h"
@@ -123,21 +125,84 @@ static bool _optional_bool(const cJSON *item)
     return (item == NULL) || cJSON_IsBool(item);
 }
 
-static esp_err_t _restart_recorder_service(bool want_mounted)
+/** @brief Seed bounded, real UTF-8 files for storage UI review. */
+static esp_err_t _sim_storage_fixture(void)
 {
-    const recorder_service_config_t config =
+    sd_storage_service_usage_t usage = {0};
+    esp_err_t result = sd_storage_service_usage_acquire(
+                           SD_STORAGE_SERVICE_USAGE_MAINTENANCE, &usage);
+    if (result != ESP_OK)
     {
-        .directory = host_sd_recordings_dir(),
-        .max_duration_seconds = 30U * 60U,
-        .minimum_free_bytes = 8U * 1024U * 1024U,
+        return result;
+    }
+    const char *root = host_sd_directory();
+    char path[FILE_SERVICE_PATH_BYTES];
+    static const char *const directories[] =
+    {
+        "审查目录", "审查目录/空目录", "审查目录/多层路径",
+        "审查目录/多层路径/完整中文路径换行显示的子目录",
+        "审查目录/多层路径/完整中文路径换行显示的子目录/另一个完整中文名称用于验证路径不截断的目录",
     };
+    for (size_t index = 0U; index < sizeof(directories) / sizeof(directories[0]); ++index)
+    {
+        if (snprintf(path, sizeof(path), "%s/%s", root, directories[index]) >= (int)sizeof(path) ||
+                (mkdir(path, 0775) != 0 && errno != EEXIST))
+        {
+            result = ESP_FAIL;
+            goto done;
+        }
+    }
+    for (unsigned index = 0U; index < 24U; ++index)
+    {
+        (void)snprintf(path, sizeof(path), "%s/审查目录/%02u_完整中文文件名称需要多行显示而不能被固定行高裁切.txt",
+                       root, index);
+        FILE *file = fopen(path, "wb");
+        if (file == NULL)
+        {
+            result = ESP_FAIL;
+            goto done;
+        }
+        const bool written = fputs("UTF-8 fixture\n", file) >= 0;
+        const int closed = fclose(file);
+        if (!written || closed != 0)
+        {
+            result = ESP_FAIL;
+            goto done;
+        }
+    }
+    (void)sd_storage_service_note_content_change(&usage);
+done:
+    (void)sd_storage_service_usage_release(&usage);
+    return result;
+}
 
-    (void)recorder_service_deinit();
-    if (!want_mounted)
+/** @brief Run a version-bound request through the production file worker. */
+static esp_err_t _sim_storage_action(file_service_storage_action_t action)
+{
+    file_service_result_t result = {0};
+    file_service_snapshot_t initial;
+    if (file_service_get_snapshot(&initial) != ESP_OK)
     {
         return ESP_ERR_INVALID_STATE;
     }
-    return recorder_service_init(&config);
+    const esp_err_t submit = file_service_request_storage(action, initial.generation, &result);
+    if (submit != ESP_OK)
+    {
+        return submit;
+    }
+    for (unsigned attempt = 0U; attempt < 400U; ++attempt)
+    {
+        file_service_snapshot_t snapshot;
+        if (file_service_get_snapshot(&snapshot) == ESP_OK &&
+                snapshot.storage.operation_id == result.operation_id &&
+                (snapshot.storage.state == FILE_SERVICE_RESULT_DONE ||
+                 snapshot.storage.state == FILE_SERVICE_RESULT_FAILED))
+        {
+            return snapshot.storage.error;
+        }
+        usleep(5000);
+    }
+    return ESP_ERR_TIMEOUT;
 }
 
 static const char *_wait_idle_error(sim_wait_idle_result_t result)
@@ -1046,22 +1111,129 @@ static cJSON *_handle(cJSON *request, bool *ok)
         const char *verb = cJSON_GetStringValue(action);
         if (verb != NULL && strcmp(verb, "mount") == 0)
         {
-            *ok = host_sd_set_mounted(true) &&
-                  _restart_recorder_service(true) == ESP_OK;
+            const esp_err_t mount_result = _sim_storage_action(
+                                               FILE_SERVICE_STORAGE_MOUNT);
+            *ok = mount_result == ESP_OK;
             if (!*ok)
             {
                 cJSON_AddStringToObject(result, "error", "mount failed");
+                cJSON_AddNumberToObject(result, "err", (double)mount_result);
             }
         }
         else if (verb != NULL && strcmp(verb, "umount") == 0)
         {
-            const bool removed = host_sd_set_mounted(false);
-            _restart_recorder_service(false);
-            *ok = removed && !host_sd_is_mounted();
+            const esp_err_t unmount_result = _sim_storage_action(
+                                                 FILE_SERVICE_STORAGE_UNMOUNT);
+            /* The medium stays where it is; only the service releases it. */
+            *ok = unmount_result == ESP_OK;
             if (!*ok)
             {
                 cJSON_AddStringToObject(result, "error", "umount failed");
             }
+        }
+        else if (verb != NULL && strcmp(verb, "format") == 0)
+        {
+            const esp_err_t format_result = _sim_storage_action(
+                                                FILE_SERVICE_STORAGE_FORMAT);
+            *ok = format_result == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", "format failed");
+                cJSON_AddNumberToObject(result, "err", (double)format_result);
+            }
+        }
+        else if (verb != NULL && strcmp(verb, "fail_mount") == 0)
+        {
+            const cJSON *fail = cJSON_GetObjectItemCaseSensitive(params,
+                "fail");
+            host_sd_set_mount_failure(cJSON_IsBool(fail) &&
+                                      cJSON_IsTrue(fail));
+            *ok = true;
+        }
+        else if (verb != NULL && strcmp(verb, "fail_format") == 0)
+        {
+            const cJSON *fail = cJSON_GetObjectItemCaseSensitive(params,
+                "fail");
+            host_sd_set_format_failure(cJSON_IsBool(fail) &&
+                                       cJSON_IsTrue(fail));
+            *ok = true;
+        }
+        else if (verb != NULL && strcmp(verb, "fail_space") == 0)
+        {
+            const cJSON *fail = cJSON_GetObjectItemCaseSensitive(params, "fail");
+            host_sd_set_space_failure(cJSON_IsTrue(fail));
+            *ok = true;
+        }
+        else if (verb != NULL && strcmp(verb, "fault") == 0)
+        {
+            sd_storage_service_usage_t usage = {0};
+            const esp_err_t acquired = sd_storage_service_usage_acquire(
+                                           SD_STORAGE_SERVICE_USAGE_ACCESS, &usage);
+            *ok = acquired == ESP_OK;
+            if (*ok)
+            {
+                (void)sd_storage_service_usage_report_fault(&usage, ESP_FAIL);
+                (void)sd_storage_service_usage_release(&usage);
+            }
+        }
+        else if (verb != NULL && strcmp(verb, "fixture") == 0)
+        {
+            *ok = _sim_storage_fixture() == ESP_OK;
+        }
+        else if (verb != NULL && strcmp(verb, "record") == 0)
+        {
+            /* Drive the real recorder worker so lease/busy behaviour can be
+             * asserted without the touch UI. */
+            const cJSON *start = cJSON_GetObjectItemCaseSensitive(params,
+                "start");
+            const cJSON *stop = cJSON_GetObjectItemCaseSensitive(params,
+                "stop");
+            esp_err_t result_rec = ESP_ERR_INVALID_STATE;
+            if (cJSON_IsBool(start) && cJSON_IsTrue(start))
+            {
+                result_rec = recorder_service_start();
+            }
+            else if (cJSON_IsBool(stop) && cJSON_IsTrue(stop))
+            {
+                result_rec = recorder_service_stop();
+            }
+            recorder_service_snapshot_t snap;
+            memset(&snap, 0, sizeof(snap));
+            (void)recorder_service_get_snapshot(&snap);
+            cJSON_AddNumberToObject(result, "err", (double)result_rec);
+            cJSON_AddNumberToObject(result, "state", (double)snap.state);
+            cJSON_AddBoolToObject(result, "storage_ready", snap.storage_ready);
+            *ok = result_rec == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(result_rec));
+            }
+        }
+        else if (verb != NULL && strcmp(verb, "files") == 0)
+        {
+            file_service_snapshot_t snapshot;
+            const esp_err_t snap_result = file_service_get_snapshot(&snapshot);
+            cJSON_AddNumberToObject(result, "snap", (double)snap_result);
+            cJSON_AddNumberToObject(result, "volume",
+                                    (double)snapshot.volume);
+            cJSON_AddBoolToObject(result, "space_valid",
+                                  snapshot.space.valid);
+            cJSON_AddNumberToObject(result, "space_total",
+                                    (double)snapshot.space.total_bytes);
+            cJSON_AddNumberToObject(result, "space_free",
+                                    (double)snapshot.space.free_bytes);
+            cJSON_AddNumberToObject(result, "space_error",
+                                    (double)snapshot.space.last_error);
+            cJSON_AddNumberToObject(result, "revision",
+                                    (double)snapshot.revision);
+            cJSON_AddBoolToObject(result, "busy", snapshot.busy);
+            cJSON_AddNumberToObject(result, "generation", snapshot.generation);
+            cJSON_AddBoolToObject(result, "faulted", snapshot.faulted);
+            cJSON_AddNumberToObject(result, "pending", snapshot.pending_requests);
+            cJSON_AddNumberToObject(result, "space_error_count",
+                                    (double)host_sd_space_error_count());
+            *ok = snap_result == ESP_OK;
         }
         else if (verb != NULL && strcmp(verb, "write") == 0)
         {
@@ -1070,15 +1242,21 @@ static cJSON *_handle(cJSON *request, bool *ok)
             const cJSON *seconds = cJSON_GetObjectItemCaseSensitive(params,
                 "seconds");
             esp_err_t result_sd = ESP_ERR_INVALID_ARG;
+            sd_storage_service_usage_t usage = {0};
             if (cJSON_IsString(name) && cJSON_IsNumber(seconds) &&
-                    seconds->valuedouble >= 0.0 &&
-                    seconds->valuedouble <= 3600.0)
+                    seconds->valuedouble >= 0.0 && seconds->valuedouble <= 3600.0)
             {
-                result_sd = host_sd_write_wav(name->valuestring,
-                                              (uint32_t)seconds->valuedouble);
+                result_sd = sd_storage_service_usage_acquire(
+                                SD_STORAGE_SERVICE_USAGE_MAINTENANCE, &usage);
                 if (result_sd == ESP_OK)
                 {
-                    (void)_restart_recorder_service(host_sd_is_mounted());
+                    result_sd = host_sd_write_wav(name->valuestring,
+                                                  (uint32_t)seconds->valuedouble);
+                    if (result_sd == ESP_OK)
+                    {
+                        result_sd = sd_storage_service_note_content_change(&usage);
+                    }
+                    (void)sd_storage_service_usage_release(&usage);
                 }
             }
             *ok = result_sd == ESP_OK;
@@ -1103,14 +1281,33 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                     (double)snap.generation);
             cJSON_AddNumberToObject(result, "state", (double)snap.state);
             cJSON_AddNumberToObject(result, "svc_files", (double)count);
+            cJSON_AddNumberToObject(result, "operation_id", snap.operation_id);
+            cJSON_AddBoolToObject(result, "operation_pending", snap.operation_pending);
+            cJSON_AddNumberToObject(result, "last_error", snap.last_error);
+            cJSON_AddNumberToObject(result, "storage_generation", snap.storage_generation);
+            cJSON_AddNumberToObject(result, "content_revision", snap.content_revision);
+            cJSON_AddNumberToObject(result, "index_generation", snap.index_generation);
+            cJSON_AddNumberToObject(result, "index_revision", snap.index_revision);
+            cJSON_AddBoolToObject(result, "index_valid", snap.index_valid);
+            cJSON *targets = cJSON_AddArrayToObject(result, "files");
+            for (size_t index = 0U; index < count && targets != NULL; ++index)
+            {
+                cJSON_AddItemToArray(targets, cJSON_CreateString(files[index].target.name));
+            }
             *ok = true;
         }
         else if (verb != NULL && strcmp(verb, "clear") == 0)
         {
-            cJSON_AddNumberToObject(result, "removed",
-                                    (double)host_sd_clear_recordings());
-            (void)_restart_recorder_service(host_sd_is_mounted());
-            *ok = true;
+            sd_storage_service_usage_t usage = {0};
+            const esp_err_t acquired = sd_storage_service_usage_acquire(
+                                           SD_STORAGE_SERVICE_USAGE_MAINTENANCE, &usage);
+            *ok = acquired == ESP_OK;
+            if (*ok)
+            {
+                cJSON_AddNumberToObject(result, "removed", (double)host_sd_clear_recordings());
+                (void)sd_storage_service_note_content_change(&usage);
+                (void)sd_storage_service_usage_release(&usage);
+            }
         }
         else if (verb != NULL && strcmp(verb, "list") == 0)
         {

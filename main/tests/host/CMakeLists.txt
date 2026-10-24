@@ -97,6 +97,7 @@ target_include_directories(app_runtime_test PRIVATE
     ../../../layers/middleware/components/time_service/include
     ../../../layers/middleware/components/timer_service/include
     ../../../layers/middleware/components/recorder_service/include
+    ../../../layers/middleware/components/file_service/include
     ../../../layers/middleware/components/onboarding_service/include
     ../../../layers/middleware/components/weather_service/include
 )
@@ -131,6 +132,7 @@ target_include_directories(app_runtime_pm_test PRIVATE
     ../../../layers/middleware/components/time_service/include
     ../../../layers/middleware/components/timer_service/include
     ../../../layers/middleware/components/recorder_service/include
+    ../../../layers/middleware/components/file_service/include
     ../../../layers/middleware/components/onboarding_service/include
     ../../../layers/middleware/components/weather_service/include
 )

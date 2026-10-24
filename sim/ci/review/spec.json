@@ -370,6 +370,91 @@
           ],
           "allow_disabled": []
         }
+        ,{
+          "name": "mounted_busy",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "record", "start": true},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "step", "ms": 1320}
+          ],
+          "expect_visible": ["设备状态", "已挂载", "存储管理"],
+          "expect_absent": ["未挂载"],
+          "single_line": ["已挂载", "存储管理"],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "storage",
+      "states": [
+        {
+          "name": "mounted",
+          "seed": [
+            {"cmd": "sd", "action": "record", "stop": true},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "navigate", "app": "settings", "page": "storage"},
+            {"cmd": "step", "ms": 660}
+          ],
+          "expect_visible": ["存储管理", "挂载状态", "总容量", "剩余空间", "安全卸载", "格式化存储卡"],
+          "single_line": ["挂载状态", "总容量", "剩余空间", "当前操作", "重新挂载", "刷新容量", "安全卸载"],
+          "allow_disabled": ["\uf00d", "\uf2ed", "\uf021"],
+          "no_golden": true
+        },
+        {
+          "name": "unmounted",
+          "seed": [
+            {"cmd": "sd", "action": "umount"},
+            {"cmd": "navigate", "app": "settings", "page": "storage"},
+            {"cmd": "step", "ms": 660}
+          ],
+          "expect_visible": ["存储管理", "重新挂载", "格式化并恢复挂载"],
+          "single_line": ["挂载状态", "总容量", "剩余空间", "当前操作"],
+          "allow_disabled": ["\uf00d", "\uf2ed"],
+          "no_golden": true
+        },
+        {
+          "name": "faulted",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "fault"},
+            {"cmd": "navigate", "app": "settings", "page": "storage"},
+            {"cmd": "step", "ms": 660}
+          ],
+          "expect_visible": ["存储故障", "重新挂载", "格式化并恢复挂载"],
+          "single_line": ["挂载状态", "总容量", "剩余空间", "当前操作"],
+          "allow_disabled": ["\uf00d", "\uf2ed", "\uf021"],
+          "no_golden": true
+        },
+        {
+          "name": "format_confirm",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "navigate", "app": "settings", "page": "storage"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "tap_text", "text": "格式化存储卡"}
+          ],
+          "expect_visible": ["全部用户内容", "格式化", "取消"],
+          "single_line": [],
+          "allow_disabled": ["\uf00d", "\uf2ed", "\uf021"],
+          "no_golden": true
+        },
+        {
+          "name": "format_cancel",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "navigate", "app": "settings", "page": "storage"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "tap_text", "text": "格式化存储卡"},
+            {"cmd": "tap_text", "text": "取消"}
+          ],
+          "expect_visible": ["存储管理", "存储卡可用"],
+          "single_line": ["挂载状态", "总容量", "剩余空间", "当前操作"],
+          "allow_disabled": ["\uf00d", "\uf2ed", "\uf021"],
+          "no_golden": true
+        }
       ]
     },
     {
@@ -779,6 +864,10 @@
           "seed": [
             {
               "cmd": "sd",
+              "action": "mount"
+            },
+            {
+              "cmd": "sd",
               "action": "clear"
             }
           ],
@@ -789,99 +878,274 @@
           "allow_disabled": []
         },
         {
-          "name": "delete_confirm",
+          "name": "long_filename",
           "seed": [
-            {
-              "cmd": "sd",
-              "action": "clear"
-            },
-            {
-              "cmd": "sd",
-              "action": "write",
-              "name": "REC_review.wav",
-              "seconds": 2
-            },
-            {
-              "cmd": "navigate",
-              "app": "recorder",
-              "page": "files"
-            },
-            {
-              "cmd": "step",
-              "ms": 990
-            },
-            {
-              "cmd": "touch",
-              "action": "down",
-              "x": 184,
-              "y": 100
-            },
-            {
-              "cmd": "step",
-              "ms": 66
-            },
-            {
-              "cmd": "touch",
-              "action": "up",
-              "x": 184,
-              "y": 100
-            },
-            {
-              "cmd": "step",
-              "ms": 330
-            },
-            {
-              "cmd": "touch",
-              "action": "down",
-              "x": 267,
-              "y": 404
-            },
-            {
-              "cmd": "step",
-              "ms": 66
-            },
-            {
-              "cmd": "touch",
-              "action": "up",
-              "x": 267,
-              "y": 404
-            },
-            {
-              "cmd": "step",
-              "ms": 330
-            }
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.wav", "seconds": 2},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990}
           ],
-          "expect_visible": [
-            "删除录音",
-            "取消"
-          ],
+          "expect_visible": ["LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"],
           "single_line": [],
           "allow_disabled": []
         },
         {
-          "name": "long_filename",
+          "name": "delete_confirm",
           "seed": [
-            {
-              "cmd": "sd",
-              "action": "clear"
-            },
-            {
-              "cmd": "sd",
-              "action": "write",
-              "name": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.wav",
-              "seconds": 2
-            },
-            {
-              "cmd": "navigate",
-              "app": "recorder",
-              "page": "files"
-            }
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_review.wav", "seconds": 2},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 330},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "tap_text", "text": "REC_review"},
+            {"cmd": "tap_text", "text": "删除"}
           ],
-          "expect_visible": [
-            "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
-          ],
+          "expect_visible": ["播放库", "删除录音", "取消"],
           "single_line": [],
-          "allow_disabled": []
+          "allow_disabled": [],
+          "no_golden": true
+        }
+        ,{
+          "name": "external_revision",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 2},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "tap_text", "text": "REC_epoch"},
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 3},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "tap_text", "text": "播放"},
+            {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"state": 0, "svc_files": 1, "operation_pending": false}}
+          ],
+          "expect_visible": ["播放库", "REC_epoch", "0:03"],
+          "expect_absent": ["已删除", "停止播放"],
+          "single_line": ["REC_epoch", "0:03"],
+          "allow_disabled": [], "no_golden": true
+        },{
+          "name": "stale_delete_failed",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 2},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "tap_text", "text": "REC_epoch"},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_epoch.wav", "seconds": 3},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "step", "ms": 1320},
+            {"cmd": "sd_assert", "contains": ["REC_epoch.wav"]},
+            {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"state": 0, "svc_files": 1, "operation_pending": false, "last_error": -5}}
+          ],
+          "expect_visible": ["播放库", "REC_epoch", "删除失败"],
+          "expect_absent": ["已删除", "删除录音"],
+          "single_line": ["删除失败"],
+          "allow_disabled": [], "no_golden": true
+        },{
+          "name": "delete_completed",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "clear"},
+            {"cmd": "sd", "action": "write", "name": "REC_done.wav", "seconds": 2},
+            {"cmd": "navigate", "app": "recorder", "page": "root"},
+            {"cmd": "step", "ms": 660},
+            {"cmd": "navigate", "app": "recorder", "page": "files"},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "tap_text", "text": "REC_done"},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "step", "ms": 990},
+            {"cmd": "sd_assert", "absent": ["REC_done.wav"]},
+            {"cmd": "assert_result", "method": "sim.sd", "params": {"action": "svc"}, "expect": {"svc_files": 0, "operation_pending": false, "last_error": 0}}
+          ],
+          "expect_visible": ["已删除", "暂无已完成录音"],
+          "expect_absent": ["删除失败", "REC_done"],
+          "single_line": ["已删除"],
+          "allow_disabled": [], "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "files",
+      "page": "browse",
+      "states": [
+        {
+          "name": "root",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "fixture"},
+            {"cmd": "files_root"},
+            {"cmd": "step", "ms": 660}
+          ],
+          "expect_visible": ["文件管理", "存储卡 /", "审查目录", "上级", "刷新"],
+          "single_line": ["上级", "刷新", "上一批", "下一批"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "long_names",
+          "seed": [
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"}
+          ],
+          "expect_visible": ["当前目录详情", "空目录", "多层路径"],
+          "single_line": ["当前目录详情", "上一批", "下一批"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "next_batch",
+          "seed": [
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "tap_text", "text": "下一批"}
+          ],
+          "expect_visible": ["第 2 批", "当前目录详情"],
+          "single_line": ["当前目录详情", "上一批", "下一批"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "empty_directory",
+          "seed": [
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "tap_text", "text": "空目录"}
+          ],
+          "expect_visible": ["目录为空", "当前目录详情"],
+          "single_line": ["当前目录详情"],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "unmounted",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "files_root"},
+            {"cmd": "sd", "action": "umount"},
+            {"cmd": "tap_text", "text": "刷新"}
+          ],
+          "expect_visible": ["文件管理", "存储卡未挂载，请前往存储管理重新挂载"],
+          "expect_absent": ["正在使用", "审查目录", "第 1 批"],
+          "single_line": ["刷新", "上级"],
+          "allow_disabled": [], "no_golden": true
+        },{
+          "name": "failed_navigation",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "fixture"},
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "刷新"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "sd", "action": "umount"},
+            {"cmd": "tap_text", "text": "多层路径"}
+          ],
+          "expect_visible": ["审查目录/多层路径", "存储卡未挂载"],
+          "expect_absent": ["完整中文文件名称", "空目录", "第 1 批"],
+          "single_line": ["当前目录详情"],
+          "allow_disabled": [], "no_golden": true
+        },
+        {
+          "name": "recording_browse",
+          "seed": [
+            {"cmd": "sd", "action": "mount"},
+            {"cmd": "sd", "action": "record", "start": true},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "刷新"},
+            {"cmd": "tap_text", "text": "审查目录"}
+          ],
+          "expect_visible": ["当前目录详情", "空目录"],
+          "single_line": ["当前目录详情"],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
+      "app": "files",
+      "page": "detail",
+      "states": [
+        {
+          "name": "empty_directory_confirm",
+          "seed": [
+            {"cmd": "sd", "action": "record", "stop": true},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "tap_text", "text": "空目录"},
+            {"cmd": "tap_text", "text": "当前目录详情"},
+            {"cmd": "tap_text", "text": "删除"}
+          ],
+          "expect_visible": ["文件详情", "删除空目录", "取消"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "confirmation_cancel",
+          "seed": [
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "tap_text", "text": "空目录"},
+            {"cmd": "tap_text", "text": "当前目录详情"},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "tap_text", "text": "取消"}
+          ],
+          "expect_visible": ["文件详情", "可以删除", "空目录"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "busy_delete",
+          "seed": [
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "tap_text", "text": "空目录"},
+            {"cmd": "tap_text", "text": "当前目录详情"},
+            {"cmd": "sd", "action": "record", "start": true},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "tap_text", "text": "删除"},
+            {"cmd": "tap_text", "text": "删除"}
+          ],
+          "expect_visible": ["文件详情", "正在使用"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "full_path",
+          "seed": [
+            {"cmd": "sd", "action": "record", "stop": true},
+            {"cmd": "sleep_ms", "ms": 100},
+            {"cmd": "files_root"},
+            {"cmd": "tap_text", "text": "审查目录"},
+            {"cmd": "tap_text", "text": "多层路径"},
+            {"cmd": "tap_text", "text": "完整中文路径换行显示的子目录"},
+            {"cmd": "tap_text", "text": "另一个完整中文名称用于验证路径不截断的目录"},
+            {"cmd": "tap_text", "text": "当前目录详情"}
+          ],
+          "expect_visible": ["文件详情", "位置", "审查目录/多层路径/完整中文路径换行显示的子目录/另一个完整中文名称用于验证路径不截断的目录"],
+          "single_line": [],
+          "allow_disabled": [],
+          "no_golden": true
         }
       ]
     },

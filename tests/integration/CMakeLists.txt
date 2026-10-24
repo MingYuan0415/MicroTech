@@ -90,6 +90,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/imu_service/include"
     "${MIDDLEWARE}/audio_service/include"
     "${MIDDLEWARE}/sd_storage_service/include"
+    "${MIDDLEWARE}/file_service/include"
     "${MIDDLEWARE}/time_service/include"
     "${MIDDLEWARE}/timer_service/include"
     "${MIDDLEWARE}/nv_storage/include"

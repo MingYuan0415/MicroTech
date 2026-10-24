@@ -404,7 +404,7 @@ int main(int argc, char **argv)
         .ci = false,
         .res_dir = NULL,
         .nvs_dir = NULL,
-        .sd_dir = "/tmp/mt_sim_sdcard",
+        .sd_dir = NULL,
         .out_dir = NULL,
         .navigate = NULL,
         .brightness = -1,
@@ -473,22 +473,20 @@ int main(int argc, char **argv)
     {
         sim_nvs_set_dir(opt.nvs_dir);
     }
-    if (opt.sd_dir != NULL)
     {
-        char sd_abs[PATH_MAX];
-        const char *sd_path = opt.sd_dir;
-        if (sd_path[0] != '/' && realpath(".", sd_abs) != NULL)
+        char sandbox[] = "/tmp/mt-sd-XXXXXX";
+        const bool owned_sandbox = opt.sd_dir == NULL;
+        const char *sd_path = owned_sandbox ? mkdtemp(sandbox) : opt.sd_dir;
+        char *absolute = sd_path != NULL && sd_path[0] != '/' ? realpath(sd_path, NULL) : NULL;
+        if (absolute != NULL)
         {
-            if (snprintf(sd_abs + strlen(sd_abs), sizeof(sd_abs) - strlen(sd_abs),
-                         "/%s", sd_path) < (int)sizeof(sd_abs))
-            {
-                sd_path = sd_abs;
-            }
+            sd_path = absolute;
         }
-        if (host_sd_boot(sd_path) != ESP_OK)
+        if (sd_path == NULL || host_sd_boot(sd_path, owned_sandbox) != ESP_OK)
         {
-            fprintf(stderr, "sim boot: host_sd_boot(%s) failed\n", sd_path);
+            fprintf(stderr, "sim boot: SD backing directory unavailable\n");
         }
+        free(absolute);
     }
     host_audio_set_available(true);
     if (opt.ci)

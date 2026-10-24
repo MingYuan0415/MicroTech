@@ -99,6 +99,14 @@ void app_runtime_pm_set_time_participant(bool enabled);
 void app_runtime_pm_set_weather_participant(bool enabled);
 
 /**
+ * @brief Set whether the file service participates in standby.
+ *
+ * While enabled, a pending file request or a maintenance operation blocks
+ * standby admission.
+ */
+void app_runtime_pm_set_file_participant(bool enabled);
+
+/**
  * @brief Detach BSP-backed input state after BSP shutdown.
  */
 void app_runtime_pm_detach_bsp(void);

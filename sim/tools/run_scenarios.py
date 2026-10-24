@@ -74,6 +74,14 @@ def _walk(node):
         yield from _walk(child)
 
 
+def _walk_actionable(node, blocked=False):
+    blocked = blocked or node.get('flags', {}).get('hidden', False) or node.get('state', {}).get('disabled', False)
+    if not blocked:
+        yield node
+    for child in node.get('children', []) + node.get('overlays', []):
+        yield from _walk_actionable(child, blocked)
+
+
 class Runner:
     def __init__(self, host, port, out_dir, golden, update):
         self.host, self.port = host, port
@@ -133,6 +141,45 @@ class Runner:
                         'pm_state %s != %s' % (result.get('pm_state'), want)
         elif cmd == 'sleep_ms':
             time.sleep(step['ms'] / 1000.0)
+        elif cmd == 'files_root':
+            self.call('sim.navigate', {'app': 'files', 'page': 'browse'})
+            for _ in range(16):
+                self.call('sim.step', {'ms': 660})
+                time.sleep(0.05)
+                texts = [node.get('text') for node in _walk(self.call('sim.tree')['tree'])]
+                if '存储卡 /' in texts:
+                    break
+                self._step({'cmd': 'tap_text', 'text': '上级'})
+            else:
+                raise AssertionError('file browser root not reachable')
+        elif cmd == 'tap_text':
+            for attempt in range(12):
+                tree = self.call('sim.tree')['tree']
+                time.sleep(0.05)
+                nodes = [node for node in _walk_actionable(tree)
+                         if node.get('text') == step['text'] and
+                         node.get('flags', {}).get('visible', True) and
+                         64 <= node['coords']['y'] and
+                         node['coords']['y'] + node['coords']['h'] <= 448]
+                if nodes:
+                    break
+                targets = [node for node in _walk(tree) if node.get('text') == step['text']]
+                above = targets and targets[-1]['coords']['y'] < 64
+                if targets and all(node.get('coords', {}).get('y', 0) >= 64 and
+                                   node.get('coords', {}).get('y', 0) < 448 for node in targets):
+                    self.call('sim.step', {'ms': 330})
+                    continue
+                self._step({'cmd': 'drag', 'x0': 180, 'y0': 170 if above else 390,
+                            'x1': 180, 'y1': 390 if above else 170, 'steps': 8})
+            assert nodes, 'reachable text not found: %s' % step['text']
+            box = nodes[-1]['coords']
+            x, y = box['x'] + box['w'] // 2, box['y'] + box['h'] // 2
+            self.call('sim.touch', {'action': 'down', 'x': x, 'y': y})
+            self.call('sim.step', {'ms': 66})
+            self.call('sim.touch', {'action': 'up', 'x': x, 'y': y})
+            self.call('sim.step', {'ms': 660})
+            time.sleep(0.05)
+            self.call('sim.step', {'ms': 330})
         elif cmd == 'touch':
             self.call('sim.touch', {k: step[k] for k in ('action', 'x', 'y')})
         elif cmd == 'drag':
@@ -182,7 +229,7 @@ class Runner:
         elif cmd == 'sd':
             self.call('sim.sd',
                       {k: step[k] for k in
-                       ('action', 'name', 'seconds') if k in step})
+                       ('action', 'name', 'seconds', 'fail', 'start', 'stop') if k in step})
         elif cmd == 'sd_assert':
             result = self.call('sim.sd', {'action': 'list'})
             files = result.get('files', [])

@@ -103,6 +103,14 @@ class ReviewPagesTest(unittest.TestCase):
         runner.call.return_value = {'idle': True}
         review._wait_idle(runner)
 
+    def test_forbidden_text_detects_false_success_and_stale_rows(self):
+        label = self._label('已删除', ['已删除'])
+        state = {'expect_absent': ['已删除', '旧目录文件']}
+        self.assertEqual(review._lint(label, {}, state, 368, 448),
+                         ["unexpected text '已删除'"])
+        label = self._label('删除失败', ['删除失败'])
+        self.assertEqual(review._lint(label, {}, state, 368, 448), [])
+
     def test_scroll_requires_direction_and_sufficient_travel(self):
         button = {'type': 'lv_button', 'coords': {'x': 10, 'y': -40, 'w': 60, 'h': 30}}
         owner = {'coords': {'x': 0, 'y': 0, 'w': 368, 'h': 448},
@@ -181,6 +189,26 @@ class ReviewPagesTest(unittest.TestCase):
         with Image.open(path) as handle:
             self.assertEqual(handle.size, (368, VH))
         self.assertIsNone(note)
+
+    def test_modal_scrim_preserves_one_surface_frame(self):
+        runner = self._fake_page(200, stuck=True)
+        original_call = runner.call
+
+        def modal_call(method, params=None):
+            result = original_call(method, params)
+            if method == 'sim.tree':
+                result['tree']['children'] = [{
+                    'coords': {'x': 0, 'y': 0, 'w': 368, 'h': VH},
+                    'flags': {'floating': True, 'clickable': True}}]
+            return result
+
+        runner.call = modal_call
+        path, note = review._capture_full_page(runner, 'modal', 368, VH)
+        with Image.open(path) as image:
+            self.assertEqual(image.size, (368, VH))
+            self.assertEqual(image.getpixel((0, VH - 1)), _content_color(VH - 1 - BOX_Y))
+        self.assertIn('modal', note)
+        self.assertEqual(runner.offset, 0)
 
     def test_unscrollable_page_never_yields_a_short_canvas(self):
         """If the drag cannot advance, a truncated composite must fail loudly."""

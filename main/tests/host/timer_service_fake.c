@@ -1,10 +1,37 @@
 #include "timer_service.h"
+#include "file_service.h"
 #include "recorder_service.h"
 #include "onboarding_service.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
+
+static esp_err_t s_file_service_init_result;
+static bool s_file_service_initialized;
+static size_t s_file_service_deinit_count;
+
+void host_file_service_reset(void)
+{
+    s_file_service_init_result = ESP_OK;
+    s_file_service_initialized = false;
+    s_file_service_deinit_count = 0U;
+}
+
+void host_file_service_set_init_result(esp_err_t result)
+{
+    s_file_service_init_result = result;
+}
+
+bool host_file_service_is_initialized(void)
+{
+    return s_file_service_initialized;
+}
+
+size_t host_file_service_deinit_count(void)
+{
+    return s_file_service_deinit_count;
+}
 
 bool g_host_onboarding_pending;
 
@@ -21,6 +48,47 @@ bool recorder_service_is_busy(void)
 esp_err_t recorder_service_init(const recorder_service_config_t *config)
 {
     return config != NULL ? ESP_OK : ESP_ERR_INVALID_ARG;
+}
+
+esp_err_t file_service_init(const file_service_config_t *config)
+{
+    if (config == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_file_service_init_result != ESP_OK)
+    {
+        return s_file_service_init_result;
+    }
+    s_file_service_initialized = true;
+    return ESP_OK;
+}
+
+esp_err_t file_service_deinit(void)
+{
+    ++s_file_service_deinit_count;
+    if (!s_file_service_initialized)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_file_service_initialized = false;
+    return ESP_OK;
+}
+
+bool file_service_is_busy(void)
+{
+    return false;
+}
+
+esp_err_t file_service_suspend(uint32_t timeout_ms)
+{
+    (void)timeout_ms;
+    return ESP_OK;
+}
+
+esp_err_t file_service_resume(void)
+{
+    return ESP_OK;
 }
 
 esp_err_t recorder_service_deinit(void)

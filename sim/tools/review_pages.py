@@ -21,6 +21,7 @@ Spec schema (JSON):
          {"name": "idle_no_profile",
           "seed": [ {"cmd": "set_power", ...}, ... ],   # run_scenarios cmds
           "expect_visible": ["Wi-Fi 开关", "忘记网络"],
+          "expect_absent": ["已删除"],  # forbidden stale/false-success copy
           "single_line":    ["IP 地址", "状态"],   # must render as one line
           "balanced_prose": ["预计未来6小时内"],   # multi-line: no orphan tail
           "allow_truncation": ["SSID: "],          # deliberate DOTS prefixes
@@ -203,7 +204,14 @@ def _capture_full_page(runner, name, vw, vh):
     screenshot.
     """
     from PIL import Image
-    owner = _scroll_owner(runner.call('sim.tree')['tree'], vw, vh)
+    tree = runner.call('sim.tree')['tree']
+    for node in _walk_on_screen(tree):
+        flags = node.get('flags') or {}
+        box = node.get('coords') or {}
+        if (flags.get('floating') and flags.get('clickable') and
+                box.get('w', 0) >= vw and box.get('h', 0) >= vh):
+            return runner.call('sim.screenshot', {'name': name + '.png'})['path'], 'modal surface: single frame'
+    owner = _scroll_owner(tree, vw, vh)
     if owner is None:
         return runner.call('sim.screenshot', {'name': name + '.png'})['path'], None
     box, _offset, below = owner
@@ -465,6 +473,9 @@ def _lint(tree, page, state, vw, vh):
     for want in state.get('expect_visible', []):
         if want not in joined:
             v.append('missing expected text %r' % want)
+    for forbidden in state.get('expect_absent', []):
+        if forbidden in joined:
+            v.append('unexpected text %r' % forbidden)
 
     v.extend(_lint_labels(tree, state))
 

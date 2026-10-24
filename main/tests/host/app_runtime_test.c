@@ -115,6 +115,7 @@ typedef struct test_runtime
     bool audio_participant;
     bool time_participant;
     bool weather_participant;
+    bool file_participant;
     bool weather_network_ready;
     bool factory_reset_marker_durable;
     bool device_link_started_gated;
@@ -134,6 +135,10 @@ EVENT_BUS_DEFINE_ID(CONNECTIVITY_MANAGER_MSG);
 static test_runtime_t s_test;
 
 extern bool g_host_onboarding_pending;
+void host_file_service_reset(void);
+void host_file_service_set_init_result(esp_err_t result);
+bool host_file_service_is_initialized(void);
+size_t host_file_service_deinit_count(void);
 void host_onboarding_set_pending(bool pending);
 
 static const app_manager_app_desc_t s_required_apps[] =
@@ -161,6 +166,10 @@ static const app_manager_app_desc_t s_required_apps[] =
     {
         .name = "recorder", .id = APP_MANAGER_ID_RECORDER,
         .root_page_id = "root",
+    },
+    {
+        .name = "files", .id = APP_MANAGER_ID_FILES,
+        .root_page_id = "browse",
     },
     {
         .name = "level", .id = APP_MANAGER_ID_LEVEL, .root_page_id = "root",
@@ -202,6 +211,7 @@ static void _test_reset(void)
     s_test.secondary_failure_result = ESP_FAIL;
     s_test.sd_mounted = true;
     s_test.sd_mount_result = ESP_OK;
+    host_file_service_reset();
 }
 
 static void _test_clear_events(void)
@@ -794,6 +804,11 @@ void app_runtime_pm_set_weather_participant(bool enabled)
     s_test.weather_participant = enabled;
 }
 
+void app_runtime_pm_set_file_participant(bool enabled)
+{
+    s_test.file_participant = enabled;
+}
+
 void app_runtime_pm_detach_bsp(void)
 {
 }
@@ -1270,7 +1285,8 @@ static void _test_successful_lifecycle(void)
     };
 
     _test_reset();
-    assert(app_runtime_start() == ESP_OK);
+    const esp_err_t start_result = app_runtime_start();
+    assert(start_result == ESP_OK);
     assert(app_runtime_is_running());
     assert(s_test.connectivity_participant);
     assert(s_test.device_link_participant);
@@ -1563,7 +1579,6 @@ static void _test_degradable_hardware_failures(void)
     {
         {TEST_EVENT_IMU_INIT, TEST_EVENT_IMU_DEINIT},
         {TEST_EVENT_AUDIO_INIT, TEST_EVENT_AUDIO_DEINIT},
-        {TEST_EVENT_SD_INIT, TEST_EVENT_SD_DEINIT},
     };
 
     for (size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index)
@@ -1579,6 +1594,44 @@ static void _test_degradable_hardware_failures(void)
         assert(app_runtime_stop() == ESP_OK);
         assert(!_test_event_seen(cases[index].deinit_event));
     }
+
+    /* A failed mount keeps the service, adapter and cleanup obligations alive
+     * so Settings can retry; teardown is deferred until runtime stop. */
+    _test_reset();
+    s_test.failure_event = TEST_EVENT_SD_INIT;
+    assert(app_runtime_start() == ESP_OK);
+    assert(app_runtime_is_running());
+    assert(!_test_event_seen(TEST_EVENT_SD_DEINIT));
+    _test_clear_events();
+    s_test.failure_event = TEST_EVENT_NONE;
+    assert(app_runtime_stop() == ESP_OK);
+    assert(_test_event_seen(TEST_EVENT_SD_DEINIT));
+}
+
+static void _test_file_init_failure_is_degradable(void)
+{
+    _test_reset();
+    host_file_service_set_init_result(ESP_ERR_NO_MEM);
+    assert(app_runtime_start() == ESP_OK);
+    assert(app_runtime_is_running());
+    assert(!s_test.file_participant);
+    assert(!host_file_service_is_initialized());
+    assert(host_file_service_deinit_count() == 0U);
+
+    _test_clear_events();
+    assert(app_runtime_stop() == ESP_OK);
+    assert(_test_event_seen(TEST_EVENT_SD_DEINIT));
+    assert(_test_event_seen(TEST_EVENT_BSP_DEINIT));
+    assert(host_file_service_deinit_count() == 0U);
+
+    host_file_service_set_init_result(ESP_OK);
+    _test_clear_events();
+    assert(app_runtime_start() == ESP_OK);
+    assert(app_runtime_is_running());
+    assert(s_test.file_participant);
+    assert(host_file_service_is_initialized());
+    assert(app_runtime_stop() == ESP_OK);
+    assert(host_file_service_deinit_count() == 1U);
 }
 
 static void _test_imu_init_cleanup_retry_keeps_bridge(void)
@@ -1658,6 +1711,7 @@ int main(void)
     _test_degradable_connectivity_failures();
     _test_degradable_hardware_failures();
     _test_imu_init_cleanup_retry_keeps_bridge();
+    _test_file_init_failure_is_degradable();
     _test_sd_mount_error_exposes_cleanup_handle();
     return 0;
 }

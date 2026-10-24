@@ -10,6 +10,7 @@
 #include "imu_service.h"
 #include "power_service.h"
 #include "device_link_service.h"
+#include "file_service.h"
 #include "recorder_service.h"
 #include "time_service.h"
 #include "weather_service.h"
@@ -32,6 +33,7 @@ typedef struct app_runtime_sleep_context
     bool audio_participant;
     bool time_participant;
     bool weather_participant;
+    bool file_participant;
     bool chore_resume_required;
     bool connectivity_resume_required;
     bool device_link_resume_required;
@@ -41,6 +43,7 @@ typedef struct app_runtime_sleep_context
     bool weather_resume_required;
     bool power_resume_required;
     bool input_resume_required;
+    bool file_resume_required;
 } app_runtime_sleep_context_t;
 
 static atomic_bool s_standby_admitted = false;
@@ -64,6 +67,12 @@ static bool _app_runtime_pm_is_standby_allowed(void)
         return false;
     }
     if (recorder_service_is_busy())
+    {
+        return false;
+    }
+    /* Pending deletes, a maintenance operation, or a running format block
+     * standby; a mounted card with idle sessions does not. */
+    if (s_sleep_context.file_participant && file_service_is_busy())
     {
         return false;
     }
@@ -284,7 +293,8 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
             sleep->connectivity_resume_required || sleep->imu_resume_required ||
             sleep->audio_resume_required || sleep->time_resume_required ||
             sleep->weather_resume_required ||
-            sleep->power_resume_required || sleep->input_resume_required)
+            sleep->power_resume_required || sleep->input_resume_required ||
+            sleep->file_resume_required)
     {
         result = _app_runtime_pm_complete_sleep(timeout_ms, sleep);
         if (result != ESP_OK)
@@ -300,6 +310,22 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
     if (result != ESP_OK)
     {
         goto rollback;
+    }
+
+    if (sleep->file_participant)
+    {
+        /* Close admission and wait for in-flight file work. A running format
+         * makes this time out, which rolls the standby request back. */
+        sleep->file_resume_required = true;
+        result = file_service_suspend(timeout_ms);
+        if (result != ESP_OK)
+        {
+            if (result != ESP_ERR_TIMEOUT)
+            {
+                sleep->file_resume_required = false;
+            }
+            goto rollback;
+        }
     }
 
     if (sleep->device_link_participant)
@@ -410,6 +436,15 @@ static esp_err_t _app_runtime_pm_complete_sleep(uint32_t timeout_ms,
         if (result == ESP_OK)
         {
             sleep->input_resume_required = false;
+        }
+    }
+    if (sleep->file_resume_required)
+    {
+        const esp_err_t result = file_service_resume();
+        _app_runtime_pm_record_first_error(&first_error, result);
+        if (result == ESP_OK)
+        {
+            sleep->file_resume_required = false;
         }
     }
     if (sleep->power_resume_required)
@@ -660,6 +695,11 @@ void app_runtime_pm_set_time_participant(bool enabled)
 void app_runtime_pm_set_weather_participant(bool enabled)
 {
     s_sleep_context.weather_participant = enabled;
+}
+
+void app_runtime_pm_set_file_participant(bool enabled)
+{
+    s_sleep_context.file_participant = enabled;
 }
 
 void app_runtime_pm_detach_bsp(void)
