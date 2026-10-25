@@ -1,0 +1,189 @@
+{
+ "name": "flybirds",
+ "steps": [
+  {
+   "cmd": "set_time",
+   "epoch": 1785888100
+  },
+  {
+   "cmd": "navigate",
+   "app": "flybirds",
+   "page": "root"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "轻点屏幕起飞"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "最高 0"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "flybirds_ready.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 300
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 300
+  },
+  {
+   "cmd": "step",
+   "times": 6
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "得分"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "flybirds_playing.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 331,
+   "y": 41
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 331,
+   "y": 41
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "已暂停"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "音乐：开"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "flybirds_paused.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 260
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 260
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "音乐：关"
+   }
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 184,
+   "y": 194
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 184,
+   "y": 194
+  },
+  {
+   "cmd": "step",
+   "times": 3
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "得分"
+   }
+  },
+  {
+   "cmd": "flybirds_restart_regression"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 254,
+   "y": 344
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 254,
+   "y": 344
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "8月5日  周三"
+   }
+  }
+ ]
+}

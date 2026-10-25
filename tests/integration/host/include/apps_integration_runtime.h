@@ -297,5 +297,7 @@ unsigned host_audio_set_volume_count(void);
 void host_audio_set_read_peak(int16_t peak);
 /** @brief Fail the next valid fake set-volume call. */
 void host_audio_fail_next_volume(void);
+/** @brief Fail the next current-owner release, retaining its lease in ERROR. */
+void host_audio_fail_next_release(void);
 
 #endif /* __CROSS_LAYER_RUNTIME_H__ */

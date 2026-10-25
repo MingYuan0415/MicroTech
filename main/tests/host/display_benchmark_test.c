@@ -7,6 +7,7 @@
 #include "device_link_service.h"
 #include "display_benchmark_host_port.h"
 #include "esp_heap_caps.h"
+#include "freertos/task.h"
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -177,6 +178,15 @@ static atomic_uint s_audio_start_count;
 static atomic_uint s_audio_stop_count;
 static atomic_uint s_audio_write_count;
 static atomic_uint s_audio_read_count;
+static pthread_mutex_t s_audio_lock = PTHREAD_MUTEX_INITIALIZER;
+static audio_service_lease_t s_active_audio_lease;
+static audio_service_session_kind_t s_active_audio_kind;
+static atomic_uint s_audio_release_failures;
+static atomic_int s_audio_release_error;
+static atomic_uint s_audio_getter_fault;
+static atomic_uint s_audio_setup_fault;
+static atomic_uint s_audio_restore_fault;
+static atomic_uint s_audio_setter_count[3];
 static atomic_uint s_diagnostics_begin_count;
 static atomic_uint s_diagnostics_end_count;
 static atomic_uint s_navigation_count;
@@ -753,28 +763,79 @@ bool device_link_service_is_active(void)
     return atomic_load(&s_device_link_active);
 }
 
-esp_err_t audio_service_start(void)
+static unsigned s_audio_lease_generation;
+
+esp_err_t audio_service_acquire(audio_service_session_kind_t kind,
+                                audio_service_lease_t *lease)
 {
+    assert(lease != NULL);
+    memset(lease, 0, sizeof(*lease));
+    (void)pthread_mutex_lock(&s_audio_lock);
+    if (s_active_audio_lease.token != 0U ||
+            atomic_load(&s_audio_state) != AUDIO_SERVICE_STATE_READY)
+    {
+        (void)pthread_mutex_unlock(&s_audio_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     atomic_fetch_add(&s_audio_start_count, 1U);
+    const unsigned generation = ++s_audio_lease_generation;
+    *lease = (audio_service_lease_t)
+    {
+        generation, generation
+    };
+    s_active_audio_lease = *lease;
+    s_active_audio_kind = kind;
     atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_RUNNING);
+    (void)pthread_mutex_unlock(&s_audio_lock);
     return ESP_OK;
 }
 
-esp_err_t audio_service_stop(void)
+static bool _audio_lease_matches(audio_service_lease_t lease)
 {
-#if TEST_C_EXT_STRESS
-    if (!atomic_load(&s_c_ext_active))
-#endif
+    return lease.token != 0U && lease.token == s_active_audio_lease.token &&
+           lease.generation == s_active_audio_lease.generation;
+}
+
+esp_err_t audio_service_release(audio_service_lease_t lease)
+{
+    (void)pthread_mutex_lock(&s_audio_lock);
+    if (!_audio_lease_matches(lease))
     {
-        const size_t delete_count = display_benchmark_host_port_delete_count();
-        assert(delete_count > 0U);
-        assert(strcmp(
-                   display_benchmark_host_port_deleted_name(delete_count - 1U),
-                   "display_audio") == 0);
+        (void)pthread_mutex_unlock(&s_audio_lock);
+        return ESP_ERR_INVALID_STATE;
     }
+    assert(xTaskGetHandle("display_audio") == NULL);
+    assert(xTaskGetHandle("stress_audio_tx") == NULL);
+    assert(xTaskGetHandle("stress_audio_rx") == NULL);
     atomic_fetch_add(&s_audio_stop_count, 1U);
+    if (atomic_load(&s_audio_release_failures) != 0U)
+    {
+        atomic_fetch_sub(&s_audio_release_failures, 1U);
+        atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_ERROR);
+        (void)pthread_mutex_unlock(&s_audio_lock);
+        return atomic_load(&s_audio_release_error);
+    }
+    memset(&s_active_audio_lease, 0, sizeof(s_active_audio_lease));
     atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
+    (void)pthread_mutex_unlock(&s_audio_lock);
     return ESP_OK;
+}
+
+static bool _audio_io_allowed(audio_service_lease_t lease, bool read)
+{
+    (void)pthread_mutex_lock(&s_audio_lock);
+    const bool allowed = _audio_lease_matches(lease) &&
+                         atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_RUNNING &&
+                         (!read || s_active_audio_kind != AUDIO_SERVICE_SESSION_PLAYBACK);
+    (void)pthread_mutex_unlock(&s_audio_lock);
+    return allowed;
+}
+
+static esp_err_t _audio_setter_result(unsigned field, bool restoring)
+{
+    atomic_fetch_add(&s_audio_setter_count[field - 1U], 1U);
+    return atomic_load(restoring ? &s_audio_restore_fault :
+                       &s_audio_setup_fault) == field ? ESP_FAIL : ESP_OK;
 }
 
 audio_service_state_t audio_service_get_state(void)
@@ -785,6 +846,10 @@ audio_service_state_t audio_service_get_state(void)
 esp_err_t audio_service_get_config(audio_service_config_t *config)
 {
     assert(config != NULL);
+    if (atomic_load(&s_audio_getter_fault) == 1U)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     *config = (audio_service_config_t)
     {
         .sample_rate_hz = 48000U,
@@ -798,6 +863,10 @@ esp_err_t audio_service_get_config(audio_service_config_t *config)
 esp_err_t audio_service_set_volume(uint8_t percent)
 {
     assert(percent <= 100U);
+    if (_audio_setter_result(1U, percent == 37U) != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
 #if TEST_C_EXT_STRESS
     if (percent == 37U && atomic_load(&s_audio_restore_volume_fail))
     {
@@ -811,12 +880,20 @@ esp_err_t audio_service_set_volume(uint8_t percent)
 esp_err_t audio_service_get_volume(uint8_t *percent)
 {
     assert(percent != NULL);
+    if (atomic_load(&s_audio_getter_fault) == 2U)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     *percent = atomic_load(&s_audio_volume);
     return ESP_OK;
 }
 
 esp_err_t audio_service_set_mute(bool muted)
 {
+    if (_audio_setter_result(2U, muted) != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
     atomic_store(&s_audio_muted, muted);
     return ESP_OK;
 }
@@ -824,12 +901,20 @@ esp_err_t audio_service_set_mute(bool muted)
 esp_err_t audio_service_get_mute(bool *muted)
 {
     assert(muted != NULL);
+    if (atomic_load(&s_audio_getter_fault) == 3U)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     *muted = atomic_load(&s_audio_muted);
     return ESP_OK;
 }
 
 esp_err_t audio_service_set_pa(bool enabled)
 {
+    if (_audio_setter_result(3U, !enabled) != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
     atomic_store(&s_audio_pa_enabled, enabled);
     return ESP_OK;
 }
@@ -837,13 +922,23 @@ esp_err_t audio_service_set_pa(bool enabled)
 esp_err_t audio_service_get_pa(bool *enabled)
 {
     assert(enabled != NULL);
+    if (atomic_load(&s_audio_getter_fault) == 4U)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     *enabled = atomic_load(&s_audio_pa_enabled);
     return ESP_OK;
 }
 
-esp_err_t audio_service_write(void *data, size_t bytes, size_t *written,
-                              uint32_t timeout_ms)
+esp_err_t audio_service_write_leased(audio_service_lease_t lease, void *data,
+                                     size_t bytes, size_t *written,
+                                     uint32_t timeout_ms)
 {
+    *written = 0U;
+    if (!_audio_io_allowed(lease, false))
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     assert(data != NULL);
     assert(written != NULL);
     assert(timeout_ms > 0U);
@@ -884,9 +979,15 @@ esp_err_t audio_service_write(void *data, size_t bytes, size_t *written,
     return ESP_OK;
 }
 
-esp_err_t audio_service_read(void *data, size_t bytes, size_t *read,
-                             uint32_t timeout_ms)
+esp_err_t audio_service_read_leased(audio_service_lease_t lease, void *data,
+                                    size_t bytes, size_t *read,
+                                    uint32_t timeout_ms)
 {
+    *read = 0U;
+    if (!_audio_io_allowed(lease, true))
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     assert(data != NULL);
     assert(read != NULL);
     assert(timeout_ms > 0U);
@@ -925,7 +1026,9 @@ esp_err_t audio_service_read(void *data, size_t bytes, size_t *read,
         }
         else
         {
+            (void)pthread_mutex_lock(&s_audio_lock);
             atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_ERROR);
+            (void)pthread_mutex_unlock(&s_audio_lock);
             *read = 0U;
             return ESP_ERR_INVALID_STATE;
         }
@@ -1384,6 +1487,18 @@ static void _echo_server_stop(echo_server_t *server)
 
 static void _reset(void)
 {
+    (void)pthread_mutex_lock(&s_audio_lock);
+    assert(s_active_audio_lease.token == 0U);
+    (void)pthread_mutex_unlock(&s_audio_lock);
+    atomic_store(&s_audio_release_failures, 0U);
+    atomic_store(&s_audio_release_error, ESP_ERR_TIMEOUT);
+    atomic_store(&s_audio_getter_fault, 0U);
+    atomic_store(&s_audio_setup_fault, 0U);
+    atomic_store(&s_audio_restore_fault, 0U);
+    for (size_t index = 0U; index < 3U; ++index)
+    {
+        atomic_store(&s_audio_setter_count[index], 0U);
+    }
     display_benchmark_host_port_reset();
     (void)pthread_mutex_lock(&s_event_bus_lock);
     assert(s_wifi_event_callback == NULL);
@@ -2032,31 +2147,43 @@ static void _test_c_ext_stress_audio_soft_faults_continue(void)
 
 static void _test_c_ext_stress_audio_state_failure_exits_and_restores(void)
 {
-    static const audio_service_state_t original_states[] =
-    {
-        AUDIO_SERVICE_STATE_READY,
-        AUDIO_SERVICE_STATE_RUNNING,
-    };
-    for (size_t index = 0U;
-            index < sizeof(original_states) / sizeof(original_states[0]);
-            ++index)
-    {
-        _reset();
-        atomic_store(&s_audio_state, original_states[index]);
-        echo_server_t server;
-        _c_ext_stress_start(&server);
-        _wait_for_counter(&s_navigation_count, 30U);
-        atomic_store(&s_audio_io_fault, TEST_AUDIO_IO_FAULT_STATE_ERROR);
-        _c_ext_stress_finish(&server);
+    _reset();
+    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
+    echo_server_t server;
+    _c_ext_stress_start(&server);
+    _wait_for_counter(&s_navigation_count, 30U);
+    atomic_store(&s_audio_io_fault, TEST_AUDIO_IO_FAULT_STATE_ERROR);
+    _c_ext_stress_finish(&server);
 
-        assert(atomic_load(&s_audio_io_fault_injected));
-        assert(atomic_load(&s_c_ext_summary_result) == 2U);
-        assert(!atomic_load(&s_c_ext_summary_completed));
-        assert((audio_service_state_t)atomic_load(&s_audio_state) ==
-               original_states[index]);
-        assert(atomic_load(&s_audio_stop_count) == 1U);
-        assert(atomic_load(&s_audio_start_count) == 1U);
-    }
+    assert(atomic_load(&s_audio_io_fault_injected));
+    assert(atomic_load(&s_c_ext_summary_result) == 2U);
+    assert(!atomic_load(&s_c_ext_summary_completed));
+    assert((audio_service_state_t)atomic_load(&s_audio_state) ==
+           AUDIO_SERVICE_STATE_READY);
+    assert(atomic_load(&s_audio_stop_count) == 1U);
+    assert(atomic_load(&s_audio_start_count) == 1U);
+}
+
+static void _test_c_ext_stress_audio_busy_fails(void)
+{
+    _reset();
+    audio_service_lease_t background;
+    assert(audio_service_acquire(AUDIO_SERVICE_SESSION_PLAYBACK, &background) == ESP_OK);
+    echo_server_t server;
+    _echo_server_start(&server, false, false, 0U);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
+    atomic_store(&s_c_ext_active, true);
+    assert((display_benchmark_start)(&s_c_ext_stress_config) == ESP_OK);
+    _wait_for_counter(&s_c_ext_summary_result, 1U);
+    assert(!atomic_load(&s_c_ext_summary_completed));
+    assert(atomic_load(&s_audio_start_count) == 1U);
+    assert(atomic_load(&s_audio_stop_count) == 0U);
+    assert((audio_service_state_t)atomic_load(&s_audio_state) ==
+           AUDIO_SERVICE_STATE_RUNNING);
+    assert(display_benchmark_stop() == ESP_OK);
+    assert(audio_service_release(background) == ESP_OK);
+    atomic_store(&s_c_ext_active, false);
+    _echo_server_stop(&server);
 }
 
 static void _test_c_ext_stress_partial_worker_start_rolls_back(void)
@@ -2099,16 +2226,112 @@ static void _test_c_ext_stress_cleanup_preserves_first_error(void)
     atomic_store(&s_audio_restore_volume_fail, true);
     echo_server_t server;
     _c_ext_stress_start(&server);
-    _c_ext_stress_finish(&server);
+    _wait_for_counter(&s_c_ext_summary_result, 1U);
+    assert(display_benchmark_stop() == ESP_FAIL);
+    assert(display_benchmark_host_port_pm_inhibited());
+    atomic_store(&s_audio_restore_volume_fail, false);
+    assert(display_benchmark_stop() == ESP_OK);
+    atomic_store(&s_c_ext_active, false);
+    _echo_server_stop(&server);
 
     assert(atomic_load(&s_c_ext_summary_result) == 2U);
     assert(atomic_load(&s_c_ext_summary_completed));
     assert(atomic_load(&s_log_control_error) == (unsigned)ESP_ERR_TIMEOUT);
     assert(!atomic_load(&s_device_link_active));
     assert(atomic_load(&s_audio_state) == AUDIO_SERVICE_STATE_READY);
-    assert(atomic_load(&s_audio_volume) == 5U);
+    assert(atomic_load(&s_audio_volume) == 37U);
     assert(atomic_load(&s_audio_muted));
     assert(!atomic_load(&s_audio_pa_enabled));
+}
+static void _test_c_ext_audio_setup_cleanup_matrix(void)
+{
+    for (unsigned fault = 1U; fault <= 7U; ++fault)
+    {
+        for (unsigned release_fault = 0U; release_fault <= 1U; ++release_fault)
+        {
+            _reset();
+            const bool getter = fault <= 4U;
+            atomic_store(&s_audio_getter_fault, getter ? fault : 0U);
+            atomic_store(&s_audio_setup_fault, getter ? 0U : fault - 4U);
+            atomic_store(&s_audio_release_failures, release_fault != 0U ? 2U : 0U);
+            echo_server_t server;
+            _c_ext_stress_start(&server);
+            _wait_for_counter(&s_c_ext_summary_result, 1U);
+            _wait_for_counter(&s_log_result, 1U);
+            assert(atomic_load(&s_log_audio_error) ==
+                   (unsigned)(getter ? ESP_ERR_TIMEOUT : ESP_FAIL));
+            if (getter)
+            {
+                for (size_t index = 0U; index < 3U; ++index)
+                {
+                    assert(atomic_load(&s_audio_setter_count[index]) == 0U);
+                }
+            }
+            assert(atomic_load(&s_audio_volume) == 37U);
+            assert(atomic_load(&s_audio_muted));
+            assert(!atomic_load(&s_audio_pa_enabled));
+            assert(display_benchmark_stop() ==
+                   (release_fault != 0U ? ESP_ERR_TIMEOUT : ESP_OK));
+            if (release_fault != 0U)
+            {
+                assert(display_benchmark_host_port_pm_inhibited());
+                assert((display_benchmark_start)(&s_c_ext_stress_config) ==
+                       ESP_ERR_INVALID_STATE);
+                assert(atomic_load(&s_heap_allocate_count) ==
+                       atomic_load(&s_heap_free_count) + 1U);
+                assert(display_benchmark_stop() == ESP_OK);
+            }
+            assert(!display_benchmark_host_port_pm_inhibited());
+            assert(atomic_load(&s_heap_allocate_count) == atomic_load(&s_heap_free_count));
+            const unsigned releases = atomic_load(&s_audio_stop_count);
+            assert(display_benchmark_stop() == ESP_OK);
+            assert(atomic_load(&s_audio_stop_count) == releases);
+            atomic_store(&s_c_ext_active, false);
+            _echo_server_stop(&server);
+        }
+    }
+}
+
+static void _test_c_ext_audio_restore_cleanup_matrix(void)
+{
+    for (unsigned field = 1U; field <= 3U; ++field)
+    {
+        _reset();
+        atomic_store(&s_audio_restore_fault, field);
+        echo_server_t server;
+        _c_ext_stress_start(&server);
+        _wait_for_counter(&s_c_ext_summary_result, 1U);
+        assert(atomic_load(&s_audio_stop_count) == 0U);
+        for (size_t index = 0U; index < 3U; ++index)
+        {
+            assert(atomic_load(&s_audio_setter_count[index]) == 2U);
+        }
+        assert(display_benchmark_stop() == ESP_FAIL);
+        assert(display_benchmark_host_port_pm_inhibited());
+        assert((display_benchmark_start)(&s_c_ext_stress_config) == ESP_ERR_INVALID_STATE);
+        for (size_t index = 0U; index < 3U; ++index)
+        {
+            assert(atomic_load(&s_audio_setter_count[index]) == 3U);
+        }
+        assert(atomic_load(&s_audio_stop_count) == 0U);
+        atomic_store(&s_audio_restore_fault, 0U);
+        atomic_store(&s_audio_release_failures, 1U);
+        assert(display_benchmark_stop() == ESP_ERR_TIMEOUT);
+        assert(display_benchmark_host_port_pm_inhibited());
+        assert(atomic_load(&s_audio_volume) == 37U);
+        assert(atomic_load(&s_audio_muted));
+        assert(!atomic_load(&s_audio_pa_enabled));
+        assert(display_benchmark_stop() == ESP_OK);
+        for (size_t index = 0U; index < 3U; ++index)
+        {
+            assert(atomic_load(&s_audio_setter_count[index]) == 4U);
+        }
+        assert(atomic_load(&s_heap_allocate_count) == atomic_load(&s_heap_free_count));
+        assert(!display_benchmark_host_port_pm_inhibited());
+        assert(display_benchmark_stop() == ESP_OK);
+        atomic_store(&s_c_ext_active, false);
+        _echo_server_stop(&server);
+    }
 }
 #endif
 
@@ -2191,12 +2414,57 @@ static void _test_stop_while_waiting_for_ip(void)
 }
 #endif
 
+#if TEST_REQUIRES_AUDIO
+static void _test_load_audio_cleanup_retries(void)
+{
+    _reset();
+    echo_server_t server;
+    _echo_server_start(&server, false, false, 0U);
+    atomic_store(&s_wifi_state, CONNECTIVITY_MANAGER_STATE_IP_READY);
+    atomic_store(&s_audio_release_failures, 2U);
+    assert(display_benchmark_start() == ESP_OK);
+    _wait_for_counter(&s_log_result, 1U);
+#if TEST_REQUIRES_TCP
+    atomic_store(&s_event_unsubscribe_fail_once, true);
+#endif
+    assert(display_benchmark_stop() == ESP_ERR_TIMEOUT);
+    assert(display_benchmark_host_port_pm_inhibited());
+    assert(display_benchmark_start() == ESP_ERR_INVALID_STATE);
+#if TEST_REQUIRES_TCP
+    assert(atomic_load(&s_event_unsubscribe_count) == 1U);
+#endif
+    assert(display_benchmark_stop() == ESP_OK);
+    assert(!display_benchmark_host_port_pm_inhibited());
+    assert(atomic_load(&s_audio_stop_count) == 3U);
+    assert(display_benchmark_stop() == ESP_OK);
+    assert(atomic_load(&s_audio_stop_count) == 3U);
+    _echo_server_stop(&server);
+}
+#endif
+
+#if TEST_REQUIRES_TCP
+static void _test_create_and_unsubscribe_failure_retains_inhibitor(void)
+{
+    _reset();
+    display_benchmark_host_port_fail_next_create();
+    atomic_store(&s_event_unsubscribe_fail_once, true);
+    assert(display_benchmark_start() == ESP_ERR_NO_MEM);
+    assert(display_benchmark_host_port_pm_inhibited());
+    assert(display_benchmark_start() == ESP_ERR_INVALID_STATE);
+    assert(display_benchmark_stop() == ESP_OK);
+    assert(!display_benchmark_host_port_pm_inhibited());
+    assert(atomic_load(&s_event_unsubscribe_count) == 2U);
+    assert(display_benchmark_stop() == ESP_OK);
+}
+#endif
+
 int main(void)
 {
     _test_invalid_config();
     _test_runs_configured_load();
 #if TEST_REQUIRES_AUDIO
     _test_audio_failure_cleans_up();
+    _test_load_audio_cleanup_retries();
 #endif
 #if TEST_REQUIRES_TCP
     _test_tcp_failure_cleans_up();
@@ -2240,11 +2508,15 @@ int main(void)
     _test_c_ext_stress_heap_exhaustion_exits();
     _test_c_ext_stress_audio_soft_faults_continue();
     _test_c_ext_stress_audio_state_failure_exits_and_restores();
+    _test_c_ext_stress_audio_busy_fails();
     _test_c_ext_stress_partial_worker_start_rolls_back();
     _test_c_ext_stress_cleanup_preserves_first_error();
+    _test_c_ext_audio_setup_cleanup_matrix();
+    _test_c_ext_audio_restore_cleanup_matrix();
 #endif
 #if TEST_REQUIRES_TCP
     _test_tcp_worker_create_failure_fails_rate();
+    _test_create_and_unsubscribe_failure_retains_inhibitor();
     _test_unsubscribe_failure_is_retryable();
     _test_stop_while_tcp_connected();
     _test_stop_while_waiting_for_ip();

@@ -312,6 +312,8 @@ label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines
 daily 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）和
 `agent_contract.json`（参数错误、暂停和截图契约）。树断言为主门禁。
 
+`flybirds.json` 的 `flybirds_restart_regression` 动作只通过实时树和触摸闭环得 1 分，随后验证重开 HUD 为 0、第二次零分结算与最高分 1；不设置种子或生产作弊入口。HUD/结算数值限定所属可见容器，隐藏祖先下的数字不参与断言。评分最多推进 360 个 33 ms 帧，每次结算最多等待 120 帧；RPC 错误、提前死亡或超时直接失败。场内触点避开系统左缘返回手势区，短 tap 不额外快进一秒；结算截图等待卡片淡入完成。
+
 确定性依赖数据冻结：场景首步 `set_time/set_power/set_imu/set_wifi`，UI 稳定判据
 为帧哈希连续两步不变 + `lv_anim_count_running()==0`。PNG 辅门禁默认关闭。
 

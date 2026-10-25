@@ -280,7 +280,7 @@ typedef struct display_benchmark_stress_context
     display_benchmark_stress_task_metric_t tasks[
         DISPLAY_BENCHMARK_STRESS_TASK_COUNT];
     audio_service_config_t audio_config;
-    audio_service_state_t original_audio_state;
+    audio_service_lease_t audio_lease;
     uint8_t original_volume_percent;
     bool original_muted;
     bool original_pa_enabled;
@@ -378,6 +378,8 @@ static const app_manager_transition_effect_t s_characterization_effects[
 static TaskHandle_t s_supervisor_task;
 static SemaphoreHandle_t s_supervisor_stopped;
 static display_benchmark_worker_t s_audio_worker;
+static audio_service_lease_t s_load_audio_lease;
+static bool s_load_audio_leased;
 static display_benchmark_worker_t s_tcp_worker;
 static atomic_bool s_stop_requested;
 static atomic_bool s_load_stop_requested;
@@ -569,10 +571,11 @@ static void _display_benchmark_audio_task(void *arg)
         }
 
         size_t written = 0U;
-        esp_err_t result = audio_service_write(playback,
-                                               sizeof(int16_t) * 512U,
-                                               &written,
-                                               DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS);
+        esp_err_t result = audio_service_write_leased(s_load_audio_lease,
+            playback,
+            sizeof(int16_t) * 512U,
+            &written,
+            DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS);
         if (result != ESP_OK || written != sizeof(int16_t) * 512U)
         {
             _display_benchmark_record_error(&s_audio_error,
@@ -586,8 +589,9 @@ static void _display_benchmark_audio_task(void *arg)
         }
 
         size_t read = 0U;
-        result = audio_service_read(capture, sizeof(int16_t) * 512U, &read,
-                                    DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS);
+        result = audio_service_read_leased(s_load_audio_lease, capture,
+                                           sizeof(int16_t) * 512U, &read,
+                                           DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS);
         if (result != ESP_OK || read != sizeof(int16_t) * 512U)
         {
             _display_benchmark_record_error(&s_audio_error,
@@ -1118,8 +1122,8 @@ static void _display_benchmark_stress_audio_tx_task(void *arg)
         }
         size_t written = 0U;
         const int64_t started_us = esp_timer_get_time();
-        const esp_err_t result = audio_service_write(
-                                     buffer,
+        const esp_err_t result = audio_service_write_leased(
+                                     context->audio_lease, buffer,
                                      DISPLAY_BENCHMARK_STRESS_AUDIO_BLOCK_BYTES,
                                      &written,
                                      DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS);
@@ -1163,8 +1167,8 @@ static void _display_benchmark_stress_audio_rx_task(void *arg)
     {
         size_t captured = 0U;
         const int64_t started_us = esp_timer_get_time();
-        const esp_err_t result = audio_service_read(
-                                     buffer,
+        const esp_err_t result = audio_service_read_leased(
+                                     context->audio_lease, buffer,
                                      DISPLAY_BENCHMARK_STRESS_AUDIO_BLOCK_BYTES,
                                      &captured,
                                      DISPLAY_BENCHMARK_AUDIO_TIMEOUT_MS);
@@ -2277,13 +2281,15 @@ static esp_err_t _display_benchmark_stress_wait_for_tcp(void)
 static esp_err_t _display_benchmark_stress_save_start_audio(
     display_benchmark_stress_context_t *context)
 {
-    context->original_audio_state = audio_service_get_state();
-    if (context->original_audio_state != AUDIO_SERVICE_STATE_READY &&
-            context->original_audio_state != AUDIO_SERVICE_STATE_RUNNING)
+    audio_service_lease_t lease = {0};
+    esp_err_t result = audio_service_acquire(
+                           AUDIO_SERVICE_SESSION_MAINTENANCE, &lease);
+    if (result != ESP_OK)
     {
-        return ESP_ERR_INVALID_STATE;
+        return result;
     }
-    esp_err_t result = audio_service_get_config(&context->audio_config);
+    context->audio_lease = lease;
+    result = audio_service_get_config(&context->audio_config);
     if (result == ESP_OK)
     {
         result = audio_service_get_volume(&context->original_volume_percent);
@@ -2296,17 +2302,9 @@ static esp_err_t _display_benchmark_stress_save_start_audio(
     {
         result = audio_service_get_pa(&context->original_pa_enabled);
     }
-    if (result != ESP_OK)
-    {
-        return result;
-    }
-    context->audio_state_saved = true;
-    if (context->original_audio_state == AUDIO_SERVICE_STATE_READY)
-    {
-        result = audio_service_start();
-    }
     if (result == ESP_OK)
     {
+        context->audio_state_saved = true;
         result = audio_service_set_volume(s_config.audio_volume_percent);
     }
     if (result == ESP_OK)
@@ -2323,54 +2321,38 @@ static esp_err_t _display_benchmark_stress_save_start_audio(
 static esp_err_t _display_benchmark_stress_restore_audio(
     display_benchmark_stress_context_t *context)
 {
-    if (!context->audio_state_saved)
+    if (context->audio_state_saved)
     {
-        return ESP_OK;
-    }
-    esp_err_t result = ESP_OK;
-    audio_service_state_t current_state = audio_service_get_state();
-    const bool stop_required = current_state == AUDIO_SERVICE_STATE_ERROR ||
-                               (context->original_audio_state ==
-                                AUDIO_SERVICE_STATE_READY &&
-                                current_state == AUDIO_SERVICE_STATE_RUNNING);
-    if (stop_required)
-    {
-        result = audio_service_stop();
-        current_state = audio_service_get_state();
-    }
-    if (context->original_audio_state == AUDIO_SERVICE_STATE_RUNNING &&
-            current_state != AUDIO_SERVICE_STATE_RUNNING)
-    {
-        const esp_err_t start_result = audio_service_start();
+        esp_err_t result = audio_service_set_volume(
+                               context->original_volume_percent);
+        const esp_err_t mute_result = audio_service_set_mute(
+                                          context->original_muted);
+        const esp_err_t pa_result = audio_service_set_pa(
+                                        context->original_pa_enabled);
         if (result == ESP_OK)
         {
-            result = start_result;
+            result = mute_result;
         }
+        if (result == ESP_OK)
+        {
+            result = pa_result;
+        }
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        context->audio_state_saved = false;
     }
-    const esp_err_t volume_result = audio_service_set_volume(
-                                        context->original_volume_percent);
-    const esp_err_t mute_result = audio_service_set_mute(
-                                      context->original_muted);
-    const esp_err_t pa_result = audio_service_set_pa(
-                                    context->original_pa_enabled);
-    if (result == ESP_OK)
+    if (context->audio_lease.token != 0U)
     {
-        result = volume_result;
+        const esp_err_t result = audio_service_release(context->audio_lease);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        memset(&context->audio_lease, 0, sizeof(context->audio_lease));
     }
-    if (result == ESP_OK)
-    {
-        result = mute_result;
-    }
-    if (result == ESP_OK)
-    {
-        result = pa_result;
-    }
-    if (result == ESP_OK && audio_service_get_state() !=
-            context->original_audio_state)
-    {
-        result = ESP_ERR_INVALID_STATE;
-    }
-    return result;
+    return ESP_OK;
 }
 
 static void _display_benchmark_stress_preserve_error(
@@ -2582,18 +2564,21 @@ static bool _display_benchmark_stress_effects_passed(
 }
 
 static esp_err_t _display_benchmark_start_load(display_benchmark_load_t load,
-        bool *audio_started, int64_t *tcp_started_us)
+        int64_t *tcp_started_us)
 {
     esp_err_t result = ESP_OK;
     if (_display_benchmark_load_requires_audio(load))
     {
-        result = audio_service_start();
+        audio_service_lease_t lease = {0};
+        result = audio_service_acquire(AUDIO_SERVICE_SESSION_MAINTENANCE,
+                                       &lease);
         if (result != ESP_OK)
         {
             _display_benchmark_record_error(&s_audio_error, result);
             return result;
         }
-        *audio_started = true;
+        s_load_audio_lease = lease;
+        s_load_audio_leased = true;
 
         result = _display_benchmark_worker_start(&s_audio_worker,
             _display_benchmark_audio_task, "display_audio",
@@ -2625,19 +2610,26 @@ static esp_err_t _display_benchmark_start_load(display_benchmark_load_t load,
     return result;
 }
 
-static void _display_benchmark_stop_load(bool audio_started)
+static esp_err_t _display_benchmark_stop_load(void)
 {
     atomic_store_explicit(&s_load_stop_requested, true, memory_order_release);
     _display_benchmark_worker_stop(&s_tcp_worker);
     _display_benchmark_worker_stop(&s_audio_worker);
-    if (audio_started)
+    esp_err_t result = ESP_OK;
+    if (s_load_audio_leased)
     {
-        const esp_err_t result = audio_service_stop();
+        result = audio_service_release(s_load_audio_lease);
         if (result != ESP_OK)
         {
             _display_benchmark_record_error(&s_audio_error, result);
         }
+        else
+        {
+            s_load_audio_leased = false;
+            memset(&s_load_audio_lease, 0, sizeof(s_load_audio_lease));
+        }
     }
+    return result;
 }
 
 static esp_err_t _display_benchmark_begin_profile(void)
@@ -3202,8 +3194,15 @@ cleanup:
     }
     heap_caps_free(report);
     heap_caps_free(context != NULL ? context->heap_samples : NULL);
-    heap_caps_free(context);
-    s_stress_context = NULL;
+    if (context != NULL)
+    {
+        context->heap_samples = NULL;
+        if (!context->audio_state_saved && context->audio_lease.token == 0U)
+        {
+            heap_caps_free(context);
+            s_stress_context = NULL;
+        }
+    }
 }
 
 static void _display_benchmark_release_pm_inhibitor(void)
@@ -3221,14 +3220,16 @@ static void _display_benchmark_supervisor_task(void *arg)
     if (_display_benchmark_is_c_ext_stress())
     {
         _display_benchmark_c_ext_stress_supervisor();
-        _display_benchmark_release_pm_inhibitor();
+        if (s_stress_context == NULL)
+        {
+            _display_benchmark_release_pm_inhibitor();
+        }
         (void)xSemaphoreGive(s_supervisor_stopped);
         vTaskSuspend(NULL);
         return;
     }
     const display_benchmark_load_t load = s_config.load;
     const bool tcp_required = _display_benchmark_load_requires_tcp(load);
-    bool audio_started = false;
     bool benchmark_started = false;
     bool completed = false;
     bool report_available = false;
@@ -3294,8 +3295,7 @@ static void _display_benchmark_supervisor_task(void *arg)
             goto exit;
         }
 
-        result = _display_benchmark_start_load(load, &audio_started,
-                                               &tcp_started_us);
+        result = _display_benchmark_start_load(load, &tcp_started_us);
         if (result != ESP_OK)
         {
             goto exit;
@@ -3318,8 +3318,7 @@ static void _display_benchmark_supervisor_task(void *arg)
     }
     else
     {
-        result = _display_benchmark_start_load(load, &audio_started,
-                                               &tcp_started_us);
+        result = _display_benchmark_start_load(load, &tcp_started_us);
         if (result != ESP_OK)
         {
             goto exit;
@@ -3341,7 +3340,7 @@ exit:
     atomic_store_explicit(&s_wifi_monitoring_active, false,
                           memory_order_release);
     const int64_t tcp_stopped_us = esp_timer_get_time();
-    _display_benchmark_stop_load(audio_started);
+    (void)_display_benchmark_stop_load();
     const uint64_t tcp_active_duration_us =
         tcp_started_us > 0 && tcp_stopped_us > tcp_started_us ?
         (uint64_t)(tcp_stopped_us - tcp_started_us) : 0U;
@@ -3363,7 +3362,10 @@ exit:
             atomic_load_explicit(&s_stop_requested, memory_order_relaxed));
     }
     heap_caps_free(report);
-    _display_benchmark_release_pm_inhibitor();
+    if (!s_load_audio_leased)
+    {
+        _display_benchmark_release_pm_inhibitor();
+    }
     (void)xSemaphoreGive(s_supervisor_stopped);
     vTaskSuspend(NULL);
 }
@@ -3390,7 +3392,8 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
         return ESP_ERR_INVALID_ARG;
     }
     if (s_supervisor_task != NULL || s_supervisor_stopped != NULL ||
-            s_wifi_subscription != EVENT_BUS_SUB_HANDLE_INVALID)
+            s_wifi_subscription != EVENT_BUS_SUB_HANDLE_INVALID ||
+            s_load_audio_leased || s_stress_context != NULL)
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -3498,7 +3501,10 @@ fail:
         vSemaphoreDelete(s_supervisor_stopped);
         s_supervisor_stopped = NULL;
     }
-    _display_benchmark_release_pm_inhibitor();
+    if (s_wifi_subscription == EVENT_BUS_SUB_HANDLE_INVALID)
+    {
+        _display_benchmark_release_pm_inhibitor();
+    }
     return result;
 }
 
@@ -3517,8 +3523,28 @@ esp_err_t display_benchmark_stop(void)
         vSemaphoreDelete(s_supervisor_stopped);
         s_supervisor_stopped = NULL;
     }
-    const esp_err_t result = _display_benchmark_unsubscribe_wifi();
+    esp_err_t result = _display_benchmark_stop_load();
+    if (s_stress_context != NULL)
+    {
+        const esp_err_t audio_result =
+            _display_benchmark_stress_restore_audio(s_stress_context);
+        if (result == ESP_OK)
+        {
+            result = audio_result;
+        }
+        if (!s_stress_context->audio_state_saved &&
+                s_stress_context->audio_lease.token == 0U)
+        {
+            heap_caps_free(s_stress_context);
+            s_stress_context = NULL;
+        }
+    }
+    const esp_err_t unsubscribe_result = _display_benchmark_unsubscribe_wifi();
     if (result == ESP_OK)
+    {
+        result = unsubscribe_result;
+    }
+    if (result == ESP_OK && !s_load_audio_leased && s_stress_context == NULL)
     {
         _display_benchmark_release_pm_inhibitor();
     }

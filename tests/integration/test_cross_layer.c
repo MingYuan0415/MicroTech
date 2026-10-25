@@ -12,6 +12,7 @@
 #include "app_theme.h"
 #include "app_theme_colors.h"
 #include "event_bus.h"
+#include "audio_service.h"
 #include "host_freertos.h"
 #include "host_connectivity_manager.h"
 #include "host_device_link_service.h"
@@ -57,6 +58,7 @@ static const char *const s_expected_app_ids[] =
     APP_MANAGER_ID_RECORDER,
     APP_MANAGER_ID_FILES,
     APP_MANAGER_ID_LEVEL,
+    APP_MANAGER_ID_FLYBIRDS,
     APP_MANAGER_ID_DIAGNOSTICS,
 };
 
@@ -1808,6 +1810,7 @@ static void _test_real_app_navigation(void)
         {"计算器", APP_MANAGER_ID_CALCULATOR, "计算器"},
         {"录音", APP_MANAGER_ID_RECORDER, "录音服务不可用"},
         {"水平仪", APP_MANAGER_ID_LEVEL, "水平仪"},
+        {"飞鸟", APP_MANAGER_ID_FLYBIRDS, "飞鸟"},
     };
     for (size_t index = 0U; index < sizeof(product_apps) /
             sizeof(product_apps[0]); ++index)
@@ -2281,6 +2284,7 @@ static void _assert_real_page_start_contract(void)
         {APP_MANAGER_ID_RECORDER, "root"},
         {APP_MANAGER_ID_LEVEL, "root"},
         {APP_MANAGER_ID_CALCULATOR, "root"},
+        {APP_MANAGER_ID_FLYBIRDS, "root"},
         {APP_MANAGER_ID_DIAGNOSTICS, "root"},
         {APP_MANAGER_ID_SETTINGS, "root"},
         {APP_MANAGER_ID_SETTINGS, "display"},
@@ -2549,6 +2553,206 @@ static void _test_other_real_app_screen_lifecycles(void)
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(_ui_has_text("08:30"));
     _assert_event_slot_headroom(3);
+}
+
+static void _test_host_audio_lease_contract(void)
+{
+    audio_service_lease_t record = {0};
+    audio_service_lease_t playback = {0};
+    int16_t pcm = 123;
+    size_t transferred = 99U;
+    assert(audio_service_acquire(AUDIO_SERVICE_SESSION_RECORD, &record) == ESP_OK);
+    assert(record.token != 0U && record.generation != 0U);
+    assert(audio_service_acquire(AUDIO_SERVICE_SESSION_PLAYBACK, &playback) ==
+           ESP_ERR_INVALID_STATE);
+    assert(playback.token == 0U && playback.generation == 0U);
+    assert(audio_service_read_leased(record, &pcm, sizeof(pcm), &transferred,
+                                     0U) == ESP_OK);
+    assert(transferred == sizeof(pcm));
+
+    audio_service_lease_t stale = record;
+    ++stale.generation;
+    host_audio_fail_next_release();
+    assert(audio_service_release(stale) == ESP_ERR_INVALID_STATE);
+    assert(audio_service_get_state() == AUDIO_SERVICE_STATE_RUNNING);
+    transferred = 99U;
+    pcm = 123;
+    assert(audio_service_read_leased(stale, &pcm, sizeof(pcm), &transferred,
+                                     0U) == ESP_ERR_INVALID_STATE);
+    assert(transferred == 0U && pcm == 123);
+    transferred = 99U;
+    assert(audio_service_write_leased(stale, &pcm, sizeof(pcm), &transferred,
+                                      0U) == ESP_ERR_INVALID_STATE);
+    assert(transferred == 0U);
+
+    assert(audio_service_set_pa(true) == ESP_OK);
+    assert(audio_service_release(record) == ESP_FAIL);
+    assert(audio_service_get_state() == AUDIO_SERVICE_STATE_ERROR);
+    assert(audio_service_acquire(AUDIO_SERVICE_SESSION_PLAYBACK, &playback) ==
+           ESP_ERR_INVALID_STATE);
+    assert(playback.token == 0U && playback.generation == 0U);
+    transferred = 99U;
+    assert(audio_service_write_leased(record, &pcm, sizeof(pcm), &transferred,
+                                      0U) == ESP_ERR_INVALID_STATE);
+    assert(transferred == 0U);
+    assert(audio_service_release(record) == ESP_OK);
+    bool pa = false;
+    assert(audio_service_get_pa(&pa) == ESP_OK && pa);
+
+    assert(audio_service_acquire(AUDIO_SERVICE_SESSION_PLAYBACK, &playback) ==
+           ESP_OK);
+    assert(playback.generation > record.generation);
+    assert(audio_service_release(record) == ESP_ERR_INVALID_STATE);
+    transferred = 99U;
+    pcm = 123;
+    const unsigned reads_before = host_audio_read_count();
+    assert(audio_service_read_leased(playback, &pcm, sizeof(pcm), &transferred,
+                                     0U) == ESP_ERR_INVALID_STATE);
+    assert(transferred == 0U && pcm == 123);
+    assert(host_audio_read_count() == reads_before);
+    transferred = 99U;
+    assert(audio_service_write_leased(record, &pcm, sizeof(pcm), &transferred,
+                                      0U) == ESP_ERR_INVALID_STATE);
+    assert(transferred == 0U);
+    assert(audio_service_write_leased(playback, &pcm, sizeof(pcm), &transferred,
+                                      0U) == ESP_OK);
+    assert(transferred == sizeof(pcm));
+    assert(audio_service_release(playback) == ESP_OK);
+    assert(audio_service_get_pa(&pa) == ESP_OK && pa);
+    assert(audio_service_set_pa(false) == ESP_OK);
+}
+
+typedef struct flybirds_progress
+{
+    bool launch;
+    int32_t bird_y;
+    bool game_over;
+} flybirds_progress_t;
+
+static esp_err_t _flybirds_progress_on_ui(void *arg)
+{
+    flybirds_progress_t *progress = arg;
+    host_lv_system_object_snapshot_t hud;
+    if (!host_lv_visible_label_snapshot(
+                "得分", &s_theme_fonts[APP_THEME_FONT_SMALL], &hud))
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    lv_obj_t *field = lv_obj_get_parent(lv_obj_get_parent(hud.object));
+    lv_obj_t *bird = NULL;
+    const uint32_t children = lv_obj_get_child_count(field);
+    for (uint32_t index = 0U; index < children; ++index)
+    {
+        lv_obj_t *child = lv_obj_get_child(field, (int32_t)index);
+        if (lv_obj_get_width(child) == 30 && lv_obj_get_height(child) == 24 &&
+                lv_obj_get_x(child) == 88)
+        {
+            assert(bird == NULL);
+            bird = child;
+        }
+    }
+    if (bird == NULL)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (progress->launch)
+    {
+        assert(lv_obj_send_event(field, LV_EVENT_PRESSED, NULL) == LV_RESULT_OK);
+        progress->launch = false;
+    }
+    progress->bird_y = lv_obj_get_y(bird);
+    progress->game_over = host_lv_has_text("本局得分");
+    return ESP_OK;
+}
+
+static void _test_flybirds_failed_pause_keeps_ticking(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    assert(app_manager_get_running_apps() == 1U);
+    assert(_wait_for_dynamic_task_count(0U));
+    const lv_resource_counts_t baseline = _lv_resource_counts();
+
+    for (unsigned screen_pause = 0U; screen_pause < 2U; ++screen_pause)
+    {
+        assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_FLYBIRDS,
+                         NULL) == ESP_OK);
+        assert(app_page_is_actived(APP_MANAGER_ID_FLYBIRDS, "root"));
+        assert(_wait_for_dynamic_task_count(1U));
+        assert(audio_service_get_state() == AUDIO_SERVICE_STATE_RUNNING);
+        flybirds_progress_t progress = {.launch = true};
+        assert(app_manager_ui_call(_flybirds_progress_on_ui, &progress,
+                                   UI_TIMEOUT_MS) == ESP_OK);
+        assert(!progress.game_over);
+        const int32_t starting_y = progress.bird_y;
+        const lv_resource_counts_t playing = _lv_resource_counts();
+        const size_t resumes_before = _lifecycle_observed(
+                                          APP_MANAGER_ID_FLYBIRDS, "root", APP_MANAGER_MSG_ONRESUME,
+                                          APP_MANAGER_LIFECYCLE_OBSERVER_AFTER);
+
+        host_audio_fail_next_release();
+        if (screen_pause != 0U)
+        {
+            assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                                       UI_TIMEOUT_MS) == ESP_FAIL);
+        }
+        else
+        {
+            assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_FLYBIRDS,
+                             NULL) == ESP_FAIL);
+        }
+        assert(app_manager_is_actived(APP_MANAGER_ID_FLYBIRDS));
+        assert(app_page_is_actived(APP_MANAGER_ID_FLYBIRDS, "root"));
+        assert(_lv_resource_counts().timers == playing.timers);
+        assert(audio_service_get_state() == AUDIO_SERVICE_STATE_ERROR);
+        audio_service_lease_t blocked = {0};
+        assert(audio_service_acquire(AUDIO_SERVICE_SESSION_RECORD, &blocked) ==
+               ESP_ERR_INVALID_STATE);
+        assert(blocked.token == 0U && blocked.generation == 0U);
+        assert(_lifecycle_observed(
+                   APP_MANAGER_ID_FLYBIRDS, "root", APP_MANAGER_MSG_ONRESUME,
+                   APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == resumes_before);
+
+        /* Drive actual page timers, not wall-clock guesses or page internals.
+         * A failed PAUSE gets no compensating RESUME from App Manager. */
+        assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                                   UI_TIMEOUT_MS) == ESP_OK);
+        assert(app_manager_ui_call(_flybirds_progress_on_ui, &progress,
+                                   UI_TIMEOUT_MS) == ESP_OK);
+        assert(progress.bird_y != starting_y);
+        for (unsigned frame = 1U; frame < 120U && !progress.game_over; ++frame)
+        {
+            assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                                       UI_TIMEOUT_MS) == ESP_OK);
+            assert(app_manager_ui_call(_flybirds_progress_on_ui, &progress,
+                                       UI_TIMEOUT_MS) == ESP_OK);
+        }
+        assert(progress.game_over);
+        assert(app_page_is_actived(APP_MANAGER_ID_FLYBIRDS, "root"));
+
+        if (screen_pause != 0U)
+        {
+            assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                                       UI_TIMEOUT_MS) == ESP_OK);
+            assert(_lv_resource_counts().timers == 0U);
+            assert(_wait_for_dynamic_task_count(0U));
+            assert(audio_service_get_state() == AUDIO_SERVICE_STATE_READY);
+            assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                                       UI_TIMEOUT_MS) == ESP_OK);
+        }
+        assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_FLYBIRDS,
+                         NULL) == ESP_OK);
+        assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+        assert(!app_manager_is_page_present(APP_MANAGER_ID_FLYBIRDS, "root"));
+        assert(_wait_for_dynamic_task_count(0U));
+        assert(audio_service_get_state() == AUDIO_SERVICE_STATE_READY);
+        const lv_resource_counts_t after = _lv_resource_counts();
+        assert(after.objects == baseline.objects);
+        assert(after.screens == baseline.screens);
+        assert(after.timers == baseline.timers);
+        assert(audio_service_acquire(AUDIO_SERVICE_SESSION_RECORD, &blocked) ==
+               ESP_OK);
+        assert(audio_service_release(blocked) == ESP_OK);
+    }
 }
 
 static void _test_screen_pause_finishes_transition(void)
@@ -3620,6 +3824,7 @@ static void _test_control_center_band_and_entering_toggle(void)
 int main(void)
 {
     _initialize_stack();
+    _test_host_audio_lease_contract();
     _test_real_app_navigation();
     _test_weather_page_screen_lifecycles();
     _test_home_resume_before_first_draw();
@@ -3628,6 +3833,7 @@ int main(void)
     _test_optional_services_unavailable();
     _assert_real_page_start_contract();
     _test_other_real_app_screen_lifecycles();
+    _test_flybirds_failed_pause_keeps_ticking();
     _test_screen_pause_finishes_transition();
     _test_fifo_navigation_finishes_snapshot_transition();
     _test_home_screen_lifecycle();

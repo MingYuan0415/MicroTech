@@ -1709,6 +1709,153 @@
       ]
     },
     {
+      "app": "flybirds",
+      "page": "root",
+      "states": [
+        {
+          "name": "ready",
+          "seed": [],
+          "expect_visible": [
+            "飞鸟",
+            "轻点屏幕起飞",
+            "最高 0",
+            "得分"
+          ],
+          "single_line": [
+            "轻点屏幕起飞",
+            "最高 0",
+            "得分"
+          ],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "paused",
+          "seed": [
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 184,
+              "y": 300
+            },
+            {
+              "cmd": "step",
+              "times": 2
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 184,
+              "y": 300
+            },
+            {
+              "cmd": "step",
+              "times": 4
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 331,
+              "y": 41
+            },
+            {
+              "cmd": "step",
+              "times": 2
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 331,
+              "y": 41
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            }
+          ],
+          "expect_visible": [
+            "已暂停",
+            "继续",
+            "音乐：开",
+            "音效：开",
+            "返回主页"
+          ],
+          "single_line": [
+            "已暂停",
+            "继续",
+            "音乐：开",
+            "音效：开",
+            "返回主页"
+          ],
+          "allow_disabled": [],
+          "no_golden": true
+        },
+        {
+          "name": "game_over",
+          "seed": [
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 184,
+              "y": 194
+            },
+            {
+              "cmd": "step",
+              "times": 2
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 184,
+              "y": 194
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 114,
+              "y": 344
+            },
+            {
+              "cmd": "step",
+              "times": 2
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 114,
+              "y": 344
+            },
+            {
+              "cmd": "step",
+              "times": 3
+            },
+            {
+              "cmd": "step",
+              "times": 90
+            }
+          ],
+          "expect_visible": [
+            "本局得分",
+            "最高 0",
+            "再来一局",
+            "返回"
+          ],
+          "single_line": [
+            "本局得分",
+            "最高 0",
+            "再来一局",
+            "返回"
+          ],
+          "allow_disabled": [],
+          "no_golden": true
+        }
+      ]
+    },
+    {
       "app": "diagnostics",
       "page": "root",
       "states": [

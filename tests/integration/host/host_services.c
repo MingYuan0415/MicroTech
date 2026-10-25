@@ -17,6 +17,7 @@
 #include "weather_service.h"
 
 #include <assert.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,7 +48,12 @@ static atomic_bool s_time_sync_owned;
 static atomic_bool s_time_alarm_enabled;
 static atomic_bool s_time_sync_blocked;
 static atomic_bool s_time_sync_entered;
-static atomic_int s_audio_state = AUDIO_SERVICE_STATE_READY;
+static pthread_mutex_t s_audio_mutex = PTHREAD_MUTEX_INITIALIZER;
+static audio_service_state_t s_audio_state = AUDIO_SERVICE_STATE_READY;
+static audio_service_lease_t s_audio_lease;
+static audio_service_session_kind_t s_audio_kind;
+static uint32_t s_audio_lease_generation;
+static bool s_audio_fail_next_release;
 static atomic_uint s_audio_volume = 60U;
 static atomic_bool s_audio_muted;
 static atomic_bool s_audio_pa_enabled;
@@ -80,7 +86,13 @@ void host_runtime_reset(void)
     s_power_snapshot_valid = false;
     atomic_store(&s_time_available, true);
     atomic_store(&s_imu_available, true);
+    pthread_mutex_lock(&s_audio_mutex);
+    assert(s_audio_lease.token == 0U);
     atomic_store(&s_audio_available, true);
+    s_audio_state = AUDIO_SERVICE_STATE_READY;
+    s_audio_kind = AUDIO_SERVICE_SESSION_RECORD;
+    s_audio_fail_next_release = false;
+    pthread_mutex_unlock(&s_audio_mutex);
     atomic_store(&s_storage_available, true);
     atomic_store(&s_random_nonce, 0x13579BDFU);
     atomic_store(&s_imu_sequence, 1U);
@@ -89,7 +101,6 @@ void host_runtime_reset(void)
     atomic_store(&s_time_alarm_enabled, false);
     atomic_store(&s_time_sync_blocked, false);
     atomic_store(&s_time_sync_entered, false);
-    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
     atomic_store(&s_audio_volume, 60U);
     atomic_store(&s_audio_muted, false);
     atomic_store(&s_audio_pa_enabled, false);
@@ -433,7 +444,9 @@ void host_optional_services_set_available(bool available)
     atomic_store(&s_power_available, available);
     atomic_store(&s_time_available, available);
     atomic_store(&s_imu_available, available);
+    pthread_mutex_lock(&s_audio_mutex);
     atomic_store(&s_audio_available, available);
+    pthread_mutex_unlock(&s_audio_mutex);
     atomic_store(&s_storage_available, available);
     if (!available)
     {
@@ -468,6 +481,13 @@ void host_audio_set_read_peak(int16_t peak)
 void host_audio_fail_next_volume(void)
 {
     atomic_store(&s_audio_fail_next_volume, true);
+}
+
+void host_audio_fail_next_release(void)
+{
+    pthread_mutex_lock(&s_audio_mutex);
+    s_audio_fail_next_release = true;
+    pthread_mutex_unlock(&s_audio_mutex);
 }
 
 bool host_time_alarm_is_enabled(void)
@@ -746,31 +766,89 @@ bool audio_service_is_available(void)
 
 audio_service_state_t audio_service_get_state(void)
 {
-    return (audio_service_state_t)atomic_load(&s_audio_state);
+    pthread_mutex_lock(&s_audio_mutex);
+    const audio_service_state_t state = s_audio_state;
+    pthread_mutex_unlock(&s_audio_mutex);
+    return state;
 }
 
-esp_err_t audio_service_start(void)
+/* Called only while s_audio_mutex protects the owner and stream state. */
+static bool _audio_lease_matches(audio_service_lease_t lease)
 {
-    const int state = atomic_load(&s_audio_state);
-    if (state != AUDIO_SERVICE_STATE_READY &&
-            state != AUDIO_SERVICE_STATE_RUNNING)
+    return lease.token != 0U && lease.token == s_audio_lease.token &&
+           lease.generation == s_audio_lease.generation;
+}
+
+esp_err_t audio_service_acquire(audio_service_session_kind_t kind,
+                                audio_service_lease_t *lease)
+{
+    if (lease == NULL)
     {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *lease = (audio_service_lease_t)
+    {
+        0
+    };
+    if (kind != AUDIO_SERVICE_SESSION_RECORD &&
+            kind != AUDIO_SERVICE_SESSION_PLAYBACK &&
+            kind != AUDIO_SERVICE_SESSION_MAINTENANCE)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    pthread_mutex_lock(&s_audio_mutex);
+    if (!atomic_load(&s_audio_available) || s_audio_lease.token != 0U ||
+            s_audio_state != AUDIO_SERVICE_STATE_READY)
+    {
+        pthread_mutex_unlock(&s_audio_mutex);
         return ESP_ERR_INVALID_STATE;
     }
-    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_RUNNING);
+    if (++s_audio_lease_generation == 0U)
+    {
+        ++s_audio_lease_generation;
+    }
+    s_audio_lease = (audio_service_lease_t)
+    {
+        .token = s_audio_lease_generation,
+        .generation = s_audio_lease_generation,
+    };
+    s_audio_kind = kind;
+    s_audio_state = AUDIO_SERVICE_STATE_RUNNING;
+    *lease = s_audio_lease;
+    pthread_mutex_unlock(&s_audio_mutex);
     return ESP_OK;
 }
 
-esp_err_t audio_service_stop(void)
+esp_err_t audio_service_release(audio_service_lease_t lease)
 {
-    atomic_store(&s_audio_pa_enabled, false);
-    atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
+    pthread_mutex_lock(&s_audio_mutex);
+    if (!_audio_lease_matches(lease))
+    {
+        pthread_mutex_unlock(&s_audio_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_audio_fail_next_release)
+    {
+        s_audio_fail_next_release = false;
+        s_audio_state = AUDIO_SERVICE_STATE_ERROR;
+        pthread_mutex_unlock(&s_audio_mutex);
+        return ESP_FAIL;
+    }
+    s_audio_lease = (audio_service_lease_t)
+    {
+        0
+    };
+    s_audio_kind = AUDIO_SERVICE_SESSION_RECORD;
+    s_audio_state = AUDIO_SERVICE_STATE_READY;
+    pthread_mutex_unlock(&s_audio_mutex);
     return ESP_OK;
 }
 
-esp_err_t audio_service_write(void *data, size_t bytes, size_t *written,
-                              uint32_t timeout_ms)
+esp_err_t audio_service_write_leased(audio_service_lease_t lease, void *data,
+                                     size_t bytes, size_t *written,
+                                     uint32_t timeout_ms)
 {
+    /* Keep the fixture's transport pacing outside the ownership transaction. */
     (void)timeout_ms;
     if (written != NULL)
     {
@@ -780,20 +858,25 @@ esp_err_t audio_service_write(void *data, size_t bytes, size_t *written,
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if (atomic_load(&s_audio_state) != AUDIO_SERVICE_STATE_RUNNING)
+    (void)usleep(1000U);
+    pthread_mutex_lock(&s_audio_mutex);
+    if (!atomic_load(&s_audio_available) || !_audio_lease_matches(lease) ||
+            s_audio_state != AUDIO_SERVICE_STATE_RUNNING)
     {
+        pthread_mutex_unlock(&s_audio_mutex);
         return ESP_ERR_INVALID_STATE;
     }
-    (void)usleep(1000U);
     if (written != NULL)
     {
         *written = bytes;
     }
+    pthread_mutex_unlock(&s_audio_mutex);
     return ESP_OK;
 }
 
-esp_err_t audio_service_read(void *data, size_t bytes, size_t *read,
-                             uint32_t timeout_ms)
+esp_err_t audio_service_read_leased(audio_service_lease_t lease, void *data,
+                                    size_t bytes, size_t *read,
+                                    uint32_t timeout_ms)
 {
     (void)timeout_ms;
     if (read != NULL)
@@ -804,11 +887,15 @@ esp_err_t audio_service_read(void *data, size_t bytes, size_t *read,
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if (atomic_load(&s_audio_state) != AUDIO_SERVICE_STATE_RUNNING)
+    (void)usleep(1000U);
+    pthread_mutex_lock(&s_audio_mutex);
+    if (!atomic_load(&s_audio_available) || !_audio_lease_matches(lease) ||
+            s_audio_state != AUDIO_SERVICE_STATE_RUNNING ||
+            s_audio_kind == AUDIO_SERVICE_SESSION_PLAYBACK)
     {
+        pthread_mutex_unlock(&s_audio_mutex);
         return ESP_ERR_INVALID_STATE;
     }
-    (void)usleep(1000U);
     memset(data, 0, bytes);
     if (bytes >= sizeof(int16_t))
     {
@@ -820,6 +907,7 @@ esp_err_t audio_service_read(void *data, size_t bytes, size_t *read,
         *read = bytes;
     }
     atomic_fetch_add(&s_audio_read_count, 1U);
+    pthread_mutex_unlock(&s_audio_mutex);
     return ESP_OK;
 }
 
@@ -867,6 +955,16 @@ esp_err_t audio_service_get_mute(bool *muted)
 esp_err_t audio_service_set_pa(bool enabled)
 {
     atomic_store(&s_audio_pa_enabled, enabled);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_get_pa(bool *enabled)
+{
+    if (enabled == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *enabled = atomic_load(&s_audio_pa_enabled);
     return ESP_OK;
 }
 

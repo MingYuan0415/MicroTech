@@ -62,10 +62,24 @@ typedef struct display_benchmark_config
  *
  * Profiles with a TCP workload wait for a Wi-Fi address before sampling.
  * The complete configuration and host string are copied before return.
+ * Pending stop cleanup prevents a new start; retry stop before starting again.
+ *
+ * @param config Campaign configuration copied by this call.
+ * @return ESP_OK when armed, ESP_ERR_INVALID_STATE while running or cleanup is pending,
+ *         or the original setup error (even if its cleanup also fails).
  */
 esp_err_t display_benchmark_start(const display_benchmark_config_t *config);
 
-/** @brief Stop the benchmark before its runtime service dependencies. */
+/**
+ * @brief Stop the benchmark before its runtime service dependencies.
+ *
+ * Audio settings, leases, and Wi-Fi subscriptions remain owned after cleanup failure.
+ * Retry this call until it succeeds; the PM inhibitor is retained while cleanup is pending.
+ * A successful retry reports current cleanup success, not historical workload errors.
+ *
+ * @return The first current audio cleanup error, otherwise the Wi-Fi unsubscribe error,
+ *         or ESP_OK after all cleanup completes. Repeated successful stops are no-ops.
+ */
 esp_err_t display_benchmark_stop(void);
 
 #ifdef __cplusplus

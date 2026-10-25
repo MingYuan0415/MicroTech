@@ -22,6 +22,13 @@ tree_assert: every node matching ALL given key/values must exist
  "coords.x" style nesting is supported by walking dicts; a numeric key may
  match a range with {"min": N, "max": M}).
 
+flybirds_restart_regression: from PLAYING, fly by current bird/pipe geometry
+for at most 360 single 33 ms frames to score 1, wait at most 120 frames for
+settlement, restart with a short tap, and prove HUD/settlement return to 0
+while highest remains 1. Numeric assertions are scoped to visible containers.
+Saves flybirds_over.png, flybirds_restart_zero.png, and
+flybirds_second_over_zero.png; takes no parameters.
+
 Usage:
   python3 sim/tools/run_scenarios.py sim/ci/scenarios/*.json [--golden DIR]
       [--update] [--report out.json] [--host H] [--port P]
@@ -116,8 +123,144 @@ class Runner:
                 break
         return name, failures
 
+    def _flybirds_restart_regression(self):
+        # Paths retain inherited hidden flags, but deliberately ignore clipping:
+        # pipes outside the viewport still determine the next flight target.
+        def paths(node, ancestors=(), hidden=False):
+            hidden = hidden or node.get('flags', {}).get('hidden', False)
+            yield node, ancestors, hidden
+            for child in node.get('children', []) + node.get('overlays', []):
+                yield from paths(child, ancestors + (node,), hidden)
+
+        def texts(node):
+            return [item for item, _, hidden in paths(node)
+                    if not hidden and 'text' in item]
+
+        def numeric(node, expected, context):
+            numbers = [item['text'] for item in texts(node)
+                       if item['text'].isascii() and item['text'].isdecimal()]
+            assert numbers == [str(expected)], \
+                '%s score %r != %s' % (context, numbers, expected)
+
+        def snapshot():
+            entries = list(paths(self.call('sim.tree')['tree']))
+            hud_labels = [(node, ancestors) for node, ancestors, hidden in entries
+                          if not hidden and node.get('text') == '得分']
+            assert len(hud_labels) == 1, 'expected unique visible 得分 HUD'
+            _, ancestors = hud_labels[0]
+            assert len(ancestors) >= 2, 'HUD lacks field ancestor'
+            hud, field = ancestors[-1], ancestors[-2]
+            headings = [(node, parents, hidden) for node, parents, hidden in entries
+                        if node.get('text') == '本局得分']
+            assert len(headings) == 1 and headings[0][1], \
+                'expected unique settlement card'
+            _, parents, over_hidden = headings[0]
+            card = parents[-1]
+            assert any(parent is field for parent in parents), \
+                'settlement card outside game field'
+            return field, hud, card, over_hidden
+
+        def playing(field, over_hidden):
+            assert over_hidden, 'premature death before HUD score 1'
+            assert not any(node.get('text') in ('轻点屏幕起飞', '已暂停')
+                           for node in texts(field)), 'expected PLAYING state'
+
+        def frame():
+            self.call('sim.step', {'ms': 33})
+
+        def touch(action, x, y):
+            self.call('sim.touch', {'action': action, 'x': x, 'y': y})
+
+        frames = 0
+        while True:
+            field, hud, card, over_hidden = snapshot()
+            playing(field, over_hidden)
+            numbers = [node['text'] for node in texts(hud)
+                       if node['text'].isascii() and node['text'].isdecimal()]
+            assert len(numbers) == 1 and numbers[0] in ('0', '1'), \
+                'unexpected HUD score before first point: %r' % numbers
+            if numbers == ['1']:
+                break
+            assert frames < 360, 'HUD score 1 not reached within 360 frames'
+            children = [node for node in field.get('children', [])
+                        if not node.get('flags', {}).get('hidden', False)]
+            box = field['coords']
+            birds = [node for node in children
+                     if node.get('coords', {}).get('w') == 30 and
+                     node['coords'].get('h') == 24 and
+                     node['coords'].get('x') == box['x'] + 88]
+            assert len(birds) == 1, 'expected unique 30x24 bird at field x88'
+            bird = birds[0]['coords']
+            pairs = {}
+            for node in children:
+                coords = node.get('coords', {})
+                if coords.get('w') == 60:
+                    pairs.setdefault(coords['x'], []).append(coords)
+            assert pairs and all(len(pair) == 2 for pair in pairs.values()), \
+                'expected upper/lower width60 pipe pairs'
+            approaching = [pair for x, pair in pairs.items()
+                           if x + 60 >= bird['x']]
+            assert approaching, 'no pipe trailing edge ahead of bird'
+            pair = min(approaching, key=lambda pair: pair[0]['x'] + 60)
+            top, bottom = sorted(pair, key=lambda coords: coords['y'])
+            assert top['y'] + top['h'] < bottom['y'], 'invalid pipe gap'
+            target = top['y'] + top['h'] + 63 - 12 + 8
+            if bird['y'] >= target and frames + 2 <= 360:
+                # Stay outside the system's left-edge back-gesture capture.
+                # Passive pipe/ground children let this point reach the field.
+                x, y = box['x'] + box['w'] // 2, box['y'] + box['h'] - 40
+                touch('down', x, y)
+                frame()
+                frames += 1
+                # Even between the two tap frames, inspect the actual tree.
+                field, hud, card, over_hidden = snapshot()
+                playing(field, over_hidden)
+                touch('up', x, y)
+                frame()
+                frames += 1
+            else:
+                frame()
+                frames += 1
+
+        def wait_over(expected):
+            for elapsed in range(121):
+                field, hud, card, over_hidden = snapshot()
+                numeric(hud, expected, 'HUD')
+                if not over_hidden:
+                    numeric(card, expected, 'settlement')
+                    assert [node['text'] for node in texts(card)
+                            if node['text'].startswith('最高 ')] == ['最高 1'], \
+                        'settlement highest score must be 1'
+                    return card
+                assert elapsed < 120, 'settlement not visible within 120 frames'
+                frame()
+
+        card = wait_over(1)
+        for _ in range(6):
+            frame()  # Let the existing 180 ms card fade finish for visual proof.
+        self._step({'cmd': 'screenshot', 'name': 'flybirds_over.png'})
+        buttons = [node for node in texts(card) if node['text'] == '再来一局']
+        assert len(buttons) == 1, 'expected unique settlement restart control'
+        box = buttons[0]['coords']
+        x, y = box['x'] + box['w'] // 2, box['y'] + box['h'] // 2
+        touch('down', x, y)
+        frame()
+        touch('up', x, y)
+        frame()
+        field, hud, card, over_hidden = snapshot()
+        numeric(hud, 0, 'restart HUD')
+        assert over_hidden, 'settlement card must be hidden after restart'
+        self._step({'cmd': 'screenshot', 'name': 'flybirds_restart_zero.png'})
+        wait_over(0)
+        for _ in range(6):
+            frame()
+        self._step({'cmd': 'screenshot', 'name': 'flybirds_second_over_zero.png'})
+
     def _step(self, step):
         cmd = step['cmd']
+        if cmd == 'flybirds_restart_regression':
+            self._flybirds_restart_regression()
+            return
         if cmd == 'navigate':
             params = {'app': step['app']}
             if step.get('page'):

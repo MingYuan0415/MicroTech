@@ -3,5 +3,6 @@
 #define __CROSS_LAYER_NVS_H__
 
 #define ESP_ERR_NVS_NOT_FOUND 0x1102
+#define ESP_ERR_NVS_INVALID_LENGTH 0x110c
 
 #endif /* __CROSS_LAYER_NVS_H__ */
