@@ -114,6 +114,18 @@
 
 #define DISPLAY_BENCHMARK_COLOR_FORMAT "RGB565"
 
+/* LV_DRAW_SW_DRAW_UNIT_CNT only exists as a Kconfig symbol when LVGL runs on an
+ * RTOS; under LV_OS_NONE the drawing is synchronous on the LVGL worker and
+ * LVGL itself falls back to a single draw unit. Mirror that fallback so the
+ * parallel-draw checks below never see an undefined macro. */
+#if defined(CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT) && \
+    (CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT > 1)
+#define DISPLAY_BENCHMARK_DRAW_UNIT_COUNT \
+            CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT
+#else
+#define DISPLAY_BENCHMARK_DRAW_UNIT_COUNT 1
+#endif
+
 #if CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_ENABLED 1U
     #define DISPLAY_BENCHMARK_SNAPSHOT_ANIMATION_NAME "enabled"
@@ -1976,7 +1988,7 @@ static void _display_benchmark_accumulate_stability(
             }
         }
     }
-#if CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT == 1
+#if DISPLAY_BENCHMARK_DRAW_UNIT_COUNT == 1
     summary->render_task_found = first_report ? report->render_task_found :
                                  summary->render_task_found &&
                                  report->render_task_found;
@@ -2139,7 +2151,7 @@ static void _display_benchmark_log_final(
                              summary->minimum_dma_largest > 0U &&
                              summary->minimum_psram_free > 0U &&
                              summary->minimum_psram_largest > 0U;
-#if CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT == 1
+#if DISPLAY_BENCHMARK_DRAW_UNIT_COUNT == 1
     bool render_passed = summary->render_task_found &&
                          summary->minimum_render_stack_high_water >=
                          DISPLAY_BENCHMARK_RENDER_MINIMUM_HWM;
@@ -2227,7 +2239,7 @@ static void _display_benchmark_log_config(void)
           s_display_transport.psram_dma_direct ? 1U : 0U,
           s_te_enabled ? 1U : 0U,
           DISPLAY_BENCHMARK_LVGL_OS_NAME,
-          (unsigned)CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT,
+          (unsigned)DISPLAY_BENCHMARK_DRAW_UNIT_COUNT,
           (unsigned)DISPLAY_BENCHMARK_DRAW_STACK_SIZE,
           (unsigned)DISPLAY_BENCHMARK_DRAW_PRIORITY,
           (unsigned)DISPLAY_BENCHMARK_FREETYPE_RENDER_POOL_SIZE,
