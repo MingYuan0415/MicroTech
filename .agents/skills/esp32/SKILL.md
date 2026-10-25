@@ -1,6 +1,6 @@
 ---
 name: esp32
-description: MicroTech ESP32-S3 and Waveshare ESP32-S3 Touch AMOLED 1.8 board-hardware guidance. Use for BSP drivers, GPIO assignments and strapping, I2C/SPI/I2S buses, Octal PSRAM and DMA capabilities, RTC/PMU/IMU/audio/SD hardware, sleep and wake sources, electrical constraints, or physical board behavior. Do not use as a generic ESP32-family reference.
+description: Check MicroTech BSP hardware changes against the Waveshare ESP32-S3 Touch AMOLED 1.8 topology, pin/strapping constraints, buses, memory, power, and wake capabilities. Use for board facts and physical behavior, not generic ESP32-family advice.
 ---
 
 # MicroTech ESP32-S3 Hardware
@@ -94,12 +94,10 @@ Waveshare board.
    ESP32-S3 datasheet or ESP-IDF capability definitions.
 4. Keep ISRs short and IRAM-safe where required. Keep blocking I2C, expander,
    and peripheral work in task context.
-5. Run the owning BSP host tests and cross-layer tests for behavior changes.
-6. Validate driver timing, DMA, power, sleep/wake, radio coexistence, and
-   physical peripheral behavior on hardware; report the exact tested scope.
-
-Validation scope follows the `AGENTS.md` default workflow; do not expand it
-from this skill.
+5. Select tests by actual source and contract impact under `AGENTS.md`.
+   Driver timing, DMA, power, sleep/wake, radio coexistence, and physical
+   behavior need hardware evidence; report unexecuted checks as limitations,
+   not as implicit authorization or a requirement to flash on every task.
 
 ## Display Boundary
 

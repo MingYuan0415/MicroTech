@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -16,16 +17,46 @@ IGNORED_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
 FENCE = re.compile(r"^\s*(```|~~~)")
 
 
+def documents(root: Path):
+    """Enumerate owned tracked/new Markdown, including initialized submodules."""
+    def owned(path):
+        return not any(part in EXCLUDED_PARTS or
+                       part.startswith(("build-", "cmake-build-"))
+                       for part in path.parts)
+
+    def visit(repository):
+        output = subprocess.check_output(
+            ["git", "-C", str(repository), "ls-files", "-z", "--cached",
+             "--others", "--exclude-standard", "--", "*.md"])
+        for name in sorted(set(output.decode().split("\0")) - {""}):
+            path = repository / name
+            relative = path.relative_to(root)
+            if owned(relative) and path.is_file() and not path.is_symlink():
+                yield relative, path
+        index = subprocess.check_output(
+            ["git", "-C", str(repository), "ls-files", "--stage", "-z"])
+        for entry in index.decode().split("\0"):
+            if not entry.startswith("160000 "):
+                continue
+            submodule = repository / entry.split("\t", 1)[1]
+            if not owned(submodule.relative_to(root)) or not submodule.is_dir():
+                continue
+            # An uninitialized directory would otherwise resolve to the parent repo.
+            top = subprocess.run(
+                ["git", "-C", str(submodule), "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, check=False)
+            if top.returncode == 0 and Path(top.stdout.strip()).resolve() == submodule.resolve():
+                yield from visit(submodule)
+
+    yield from visit(root.resolve())
+
+
 class DocLinkTest(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parents[2]
 
     def _documents(self):
-        for path in sorted(self.root.rglob("*.md")):
-            relative = path.relative_to(self.root)
-            if any(part in EXCLUDED_PARTS for part in relative.parts):
-                continue
-            yield relative, path
+        yield from documents(self.root)
 
     @staticmethod
     def _links(text: str):

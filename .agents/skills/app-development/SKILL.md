@@ -1,6 +1,6 @@
 ---
 name: app-development
-description: MicroTech built-in application development workflow for layers/apps, including App Manager Page ops and raw handlers, lifecycle ownership, static routes, navigation, Typed Blob arguments, app_ui composition, subscriptions, workers, and private state. Use when creating, modifying, or reviewing an App or Page in layers/apps; use esp32 for board and peripheral facts and lvgl-integration for display-pipeline ownership.
+description: Create, modify, or review MicroTech Apps and Pages in layers/apps, including lifecycle ownership, static routes, typed arguments, subscriptions, and workers. Use for application contracts, not board wiring or display-pipeline internals.
 ---
 
 # MicroTech App Development
@@ -27,8 +27,8 @@ capacities in the owning headers instead of copying them from this skill.
 1. Classify the change (new App, new Page, existing Page update) and the Page
    model (static, refresh, session, worker, argument driven); implement only
    the lifecycle stages its owned resources require.
-2. Choose typed Page ops for ordinary stages; keep a raw handler only when
-   direct message dispatch materially simplifies the Page.
+2. Use typed Page ops for new Pages; raw handlers are the compatibility path
+   for existing direct message dispatch.
 3. Inventory every UI object, timer, subscription, worker, snapshot, argument,
    and retained handle by acquisition and release stage.
 4. Keep only instance state in Page memory (`APP_MANAGER_PAGE_STATE_BYTES`);
@@ -40,36 +40,30 @@ capacities in the owning headers instead of copying them from this skill.
    When the App owns icons, author SVG sources, register them in
    `resource_manifest.cmake` plus `app_image_ids.h`, and run
    `idf.py reconfigure` (see references/asset-authoring.md).
-7. Navigate through `app_manager_navigate_*` or `app_ui_request_*`; validate
-   Typed Blob type and exact size before use.
+7. Use asynchronous navigation from LVGL callbacks (`app_ui_request_*` or
+   `app_manager_navigate_async`); validate Typed Blob version, type, and exact
+   size before decoding with `memcpy`.
 8. Add focused host coverage for the changed behavior; validation scope
    follows the `AGENTS.md` default workflow.
-9. Cover UI behavior with simulator scenarios: reach subpages deterministically
-   via `sim.navigate` `page`, assert tree fields through dotted paths
-   (`scroll.y`, `flags.scrollable`, numeric `{"min": N, "max": M}`), and use
-   `drag` steps to prove the page's scroll policy both directions. `sim.step`
-   accepts only multiples of 33 ms and every RPC result must be asserted: a
-   rejected call advances no frames and masquerades as an unresponsive UI.
-    Derive tap coordinates from the dumped tree geometry, review a screenshot
-    for every new page, and remember that pages with looping animations (for
-    example `LV_LABEL_LONG_SCROLL_CIRCULAR` overflow) never satisfy `wait_idle`.
-    Before declaring a page done, run the `ui-review` gate at the scope its
-    tier table assigns to this change; the lint/screenshot/gesture checklist
-    itself lives only in that skill.
+9. For visible or interaction changes, use `ui-review` at the affected-page
+   scope. Simulator commands, scenario assertions, and session operation live
+   in `sim/README.md`; layout decisions use `lvgl-ui-layout`. Pure logic changes
+   with no UI impact do not automatically require a screenshot matrix.
 
 ## Ownership Rules
 
 - Initialize only nonzero sentinels in START; Page state is already zeroed.
-- Page state is zeroed only when the instance is allocated; a pop-back remounts
-  with the same arena. Re-initialize render caches and defaults at the top of
-  MOUNT, and keep values that must survive remounts (a selected duration, a
-  session choice) in App-scope statics behind internal accessors.
-- NEWINTENT runs on the App worker thread: copy payloads only and never call
-  LVGL from it (that deadlocks against the UI thread). Apply visual changes in
-  MOUNT/RESUME.
-- Structure a multi-page App as one file per page plus an
-  `<app>_internal.h` exposing route id macros, extern page definitions, and
-  shared helpers; register every source explicitly in `APP_SRCS`.
+- Page state survives UNMOUNT/remount until successful STOP. Reset mount-local
+  LVGL pointers and render caches without discarding instance selections or
+  copied arguments. Use App-scope state only for genuinely shared data, and
+  service state for service-owned sessions; do not promote instance data to
+  statics merely to survive remount.
+- Lifecycle callbacks, including NEWINTENT, run on the UI worker. NEWINTENT
+  validates and copies arguments; when mounted it may update its own UI, and
+  when unmounted it retains data for MOUNT/RESUME. It must not block.
+- Prefer one file per substantial page with a narrow `<app>_internal.h` for
+  routes and shared helpers; do not split a cohesive small page just for shape.
+  Register every source explicitly in `app_sources.cmake`.
 - Create UI only below the Page Screen in MOUNT; destroy it and clear every
   LVGL pointer in UNMOUNT.
 - Start foreground resources in RESUME, stop them in PAUSE; support a
@@ -89,16 +83,14 @@ capacities in the owning headers instead of copying them from this skill.
 ## Prohibited Patterns
 
 - Do not create LVGL objects in START or use `lv_screen_active()` as a Page root.
-- Do not render copy that announces unimplemented features or absent hardware
-  (for example "firmware update: unavailable" or "no magnetometer, no
-  compass"). Show implemented behavior and live service state only; a
-  disabled control needs no explanatory label.
-- Do not call LVGL from NEWINTENT or any other worker-thread callback.
+- Do not present unimplemented behavior as an available feature. Explain a
+  disabled control or unavailable service when the reason helps the user act;
+  avoid placeholder feature announcements unrelated to the task.
+- Do not call LVGL from background workers; use the UI dispatcher or snapshots.
 - Do not apply label APIs to non-label objects; a button caption is its child
   label.
-- Do not use DOT for an external-input primary identifier in a fixed-height
-  row. A compact T3 summary row may use DOT only when the complete value is
-  reachable in one step on its owning detail page or confirmation sheet.
+- Keep required external identifiers readable at their decision surface;
+  text-treatment choices live in `lvgl-ui-layout`.
 - Do not create runtime Pages outside the owning App route table.
 - Do not clear a subscription, worker, or service handle after failed cleanup.
 - Do not add another LVGL task, tick source, Screen manager, or direct hardware

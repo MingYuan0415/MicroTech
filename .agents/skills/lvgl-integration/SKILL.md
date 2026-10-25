@@ -1,6 +1,6 @@
 ---
 name: lvgl-integration
-description: MicroTech display-pipeline ownership boundaries and hard rules for esp_lvgl_adapter, App Manager, and the BSP panel/touch path on the 368 x 448 SH8601A QSPI AMOLED panel. Use before changing display registration, draw submission, flush handshake, suspend/resume, or transitions; use esp32 for panel pins, buses, and power, and layers/bsp/README.md plus tests/display/README.md for baselines and benchmark acceptance.
+description: Preserve MicroTech display-pipeline ownership when changing registration, draw submission, flush completion, suspend/resume, or transitions. Covers esp_lvgl_adapter, App Manager, and BSP boundaries; use esp32 for electrical and pin facts.
 ---
 
 # MicroTech LVGL Display Pipeline
@@ -38,9 +38,10 @@ copy them here.
   return its `esp_err_t`; never call `lv_display_flush_ready` there — the
   adapter owns asynchronous completion and its failure fallback.
 - Write new code against LVGL 9 names only; do not revive v8 aliases.
-- Suspend/resume must drain in-flight display work. Treat 80 MHz, TE
-  synchronization, and direct PSRAM DMA as characterization paths, not
-  production fixes; changing defaults requires the evidence gates in
-  `tests/display/README.md`.
-- Validation scope follows the `AGENTS.md` default workflow; do not expand it
-  from this skill.
+- Suspend/resume must drain in-flight display work. Do not assume 80 MHz, TE
+  synchronization, or direct PSRAM DMA are available profiles or production
+  fixes; consult the owning docs for current support and the evidence needed
+  to change the baseline.
+- Select validation under `AGENTS.md`; hardware timing and performance claims
+  require on-device evidence. State unexecuted checks without treating this
+  skill as authorization to flash or run a benchmark.

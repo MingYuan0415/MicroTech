@@ -1,195 +1,105 @@
 ---
 name: ui-review
-description: Adversarial simulator UI review protocol for MicroTech layers/apps. Use after creating or modifying an App, Page, or shared app_ui widget, and before declaring any UI change done, to catch wrapped text, off-screen or unreachable controls, washed-out disabled states, fallback/broken icons, wrong-state visuals, and stale-binary conclusions that structure-only checks and single happy-path screenshots miss. Drives the sim agent through a per-page state matrix with geometry lint and masked PNG baselines.
+description: Review MicroTech visible UI and interaction changes using affected-page simulator states, geometry lint, screenshots, and gestures. Use for layout, rendering, touch, or visible-state changes; pure logic and documentation changes do not automatically need a UI matrix.
 ---
 
 # UI Review
 
-Reviewing a UI change means proving every page looks and behaves right in every
-state it can reach, not that a scenario's text assertions pass. The simulator
-(SDL, real fonts, real LVGL 9.6 layout) is the primary review surface; hardware
-only adds RF, touch feel, and AMOLED color. Treat "host green + one screenshot"
-as NOT reviewed.
+Use the simulator's real LVGL layout and fonts to check the changed behavior,
+not just source structure or a default-state screenshot. General validation and
+authorization follow `AGENTS.md`. Commands, tree fields, fixture seeding, and
+session operation are maintained in `sim/README.md`.
 
-## Why This Skill Exists (recurring misses)
+## Choose Scope Before Running
 
-These shipped as "done" and were caught by a human looking at a screenshot or
-doing a gesture, because the review was confirmatory, not adversarial:
+A full review protocol is not the same as the full repository page set.
 
-- Scroll chain stripped by a passive helper: `tree_assert` text still passed.
-- Buttons firing on `PRESS_LOST`: only a press-and-drag-off gesture reveals it.
-- Wrapped hub summary, wrapped storage value, wrapped PM chip, orphaned `。`:
-  present in the screenshot, missed by eye; reading the rendered line count
-  from the tree catches them mechanically.
-- Oversized slider knob, reviewed against a stale binary (ninja did not rebuild
-  the edited file) and by eyeballing the PNG instead of measuring.
-- Broken-image glyph, off-center no-data text, English city after a payload
-  clobber: all lived in states that were never screenshotted.
-- Danger rows washed-out by `LV_STATE_DISABLED`, and a control buried below a
-  populated list so it was unreachable: visible in the first screenshot.
+| Change | Automated coverage | Human inspection and interactions |
+| --- | --- | --- |
+| Copy only | Lint and baseline check for touched pages | Read touched states; no unrelated gesture set |
+| Visible behavior/state fix | Affected pages and relevant scenarios | Inspect states the fix touches and replay involved interactions |
+| New page, new state, local re-layout/restyle | Full protocol for that page; add/update relevant spec entries | Relevant reachable states, gestures, entry and return paths |
+| Shared widget/helper | Its actual consumers; full spec if scope cannot be bounded reliably | Representative consumers and changed interactions |
+| Global font/theme/viewport or navigation foundation | Cross-page/full coverage as required by impact | Cross-page state and input regressions |
+| Pure logic with no visible/input impact | Owning host tests | No automatic screenshot matrix |
 
-The common failure is trusting structure assertions and a single default-state
-screenshot. Fix it with a state matrix, geometry lint, gesture tests, and a
-verified artifact.
+`review_pages.py --pages` selects pages, not individual states: automated runs
+execute the selected pages' executable spec states. Human screenshot review may
+focus on the affected states. Related scenarios can be selected with
+`sim/ci/run_ci.sh --scenario <name>`; omit the filter for the full scenario set.
+Do not assume every service call change necessarily changes the interface.
 
-## Review Tiers (pick per change; do not re-litigate verified pages)
+## Full Protocol for an Affected Page
 
-The full four-bar protocol below applies to a NEW page, a re-layout/restyle, or
-a newly reachable state. Everything else uses the narrower tier so an
-already-reviewed page costs minutes, not a full pass:
+1. **State coverage.** Identify relevant reachable empty, loading, populated,
+   disabled/busy, error, and transient states. Add deterministic seeds and
+   expectations to `sim/ci/review/spec.json` where practical. Record states the
+   simulator cannot reproduce as hardware-only limitations; do not invent
+   evidence or demand screenshots for impossible combinations.
+2. **Geometry and visuals.** Run the affected-page lint/baseline check. Read
+   screenshots for composition, color, icons and wrong-state visuals; use tree
+   coordinates and rendered lines for exact fit. Inspect long external input,
+   signs/units and Chinese prose where they affect the page.
+3. **Input.** Exercise changed taps and drags from labels, icons and gaps.
+   Ordinary taps dragged off must not activate; scroll owners must move in
+   both directions, pinned content must remain pinned, and toggles must persist
+   for the lifetime the feature promises. Include navigation away/back where
+   state or resource ownership is involved.
+4. **Current artifact.** Build once after relevant edits, then review a newly
+   launched instance of that binary. A successful build does not update an
+   already running process. After a relevant edit, rebuild/restart and repeat
+   affected evidence only; unrelated prior results remain reusable.
 
-- **Behavior fix, geometry unchanged** (state sync, error handling, service
-  calls): run the lint over affected pages only
-  (`review_pages.py --pages app/page[,app/page]`), screenshot and read just the
-  states the fix can touch, and replay only the gestures involved. Baselines
-  move only when mask-free pixels legitimately changed.
-- **Copy-only change**: lint (all label rules: single line, clipping,
-  truncation, prose balance) plus the touched states' screenshots; no gesture
-  set. Shortening a string can move a wrap point, so the lint is not optional
-  here.
-- **New/re-laid-out page or new state**: full protocol, and add the page/state
-  to `sim/ci/review/spec.json` in the same task.
+## What the Harness Does and Does Not Prove
 
-## The Review Bar (all four, full tier only)
+- **Automatic:** rendered-line completeness, some WRAP-height and ancestor
+  clipping, observable `...` truncation, control reachability through scroll
+  travel, unexpected disabled controls, unknown image IDs, and masked baseline
+  differences. Consult `sim/tools/review_pages.py` for exact implementation;
+  these checks are not a general proof of all horizontal/vertical clipping.
+- **Spec-dependent:** `single_line` and `balanced_prose` match explicit text
+  selectors; `expect_visible`, `expect_absent`, and `expect_image` cover only
+  their listed expectations. Deliberate summary ellipses use `allow_truncation`.
+  A green run cannot prove unlisted label policy, that a selector still matches,
+  or that an external row uses content-driven sizing.
+- **Manual/source review:** T1/T2/T3 classification (`lvgl-ui-layout`), complete
+  identifiers at decision surfaces, appropriate row sizing, meaning preserved
+  by copy edits, primary-control placement, fallback visibility, and intentional
+  disabled-state styling. Disabled can be correct for busy, ineligible, or
+  unavailable actions; add narrow spec allowances with the intended reason
+  rather than changing product behavior merely to appease the lint.
+- **System layers:** request `sim.tree {include_layers:true}` to inspect top/sys
+  overlays. The current page harness walks `children`, not the separate
+  `overlays` array, so review these with explicit tree assertions, screenshots,
+  and the appropriate system hook/gesture; do not count page lint as coverage.
+- **Hardware:** real touch feel, panel timing/color, DMA, radio, I2S and sleep
+  require their own evidence. The simulator does not replace those checks or
+  authorize hardware operations.
 
-1. **State matrix.** Enumerate and screenshot every state the page can show:
-   empty/no-data, loading/scanning, populated, disabled/ineligible, error, and
-   interactive-transient (pressed, two-step armed, pairing passkey). A bug in an
-   un-screenshotted state is a bug you shipped.
-2. **Geometry lint.** Do not eyeball; read it from `sim.tree`. Run
-   `sim/tools/review_pages.py` (see below) and drive it clean. It now includes
-   line-count, clipping, truncation, and prose-balance rules, so a green run
-   means the label policy holds too, not only that boxes stay on screen.
-3. **Gesture tests.** Exercise input the way a finger does, via the agent:
-   press-and-drag-off a control must NOT activate it; a scroll page must move
-   `scroll.y` when dragged over labels/rows/gaps and a pinned page must stay at
-   0 with `flags.scrollable` false; a toggle must persist across re-navigate.
-4. **Verified artifact.** The binary you review is the one you just built: run
-   `cmake --build build/sim` immediately before any screenshot or tree
-   conclusion. A failed build, or an edit made after the build, voids every
-   prior review conclusion. Measure geometry from the tree dump, never from a
-   PNG by eye.
-
-## Geometry Invariants To Enforce (what review_pages.py checks)
-
-- **Single line stays single line.** A label listed in `single_line` must
-  render as one line (`len(lines) == 1` in the tree dump); a two-line render is
-  a violation regardless of height. Fix by condensing the copy or widening the
-  container; never accept a wrap or an orphaned trailing punctuation mark.
-- **Nothing is clipped or dotted away by accident.** `clipped text` fires when
-  the rendered line count needs more height than the label box;
-  `clipped by parent` fires when a non-scrollable ancestor cuts the box;
-  `truncated text` fires on any label ending in `...` (LVGL's DOTS mode rewrites
-  the text in place, so the ellipsis is observable in the tree). A deliberate
-  summary ellipsis must be listed in the state's `allow_truncation` prefixes and
-  its complete value must be reachable on the owning detail page.
-  `SCROLL_CIRCULAR` headers and `CLIP` labels are exempt because clipping is
-  their chosen policy.
-- **Prose ends on a whole line.** A label listed in `balanced_prose` must not
-  leave a 1–2 cluster tail, open a line with `，。、；：！？）】」』…`, or close one
-  with `（【「『《`; widen the label within its layout or rewrite the copy.
-- **Row height follows external identifiers.** A row whose primary text is
-  external input (SSID, file name) uses `LV_SIZE_CONTENT` height with
-  `min_height`, never a fixed height.
-- **No unreachable control.** A visible interactive node (button/switch/slider/
-  roller, or `flags.clickable`) with `coords.y + h > viewport_h` (or x overflow)
-  inside a page whose content is NOT a scroll owner is clipped and dead. Either
-  make the page a real scroll list or fit it. Controls that only sit below the
-  fold because a list grew above them are a UX defect: move primary controls up.
-- **Disabled is intentional.** `state.disabled` greys a control. Destructive or
-  optional rows must NOT be greyed when the action is merely "nothing to do";
-  keep red text on the normal surface and give a neutral hint on tap. Grey only
-  what is physically unavailable (e.g. pairing while Bluetooth is off).
-- **Right icon per state.** In a data state the real image node is visible with
-  the expected `image_semantic_id` and the fallback symbol label is hidden; a
-  visible `lv_image` with `image_semantic_id == "unknown"` is a broken icon.
-
-## Running The Harness
+## Run and Interpret
 
 ```sh
 cmake --build build/sim
-python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json --check
-python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json --check --pages settings/wifi,settings/bluetooth   # affected subset (L0/L1 iteration)
-python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json --update   # re-baseline after an approved change
+python3 sim/tools/review_pages.py --check --pages settings/wifi,settings/bluetooth
+sim/ci/run_ci.sh --scenario smoke_pages
 ```
 
-By default the harness sends `sim.exit` when it finishes, killing any session
-you wanted to keep probing; interactive gesture work after a lint run then
-needs a fresh launch and re-navigation. Order your session as probe-first /
-lint-last, or pass `--keep-sim` and end the sim yourself (`simctl exit`). A
-baseline refresh costs exactly two runs: look at the new shots, `--update`,
-then one `--check` — re-running the full matrix repeatedly on an unchanged
-binary is process waste, not rigor.
+The review harness normally launches and owns fresh headless sessions with
+isolated NVS/SD directories; an occupied port is an error, not permission to
+reuse or terminate its owner. For deliberate interactive reuse pass
+`--no-launch` after confirming the process/binary and seeded state yourself;
+this mode has no per-page process isolation and never stops the external sim.
+`--keep-sim` retains the final owned instance and its temporary data for probing;
+end it explicitly when finished. Detailed operation lives in `sim/README.md`.
 
-It launches its own headless `--ci` sim (fresh NVS), drives each page/state from
-the spec, dumps the tree, runs the lint above, and compares a masked PNG to the
-baseline in `sim/ci/golden/ui/`. Non-zero exit = a violation or a baseline diff.
-Add a page/state to `sim/ci/review/spec.json` whenever you add or restyle one;
-states the sim cannot seed (real association, live RF) are marked `hardware_only`
-and move to the on-device checklist instead of being silently skipped.
+A lint failure requires understanding the violated contract; a baseline diff
+requires judging whether pixels changed intentionally. Inspect new captures
+before `--update`, update only affected pages, then run `--check`. Do not raise
+tolerance, broaden masks, or remove assertions to hide an unintended change.
+Masks cover genuinely volatile pixels; lint and explicit assertions still need
+to prove their relevant geometry/text. `no_golden` is for surfaces without a
+useful stable pixel baseline, not a shortcut around review.
 
-## Baselines Are For Layout And Color, Not Text
-
-Volatile regions (clock seconds, battery %, scan rows, countdown text) belong in
-that state's `masks` so the pixel gate ignores them; text and geometry
-correctness come from the lint, not the image. A page whose whole content is
-volatile is marked `no_golden` instead. Re-run `--update` only after you have
-looked at the new screenshot and judged it correct.
-
-## Gate Order Before "Done"
-
-`review_pages.py --check` clean -> read the screenshots the tier covers
-against the invariants above -> the involved gesture cases pass -> binary was
-the one you built. Only then is a UI change reviewed. The final `--check`
-covers the pages/states the change can affect (`--pages`); it upgrades to the
-full spec only when the change touches shared widgets (`app_ui` / `app_theme`
-/ viewport copy), adds a page or state, or is full-tier for another reason in
-the table above. Cross-page regressions remain covered by the one
-`sim/ci/run_ci.sh` paired with this gate (`AGENTS.md` L2). This tightens the
-`AGENTS.md` default only for changes that touch the interface; it stays
-host/sim-only and adds no hardware or full-CI burden.
-
-## Simulator Gotchas (cost real debugging time)
-
-- `sim.step` accepts only multiples of 33 ms; a rejected call advances no frames
-  and looks exactly like a hung UI. Assert every RPC `ok`.
-- After a long navigation session, an intra-app `sim.navigate` to a sibling page
-  can be silently dropped (you land back on the previous page). Reach a page by
-  hopping through the app root first: `navigate(app,"root")` then
-  `navigate(app,page)`. The harness does this and retries.
-- Pages with a live clock or looping animation never satisfy `wait_idle`; cap
-  the wait and read the tree anyway. `no_golden` such pages (home, clock root,
-  setup, diagnostics) so the pixel gate ignores their ticking regions.
-- A control clipped below a NON-scrolling page reports `flags.visible=false`, so
-  "is it visible" cannot detect it. The tree also exposes `flags.hidden`; treat
-  "not hidden but `coords.y+h > viewport`" as an unreachable control.
-- System-layer overlays (task switcher on `lv_display_get_layer_sys`, edge-back,
-  global menus) are NOT in `sim.tree` — the dump walks `lv_screen_active()`
-  only. Review them from `sim.screenshot` (which composites every layer), and
-  drive them through a dedicated agent hook (e.g. `sim.switcher`) because their
-  real trigger (HOME double-press) is not reproducible under CI stepping.
-- Never delete an object inside its own CLICKED callback (a card/close button
-  that hides or destroys the list frees the event target and use-after-frees on
-  the next indev step). Defer such work with `lv_async_call`. Likewise keep
-  persistent chrome (empty-state label) out of any container you `lv_obj_clean`.
-- `sim.set_power` takes `voltage` and `pct` independently; omit `pct` to
-  drive the voltage-only battery fallback.
-- Wi-Fi scan lists are seedable end to end: `sim.set_wifi_scan` with
-  `request` (start a real scan through the connectivity manager), then
-  `trigger` + `wait_scan` to inject `SCAN_DONE` inside the port's scan
-  window; the scan section sits below the fold, which the full-page capture and
-  `expect_visible` both cover (see `settings/wifi scan_list` in the spec).
-  The service clamps an SSID to `CONNECTIVITY_MANAGER_SSID_MAX_BYTES` (32), so
-  a longer seed string is cut before it reaches the label; assert the surviving
-  prefix, not the original literal.
-- The SD card is a real host directory (`--sd-dir`, kept short: the service
-  stores full paths in a 64-byte buffer and silently skips deeper ones).
-  `sim.sd` writes silent WAVs, clears, remounts, and reads the service's
-  cached index (`svc`). Because `recorder_service_list` serves a cached
-  index refreshed only at init and after service commands, external file
-  changes show up on a freshly mounted page — order states so the page
-  mounts after the files exist, or use `sd write`/`clear` (they re-init the
-  service) before navigating in.
-- What remains hardware-only: BLE pairing crypto, real I2S audio output,
-  AMOLED color, touch feel, radio, deep sleep.
-
+Report selected pages/states and scenarios, important gestures, artifact/session
+identity, failures, and unexecuted checks. A green harness plus a single default
+screenshot is not evidence for states or paths you did not exercise.

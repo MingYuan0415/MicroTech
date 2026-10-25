@@ -42,11 +42,9 @@ maximum width, and text flags. A font's nominal name or point size is not a
 layout measurement. Missing CJK glyphs can change fallback metrics, so verify
 the real font chain on hardware.
 
-For MicroTech, explicitly bind every ordinary label to its semantic
-`APP_THEME_FONT_*` font before assigning text. Explicitly bind every label that
-renders an `LV_SYMBOL_*` to `LV_FONT_DEFAULT`. Do not rely on inherited theme
-fonts: an inherited font can lack Chinese or symbol glyphs and render boxes,
-and changing it after text assignment causes an avoidable second layout pass.
+Resolve the intended font before text assignment, directly or through the
+owning helper; label policy lives in the parent skill. Verify glyph coverage
+rather than assuming widget defaults.
 
 ## Adaptive Row
 
@@ -97,13 +95,12 @@ the label content-sized inside it.
 
 ## Text Fit Classes
 
-Pick the class from who owns the string, then apply its pattern. The long mode
-follows from the class; adding `DOT` to make a class fit is not an option.
+Use the T1/T2/T3 policy in `SKILL.md`; these are implementation examples,
+not additional rules. Adapt them to the actual page contract.
 
 ### T1 pattern: one-line identity
 
-Titles, row names, status words, chip captions, and values with units must
-render as one line. Size them and prove the worst case:
+For a title or value intended to remain one line, size it for the worst case:
 
 ```c
 lv_obj_set_width(title, LV_PCT(100));      /* or LV_SIZE_CONTENT */
@@ -141,17 +138,16 @@ app_ui_set_prose_text(body, text, prose, sizeof(prose));
 must already have its bounded width and `WRAP` mode. It needs a scratch buffer
 sized for the worst field plus slack; `weather_alert_pages.c` uses
 `WEATHER_SERVICE_ALERT_TEXT_BYTES + 128U` because the wrapper inserts `\n`
-characters. When the buffer is too small the helper leaves the label untouched
-and the prose falls back to plain wrapping with no kinsoku rules.
+characters. When wrapping cannot produce output, the helper assigns the
+original text, falling back to plain LVGL wrapping without kinsoku rules.
 
 Adjusting the break points means changing the measured width: `pad_left` and
 `pad_right` on the label move the wrap boundary by the same amount. Do not
-insert `\n` by hand; the wrapper is the only sanctioned source of explicit
-breaks.
+insert layout-dependent breaks by hand; deliberate paragraph boundaries are
+separate from automatic wrapping.
 
-The acceptance check is the `balanced_prose` lint: for a multi-line label, the
-last rendered line must carry at least three clusters, no line may open with
-`，。、；：！？）】」』…`, and no non-final line may end with `（【「『《`.
+The optional `balanced_prose` spec selector checks short tails and punctuation;
+its coverage and limitations are described by `ui-review` and `sim/README.md`.
 
 ### T3 pattern: external identifiers own their row
 
@@ -212,7 +208,7 @@ If value and unit require different fonts, place two content-sized labels in a
 content-sized non-wrapping row. Measure the worst-case pair and do not let the
 row shrink below that width.
 
-A value-with-unit is a T1 label: it must stay on one line and must not ellipsize.
+A value-with-unit normally stays together on one line without ellipsis.
 Size the label from the widest formatted value rather than the current one, so a
 reading growing from `9 °C` to `-18 °C` or `100 %` does not push the unit onto a
 second line:
@@ -231,8 +227,8 @@ Do not use `DOT` here: a truncated unit (`1...`) reads as a different value.
 ## One-Screen Fit vs Scroll
 
 Decide scrolling per page from a measured vertical budget, not habit. On the
-368 x 448 panel the content viewport is 448 px for a headerless page and
-384 px below the 64 px header.
+368 x 448 panel, derive the usable content viewport from the current page
+helper, header, safe area, and padding rather than copying an old pixel budget.
 
 ```text
 scroll_overflow = last_child_bottom + bottom_padding - viewport_bottom
@@ -255,8 +251,8 @@ lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
 - When content cannot fit, keep the page content as the single scroll owner
   (the `app_ui` header-page default), distribute rows with a uniform gap, and
-  size rows so the first screen ends on a whole-row boundary. No control may
-  be sliced by the viewport edge; the remainder is revealed by dragging.
+  prefer whole-row first-screen boundaries where practical. Variable-height
+  content may cross the fold; verify the remainder is reachable by dragging.
 
 On a fixed panel an exact one-screen grid may use explicit pixel budgets
 (for example 12 + 3 x 136 + 2 x 8 + 12 = 448); keep the invariant in named
