@@ -110,7 +110,6 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_BT_NIMBLE_ROLE_PERIPHERAL": "y",
             "CONFIG_BT_NIMBLE_ROLE_BROADCASTER": "y",
             "CONFIG_BT_NIMBLE_ROLE_OBSERVER": "n",
-            "CONFIG_BT_NIMBLE_GATT_CLIENT": "n",
             "CONFIG_BT_NIMBLE_GATT_SERVER": "y",
             "CONFIG_BT_NIMBLE_SECURITY_ENABLE": "y",
             "CONFIG_BT_NIMBLE_SM_LEGACY": "n",
@@ -140,7 +139,6 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_MBEDTLS_DYNAMIC_BUFFER": "y",
             "CONFIG_LV_USE_QRCODE": "y",
             "CONFIG_LV_OS_NONE": "y",
-            "CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT": "1",
             "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "6144",
             "CONFIG_DEVICE_LINK_SERVICE_TASK_STACK": "6144",
             "CONFIG_MAIN_WEATHER_SERVER_BASE_URL":
@@ -150,6 +148,12 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         self.assertEqual(
             {key: assignments.get(key) for key in expected}, expected
         )
+        # Symbols whose Kconfig `depends on` makes them invisible under the
+        # pinned roles above: GATT client needs ROLE_CENTRAL and the LVGL draw
+        # unit count needs !LV_OS_NONE. Assert the implied effective value
+        # rather than a literal line that save-defconfig can never emit.
+        self.assertNotIn("CONFIG_BT_NIMBLE_GATT_CLIENT", assignments)
+        self.assertNotIn("CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT", assignments)
         self.assertRegex(
             (
                 self.root /
