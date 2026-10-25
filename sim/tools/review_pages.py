@@ -68,6 +68,25 @@ def _port_open(host, port):
         return False
 
 
+_launched = []
+
+
+def _stop_sim(proc, runner):
+    """Retire one headless session so the next page starts from boot."""
+    if runner is not None:
+        try:
+            runner.call('sim.exit')
+        except Exception:
+            pass
+        runner.close()
+    if proc is not None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+
 def _launch_sim(build, port, nvs, shots, sd):
     shutil.rmtree(nvs, ignore_errors=True)
     shutil.rmtree(sd, ignore_errors=True)
@@ -80,6 +99,7 @@ def _launch_sim(build, port, nvs, shots, sd):
          '--agent-port', str(port)], stdout=log, stderr=subprocess.STDOUT)
     for _ in range(60):
         if _port_open('127.0.0.1', port):
+            _launched.append(proc)
             return proc
         if proc.poll() is not None:
             raise RuntimeError('sim exited during launch; see %s' % log.name)
@@ -567,29 +587,23 @@ def main():
         ap.error(str(error))
 
     proc = None
-    if not args.no_launch and not _port_open('127.0.0.1', args.port):
+    owns_sim = not args.no_launch and not _port_open('127.0.0.1', args.port)
+    if owns_sim:
         proc = _launch_sim(args.build, args.port,
                            os.path.join(args.build, 'review_nvs'), args.shots,
                            '/tmp/mrsd')
     runner = Runner('127.0.0.1', args.port, args.shots, None, args.update)
     try:
-        _run_spec(runner, spec, args, proc)
+        _run_spec(runner, spec, args, proc, owns_sim)
     finally:
-        if proc is not None and not args.keep_sim:
-            try:
-                runner.call('sim.exit')
-            except Exception:
-                pass
+        if not args.keep_sim:
+            for live in _launched:
+                _stop_sim(live, None)
+            _launched[:] = []
         runner.close()
-        if proc is not None and not args.keep_sim:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                proc.kill()
 
 
-def _run_spec(runner, spec, args, proc):
+def _run_spec(runner, spec, args, proc, owns_sim=False):
     vw = (spec.get('viewport') or {}).get('w', 368)
     vh = (spec.get('viewport') or {}).get('h', 448)
     runner.connect()
@@ -600,8 +614,32 @@ def _run_spec(runner, spec, args, proc):
     visual_checked = 0
     geometry_only = []
     hardware_only = []
+    page_index = 0
     for page in spec['pages']:
         key = '%s/%s' % (page['app'], page.get('page', 'root'))
+        # One sim process per page. States seed the medium, run recordings and
+        # leave services in whatever mode they were testing; a state that ends
+        # faulted or unmounted would otherwise be inherited by the next page,
+        # whose capture then carries the previous page's state and whose pixel
+        # baseline silently stops describing its own page. This mirrors the
+        # per-scenario process model in sim/ci/run_ci.sh.
+        #
+        # The external --no-launch path keeps a single session: that mode
+        # exists to drive a sim the operator already controls.
+        if owns_sim and page_index > 0 and proc is not None:
+            _stop_sim(proc, runner)
+            proc = _launch_sim(args.build, args.port,
+                               os.path.join(args.build, 'review_nvs'),
+                               args.shots, '/tmp/mrsd')
+            runner = Runner('127.0.0.1', args.port, args.shots, None,
+                            args.update)
+            runner.connect()
+            # A fresh process starts with an empty card. States whose seeds
+            # only navigate (files/detail, the settings pages) relied on a
+            # sibling page creating this tree first; recreate it here so a
+            # page never depends on another page having run before it.
+            runner.call('sim.sd', {'action': 'fixture'})
+        page_index += 1
         for state in page.get('states', []):
             if state.get('hardware_only'):
                 hardware_only.append(key + '/' + state['name'])

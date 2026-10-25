@@ -304,6 +304,12 @@ label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines
 中心状态显式 `set_bluetooth {enabled:false}`，蓝牙磁贴才不依赖前序状态遗留的
 `bound` 值。
 
+页面之间不共享会话：`review_pages.py` 自己拉起 sim 时每个页面用独立进程（独立
+NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`unmounted` 介质结尾
+的页面会被下一个页面继承，像素基线不再描述它自己的页面——这个污染曾表现为
+`recorder/files/detail` 稳定多出「存储卡或音频不可用」。代价是每页一次冷启动；
+`--no-launch` 驱动外部 sim 时保持单会话，不做此隔离。
+
 每个场景独立 sim 进程 + 独立 NVS 目录（resident-app 策略与冷启动一致）。
 场景位于 `sim/ci/scenarios/`（`run_ci.sh` 遍历该目录，无单独清单）：`all_apps.json`
 （每个内置 App 主页面文本断言 + 截图）、`smoke_pages.json`（导航/手势/多页）、
