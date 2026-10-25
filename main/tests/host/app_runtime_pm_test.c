@@ -28,6 +28,9 @@
 #define TEST_SLEEP_TIMEOUT_MS  1000U
 #define TEST_TRACE_CAPACITY    64U
 
+/* Injected recorder admission state (timer_service_fake.c). */
+void host_recorder_set_busy(bool busy);
+
 typedef enum
 {
     TEST_CALL_BSP_GET_INPUT = 0,
@@ -886,6 +889,31 @@ static void _test_error_audio_must_be_stopped(void)
     assert(s_test.audio_state == AUDIO_SERVICE_STATE_SUSPENDING);
 }
 
+static void _test_recorder_blocks_standby(void)
+{
+    /* A recording or playback owns the SD card. Light sleep stops the SPI
+     * clock, so an in-flight card transfer times out (0x107) and the fault
+     * path reports the medium dead. Both the prepare stage and the final
+     * commit gate must refuse. */
+    _test_reset();
+    host_recorder_set_busy(true);
+    system_pm_config_t config = _test_build_config(true, true, true, true);
+    _test_clear_trace();
+    assert(_test_prepare(&config) == ESP_ERR_INVALID_STATE);
+    /* Nothing was suspended: the refusal precedes every participant. */
+    _test_expect_trace(NULL, 0U);
+    assert(!config.commit_guard(1U, config.commit_context));
+
+    host_recorder_set_busy(false);
+    _test_reset();
+    config = _test_build_config(true, true, true, true);
+    _test_clear_trace();
+    assert(_test_prepare(&config) == ESP_OK);
+    assert(config.commit_guard(1U, config.commit_context));
+    _test_clear_trace();
+    assert(_test_complete(&config) == ESP_OK);
+}
+
 static void _test_sleep_prepare_failures(void)
 {
     static const struct
@@ -1213,6 +1241,7 @@ int main(void)
     _test_sleep_order();
     _test_ready_audio_is_not_resumed();
     _test_error_audio_must_be_stopped();
+    _test_recorder_blocks_standby();
     _test_sleep_prepare_failures();
     _test_sleep_recovery_matrix();
     _test_pending_recovery_before_prepare();

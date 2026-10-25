@@ -309,7 +309,9 @@ label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines
 （每个内置 App 主页面文本断言 + 截图）、`smoke_pages.json`（导航/手势/多页）、
 `weather_flow.json`（真 weather 管线：
 `sim_http` 脚本层灌入 `sim/ci/fixtures/*.json`，验证 location→current/hourly/
-daily 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）和
+`daily` 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）、
+`recorder_playback_pm.json`（播放中息屏再唤醒：详情页保持「播放中/停止」，且停止后回到
+「播放」；息屏不得终止 recorder_service 的播放）和
 `agent_contract.json`（参数错误、暂停和截图契约）。树断言为主门禁。
 
 `flybirds.json` 的 `flybirds_restart_regression` 动作只通过实时树和触摸闭环得 1 分，随后验证重开 HUD 为 0、第二次零分结算与最高分 1；不设置种子或生产作弊入口。HUD/结算数值限定所属可见容器，隐藏祖先下的数字不参与断言。评分最多推进 360 个 33 ms 帧，每次结算最多等待 120 帧；RPC 错误、提前死亡或超时直接失败。场内触点避开系统左缘返回手势区，短 tap 不额外快进一秒；结算截图等待卡片淡入完成。

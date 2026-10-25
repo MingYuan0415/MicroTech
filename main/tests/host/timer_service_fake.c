@@ -40,9 +40,16 @@ void host_onboarding_set_pending(bool pending)
     g_host_onboarding_pending = pending;
 }
 
+bool g_host_recorder_busy;
+
+void host_recorder_set_busy(bool busy)
+{
+    g_host_recorder_busy = busy;
+}
+
 bool recorder_service_is_busy(void)
 {
-    return false;
+    return g_host_recorder_busy;
 }
 
 esp_err_t recorder_service_init(const recorder_service_config_t *config)

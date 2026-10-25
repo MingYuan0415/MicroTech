@@ -94,8 +94,14 @@ static void _app_runtime_pm_record_first_error(esp_err_t *first_error,
 static bool _app_runtime_pm_commit_guard(uint32_t generation, void *context)
 {
     (void)context;
+    /* Last gate before light sleep. The tick-time admission check and this
+     * commit are separated by the whole prepare sequence, so a recording or
+     * playback admitted in that window would otherwise be put to sleep under
+     * an in-flight SD transfer: light sleep stops the SPI clock, the read
+     * times out (0x107) and the medium is reported dead. */
     return !atomic_load_explicit(&s_benchmark_inhibited,
                                  memory_order_acquire) &&
+           !recorder_service_is_busy() &&
            (!s_sleep_context.device_link_participant ||
             !device_link_service_is_busy()) &&
            app_manager_pm_standby_commit_guard(generation, NULL);
@@ -301,6 +307,16 @@ static esp_err_t _app_runtime_pm_prepare_sleep(uint32_t timeout_ms,
         {
             return result;
         }
+    }
+
+    /* Refuse before suspending any participant. Light sleep stops the SPI
+     * clock, so a recording or playback that still owns the card cannot be put
+     * to sleep: the transfer times out (0x107) and the fault path reports the
+     * medium dead. This runs after the recovery block above so a leftover
+     * obligation from an earlier attempt is still honoured first. */
+    if (recorder_service_is_busy())
+    {
+        return ESP_ERR_INVALID_STATE;
     }
 
     /* The chore worker is the first service to suspend and the last to
