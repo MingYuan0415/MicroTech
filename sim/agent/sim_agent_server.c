@@ -1166,14 +1166,25 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         else if (verb != NULL && strcmp(verb, "fault") == 0)
         {
-            sd_storage_service_usage_t usage = {0};
-            const esp_err_t acquired = sd_storage_service_usage_acquire(
-                                           SD_STORAGE_SERVICE_USAGE_ACCESS, &usage);
-            *ok = acquired == ESP_OK;
-            if (*ok)
+            /* A single report is a transient the service now tolerates, so a
+             * scenario that wants the confirmed state must ask for the count
+             * it needs instead of relying on call juxtaposition. */
+            const cJSON *count = cJSON_GetObjectItemCaseSensitive(params,
+                "count");
+            const int reports = cJSON_IsNumber(count) ? (int)count->valuedouble :
+                                1;
+            *ok = reports > 0;
+            for (int report = 0; *ok && report < reports; ++report)
             {
-                (void)sd_storage_service_usage_report_fault(&usage, ESP_FAIL);
-                (void)sd_storage_service_usage_release(&usage);
+                sd_storage_service_usage_t usage = {0};
+                const esp_err_t acquired = sd_storage_service_usage_acquire(
+                                               SD_STORAGE_SERVICE_USAGE_ACCESS, &usage);
+                *ok = acquired == ESP_OK;
+                if (*ok)
+                {
+                    (void)sd_storage_service_usage_report_fault(&usage, ESP_FAIL);
+                    (void)sd_storage_service_usage_release(&usage);
+                }
             }
         }
         else if (verb != NULL && strcmp(verb, "fixture") == 0)

@@ -420,6 +420,7 @@
           "seed": [
             {"cmd": "sd", "action": "mount"},
             {"cmd": "sd", "action": "fault"},
+            {"cmd": "sd", "action": "fault"},
             {"cmd": "navigate", "app": "settings", "page": "storage"},
             {"cmd": "step", "ms": 660}
           ],
