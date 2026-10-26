@@ -1,47 +1,82 @@
-# 配置与依赖治理
+# Configuration and Dependency Governance
 
-本文描述 MicroTech 工程中配置项、板级事实、运行时策略、协议常量与外部依赖的归属规则，以及机器校验入口。规则以当前实现为准；`tests/` 下的测试是可执行的规范源，本文只陈述其已实现的内容。
+This document describes how MicroTech assigns ownership of configuration items,
+board facts, runtime policy, protocol constants, and external dependencies, and
+where the machine checks live. The rules follow the current implementation; the
+tests under `tests/` are the executable specification, and this document states
+only what they already enforce.
 
-## 1. 归属规则
+## 1. Ownership Rules
 
-| 类别 | 归属 | 载体 |
+| Category | Owner | Carrier |
 | --- | --- | --- |
-| 静态资源预算、编译期开关 | Kconfig | 各组件 `Kconfig` / `Kconfig.projbuild` |
-| 运行时策略（采样率、时区、SNTP、PCM 格式、挂载路径、天气端点等） | 调用方 | 根 `app_product_config_t` 及其子配置结构 |
-| 板级事实（分辨率、总线频率、DMA 几何、引脚、校准） | 板级后端 | `layers/bsp/waveshare/.../board_display_profile.h` 与 `board.cmake` manifest |
-| 协议常量与语义 | 契约子模块 | `contracts/device_link`（`protocol.yaml`、`vectors/golden.json`） |
-| 外部依赖版本 | manifest + lock | 各 `idf_component.yml` 与根 `dependencies.lock` |
+| Static resource budget, compile-time switches | Kconfig | each component's `Kconfig` / `Kconfig.projbuild` |
+| Runtime policy (sample rate, time zone, SNTP, PCM format, mount paths, weather endpoints, etc.) | Caller | root `app_product_config_t` and its sub-configuration structs |
+| Board facts (resolution, bus frequency, DMA geometry, pins, calibration) | Board backend | `layers/bsp/waveshare/.../board_display_profile.h` and the `board.cmake` manifest |
+| Protocol constants and semantics | Contract submodule | `contracts/device_link` (`protocol.yaml`, `vectors/golden.json`) |
+| External dependency versions | Manifest + lock | each `idf_component.yml` and the root `dependencies.lock` |
 
-根 `CMakeLists.txt` 的 LVGL / 板级 profile 门槛（缓存、allocator、RGB565、NimBLE SC-only、TLS、PSRAM 外部 BSS 等）属于构建强制项，保持原样，不弱化也不加码。
+The LVGL and board profile gates in the root `CMakeLists.txt` (cache, allocator,
+RGB565, NimBLE SC-only, TLS, PSRAM external BSS, and so on) are build
+enforcement; keep them as they are — neither weakened nor strengthened.
 
-## 2. 配置规则（机器校验）
+## 2. Configuration Rules (Machine-checked)
 
-以下规则由 `tests/configuration/test_configuration_governance.py` 扫描生产源（`main/`、`layers/`，排除 `tests/`、`managed_components/`、`XPowersLib/`、`build/`、`probe/`）强制执行：
+The following rules are enforced by
+`tests/configuration/test_configuration_governance.py`, which scans production
+sources (`main/`, `layers/`, excluding `tests/`, `managed_components/`,
+`XPowersLib/`, `build/`, `probe/`):
 
-1. 不得使用 `#ifndef CONFIG_*` 形式的编译回退；配置项一律按构建时已解析值使用。
-2. 不得重定义 `configTICK_RATE_HZ`。
-3. 不得在 `.c`/`.h` 中调用未 pin core 的 `xTaskCreate`、`xTaskCreateStatic`、`xTaskCreateWithCaps`；任务核归属必须显式。
-4. 已移除的配置符号不得重新出现。清单见 `test_configuration_governance.py` 的 `DEPRECATED_CONFIG_TOKENS`（涵盖已删除的 `CONFIG_BSP_AUDIO_*`、`CONFIG_BSP_DISPLAY_*`、`CONFIG_APP_MANAGER_DISPLAY_BENCHMARK`、各服务 task/队列旧符号等）。
-5. 被移除的配置不得出现在 `sdkconfig.defaults` 与 `tests/display/profile_defaults/*.defaults` 中。
-6. 工程 Kconfig 符号集合固定；新增或删除符号必须在同一次变更中同步 `test_project_kconfig_symbol_count` 的期望集合。
-7. `sdkconfig.defaults` 的关键连接性/缓存/任务核基线固定；变更须同步 `test_connectivity_defaults` 的期望映射。
+1. Compile-time fallbacks of the form `#ifndef CONFIG_*` are forbidden; a
+   configuration item is always used at its build-time resolved value.
+2. `configTICK_RATE_HZ` must not be redefined.
+3. `.c`/`.h` files must not call `xTaskCreate`, `xTaskCreateStatic`, or
+   `xTaskCreateWithCaps` without a pinned core; task core affinity is always
+   explicit.
+4. Removed configuration symbols must not reappear. The list is
+   `DEPRECATED_CONFIG_TOKENS` in `test_configuration_governance.py` (it covers the
+   deleted `CONFIG_BSP_AUDIO_*`, `CONFIG_BSP_DISPLAY_*`,
+   `CONFIG_APP_MANAGER_DISPLAY_BENCHMARK`, and the old per-service task and queue
+   symbols).
+5. Removed configuration must not appear in `sdkconfig.defaults` or in
+   `tests/display/profile_defaults/*.defaults`.
+6. The project's Kconfig symbol set is not machine-pinned; adding or removing a
+   symbol needs no test update, but a removed symbol must still be registered in
+   `DEPRECATED_CONFIG_TOKENS` (rule 4) so it cannot come back.
+7. The key connectivity, cache, and task-core baseline in `sdkconfig.defaults` is
+   fixed; a change requires updating the expected mapping in
+   `test_connectivity_defaults` in the same change.
 
-配置改动落在 `sdkconfig.defaults`（`idf.py save-defconfig`），不手改 `sdkconfig`。
+Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`);
+never edit `sdkconfig` by hand.
 
-## 3. 依赖与 manifest 规则
+## 3. Dependency and Manifest Rules
 
-由 `tests/configuration/test_dependency_pins.py`（本治理的一部分）校验：
+Enforced by `tests/configuration/test_dependency_pins.py` (part of this
+governance):
 
-1. 所有 `idf_component.yml` 的 registry 依赖版本不得为空或 `*`（测试逐项校验字面 `""`/`"*"`；带界范围版本允许）。
-2. `idf_component.yml` 中声明的 registry 依赖名称必须存在于根 `dependencies.lock`；版本一致性由组件管理器按 lock 解析保证，测试不逐项比对版本。
-3. 根目录 `requirements*.txt` 的每个依赖必须精确 pin（`name==version`），不得使用范围说明符。
+1. Registry dependency versions in every `idf_component.yml` must not be empty or
+   `*` (the test checks the literal `""`/`"*"` per entry; bounded ranges are
+   allowed).
+2. A registry dependency name declared in `idf_component.yml` must exist in the
+   root `dependencies.lock`; version consistency is guaranteed by the component
+   manager resolving against the lock, the test does not compare versions entry by
+   entry.
+3. Every dependency in the root `requirements*.txt` must be pinned exactly
+   (`name==version`); range specifiers are forbidden.
 
-修改 `idf_component.yml` 版本后需重新解析并更新 `dependencies.lock`；不得手改 lock。
+After changing a version in `idf_component.yml`, re-resolve and update
+`dependencies.lock`; never edit the lock by hand.
 
-## 4. 校验入口
+## 4. Check Entry Point
 
 ```sh
 python3 tests/run_python_tests.py configuration contracts
 ```
 
-`configuration` group 覆盖配置规则、Kconfig 符号集、连接性基线、依赖 pin；`contracts` group 运行契约子模块自身的协议与向量测试（宿主实现与 golden 向量的一致性由 `layers/middleware/components/device_link/tests/host` 覆盖）。它们是本地/审查用测试入口，不新增 CMake `FATAL_ERROR` 或 CI 闸。
+The `configuration` group covers the configuration rules, the removed-symbol
+lists, the connectivity baseline, and dependency pins; the `contracts` group runs
+the contract submodule's own protocol and vector tests (host implementation
+agreement with the golden vectors is covered by
+`layers/middleware/components/device_link/tests/host`). They are local and review
+entry points; they add no CMake `FATAL_ERROR` and no CI gate.

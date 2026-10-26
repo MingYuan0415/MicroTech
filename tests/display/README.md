@@ -1,158 +1,211 @@
-# 显示性能与稳定性验收
+# Display Performance and Stability Acceptance
 
-本目录保存 ESP32-S3 显示基准的主机工具。基准只用于开发固件；生产配置关闭
-`CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS` 和 `CONFIG_MAIN_DISPLAY_BENCHMARK`。
-benchmark 启动后由根运行时抑制待机，结束或启动回滚时释放抑制状态。
+This directory holds the host tools for the ESP32-S3 display baseline. The
+baseline is for development firmware only; production configuration disables
+`CONFIG_APP_MANAGER_DISPLAY_DIAGNOSTICS` and `CONFIG_MAIN_DISPLAY_BENCHMARK`.
+After the benchmark starts, the root runtime suppresses standby and releases
+the suppression when the run ends or startup rolls back.
 
-## 固定显示基线
+## Fixed Display Baseline
 
-Waveshare ESP32-S3 Touch AMOLED 1.8 的板级 profile 固定为：
+The board profile for the Waveshare ESP32-S3 Touch AMOLED 1.8 is fixed at:
 
-- 368x448、QSPI 40 MHz、4 data lines、RGB565；
-- 10 行逻辑传输、44 行 DMA 完整行上限、transaction queue depth 2；
-- PSRAM Direct DMA 关闭，TE 关闭。
+- 368x448, QSPI 40 MHz, 4 data lines, RGB565;
+- 10-line logical transfer, 44-line DMA full-line limit, transaction queue
+  depth 2;
+- PSRAM Direct DMA off, TE off.
 
-这些值由 BSP 私有 profile 和只读 transport descriptor 提供，不进入 Kconfig 或 benchmark
-defaults。LVGL 的 60 行双 PSRAM draw buffer、Snapshot、任务栈、诊断 gate 和核心亲和性
-仍是跨板静态资源或构建能力。
+These values come from the BSP private profile and the read-only transport
+descriptor; they do not enter Kconfig or the benchmark defaults. LVGL's 60-line
+dual PSRAM draw buffer, Snapshot, task stacks, diagnostics gate, and core
+affinity remain cross-board static resources or build capabilities.
 
-默认 malloc 固定为 PSRAM 优先（`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0`）。LVGL 对象、
-style 节点和 FreeType 字形缓存因此不占 internal；128 KiB
-`CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` 保留给 LCD/Wi-Fi/I2S DMA staging、任务栈和
-cache-disabled 缓冲。需要 internal 的组件必须显式使用
-`heap_caps_malloc(MALLOC_CAP_INTERNAL)` 或 `MALLOC_CAP_DMA`。FreeType 每字号缓存固定
-为 `CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_CNT=64`，限制六个字号合计的 PSRAM 峰值。
+Default malloc is fixed to PSRAM first
+(`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0`). LVGL objects, style nodes, and the
+FreeType glyph cache therefore do not occupy internal memory; the 128 KiB
+`CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` is reserved for LCD/Wi-Fi/I2S DMA
+staging, task stacks, and cache-disabled buffers. Components that need internal
+memory must explicitly use `heap_caps_malloc(MALLOC_CAP_INTERNAL)` or
+`MALLOC_CAP_DMA`. The FreeType per-size cache is fixed at
+`CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_CNT=64`, which caps the combined PSRAM peak
+of the six font sizes.
 
-历史表征显示，80 MHz 对最差 P95 的改善约 3.45%，未达到 5% 判定线，且出现 DMA 连续块
-不足和运动中的接缝；非 TE PSRAM Direct DMA 在 TCP 负载开始后出现顶部蓝线和 GUI 冻结。
-因此两者均不作为当前板型可执行 profile，也不保留时钟、Direct DMA 或 RGB swapped A/B
-构建入口。40 MHz 仍是项目经验基线，不代表 SH8601A preliminary 时序保证。
+Historical characterization showed that 80 MHz improved the worst P95 by about
+3.45%, short of the 5% decision line, and produced insufficient DMA contiguous
+blocks and seams during motion; non-TE PSRAM Direct DMA produced a blue line at
+the top and GUI freeze once TCP load began. Neither is therefore an executable
+profile for the current board, and no clock, Direct DMA, or RGB swapped A/B
+build entry point is retained. 40 MHz is still the project experience baseline
+and does not represent an SH8601A preliminary timing guarantee.
 
-## 基准 profile
+## Benchmark Profiles
 
-`tests/display/profile_defaults/benchmark_baseline.defaults` 固定 60 行 draw buffer、Snapshot
-和 benchmark gate。模式、时长、负载和网络参数由 `tests/display/profiles/*.json` 选择，
-工具在每个隔离构建目录生成 `display_benchmark_profile.h`；gate 开启但未传入
-`DISPLAY_BENCHMARK_PROFILE_DIR` 时 CMake 直接拒绝构建。
+`tests/display/profile_defaults/benchmark_baseline.defaults` fixes the 60-line
+draw buffer, Snapshot, and benchmark gate. Mode, duration, load, and network
+parameters are selected by `tests/display/profiles/*.json`, and the tools
+generate `display_benchmark_profile.h` into each isolated build directory; when
+the gate is enabled but `DISPLAY_BENCHMARK_PROFILE_DIR` is not passed, CMake
+rejects the build outright.
 
-- `STRESS`：运行生产转场以及 profile 选择的 Audio/TCP/BLE/应用负载。
-- `CHARACTERIZATION`：fade、push-left、push-right、cover-left、reveal-right 分别运行
-  display-only 和指定负载窗口。
+- `STRESS`: runs production transitions plus the Audio/TCP/BLE/App load
+  selected by the profile.
+- `CHARACTERIZATION`: runs fade, push-left, push-right, cover-left, and
+  reveal-right each display-only and each with the specified load window.
 
-最终报告将稳定性与性能分开：
+The final report separates stability from performance:
 
-- `stability=PASS`：完整结束，无采样、显示提交、Audio、TCP 或 Wi-Fi 错误，且
-  DMA/internal 最大连续块不低于 14,720 B。
-- `performance=TARGET`：active 平均至少 30 FPS，至少 95% 帧间隔不超过 33.333 ms，
-  P99 不超过 41.667 ms，且没有连续两个长帧。
-- `performance=FLOOR`：active 平均至少 25 FPS，P95/P99/max 分别不超过
-  50/66.667/100 ms。
+- `stability=PASS`: completes fully with no sampling, display submission,
+  Audio, TCP, or Wi-Fi errors, and a DMA/internal maximum contiguous block of
+  at least 14,720 B.
+- `performance=TARGET`: active average at least 30 FPS, at least 95% of frame
+  intervals no longer than 33.333 ms, P99 no longer than 41.667 ms, and no two
+  consecutive long frames.
+- `performance=FLOOR`: active average at least 25 FPS, with P95/P99/max no
+  longer than 50/66.667/100 ms respectively.
 
-`display config` 从 BSP descriptor 记录 `transport=qspi`、`bus_hz`、DMA 几何、queue、
-Direct/TE 以及 LVGL 配置。`dma_fail` 表示采样时 DMA/internal 最大连续块低于门槛；实际
-显示提交失败由 `submit_fail` 统计。
+`display config` records `transport=qspi`, `bus_hz`, DMA geometry, queue,
+Direct/TE, and the LVGL configuration from the BSP descriptor. `dma_fail` means
+the DMA/internal maximum contiguous block was below the threshold at sampling
+time; actual display submission failures are counted by `submit_fail`.
 
-## TCP echo 服务
+## TCP Echo Service
 
-在设备可访问的主机地址运行：
+Run on a host address reachable from the device:
 
 ```sh
 python3 tests/display/tcp_echo_server.py --host 0.0.0.0 --port 5001
 ```
 
-设备默认连接 `192.168.0.205:5001`，地址、端口和每方向速率来自严格 JSON profile。
-WSL mirrored 网络模式需要在 Hyper-V 防火墙放行 TCP 5001。
+The device connects to `192.168.0.205:5001` by default; the address, port, and
+per-direction rate come from the strict JSON profile. WSL mirrored networking
+mode requires allowing TCP 5001 in the Hyper-V firewall.
 
-## Snapshot 转场
+## Snapshot Transitions
 
-默认 RGB565 配置启用 `CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`。对有效的非
-`NONE` 转场，App Manager 将 source 和 target 分别采集为两张全分辨率 RGB565 PSRAM
-图片。368x448 下每张 329,728 B，两个常驻缓冲共 659,456 B，不占 internal/DMA heap。
+The default RGB565 configuration enables
+`CONFIG_APP_MANAGER_PRESENTATION_SNAPSHOT_ANIMATION`. For a valid non-`NONE`
+transition, the App Manager captures the source and the target as two
+full-resolution RGB565 PSRAM images. At 368x448 each is 329,728 B, and the two
+resident buffers total 659,456 B, without occupying internal/DMA heap.
 
-Snapshot 只依赖 SPIRAM 和自身 build gate。缓冲、采集、overlay 或动画启动失败时回退
-原生 LVGL Screen 动画；`NONE`、零时长、同一 Screen 和边缘返回 `PRESSING` 不创建快照。
-真机验收要求所有有效效果无 fallback，prepare P95 不超过 100 ms。
+Snapshot depends only on SPIRAM and its own build gate. If buffer allocation,
+capture, overlay, or animation start fails, it falls back to native LVGL Screen
+animation; `NONE`, zero duration, the same Screen, and edge-back `PRESSING` do
+not create a snapshot. Hardware acceptance requires no fallback for any valid
+effect and prepare P95 no longer than 100 ms.
 
-## 当前显示 campaign
+## Current Display Campaign
 
-工具只准备生产 C_EXT 配置，并通过运行时 campaign 选择负载：
+The tools only prepare the production C_EXT configuration and select the load
+through a runtime campaign:
 
-| Campaign | 负载 |
+| Campaign | Load |
 | --- | --- |
-| characterization | 两种 load、五种 transition |
-| stress | 1800 秒生产转场 |
-| ble-stress | 1800 秒 BLE connected 综合负载 |
-| soak | 28800 秒综合负载 |
+| characterization | both loads, five transitions |
+| stress | 1800 seconds of production transitions |
+| ble-stress | 1800 seconds of BLE connected combined load |
+| soak | 28800 seconds of combined load |
 
-准备、构建和验证隔离候选：
+Prepare, build, and validate the isolated candidates:
 
 ```sh
 python3 tests/display/display_profiles.py prepare --reset --campaigns characterization ble-stress
-# 依次执行上一步打印的 idf.py build size 命令
+# run the idf.py build size commands printed by the previous step in order
 python3 tests/display/display_profiles.py validate --campaigns characterization ble-stress
 python3 tests/display/analyze_characterization.py /path/to/characterization.log
 ```
 
-源码变更后必须重新 `prepare --reset`。分析器直接核验设备输出的原始字节数、采样数、
-cleanup、路由/effect masks、Snapshot、DMA、render task 和性能门槛。
+A source change requires a fresh `prepare --reset`. The analyzer directly
+verifies the raw byte counts, sample counts, cleanup, route/effect masks,
+Snapshot, DMA, render task, and performance thresholds emitted by the device.
 
-## C_EXT 与保留压测
+## C_EXT and Retained Stress
 
-`C_EXT` 是生产默认：LVGL 使用 `LV_OS_NONE`、单 draw unit 和 32 KiB PSRAM adapter worker，
-并固定到 CPU1；项目任务和 ESP-IDF 可配置的主要系统任务固定到 CPU0；NimBLE 动态内存
-使用 PSRAM。原始 C profile 保留为历史基线。IDLE、IPC、驱动内部任务和 ISR 不属于项目
-任务亲和性保证。
+`C_EXT` is the production default: LVGL uses `LV_OS_NONE`, a single draw unit,
+and a 32 KiB PSRAM adapter worker pinned to CPU1; project tasks and the
+configurable major ESP-IDF system tasks are pinned to CPU0; NimBLE dynamic
+memory uses PSRAM. The original C profile is retained as a historical baseline.
+IDLE, IPC, driver-internal tasks, and ISRs are not covered by the project task
+affinity guarantee.
 
 ```sh
 python3 tests/display/display_profiles.py prepare --reset \
   --campaigns stress ble-stress
-# 依次执行生成的隔离构建命令
+# run the generated isolated build commands in order
 python3 tests/display/display_profiles.py validate \
   --campaigns stress ble-stress
 ```
 
-`C_EXT_STRESS` 在 `C_EXT` 基础上加载 Device Link ACL 连接负载（`ble_connected`
-模式，验证绑定窗口打开、手机连接、断连重连无抖动），保留用于后续稳定性复现，
-不修改生产 `sdkconfig.defaults`。设备端执行 Device Link ACL、Wi-Fi/TCP、Audio、
-Microphone、显示转场和 App Manager 路由负载；Device Link v1 加密流量验收在
-硬件 Numeric Comparison 验证后回归。日志分析命令：
+`C_EXT_STRESS` adds the Device Link ACL connection load on top of `C_EXT`
+(`ble_connected` mode, verifying that the binding window opens, the phone
+connects, and disconnect/reconnect is jitter-free); it is retained for later
+stability reproduction and does not modify the production `sdkconfig.defaults`.
+The device runs Device Link ACL, Wi-Fi/TCP, Audio, Microphone, display
+transition, and App Manager routing loads; Device Link v1 encrypted traffic
+acceptance comes back after hardware Numeric Comparison verification. Log
+analysis command:
 
 ```sh
 python3 tests/display/analyze_c_ext_stress.py /path/to/c_ext_stress.log
 ```
 
-分析器检查阶段顺序、heap/DMA、任务 HWM/栈位置和核心、BLE 连接保持、TCP、Audio TX/RX、
-13 种动画、页面覆盖及 cleanup 恢复。一次 1800 秒结果不能替代 10 分钟预检、BLE 开关、
-TCP 中断恢复、冷启动、休眠恢复或 8 小时 soak。
+The analyzer checks phase order, heap/DMA, task HWM/stack placement and core,
+BLE connection retention, TCP, Audio TX/RX, the 13 animations, page coverage,
+and cleanup recovery. A single 1800-second result cannot replace the 10-minute
+pre-check, BLE toggle, TCP interruption recovery, cold boot, sleep resume, or
+8-hour soak.
 
-## 生命周期 trace
+## Lifecycle Trace
 
-`CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG` 控制 START、MOUNT、RESUME、PAUSE、UNMOUNT、
-STOP 和 NEW_INTENT 的 INFO trace。生产默认关闭；错误、警告、handler、observer 和状态
-迁移不受影响。
+`CONFIG_APP_MANAGER_LIFECYCLE_DEBUG_LOG` controls INFO traces for START, MOUNT,
+RESUME, PAUSE, UNMOUNT, STOP, and NEW_INTENT. It is off by default in
+production; errors, warnings, handlers, observers, and state transitions are
+unaffected.
 
-## 可复现证据包
+## Reproducible Evidence Bundle
 
-一次可比较的验收运行必须成组归档以下内容，缺一不可：
+A comparable acceptance run must archive the following as a group; none may be
+missing:
 
-- **display config**：设备日志中固件启动打印的 `display config transport=... bus_hz=...` 行，字段来自 BSP descriptor 与 LVGL 配置；当前分析器以 `display config ` 为标记读取。
-- **profile 文件**：`tests/display/profiles/*.json`（严格 schema，见 `display_profile_utils.load_benchmark_profile`）及构建时叠加的 `tests/display/profile_defaults/*.defaults`；`display_profiles.py prepare` 在隔离目录生成的 `display_benchmark_profile.h` 与 `source_manifest.json` 一并归档。
-- **固件来源指纹**：`prepare` 写入 `source_manifest.json` 的 `source_fingerprint` 与 `repositories[*].commit`，覆盖父仓库及子模块的 commit、diff 和未跟踪文件内容。
-- **原始日志**：设备串口完整日志，交给 `analyze_c_ext_stress.py <log>` 或
-  `analyze_characterization.py <log>`。
+- **display config**: the `display config transport=... bus_hz=...` line printed
+  by the firmware at boot in the device log, with fields from the BSP descriptor
+  and the LVGL configuration; the current analyzers read it by the
+  `display config ` marker.
+- **profile files**: `tests/display/profiles/*.json` (strict schema, see
+  `display_profile_utils.load_benchmark_profile`) plus the
+  `tests/display/profile_defaults/*.defaults` layered in at build time; archive
+  together the `display_benchmark_profile.h` and `source_manifest.json` that
+  `display_profiles.py prepare` generates in the isolated directory.
+- **firmware source fingerprint**: the `source_fingerprint` and
+  `repositories[*].commit` that `prepare` writes into `source_manifest.json`,
+  covering the commits, diffs, and untracked file contents of the parent
+  repository and the submodules.
+- **raw log**: the complete device serial log, given to
+  `analyze_c_ext_stress.py <log>` or `analyze_characterization.py <log>`.
 
-本目录工具不产生 **Device ID** 和 **Boot ID** 字段，解析器也不读取它们；工具也不计算**固件镜像 hash**。日志只含 IDF 启动标记（`boot: ESP-IDF`、`rst:0x`），用于计数重启而非标识单台设备或单次启动。需要区分设备或启动时须自行记录，不能声称由本工具产生。
+The tools in this directory do not produce **Device ID** or **Boot ID** fields,
+and the parsers do not read them; the tools also do not compute a
+**firmware image hash**. The log only contains IDF boot markers
+(`boot: ESP-IDF`, `rst:0x`), used to count restarts rather than to identify a
+single device or a single boot. To distinguish devices or boots you must record
+it yourself and cannot claim it was produced by these tools.
 
-缺少上述任一条目的运行不得与任何基线比较；`source_fingerprint` 或 profile 不一致时，该运行不与旧基线同组。
+A run missing any of the above items must not be compared against any baseline;
+if `source_fingerprint` or the profile differs, that run is not grouped with the
+old baseline.
 
-## 调试顺序
+## Debug Order
 
-1. 先用纯色 flush 验证 adapter 管理的 `lv_display_flush_ready` 握手。
-2. 核对分辨率、RGB565、stride、60 行 draw buffer、10 行 DMA staging 和 queue depth 2。
-3. 检查 adapter tick、唯一 `lv_timer_handler` worker 和 UI 进度。
-4. 独立校验触摸坐标与旋转，再叠加 UI。
-5. 核对 widget、字体、图片、Snapshot 和 PSRAM/internal/DMA 预算。
-6. 用真机 benchmark 判断帧时间、flush 完成、fallback 和连续块门槛。
+1. First verify the adapter-managed `lv_display_flush_ready` handshake with a
+   solid-color flush.
+2. Check the resolution, RGB565, stride, 60-line draw buffer, 10-line DMA
+   staging, and queue depth 2.
+3. Check the adapter tick, the single `lv_timer_handler` worker, and UI
+   progress.
+4. Verify touch coordinates and rotation independently, then add the UI on top.
+5. Check widgets, fonts, images, Snapshot, and the PSRAM/internal/DMA budget.
+6. Use the on-device benchmark to judge frame time, flush completion, fallback,
+   and the contiguous-block threshold.
 
-宿主测试只能验证配置、生命周期和解析逻辑，不能证明 SPI 时序、DMA、射频、功耗或真实
-显示稳定性。
+Host tests can only verify configuration, lifecycle, and parsing logic; they
+cannot prove SPI timing, DMA, RF, power consumption, or real display stability.

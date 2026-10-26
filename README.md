@@ -1,34 +1,44 @@
+**English** | [简体中文](README_ZH.md)
+
 # MicroTech
 
-MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 的 ESP-IDF 固件工程，集成显示与触摸、RTC、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口、持久化存储以及待机/唤醒流程。
+MicroTech is an ESP-IDF firmware project for the Waveshare ESP32-S3 Touch AMOLED
+1.8. It integrates display and touch, RTC, and power management, and provides
+LVGL-based built-in applications, Wi-Fi services, a BLE extension interface,
+persistent storage, and standby/wake flows.
 
-## 工程结构
+## Repository layout
 
-| 路径 | 职责 |
+| Path | Responsibility |
 | --- | --- |
-| `main/` | 固件入口、服务装配、运行时电源管理及文件系统挂载 |
-| `layers/bsp/` | 开发板显示、触摸、I2C、RTC 和电源硬件抽象 |
-| `layers/middleware/` | 日志、事件、存储、网络、时间及系统电源服务 |
-| `layers/app_manager/` | 应用注册、生命周期、UI mailbox、主题和显示电源适配 |
-| `layers/apps/` | Home、Menu、Settings、Setup 等内置 LVGL 应用 |
-| `sim/` | 独立 CMake 宿主 LVGL 模拟器（不接入根 IDF 构建） |
-| `tests/` | 跨层宿主测试与真机显示基准工具 |
+| `main/` | Firmware entry, service assembly, runtime power management, and filesystem mounting |
+| `layers/bsp/` | Board display, touch, I2C, RTC, and power hardware abstraction |
+| `layers/middleware/` | Logging, event, storage, network, time, and system power services |
+| `layers/app_manager/` | App registration, lifecycle, UI mailbox, theme, and display power adaptation |
+| `layers/apps/` | Built-in LVGL applications such as Home, Menu, Settings, and Setup |
+| `sim/` | Standalone CMake host LVGL simulator (not part of the root IDF build) |
+| `tests/` | Cross-layer host tests and the on-device display benchmark tool |
 
-四个 `layers/` 目录是独立 Git 子模块；`managed_components/` 由 ESP-IDF Component Manager 管理，均不应直接修改。
+The four directories under `layers/` are independent Git submodules;
+`managed_components/` is managed by the ESP-IDF Component Manager. Do not modify
+either directly.
 
-## 环境要求
+## Requirements
 
-- ESP-IDF 6.1.x，目标芯片 ESP32-S3（16 MB Flash、Octal PSRAM）
-- CMake 3.22+、Ninja 和支持 C11/Pthreads 的宿主编译器（宿主测试与 `sim/` 需要）
-- 宿主模拟器另需 `libsdl2-dev`、`libcurl4-openssl-dev`；**不要**安装发行版 `libfreetype-dev` 链接 sim（树内 FreeType 2.14.3）
+- ESP-IDF 6.1.x, target ESP32-S3 (16 MB flash, Octal PSRAM)
+- CMake 3.22+, Ninja, and a host compiler supporting C11/Pthreads (needed by the
+  host tests and `sim/`)
+- The host simulator additionally needs `libsdl2-dev` and
+  `libcurl4-openssl-dev`; do **not** install the distribution `libfreetype-dev`
+  to link `sim` (in-tree FreeType 2.14.3)
 
-首次检出后初始化子模块：
+Initialize the submodules after the first checkout:
 
 ```sh
 git submodule update --init --recursive
 ```
 
-## 构建与烧录
+## Build and flash
 
 ```sh
 idf.py set-target esp32s3
@@ -36,11 +46,16 @@ idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
-配置改动落在 `sdkconfig.defaults`（`idf.py save-defconfig`），不手改 `sdkconfig`。修改缓存、DMA 预留或资源后运行 `idf.py size`，并在真机检查显示、触摸、待机和唤醒。
+Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`);
+never edit `sdkconfig` by hand. Run `idf.py size` after changing cache, DMA
+reservation, or resources, and check display, touch, standby, and wake behavior
+on hardware.
 
-## 宿主测试
+## Host tests
 
-按改动影响面运行根 `AGENTS.md` 中对应的 CMake/CTest 套件。配置、资源、显示工具和模拟器 Python 测试使用统一入口：
+Run the CMake/CTest suites from the root `AGENTS.md` that match the impact
+surface of the change. Configuration, resources, display tools, and simulator
+Python tests share one entry point:
 
 ```sh
 python3 tests/run_python_tests.py configuration resources
@@ -48,23 +63,54 @@ python3 tests/run_python_tests.py display-tools sim-tools
 python3 tests/run_python_tests.py contracts
 ```
 
-## 功能
+## Features
 
-- **天气**：menuconfig `MicroTech product integration` 中设置 `Weather server base URL` 与 `Weather device token`（不含 `Bearer ` 前缀）；任一为空时天气页显示“服务未配置”。获取、缓存、定位与会话刷新由后台 `weather_service` 负责，细节见 [`layers/middleware/README.md`](layers/middleware/README.md)。构建图片资源（SVG 栅格化与 RGB565A8 转换）前安装依赖：`python -m pip install -r requirements-weather-assets.txt`；图片源文件是 `layers/apps/*/assets/*.svg`（唯一入库形态，构建期栅格化），字体在 `layers/app_manager/app_theme/assets/`，由 main 聚合打包进 `res` 分区。
-- **Device Link**：BLE 契约以 [`contracts/device_link`](contracts/device_link/) 的 `device-link/v1` freeze candidate 为规范源；协议语义由该子模块校验，实现边界见对应 middleware README。
-- **恢复出厂**：持久化 reset marker 后重启，启动阶段幂等清除 Wi-Fi、引导状态、显示/待机偏好、水平仪校准、内部 `/data` 及 BLE bond/CCCD；全部收敛后才清除 marker 并恢复广告。外置 SD 卡及录音不受影响。
-- **文件与录音存储**：普通挂载不格式化；文件服务初始化失败时释放部分分配并降级启动，runtime 只清理成功取得的服务所有权，停止与重启不依赖失败实例的反初始化。浏览、显式维护和录音使用权契约见各 middleware 组件文档。
-- **LVGL 宿主模拟器**：页面调试、JSON-RPC Agent 驱动与控件树回归，见 [`sim/README.md`](sim/README.md)。
-- **显示压力基准**：仅真机执行，验收门槛、profile 与配置基线见 [`tests/display/README.md`](tests/display/README.md)。
+- **Weather**: set `Weather server base URL` and `Weather device token` (without
+  the `Bearer ` prefix) under menuconfig `MicroTech product integration`. When
+  either is empty, the weather page shows `"服务未配置"` (service not
+  configured). Fetching, caching, location, and session refresh are owned by the
+  background `weather_service`; see
+  [`layers/middleware/README.md`](layers/middleware/README.md) for details.
+  Install the dependencies before building image resources (SVG rasterization and
+  RGB565A8 conversion):
+  `python -m pip install -r requirements-weather-assets.txt`. Image sources are
+  `layers/apps/*/assets/*.svg` (the only committed form, rasterized at build
+  time) and fonts live in `layers/app_manager/app_theme/assets/`; `main`
+  aggregates them into the `res` partition.
+- **Device Link**: the BLE contract takes the `device-link/v1` freeze candidate
+  in [`contracts/device_link`](contracts/device_link/) as its normative source;
+  the submodule validates protocol semantics, and the implementation boundary is
+  described in the matching middleware README.
+- **Factory reset**: persist a reset marker and restart. During boot the device
+  idempotently clears Wi-Fi, onboarding state, display/standby preferences, the
+  level calibration, internal `/data`, and BLE bonds/CCCDs; only after everything
+  converges does it clear the marker and resume advertising. The external SD card
+  and recordings are unaffected.
+- **File and recording storage**: a normal mount never formats; when file service
+  initialization fails, the runtime releases the partial allocations and degrades
+  gracefully, and only cleans up ownership of services it actually obtained.
+  Stopping and restarting do not depend on deinitializing a failed instance.
+  Browsing, explicit maintenance, and recording usage-right contracts are
+  documented in the respective middleware component docs.
+- **LVGL host simulator**: page debugging, JSON-RPC Agent driving, and control-tree
+  regression; see [`sim/README.md`](sim/README.md).
+- **Display stress benchmark**: hardware only; acceptance thresholds, profiles,
+  and configuration baseline are in [`tests/display/README.md`](tests/display/README.md).
 
-## 开发约束
+## Development constraints
 
-贡献前阅读 [AGENTS.md](AGENTS.md) 与[代码风格](doc/code-style.md)；Kconfig、运行时策略、板级事实与协议常量的归属规则见 [`doc/configuration-governance.md`](doc/configuration-governance.md)。不得通过修改 ESP-IDF、`managed_components/` 或 BSP 第三方库来规避工程自身问题。
+Read [AGENTS.md](AGENTS.md) and the [coding style](doc/code-style.md) before
+contributing; the ownership rules for Kconfig, runtime policy, board facts, and
+protocol constants are in
+[`doc/configuration-governance.md`](doc/configuration-governance.md). Do not work
+around a problem in this project by modifying ESP-IDF, `managed_components/`, or
+the BSP third-party libraries.
 
-## 声明
+## Disclaimer
 
-本项目仅作为个人兴趣爱好而开发，不提供任何形式的保证、维护承诺或技术支持。
+This project is developed as a personal hobby. It comes with no warranty,
+maintenance commitment, or technical support of any kind.
 
-## 许可证
+## License
 
-本项目采用 [MIT License](LICENSE)。
+This project is licensed under the [MIT License](LICENSE).

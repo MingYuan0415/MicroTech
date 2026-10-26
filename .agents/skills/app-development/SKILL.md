@@ -11,9 +11,9 @@ capacities in the owning headers instead of copying them from this skill.
 
 ## Sources of Truth
 
-- Section 12, "应用开发契约", in `layers/app_manager/README.md` is the
-  authoritative contract for Page ops, context validity, lifecycle ownership,
-  navigation, and arguments.
+- Section 12, "Application Development Contract", in
+  `layers/app_manager/README.md` is the authoritative contract for Page ops,
+  context validity, lifecycle ownership, navigation, and arguments.
 - Read `layers/apps/README.md`, the target App route table, and the nearest
   production Page. Prefer Weather as the typed-ops and Typed Blob reference.
 - Read `app_manager_types.h`, `app_manager.h`, `app_ui.h`, and the target

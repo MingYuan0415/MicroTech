@@ -119,10 +119,10 @@ its own layout first, then shorten the copy, then split it into two paragraphs.
 For self-wrapped prose these are all one knob — `pad_left`/`pad_right` — because
 `app_ui_wrap_prose()` breaks lines from `lv_obj_get_content_width(label)`.
 Never hand-insert `\n` to fake a break; `app_ui_set_prose_text()` is the one
-sanctioned wrapper because it applies the 行首/行末禁则 sets
-(`layers/apps/common/src/app_ui_text.c`). LVGL's own wrap has no kinsoku rules:
-it breaks at `LV_TXT_BREAK_CHARS` and anywhere inside CJK, so free-form prose
-that matters must go through that helper.
+sanctioned wrapper because it applies the line-start/line-end kinsoku rule
+sets (`layers/apps/common/src/app_ui_text.c`). LVGL's own wrap has no kinsoku
+rules: it breaks at `LV_TXT_BREAK_CHARS` and anywhere inside CJK, so free-form
+prose that matters must go through that helper.
 
 **T3: external input.** SSID (≤32 B), recording file names (≤64 B), weather
 city/alert title/body, app `display_name`, mount paths. Length is not yours to
@@ -132,7 +132,7 @@ choose, so pick the treatment by position:
 | --- | --- | --- |
 | Primary identifier of a list row (SSID, file name, alert title) | Row height `LV_SIZE_CONTENT` with `min_height APP_UI_ROW_HEIGHT`; identifier `LV_LABEL_LONG_WRAP` on the full row width | The user picks from it and must read it whole |
 | Passive header identifier (weather city) | `LV_LABEL_LONG_SCROLL_CIRCULAR` | Locked decision, asserted in `tests/integration/test_cross_layer.c` |
-| Value in a compact summary row (settings "网络" SSID, Bluetooth name) | `LV_LABEL_LONG_DOT` allowed, but only if the complete value is readable on the owning detail page or confirm sheet | The summary is not the decision surface |
+| Value in a compact summary row (the settings row labelled "网络" (Network), Bluetooth name) | `LV_LABEL_LONG_DOT` allowed, but only if the complete value is readable on the owning detail page or confirm sheet | The summary is not the decision surface |
 | Unbounded block text (alert body and advice) | Own `WRAP` region plus `app_ui_set_prose_text()`; overlong text is flagged by `content_truncated` | Already implemented in `weather_alert_pages.c` |
 
 Two hard constraints close this class. Never cap required text with

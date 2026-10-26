@@ -1,48 +1,117 @@
-# audio_service 独占音频契约
+# audio_service Exclusive Audio Contract
 
-## 范围与所有权
+## Scope and Ownership
 
-`audio_service` 在 BSP 音频设备之上提供单例全双工 PCM、独占租约和系统级音量、静音、PA 请求策略。BSP 持有设备资源；服务没有 worker、解码器、混音或抢占机制。公共接口见 `layers/middleware/components/audio_service/include/audio_service.h`。
+`audio_service` provides singleton full-duplex PCM, an exclusive lease, and
+system-level volume, mute, and PA request policy on top of the BSP audio device.
+The BSP owns the device resources; the service has no worker, decoder, mixing, or
+preemption. The public interface is in
+`layers/middleware/components/audio_service/include/audio_service.h`.
 
-- `audio_service_acquire(kind, &lease)` 成功才建立 owner 并启动 DMA。句柄保持 `audio_service_lease_t { uint32_t token; uint32_t generation; }`；两字段都必须匹配。
-- RECORD 与 MAINTENANCE 可读写，PLAYBACK 只写。busy 时返回 `ESP_ERR_INVALID_STATE`，不排队、不停止已有消费者。
-- `write_leased/read_leased` 在同一互斥区检查初始化、双字段身份、RUNNING、准入和权限，并登记在途 I/O；锁外调用 BSP，完成后归还引用。因此旧句柄不能跨 release/reacquire 进入新流。
-- 被服务拒绝的 I/O 将非空 transferred 输出置零。已准入的 BSP 调用可能在超时或其他错误时返回部分进度，消费者应从未传输尾部继续，不能重放已发送数据。
-- 只有当前 owner 可 release。成功才清 owner；陈旧句柄不触碰 DMA。release 失败（包括 reservation 冲突）不表示已释放，消费者必须保存同代句柄重试，不得以新 acquire 覆盖清理义务。
-- 音量、静音和 PA 是系统请求策略，不属于租约；release 不重置它们。PA 请求值不等于停止 DMA 后的物理电平。
+- `audio_service_acquire(kind, &lease)` establishes the owner and starts DMA only
+  on success. The handle remains `audio_service_lease_t { uint32_t token;
+  uint32_t generation; }`; both fields must match.
+- RECORD and MAINTENANCE may read and write; PLAYBACK is write-only. When busy,
+  the call returns `ESP_ERR_INVALID_STATE`; it neither queues nor stops an
+  existing consumer.
+- `write_leased/read_leased` check initialization, two-field identity, RUNNING,
+  admission, and permission inside the same mutex region, and register the
+  in-flight I/O; the BSP is called outside the lock and the reference is returned
+  afterwards. A stale handle therefore cannot enter a new stream across
+  release/reacquire.
+- An I/O rejected by the service zeroes the non-empty transferred output. An
+  admitted BSP call may report partial progress on timeout or another error;
+  consumers must continue from the untransferred tail and must not replay data
+  already sent.
+- Only the current owner may release. The owner is cleared only on success; a
+  stale handle never touches DMA. A failed release (including a reservation
+  conflict) does not mean the lease was released: the consumer must keep the
+  same-generation handle and retry, and must not overwrite the cleanup obligation
+  with a new acquire.
+- Volume, mute, and PA are system request policy, not part of the lease; release
+  does not reset them. The PA request value is not the physical level after DMA
+  stops.
 
-## 初始化、状态与并发
+## Initialization, State, and Concurrency
 
-启动 owner 必须串行完成首次 `audio_service_init()`，包括同步对象创建；板级音频须先初始化。初始化后，服务以内部互斥锁和 SUSPENDING reservation 隔离控制事务，不要求消费者另建生命周期锁。
+The startup owner must serialize the first `audio_service_init()`, including
+synchronization-object creation; board audio must be initialized first. After
+initialization, the service isolates control transactions with an internal mutex
+and the SUSPENDING reservation; consumers are not required to build their own
+lifecycle lock.
 
-| 状态 | 当前含义 |
+| State | Current meaning |
 | --- | --- |
-| UNINITIALIZED | 不能 acquire 或 I/O；partial-init 清理义务仍可能需要 deinit |
-| READY | DMA 已停；既可能 idle 无 owner，也可能是 suspend 后保留 owner |
-| RUNNING | 有 owner 且允许该代次的 I/O |
-| SUSPENDING | 排空/stop/commit 的独占 reservation；冲突控制返回 INVALID_STATE |
-| ERROR | 准入关闭；保留 owner 或尚未完成的清理义务 |
+| UNINITIALIZED | Cannot acquire or do I/O; a partial-init cleanup obligation may still require deinit |
+| READY | DMA stopped; either idle without an owner, or the owner was retained across suspend |
+| RUNNING | There is an owner and I/O is allowed for that generation |
+| SUSPENDING | Exclusive reservation for drain/stop/commit; conflicting control returns INVALID_STATE |
+| ERROR | Admission closed; either an owner is retained or the cleanup obligation is still open |
 
-`configure` 只接受 READY 且无 owner。`deinit` 拒绝活动租约，owner 应先 release。deinit 保留同步对象及跨 deinit/init 的 generation，旧句柄不会因重初始化复活。
+`configure` accepts only READY without an owner. `deinit` rejects an active lease;
+the owner should release first. Deinit retains the synchronization objects and the
+generation across deinit/init, so an old handle never revives on reinitialization.
 
-release、suspend、deinit 在同一 entry 临界区关闭准入并预留 SUSPENDING。无在途 I/O 时持锁完成 stop 和状态提交；有在途 I/O 才解锁等待 drained，再持锁 stop/commit。冲突 acquire/configure/resume/release/suspend/deinit 不能插入该事务、清 owner 或停止新流。排空超时恢复进入前的状态和准入，保留句柄；stop 失败转 ERROR 并保留清理义务。READY 有 owner 的 release 直接清 owner，不再次 stop；READY suspend 是空操作，`resume_required=false`。
+Release, suspend, and deinit close admission and reserve SUSPENDING in the same
+entry critical section. With no in-flight I/O they complete stop and the state
+commit while holding the lock; only with in-flight I/O do they unlock to wait for
+drained and then re-lock to stop/commit. A conflicting
+acquire/configure/resume/release/suspend/deinit cannot enter that transaction,
+clear the owner, or stop a new stream. A drain timeout restores the pre-entry
+state and admission and keeps the handle; a stop failure moves to ERROR and keeps
+the cleanup obligation. A release in READY with an owner clears the owner directly
+without a second stop; a suspend in READY is a no-op with `resume_required=false`.
 
-## ERROR 与重试
+## ERROR and Retry
 
-- initialized、无 owner 的 READY/ERROR 才能 acquire。ERROR 先在控制锁内 stop 清理；失败保持 ERROR 并返回该错误，不能启动新流。
-- acquire 的 start 失败立即在同一临界区 stop 补偿。补偿成功回 READY，失败保留 ERROR；返回最初 start 错误，输出 lease 为零，不分配 generation。
-- partial-init ERROR 不能 acquire，由 deinit/init 收尾恢复；deinit 失败保留重试所需信息。
-- 有 owner 的 ERROR 可由同代 release 重试 stop，或 resume 重试 start。不能把任意 `INVALID_STATE` 归一化为 release 成功。
-- resume 在 READY 无 owner 时返回 OK 且不启动 DMA；RUNNING 有 owner 时幂等成功；READY/ERROR 有 owner 时以原句柄重启。未初始化、SUSPENDING 和 ERROR 无 owner 返回 INVALID_STATE。
+- Acquire is possible only when initialized and with no owner in READY/ERROR. In
+  ERROR, stop cleanup runs first under the control lock; on failure the state
+  stays ERROR and that error is returned — a new stream cannot start.
+- A start failure in acquire is compensated immediately by stop in the same
+  critical section. Successful compensation returns to READY, failure keeps ERROR;
+  the original start error is returned, the output lease is zeroed, and no
+  generation is allocated.
+- A partial-init ERROR cannot acquire and is resolved by deinit/init; a failed
+  deinit retains the information needed to retry.
+- An ERROR with an owner may retry stop through a same-generation release, or
+  retry start through resume. An arbitrary `INVALID_STATE` must not be normalized
+  into a successful release.
+- Resume returns OK without starting DMA when READY has no owner; it succeeds
+  idempotently when RUNNING has an owner; it restarts with the original handle when
+  READY/ERROR has an owner. Uninitialized, SUSPENDING, and ERROR with no owner
+  return INVALID_STATE.
 
-## 生产消费端与 PM
+## Production Consumers and PM
 
-- `main/app_runtime.c` 提供启动 PCM/音量/静音/PA 策略并管理服务初始化，不持有播放租约。
-- `recorder_service`：录音使用 RECORD、WAV 播放使用 PLAYBACK。页面离开不抢停后台录音/播放。清理失败保留旧句柄，后续 start/play/deinit 先完成旧义务；不得覆盖 owner。
-- 飞鸟 `flybirds_audio_session.c` / `flybirds_audio.c`：使用 PLAYBACK；拿不到租约时游戏静默，按页面既有节奏重试，不打断后台消费者。writer 完成信号表示不再访问应用音频状态，reap 成功后才能复用 synth/PCM；release 失败保留 session 供 open/close 重试。双静音仍持有租约并供给 20 ms PCM。
-- `main/display_benchmark.c`：音频维护负载使用 MAINTENANCE，不能复用其他 owner 的流。完整保存设置后才修改；恢复设置失败保留 snapshot 和 lease，release 失败保留 owner，由 stop 重试。清理未完成不允许新 benchmark 覆盖上下文。
-- `main/app_runtime_pm.c` 是实际 suspend/resume 调用者。系统休眠前排空音频，租约跨 suspend 保留，唤醒或休眠回滚由 PM 按恢复标记调用 resume；不是只由消费者恢复。owner 若在 suspended READY 时 release，后续 PM resume 是 idle OK，不启动无主 DMA；若已有新 owner RUNNING，resume 不重启它。
+- `main/app_runtime.c` supplies start-up PCM/volume/mute/PA policy and manages
+  service initialization; it holds no playback lease.
+- `recorder_service`: recording uses RECORD, WAV playback uses PLAYBACK. Leaving a
+  page does not force-stop background recording or playback. A failed cleanup
+  keeps the old handle, and a later start/play/deinit completes the old obligation
+  first; the owner must not be overwritten.
+- Flybirds `flybirds_audio_session.c` / `flybirds_audio.c`: use PLAYBACK; when the
+  lease is unavailable the game stays silent and retries on its existing page
+  cadence without interrupting a background consumer. The writer completion
+  signal means no further access to application audio state, and the synth/PCM may
+  be reused only after a successful reap; a failed release keeps the session for
+  open/close to retry. Double mute still holds the lease and supplies 20 ms of
+  PCM.
+- `main/display_benchmark.c`: the audio maintenance load uses MAINTENANCE and must
+  not reuse another owner's stream. Settings are modified only after a complete
+  save; a failed restore keeps the snapshot and lease, and a failed release keeps
+  the owner for stop to retry. Incomplete cleanup forbids a new benchmark from
+  overwriting the context.
+- `main/app_runtime_pm.c` is the actual suspend/resume caller. The system drains
+  audio before sleep, the lease is retained across suspend, and resume after wake
+  or a sleep rollback is called by PM according to the restore marker — not by the
+  consumer alone. If the owner releases while suspended READY, a later PM resume
+  is an idle OK and starts no ownerless DMA; if a new owner is already RUNNING,
+  resume does not restart it.
 
-## 验证边界
+## Verification Boundary
 
-服务 host 测试覆盖租约身份、生命周期、I/O 准入、排空及错误恢复；各消费者 host、集成与 simulator fake 应遵守同代校验、独占和失败保留 owner 的契约。宿主和模拟器不证明真机 I2S/DMA 时序、音质、编解码/功放电气行为或功耗。
+Service host tests cover lease identity, lifecycle, I/O admission, drain, and error
+recovery; each consumer's host, integration, and simulator fakes must honor
+same-generation validation, exclusivity, and owner retention on failure. Host and
+simulator runs do not prove on-device I2S/DMA timing, audio quality, codec or
+amplifier electrical behavior, or power consumption.

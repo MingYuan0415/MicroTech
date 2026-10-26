@@ -1,87 +1,89 @@
-# 存储库指南
+# Repository Guide
 
-## 地图
+## Map
 
-- `main/`：入口、运行时、存储/网络装配；资源由 `layers/apps/*/assets/` 和 `layers/app_manager/app_theme/assets/` manifest 聚合后打包写入 `res` 分区。
-- `layers/`：`bsp`、`middleware`、`app_manager`、`apps`，四个独立 Git 子模块。层内改动在子模块内提交并推送，父仓库同一提交更新指针。
-- `sim/`：独立宿主 LVGL 模拟器，见 [`sim/README.md`](sim/README.md)；Agent 仅绑 `127.0.0.1:5002`（5001 留给真机基准）。
-- `tests/`：`connectivity`、`integration` 为跨层宿主测试；`display` 为真机基准工具。`managed_components/` 只读。
+- `main/`: entry point, runtime, storage and network assembly. Resources are aggregated from the `layers/apps/*/assets/` and `layers/app_manager/app_theme/assets/` manifests and packaged into the `res` partition.
+- `layers/`: `bsp`, `middleware`, `app_manager`, `apps` — four independent Git submodules. Changes inside a layer are committed and pushed in the submodule; the parent repository updates the pointer in the same commit.
+- `sim/`: standalone host LVGL simulator, see [`sim/README.md`](sim/README.md). Agents bind `127.0.0.1:5002` only (5001 is reserved for the on-device baseline).
+- `tests/`: `connectivity` and `integration` are cross-layer host tests; `display` is the on-device benchmark tool. `managed_components/` is read-only.
 
-## 默认工作方式
+## Default Working Mode
 
-- 只改与任务直接相关的代码；分析任务只读；不改计划外代码，但报告发现的问题。结论基于代码、测试或文档，不猜测。
-- **验证最小化**：按「宿主测试与验证分层」的 L0–L3 执行，每个门禁每任务只跑一次。不默认跑全仓库 CTest、sanitizer、`idf.py build`/`size`、显示基准或真机；只有用户明确要求提交、验收或发布验证时才扩大范围，并说明扩大部分。
-- **不新增流程门禁**：不得为解决问题新增 CMake `FATAL_ERROR`、Kconfig 强制开关、CI 闸或新的“不得”条款。根 `CMakeLists.txt` 的 LVGL profile 门槛与 `sdkconfig.defaults` 基线保持原样——既不弱化，也不加码。
-- 烧录/擦除仅在用户明确要求时执行。
+- Change only code directly related to the task; analysis tasks are read-only; do not change code outside the plan, but report the problems you find. Conclusions come from code, tests, or documentation — never from guesses.
+- **Minimal verification**: follow L0–L3 in "Host Tests and Verification Tiers" and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, display benchmarks, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
+- **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened.
+- Flash or erase only when the user explicitly asks.
 
-## 构建
+## Build
 
 ```sh
 git submodule update --init --recursive
 idf.py set-target esp32s3 && idf.py build
-idf.py size   # 仅当改动缓存/DMA 预留/资源时检查
+idf.py size   # only when the change touches cache, DMA reservation, or resources
 ```
 
-配置改动落在 `sdkconfig.defaults`（`idf.py save-defconfig`），不手改 `sdkconfig`。`REQUIRES`/`PRIV_REQUIRES` 不依赖 `CONFIG_xxx`；改变源文件发现后运行 `idf.py reconfigure`，不手改生成的 Ninja/CMake 状态。
+Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`); never edit `sdkconfig` by hand. `REQUIRES`/`PRIV_REQUIRES` must not depend on `CONFIG_xxx`; after a change to source-file discovery run `idf.py reconfigure` instead of editing the generated Ninja/CMake state.
 
-## 宿主测试与验证分层
+## Host Tests and Verification Tiers
 
-每套独立 CMake 工程（C11，`-Wall -Wextra -Werror -Wpedantic`），流程相同：
+Each suite is a standalone CMake project (C11, `-Wall -Wextra -Werror -Wpedantic`) with the same flow:
 
 ```sh
-cmake -S <套件路径> -B /tmp/mt-<名> -G Ninja && cmake --build /tmp/mt-<名> && ctest --test-dir /tmp/mt-<名> --output-on-failure
+cmake -S <suite path> -B /tmp/mt-<name> -G Ninja && cmake --build /tmp/mt-<name> && ctest --test-dir /tmp/mt-<name> --output-on-failure
 ```
 
-**影响面**：套件被波及 = 本任务改动了它编译的任何源文件。例如改 clock 页面源只波及 `tests/integration`，`layers/apps/tests/host` 并不编译它。
+**Impact surface**: a suite is affected when this task changed any source file that the suite compiles. For example, changing a clock page source affects only `tests/integration`; `layers/apps/tests/host` does not compile it.
 
-| 改动位置 | 受影响套件 |
+| Change location | Affected suites |
 | --- | --- |
 | `main/` | `main/tests/host` |
-| `layers/bsp/`、`layers/middleware/` | 对应 `layers/*/tests/host`（bsp 含 C++）；被 `main` 链接的再加 `main/tests/host` |
-| `layers/apps/`（页面、app_ui） | `layers/apps/tests/host`、`tests/integration` |
-| `layers/app_manager/`（app_core、app_theme） | `layers/app_manager/app_core/tests/host`、`tests/integration` |
-| 网络 runtime/连接性 | `tests/connectivity` |
-| Kconfig/契约边界、资源 manifest/资产 | `python3 tests/run_python_tests.py configuration resources`；改契约子模块再加 `contracts` |
+| `layers/bsp/`, `layers/middleware/` | the matching `layers/*/tests/host` (bsp includes C++); add `main/tests/host` when `main` links it |
+| `layers/apps/` (pages, app_ui) | `layers/apps/tests/host`, `tests/integration` |
+| `layers/app_manager/` (app_core, app_theme) | `layers/app_manager/app_core/tests/host`, `tests/integration` |
+| network runtime/connectivity | `tests/connectivity` |
+| Kconfig/contract boundaries, resource manifests/assets | `python3 tests/run_python_tests.py configuration resources`; add `contracts` when the contract submodule changes |
 
-`tests/integration` 默认 none profile；sanitizer（`-D<套件>_SANITIZER=address|thread`）仅在改动涉及内存所有权或并发时启用，通常选择与风险匹配的一种。宿主测试不覆盖驱动时序、射频、DMA、功耗，需要时上板并记录验证范围。
+`tests/integration` uses the none profile by default; sanitizers (`-D<suite>_SANITIZER=address|thread`) are enabled only when the change involves memory ownership or concurrency, and normally one profile matched to the risk. Host tests do not cover driver timing, RF, DMA, or power consumption; go to hardware when needed and record the verified scope.
 
-**分层**（对应「验证最小化」）：
+**Tiers** (matching "minimal verification"):
 
-- L0 每批编辑：对改动文件直接跑 `doc/code-style.md` §8.1 astyle（幂等）+ 受影响工程增量构建。
-- L1 每任务：受影响宿主套件各跑一次。
-- L2 UI 改动完成前：`sim/ci/run_ci.sh` ×1 + `sim/tools/review_pages.py --check` ×1；终验范围按 `ui-review` 分档，仅当改动触及共享件（`app_ui`/`app_theme`/视口文案）、新页或 re-layout 时升为全量。
-- L3 提交/验收：`doc/code-style.md` §8.2 完整清单。
+- L0 per edit batch: run the `doc/code-style.md` §8.1 astyle pass over the changed files (idempotent) plus an incremental build of the affected projects.
+- L1 per task: run each affected host suite once.
+- L2 before a UI change is done: `sim/ci/run_ci.sh` ×1 and `sim/tools/review_pages.py --check` ×1; the final review scope follows the tiers in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
+- L3 commit/acceptance: the full checklist in `doc/code-style.md` §8.2.
 
-被测产物未变化时同一门禁无需重跑；flaky 修复的验证 = 串行一次 + 并行一次。
+Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run.
 
-## 设备故障
+## Device Faults
 
-仅查看用户当前提供的日志，按序检查：reset reason、panic 回溯、heap 余量、task WDT、启动放置、app 状态迁移。显示基准门槛与配置见 `tests/display/README.md`；内置 UI 宿主回归用 `sim/ci/run_ci.sh`。
+Use only the logs the user currently provides, and check in order: reset reason, panic backtrace, heap headroom, task WDT, boot placement, app state transitions. Display benchmark thresholds and configuration are in `tests/display/README.md`; built-in UI host regression uses `sim/ci/run_ci.sh`.
 
-## 编码风格
+## Coding Style
 
-遵循 [`doc/code-style.md`](doc/code-style.md)：4 空格、Allman、大写蛇形宏、小写蛇形函数、静态函数 `_` 前缀、头文件 API 写 Doxygen，用 AStyle 3.6.19 格式化。性能优先；避免非必要防御代码，不为形式统一而加锁、加检查或加单一返回点——无清理义务的失败直接返回，`goto` 单一出口只用于确有释放/解锁/回滚义务的函数。
+Follow [`doc/code-style.md`](doc/code-style.md): 4 spaces, Allman braces, UPPER_SNAKE macros, lower_snake functions, `_` prefix for file-static functions, Doxygen on header APIs, formatted with AStyle 3.6.19. Performance first; avoid needless defensive code, and do not add locks, checks, or a single return point for the sake of uniformity — a failure with no cleanup obligation returns directly, and `goto` to a single exit serves only functions that really must release, unlock, or roll back.
 
-## 文档风格
+## Documentation Style
 
-说明文档应以实现事实为基准内容，不写实现过程&未实现内容；文档应专注于其负责的模块本身，不应包含其他无关模块的说明。
+Reference documentation states implementation facts; it does not describe the implementation process or unimplemented content. A document covers only the module it owns and must not explain unrelated modules.
 
-## 提交
+Language: agent-facing documents (`AGENTS.md`, `.agents/skills/`, `doc/`) and tool documents under `tests/` are English only. Every module `README.md` ships with a Simplified Chinese `README_ZH.md` twin, and both carry a language switcher on line 1: `**English** | [简体中文](README_ZH.md)` in the English file and `[English](README.md) | **简体中文**` in the Chinese one. A `README.md` edit and its `README_ZH.md` counterpart change in the same commit. Quoted product strings that appear on screen stay in their shipped language.
 
-Header `<type>(<scope>): <subject>`，正文写动机与影响，尾部 `Refs:` 或 `BREAKING CHANGE:`；PR 列出变更、测试与资源影响。子模块指针更新必须与内容变更同一提交，禁止 pointer-only bump。仅在用户要求提交/验收时执行完整清单（`git diff --check` + astyle + 受影响宿主套件，见 code-style.md §8.2）。
+## Commits
+
+Header `<type>(<scope>): <subject>`, body states motivation and impact, trailer `Refs:` or `BREAKING CHANGE:`; a PR lists changes, tests, and resource impact. A submodule pointer update must land in the same commit as the content change; pointer-only bumps are forbidden. Run the full checklist (`git diff --check` + astyle + affected host suites, see code-style.md §8.2) only when the user asks for a commit or acceptance.
 
 ## Skills
 
-`.agents/skills/` 按需加载，不预加载全部：
+Load `.agents/skills/` on demand; do not preload everything:
 
-| 场景 | Skill |
+| Scenario | Skill |
 | --- | --- |
-| App/Page 生命周期、路由、导航、参数 | `app-development` |
-| LVGL 布局、文本换行、裁切、触摸/滚动传递 | `lvgl-ui-layout` |
-| UI 改动完成前的模拟器对抗式审查 | `ui-review` |
-| 板级引脚、总线、硬件约束 | `esp32` |
-| 显示管线所有权边界、draw 提交、flush 握手 | `lvgl-integration` |
+| App/Page lifecycle, routing, navigation, arguments | `app-development` |
+| LVGL layout, text wrapping, clipping, touch/scroll propagation | `lvgl-ui-layout` |
+| Adversarial simulator review before a UI change is done | `ui-review` |
+| Board pins, buses, hardware constraints | `esp32` |
+| Display pipeline ownership, draw submission, flush handshake | `lvgl-integration` |
 
-构建/配置/调试/验证的通用流程已在本文件定义，不为它们加载 skill。
+The general build, configuration, debugging, and verification workflow is defined in this file; do not load a skill for it.
 
-优先级：本文件与 `doc/code-style.md` > 当前代码、锁文件及专题文档 > skill 摘要；不用 skill 常量覆盖当前实现。
+Priority: this file and `doc/code-style.md` > current code, lock files, and topic documents > skill summaries; never override the current implementation with a constant from a skill.

@@ -1,26 +1,33 @@
-# 编码风格
+# Coding Style
 
-适用于工程自有代码（`main/`、`tests/`、`layers/` 中除第三方库外的全部源文件）。规则分三级：
+Applies to project-owned code (every source file under `main/`, `tests/`, and
+`layers/` except third-party libraries). Rules have three tiers:
 
-- **必须** — 格式或构建强制，违反即失败；
-- **不得** — 红线，禁止行为；
-- **建议** — 评审取向，允许合理例外并说明理由。
+- **MUST** — enforced by formatting or the build; a violation fails;
+- **MUST NOT** — red line, the behavior is forbidden;
+- **SHOULD** — review preference; a justified exception is allowed when stated.
 
-AStyle 只处理布局（缩进、空格、换行），不覆盖命名、Doxygen、日志与错误清理，这些须人工自检。示例均取自仓库实际代码。
+AStyle only handles layout (indentation, spacing, line breaks). It does not cover
+naming, Doxygen, logging, or error cleanup; check those by hand. All examples are
+taken from real repository code.
 
-## 1. 命名
+## 1. Naming
 
-### 1.1 目录与文件
+### 1.1 Directories and Files
 
-【必须】目录与文件名全小写，单词用 `_` 连接，避免通用化、高频名称。实例：`bsp_audio.c`、`mt_log.h`、`app_runtime.c`。
+[MUST] Directory and file names are all lowercase with words joined by `_`;
+avoid generic, high-frequency names. Examples: `bsp_audio.c`, `mt_log.h`,
+`app_runtime.c`.
 
-### 1.2 宏与常量
+### 1.2 Macros and Constants
 
-【必须】宏与枚举常量（含函数式宏）全大写蛇形：`TRUE`、`DBG_ERROR`、`LOG_E`。
+[MUST] Macro and enum constant names (including function-like macros) are
+UPPER_SNAKE: `TRUE`, `DBG_ERROR`, `LOG_E`.
 
-### 1.3 类型
+### 1.3 Types
 
-【必须】结构体名小写蛇形，typedef 名取结构体名加 `_t`，非指针形式：
+[MUST] Struct names are lower_snake, and the typedef name is the struct name plus
+`_t`, in non-pointer form:
 
 ```c
 typedef struct system_pm_wake_event
@@ -29,29 +36,34 @@ typedef struct system_pm_wake_event
 } system_pm_wake_event_t;
 ```
 
-【不得】typedef 指针别名（`typedef struct x *x_t;`）；指针一律显式写成 `x_t *p`。仓库实例：`system_pm_config_t *config`。
+[MUST NOT] Use pointer typedefs (`typedef struct x *x_t;`); always write pointers
+explicitly as `x_t *p`. Repository example: `system_pm_config_t *config`.
 
-### 1.4 函数
+### 1.4 Functions
 
-【必须】函数名小写蛇形；公开 API 必须在头文件中声明；空参数显式写 `void`：
+[MUST] Function names are lower_snake; a public API MUST be declared in a header;
+an empty parameter list is written as explicit `void`:
 
 ```c
 esp_err_t bsp_audio_start(void);
 ```
 
-【必须】文件内静态函数以下划线前缀，格式 `_<模块>_<动作>`：
+[MUST] File-static functions take an underscore prefix in the form
+`_<module>_<action>`:
 
 ```c
 static esp_err_t _app_runtime_rtc_alarm_configure(void);
 ```
 
-【必须】对象方法命名 `<对象名>_<动词短语>`，实例：`bsp_audio_start()`、`wifi_service_stop()`、`app_runtime_pm_build_system_config()`。
+[MUST] Object methods are named `<object>_<verb phrase>`, for example
+`bsp_audio_start()`, `wifi_service_stop()`,
+`app_runtime_pm_build_system_config()`.
 
-## 2. 文件组织
+## 2. File Organization
 
-### 2.1 头文件
+### 2.1 Headers
 
-【必须】唯一 include guard，标识符两侧用 `__` 包裹：
+[MUST] Use a unique include guard with `__` on both sides of the identifier:
 
 ```c
 #ifndef __BSP_AUDIO_H__
@@ -60,29 +72,42 @@ static esp_err_t _app_runtime_rtc_alarm_configure(void);
 #endif /* __BSP_AUDIO_H__ */
 ```
 
-【必须】头文件自含：包含自身依赖，能独立编译；只放类型、常量与 API 声明，不放函数实现、静态变量；内容以 `extern "C"` 包裹（`#ifdef __cplusplus` 守卫）以兼容 C++ 宿主测试。
+[MUST] A header is self-contained: it includes its own dependencies and compiles
+on its own. It holds only types, constants, and API declarations — no function
+bodies and no static variables. Wrap the content in `extern "C"` (an
+`#ifdef __cplusplus` guard) so C++ host tests can include it.
 
-【不得】在头文件中定义 `DBG_TAG`（见日志节）或实现函数体。
+[MUST NOT] Define `DBG_TAG` in a header (see the logging section) or implement a
+function body there.
 
-### 2.2 源文件
+### 2.2 Source Files
 
-【必须】`.c` 顶部先定义 `DBG_TAG`、`DBG_LVL`，再包含 `mt_log.h`（见日志节）。
+[MUST] Define `DBG_TAG` and `DBG_LVL` at the top of a `.c` file before including
+`mt_log.h` (see the logging section).
 
-### 2.3 模块边界
+### 2.3 Module Boundaries
 
-- 文件行数仅是可维护性审查信号，约 1000 行为审查阈值；不设硬上限，不作 CI 失败条件。
-- 拆分依据：职责、状态所有权、依赖方向、可独立测试性。不得仅为降低行数拆散同一状态机、共享不变量或逆序清理链，也不得因此新增跨文件可变全局或宽泛内部 API。
-- 拆分后须满足：状态唯一所有、依赖单向、接口更窄；任一条件不成立时保留内聚实现，用短函数和清晰分区组织代码。
+- Line count is only a maintainability review signal; about 1000 lines is the
+  review threshold. There is no hard cap and it is not a CI failure condition.
+- Split by responsibility, state ownership, dependency direction, and independent
+  testability. Do not split one state machine, a shared invariant, or a
+  reverse-order cleanup chain only to reduce line count, and do not introduce a
+  cross-file mutable global or a broad internal API to do so.
+- After a split, all of the following MUST hold: single state ownership,
+  one-directional dependencies, narrower interfaces. When any condition fails,
+  keep the cohesive implementation and organize it with short functions and
+  clear sectioning.
 
-### 2.4 行宽
+### 2.4 Line Width
 
-【建议】行宽软上限 100 列；长字符串字面量与 Doxygen 注释可放宽，超限优先拆行而非截断语义。
+[SHOULD] Soft limit of 100 columns. Long string literals and Doxygen comments may
+exceed it; prefer breaking the line over truncating the meaning.
 
-## 3. 布局
+## 3. Layout
 
-### 3.1 缩进与大括号
+### 3.1 Indentation and Braces
 
-【必须】4 空格缩进，不使用 Tab；大括号独立成行（Allman 风格）：
+[MUST] 4-space indentation, no tabs; braces on their own line (Allman style):
 
 ```c
 if (condition)
@@ -91,7 +116,8 @@ if (condition)
 }
 ```
 
-【必须】唯一例外是 `switch`，`case` 与 `switch` 对齐，分支体缩进：
+[MUST] The only exception is `switch`: `case` aligns with `switch` and the branch
+body is indented:
 
 ```c
 switch (value)
@@ -103,40 +129,52 @@ default:
 }
 ```
 
-【必须】续行缩进以 AStyle 输出为准，不手工调整：括号内换行时续行对齐到左括号后的首字符；该对齐缩进超过 44 列时，退化为语句缩进 + 4 空格。
+[MUST] Continuation-line indentation follows AStyle output; do not adjust it by
+hand. When a line break occurs inside parentheses, the continuation aligns with
+the first character after the opening parenthesis; if that alignment would exceed
+column 44, it degrades to the statement indent plus 4 spaces.
 
-【必须】连续空行不超过两行。
+[MUST] Never more than two consecutive blank lines.
 
-### 3.2 空格
+### 3.2 Spacing
 
-【必须】`if`、`for`、`while`、`switch` 与括号之间留一空格；二元运算符两侧留一空格；括号内侧不留空格：
+[MUST] Put one space between `if`, `for`, `while`, `switch` and their
+parentheses; one space on both sides of a binary operator; no space inside the
+parentheses:
 
 ```c
-if (x <= y)     /* 合法 */
-if ( x <= y )   /* 非法：括号内侧空格 */
+if (x <= y)     /* valid */
+if ( x <= y )   /* invalid: space inside parentheses */
 for (size_t i = 0; i < n; ++i)
 ```
 
-【必须】函数调用括号前不加空格：`foo(x)`。
+[MUST] No space before the parenthesis of a function call: `foo(x)`.
 
-【必须】自增自减采用前缀形式且不带空格：`++i`，不得写成 `i ++`。AStyle `--pad-oper` 不会为 `++` 补空格。
+[MUST] Increment and decrement use the prefix form without a space: `++i`, never
+`i ++`. AStyle's `--pad-oper` does not add a space for `++`.
 
-## 4. 注释
+## 4. Comments
 
-【建议】新代码默认中文；中英文不强制统一，但单文件内保持一致。
+[SHOULD] New code defaults to Chinese; mixing Chinese and English in one project is
+not forbidden, but a single file MUST stay consistent.
 
-【必须】注释说明"做什么/为什么"，不逐行翻译代码；语句注释只能写在上方或右方；注释不过量，仅在关键点提示。
+[MUST] A comment explains what or why, it does not translate the code line by
+line. Statement comments go above or to the right of the statement; do not
+over-comment, only flag the key points.
 
-【必须】头文件中的公开 API 与结构体写 Doxygen：至少含 `@brief`；有参数或返回值时写 `@param`、`@return`；`@note`、`@see`、`@warning` 按需添加。结构体成员按需在定义处注释。
+[MUST] Public APIs and structs in headers carry Doxygen: at least `@brief`, plus
+`@param` and `@return` when there are parameters or a return value; add `@note`,
+`@see`, and `@warning` as needed. Document struct members at their definition when
+warranted.
 
-简洁函数用单行 `@brief`（`bsp_audio.h`）：
+A concise function uses a single-line `@brief` (`bsp_audio.h`):
 
 ```c
 /** @brief Report whether board audio is initialized and may be started. */
 bool bsp_audio_is_available(void);
 ```
 
-复杂 API 的多段模板（`bsp_audio.h`）：
+The multi-paragraph template for a complex API (`bsp_audio.h`):
 
 ```c
 /**
@@ -151,25 +189,36 @@ bool bsp_audio_is_available(void);
 esp_err_t bsp_audio_configure(const bsp_audio_config_t *config);
 ```
 
-各元素描述之间空一行，首列对齐。
+Separate the description of each element with a blank line and align the first
+column.
 
-## 5. 日志
+## 5. Logging
 
-【必须】日志统一走 `mt_log.h` 的 `LOG_E`、`LOG_W`、`LOG_I`、`LOG_D`、`LOG_V`。每个 `.c` 顶部定义 `DBG_TAG`；`DBG_LVL` 可选，未定义时使用 Kconfig 全局默认 `CONFIG_MT_LOG_DEFAULT_LEVEL`，仅在需要低于全局上限的文件（如 BLE 运行时）显式设置：
+[MUST] All logging goes through `LOG_E`, `LOG_W`, `LOG_I`, `LOG_D`, and `LOG_V`
+from `mt_log.h`. Define `DBG_TAG` at the top of every `.c` file; `DBG_LVL` is
+optional and falls back to the Kconfig global default
+`CONFIG_MT_LOG_DEFAULT_LEVEL` when undefined — set it explicitly only in files
+that need a lower level than the global ceiling (for example the BLE runtime):
 
 ```c
 #define DBG_TAG "app_runtime"
 #include "mt_log.h"
 ```
 
-- 【不得】在头文件中定义 `DBG_TAG`，防止包含方互相污染。
-- 【不得】用 `printf` 输出日志；`printf` 仅用于终端命令行交互工具。
-- 【不得】在中断上下文或高频路径打印大量日志；定时器与热路径日志须限频或轻量化。
-- 日志简短且可定位问题；同一错误只在最合适的抽象层记录一次。
+- [MUST NOT] Define `DBG_TAG` in a header; it would leak between includers.
+- [MUST NOT] Use `printf` for logging; `printf` is only for interactive terminal
+  tools.
+- [MUST NOT] Print heavily from interrupt context or a hot path; timer and hot-path
+  logging MUST be rate-limited or lightweight.
+- Keep log messages short and diagnostic; log the same error only once, at the
+  most appropriate abstraction layer.
 
-## 6. 错误处理与清理
+## 6. Error Handling and Cleanup
 
-【必须】存在资源释放、锁释放、状态回滚或集中日志义务的函数，用 `goto` 汇入单一 `exit` 出口，按资源获取或状态变更的逆序清理，避免多分支重复或遗漏清理：
+[MUST] A function that must release resources, release locks, roll back state, or
+log centrally funnels into a single `exit` label with `goto`, cleaning up in
+reverse order of acquisition or state change, so branches neither duplicate nor
+miss cleanup:
 
 ```c
 static esp_err_t _handle_something(void)
@@ -191,7 +240,7 @@ static esp_err_t _handle_something(void)
         LOG_E("do something fail. %#X", err);
         goto exit;
     }
-    /* 更多操作以同样方式检查 */
+    /* further operations are checked the same way */
 
 exit:
     if (acquired)
@@ -202,27 +251,44 @@ exit:
 }
 ```
 
-【必须】无清理义务的参数校验与普通失败分支直接 `return`，不得为形式上的单一返回点引入 `goto`。
+[MUST] Parameter validation and ordinary failure branches with no cleanup
+obligation return directly; do not introduce `goto` for the formality of a single
+return point.
 
-统一出口的约束：
+Constraints on the unified exit:
 
-- `err` 必须是当前函数内的错误变量，跳转前已保存失败结果。
-- 跳转目标须是本函数内的 `exit` 标签；不得跨越变长数组作用域或跳转到其他标签，标签名冲突时改用局部等价标签或直接写 `goto`。
-- `exit` 中清理按获取逆序执行；清理失败时保留首个业务错误，除非接口明确要求返回清理错误。
-- 采用统一出口的函数，成功路径自然落入 `exit`；单一返回点不是普遍要求。
-- 错误来自表达式时，先赋给 `err` 再判断，避免重复求值并保证日志错误码与判断一致。
-- 记录错误时带业务语义（操作名与错误码或 `esp_err_to_name`），同一错误只在最合适的抽象层记录一次；无记录义务的失败直接传播给调用方。
+- `err` MUST be the error variable of the current function, already holding the
+  failure result before the jump.
+- The jump target MUST be an `exit` label inside the current function; never jump
+  across a variable-length array scope or to another label — on a name clash use a
+  local equivalent label or write the `goto` inline.
+- Cleanup inside `exit` runs in reverse acquisition order; when cleanup fails,
+  keep the first business error unless the interface explicitly requires returning
+  the cleanup error.
+- A function with a unified exit lets the success path fall through to `exit`; a
+  single return point is not a general requirement.
+- When the error comes from an expression, assign it to `err` before testing, so
+  the expression is not evaluated twice and the logged code matches the test.
+- Log errors with business meaning (the operation name plus the error code or
+  `esp_err_to_name`), and log the same error only once, at the most appropriate
+  abstraction layer; a failure with no logging obligation propagates to the caller
+  unchanged.
 
-## 7. 函数
+## 7. Functions
 
-- 【建议】函数仅完成相对独立的简单功能，保持精简、单一职责；实现过长时应反思拆分（拆分理由见 2.3）。
-- 【必须】先做参数校验，无清理义务的失败直接返回（见第 6 节）。
+- [SHOULD] A function accomplishes one relatively independent, simple task; keep
+  it small and single-purpose. Reconsider splitting when an implementation grows
+  long (for split criteria see 2.3).
+- [MUST] Validate parameters first; a failure with no cleanup obligation returns
+  directly (see section 6).
 
-## 8. 格式化与提交前自检
+## 8. Formatting and Pre-commit Self-check
 
 ### 8.1 AStyle
 
-【必须】格式化基线为 AStyle 3.6.19，覆盖工程自有 `.c`/`.h`。命令幂等：已符合格式的文件不重写，直接运行即完成格式化与自检，无需先做 dry-run：
+[MUST] The formatting baseline is AStyle 3.6.19, covering project-owned `.c`/`.h`
+files. The command is idempotent: files that already comply are not rewritten, so
+running it performs both formatting and the self-check without a dry run first:
 
 ```sh
 astyle --style=allman --indent=spaces=4 --indent-preproc-block --pad-oper \
@@ -231,19 +297,33 @@ astyle --style=allman --indent=spaces=4 --indent-preproc-block --pad-oper \
        $(git ls-files '*.c' '*.h')
 ```
 
-只读自检（不改文件，供 CI 或复查）：追加 `--dry-run --error-on-changes`。
+Read-only check (no file changes, for CI or review): append
+`--dry-run --error-on-changes`.
 
-【必须】发行版包通常滞后（Debian/Arch 仍为 3.6.12），3.6.19 需从上游源码构建后安装：`cmake -S astyle-3.6.19 -B build -G Ninja && ninja`，产物 `build/AStyle/astyle`。不可用 3.6.15–3.6.18 替代，这些版本对 `extern "C"` 块内续行有缩进回归。
+[MUST] Distribution packages usually lag (Debian/Arch still ship 3.6.12), so build
+3.6.19 from upstream and install it:
+`cmake -S astyle-3.6.19 -B build -G Ninja && ninja`, producing
+`build/AStyle/astyle`. Versions 3.6.15–3.6.18 are not acceptable substitutes; they
+regress continuation-line indentation inside `extern "C"` blocks.
 
-【必须】排除构建生成文件（如 `main/mmap_generate_*.h`）与第三方代码：ESP-IDF、`managed_components/`、`layers/bsp/XPowersLib/`。不得为绕过稳定的格式化结果添加文件级排除或 `INDENT-OFF` 标记。
+[MUST] Exclude build-generated files (such as `main/mmap_generate_*.h`) and
+third-party code: ESP-IDF, `managed_components/`, `layers/bsp/XPowersLib/`. Do not
+add file-level exclusions or `INDENT-OFF` markers to work around a stable
+formatting result.
 
-【必须】`layers/` 各目录是独立 Git 子模块：父仓库的 `git ls-files` 不包含子模块内文件，须进入对应子模块目录执行同一命令。
+[MUST] Each directory under `layers/` is an independent Git submodule: the parent
+repository's `git ls-files` does not include files inside a submodule, so run the
+same command inside that submodule directory.
 
-### 8.2 提交前流程
+### 8.2 Pre-commit Flow
 
-改动作完按序执行，每项只跑一次：
+After the change, run the following in order, each item once:
 
-1. 格式化：运行 8.1 命令，随后 `git diff --check`；若格式化产生改动，重新编译并跑宿主测试；
-2. 相关宿主测试套件编译并全绿（命令见 AGENTS.md）；
-3. 按本文【必须】项人工自检命名、Doxygen、日志与清理出口（AStyle 不覆盖）；
-4. 硬件、电源、显示、存储相关改动注明真机验证范围，宿主测试不替代上板验证。
+1. Format: run the 8.1 command, then `git diff --check`; if formatting produced
+   changes, rebuild and run the host tests again;
+2. Compile the relevant host test suites and get them fully green (commands in
+   AGENTS.md);
+3. Manually self-check naming, Doxygen, logging, and cleanup exits against the
+   [MUST] items of this document (AStyle does not cover them);
+4. For changes touching hardware, power, display, or storage, state the on-device
+   verification scope; host tests do not replace board validation.
