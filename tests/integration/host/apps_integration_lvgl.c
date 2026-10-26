@@ -545,6 +545,29 @@ static lv_obj_t *_host_lv_find_visible_slider(bool enabled_only)
     return slider;
 }
 
+/* Creation-ordered lookup for surfaces that legitimately hold more than one
+ * slider; the unique-slider helpers above cannot serve those. */
+static lv_obj_t *_host_lv_find_visible_slider_at(size_t wanted)
+{
+    size_t seen = 0U;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        lv_obj_t *candidate = &s_objects[index];
+        if (!candidate->live ||
+                candidate->kind != HOST_LV_OBJECT_SLIDER ||
+                !_host_lv_is_visible(candidate))
+        {
+            continue;
+        }
+        if (seen == wanted)
+        {
+            return candidate;
+        }
+        ++seen;
+    }
+    return NULL;
+}
+
 static bool _host_lv_emit_with_input(lv_obj_t *object, lv_event_code_t code,
                                      lv_indev_t *indev, void *param)
 {
@@ -3239,6 +3262,136 @@ bool host_lv_visible_slider_snapshot(int32_t *value, bool *pressed,
     *pressed = (slider->state & LV_STATE_PRESSED) != 0U;
     *disabled = (slider->state & LV_STATE_DISABLED) != 0U;
     return true;
+}
+
+bool host_lv_visible_slider_at_drag(size_t index, int32_t value)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *slider = _host_lv_find_visible_slider_at(index);
+    if (slider == NULL)
+    {
+        return false;
+    }
+    if ((slider->state & LV_STATE_PRESSED) == 0U)
+    {
+        slider->state |= LV_STATE_PRESSED;
+        (void)_host_lv_emit(slider, LV_EVENT_PRESSED);
+    }
+    if (value < slider->slider_minimum)
+    {
+        value = slider->slider_minimum;
+    }
+    else if (value > slider->slider_maximum)
+    {
+        value = slider->slider_maximum;
+    }
+    slider->slider_value = value;
+    return _host_lv_emit(slider, LV_EVENT_VALUE_CHANGED);
+}
+
+bool host_lv_visible_slider_at_release(size_t index)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *slider = _host_lv_find_visible_slider_at(index);
+    if (slider == NULL || (slider->state & LV_STATE_PRESSED) == 0U)
+    {
+        return false;
+    }
+    slider->state &= ~LV_STATE_PRESSED;
+    return _host_lv_emit(slider, LV_EVENT_RELEASED);
+}
+
+bool host_lv_visible_slider_at_cancel(size_t index)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *slider = _host_lv_find_visible_slider_at(index);
+    if (slider == NULL || (slider->state & LV_STATE_PRESSED) == 0U)
+    {
+        return false;
+    }
+    slider->state &= ~LV_STATE_PRESSED;
+    return _host_lv_emit(slider, LV_EVENT_PRESS_LOST);
+}
+
+bool host_lv_visible_slider_at_snapshot(size_t index, int32_t *value,
+                                        bool *pressed, bool *disabled)
+{
+    if (value == NULL || pressed == NULL || disabled == NULL)
+    {
+        return false;
+    }
+    const lv_obj_t *slider = _host_lv_find_visible_slider_at(index);
+    if (slider == NULL)
+    {
+        return false;
+    }
+    *value = slider->slider_value;
+    *pressed = (slider->state & LV_STATE_PRESSED) != 0U;
+    *disabled = (slider->state & LV_STATE_DISABLED) != 0U;
+    return true;
+}
+
+bool host_lv_visible_slider_at_count(size_t *count)
+{
+    if (count == NULL)
+    {
+        return false;
+    }
+    size_t seen = 0U;
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        const lv_obj_t *candidate = &s_objects[index];
+        if (candidate->live &&
+                candidate->kind == HOST_LV_OBJECT_SLIDER &&
+                _host_lv_is_visible(candidate))
+        {
+            ++seen;
+        }
+    }
+    *count = seen;
+    return true;
+}
+
+bool host_lv_sys_layer_card_height(int32_t *height)
+{
+    if (height == NULL)
+    {
+        return false;
+    }
+    /* The control-center card is the one direct child of the full-panel scrim
+     * that is inset from the top-left corner; the scrim itself spans the whole
+     * panel and the capture band is only 40 px tall. */
+    for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        const lv_obj_t *candidate = &s_objects[index];
+        if (!candidate->live || candidate->parent == NULL ||
+                !_host_lv_is_descendant(candidate, &s_sys_layer) ||
+                !_host_lv_is_visible(candidate))
+        {
+            continue;
+        }
+        const lv_obj_t *parent = candidate->parent;
+        const bool parent_is_scrim = parent->x == 0 && parent->y == 0 &&
+                                     parent->width == HOST_LV_HOR_RES &&
+                                     parent->height == HOST_LV_VER_RES;
+        if (!parent_is_scrim || candidate->x <= 0 || candidate->y <= 0 ||
+                candidate->height <= 40)
+        {
+            continue;
+        }
+        *height = candidate->height;
+        return true;
+    }
+    return false;
 }
 
 bool host_lv_click_action(const char *title)

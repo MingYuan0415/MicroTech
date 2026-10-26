@@ -11,6 +11,7 @@
 #include "host_factory_reset_service.h"
 #include "imu_service.h"
 #include "nv_storage.h"
+#include "nvs.h"
 #include "power_service.h"
 #include "sd_storage_service.h"
 #include "time_service.h"
@@ -56,6 +57,10 @@ static uint32_t s_audio_lease_generation;
 static bool s_audio_fail_next_release;
 static atomic_uint s_audio_volume = 60U;
 static atomic_bool s_audio_muted;
+/* Persisted-volume record, separate from the live audio level. */
+static atomic_uint s_nv_volume;
+static atomic_bool s_nv_volume_present;
+static atomic_uint s_nv_volume_set_count;
 static atomic_bool s_audio_pa_enabled;
 static atomic_uint s_audio_read_count;
 static atomic_uint s_audio_set_volume_count;
@@ -108,6 +113,9 @@ void host_runtime_reset(void)
     atomic_store(&s_audio_set_volume_count, 0U);
     atomic_store(&s_audio_read_peak, 512);
     atomic_store(&s_audio_fail_next_volume, false);
+    atomic_store(&s_nv_volume, 0U);
+    atomic_store(&s_nv_volume_present, false);
+    atomic_store(&s_nv_volume_set_count, 0U);
     atomic_store(&s_weather_snapshot_index, 0U);
     atomic_store(&s_weather_snapshot_leases, 0U);
     atomic_store(&s_weather_refresh_count, 0U);
@@ -476,6 +484,13 @@ unsigned host_audio_set_volume_count(void)
 void host_audio_set_read_peak(int16_t peak)
 {
     atomic_store(&s_audio_read_peak, peak);
+}
+
+void host_audio_set_available(bool available)
+{
+    pthread_mutex_lock(&s_audio_mutex);
+    atomic_store(&s_audio_available, available);
+    pthread_mutex_unlock(&s_audio_mutex);
 }
 
 void host_audio_fail_next_volume(void)
@@ -917,6 +932,12 @@ esp_err_t audio_service_set_volume(uint8_t percent)
     {
         return ESP_ERR_INVALID_ARG;
     }
+    /* A service without an audio path rejects the request before it reaches the
+     * codec, exactly like the real one when it is not initialized. */
+    if (!atomic_load(&s_audio_available))
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     atomic_fetch_add(&s_audio_set_volume_count, 1U);
     if (atomic_exchange(&s_audio_fail_next_volume, false))
     {
@@ -926,11 +947,30 @@ esp_err_t audio_service_set_volume(uint8_t percent)
     return ESP_OK;
 }
 
+/* Mirrors the real service: apply, then store once. The level stays applied
+ * when the store fails, and nothing is stored when the audio path refuses. */
+esp_err_t audio_service_set_volume_persisted(uint8_t percent)
+{
+    const esp_err_t applied = audio_service_set_volume(percent);
+    if (applied != ESP_OK)
+    {
+        return applied;
+    }
+    atomic_store(&s_nv_volume, percent);
+    atomic_store(&s_nv_volume_present, true);
+    atomic_fetch_add(&s_nv_volume_set_count, 1U);
+    return ESP_OK;
+}
+
 esp_err_t audio_service_get_volume(uint8_t *percent)
 {
     if (percent == NULL)
     {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (!atomic_load(&s_audio_available))
+    {
+        return ESP_ERR_INVALID_STATE;
     }
     *percent = (uint8_t)atomic_load(&s_audio_volume);
     return ESP_OK;
@@ -1085,7 +1125,58 @@ esp_err_t nv_storage_erase_key(const char *key)
         s_level_calibration_size = 0U;
         memset(s_level_calibration_blob, 0, sizeof(s_level_calibration_blob));
     }
+    else if (strcmp(key, "volume") == 0)
+    {
+        atomic_store(&s_nv_volume_present, false);
+    }
     return ESP_OK;
+}
+
+esp_err_t nv_storage_set_u8(const char *key, uint8_t value)
+{
+    if (key == NULL || strcmp(key, "volume") != 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    atomic_store(&s_nv_volume, value);
+    atomic_store(&s_nv_volume_present, true);
+    atomic_fetch_add(&s_nv_volume_set_count, 1U);
+    return ESP_OK;
+}
+
+esp_err_t nv_storage_get_u8(const char *key, uint8_t *output)
+{
+    if (key == NULL || output == NULL || strcmp(key, "volume") != 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!atomic_load(&s_nv_volume_present))
+    {
+        return ESP_ERR_NVS_NOT_FOUND;
+    }
+    *output = (uint8_t)atomic_load(&s_nv_volume);
+    return ESP_OK;
+}
+
+bool host_nv_volume_present(void)
+{
+    return atomic_load(&s_nv_volume_present);
+}
+
+uint8_t host_nv_volume(void)
+{
+    return (uint8_t)atomic_load(&s_nv_volume);
+}
+
+unsigned host_nv_volume_set_count(void)
+{
+    return atomic_load(&s_nv_volume_set_count);
+}
+
+void host_nv_clear_volume(void)
+{
+    atomic_store(&s_nv_volume_present, false);
+    atomic_store(&s_nv_volume_set_count, 0U);
 }
 
 esp_err_t nv_storage_get_blob(const char *key, void *out, size_t *size)

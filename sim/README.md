@@ -285,7 +285,9 @@ directory, read the recorder service cache index and generation; `svc` also
 returns the target path list, operation_id/pending/last_error, the current
 storage, and the generation/revision of the published index, for checking
 asynchronous final states and same-path replacement protection),
-`sim.nvs {action: get|set|erase, key, value?}` (real nv_storage string keys),
+`sim.nvs {action: get|set|get_u8|set_u8|erase, key, value?}` (real
+nv_storage access: the string verbs use the string API and `_u8` the scalar
+u8 API),
 `sim.connectivity` (connectivity_manager and wifi_service state, scan cache
 snapshot), `sim.switcher {get?|action?}` (task switcher
 visibility/display/clear), `sim.control_center {get?|action: show|hide}`

@@ -39,6 +39,7 @@ COMMON_GLYPHS = (
     "ui_check",
     "ui_trash",
     "ui_loop",
+    "ui_volume",
     "ui_bluetooth",
     "ui_wifi",
     "ui_brightness",

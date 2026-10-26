@@ -211,6 +211,38 @@ bool host_lv_visible_slider_cancel(void);
 bool host_lv_visible_slider_snapshot(int32_t *value, bool *pressed,
                                      bool *disabled);
 /**
+ * @brief Drag the Nth visible Slider (creation order) to a value.
+ *
+ * Surfaces with several sliders cannot use the unique-slider helpers.
+ *
+ * @param index is the zero-based creation-order index among visible Sliders.
+ * @param value is clamped to that Slider's configured range.
+ * @return true when LV_EVENT_VALUE_CHANGED was emitted; false otherwise.
+ */
+bool host_lv_visible_slider_at_drag(size_t index, int32_t value);
+/** @brief Release the Nth visible Slider after a drag. */
+bool host_lv_visible_slider_at_release(size_t index);
+/** @brief Cancel the Nth visible Slider after a drag. */
+bool host_lv_visible_slider_at_cancel(size_t index);
+/**
+ * @brief Snapshot the Nth visible Slider.
+ * @return true when that Slider exists; false otherwise.
+ */
+bool host_lv_visible_slider_at_snapshot(size_t index, int32_t *value,
+                                        bool *pressed, bool *disabled);
+/** @brief Count the currently visible Sliders. */
+bool host_lv_visible_slider_at_count(size_t *count);
+/**
+ * @brief Read the height of the control-center card on the system layer.
+ *
+ * The card is the only generic system-layer child that is inset from the left
+ * edge and starts below the top row, which separates it from the capture band
+ * and the full-panel scrim.
+ *
+ * @return true when such a child is visible; false otherwise.
+ */
+bool host_lv_sys_layer_card_height(int32_t *height);
+/**
  * @brief Snapshot the object which owns the active pointer sequence.
  * @param snapshot receives identity, geometry and style state.
  * @return true while a live pointer target exists; false otherwise.
@@ -295,8 +327,24 @@ unsigned host_audio_read_count(void);
 unsigned host_audio_set_volume_count(void);
 /** @brief Set the PCM peak returned by subsequent fake audio reads. */
 void host_audio_set_read_peak(int16_t peak);
+/**
+ * @brief Report whether the fake audio service has a usable audio path.
+ *
+ * When false, the fake set/get-volume calls return ESP_ERR_INVALID_STATE,
+ * mirroring the real service on a board without a codec.
+ */
+void host_audio_set_available(bool available);
 /** @brief Fail the next valid fake set-volume call. */
 void host_audio_fail_next_volume(void);
+
+/** @brief Report whether a speaker volume record has been stored. */
+bool host_nv_volume_present(void);
+/** @brief Return the stored speaker volume record. */
+uint8_t host_nv_volume(void);
+/** @brief Return the number of fake persisted-volume writes. */
+unsigned host_nv_volume_set_count(void);
+/** @brief Forget the stored speaker volume and clear the write counter. */
+void host_nv_clear_volume(void);
 /** @brief Fail the next current-owner release, retaining its lease in ERROR. */
 void host_audio_fail_next_release(void);
 

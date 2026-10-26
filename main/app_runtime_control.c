@@ -3,6 +3,7 @@
 
 #include "app_runtime_control.h"
 
+#include "audio_service.h"
 #include "connectivity_manager.h"
 #include "device_link_service.h"
 #include "time_service.h"
@@ -146,6 +147,32 @@ static esp_err_t _control_get_clock(const char **time_text,
     return ESP_OK;
 }
 
+static esp_err_t _control_get_volume(uint8_t *percent)
+{
+    if (percent == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return audio_service_get_volume(percent);
+}
+
+static esp_err_t _control_set_volume(uint8_t percent)
+{
+    if (percent > 100U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return audio_service_set_volume(percent);
+}
+
+/* Storage ownership sits in audio_service, so the bridge only forwards the
+ * settle. Keeping the split here preserves the UI distinction between a drag
+ * preview and a committed level. */
+static esp_err_t _control_set_volume_persisted(uint8_t percent)
+{
+    return audio_service_set_volume_persisted(percent);
+}
+
 app_manager_control_center_ops_t app_runtime_control_get_ops(void)
 {
     const app_manager_control_center_ops_t ops =
@@ -156,6 +183,9 @@ app_manager_control_center_ops_t app_runtime_control_get_ops(void)
         .set_bluetooth = _control_set_bluetooth,
         .get_bluetooth_transitioning = _control_bluetooth_transitioning,
         .get_clock = _control_get_clock,
+        .get_volume = _control_get_volume,
+        .set_volume = _control_set_volume,
+        .set_volume_persisted = _control_set_volume_persisted,
     };
     return ops;
 }

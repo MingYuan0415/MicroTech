@@ -218,8 +218,9 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 卸载宿主目录卷、合成静音 WAV、清空、列目录、读 recorder 服务缓存索引与
 generation；`svc` 同时返回目标路径列表、operation_id/pending/last_error、
 当前存储及已发布索引的 generation/revision，用于核对异步终态和同路径替换保护）、
-`sim.nvs {action: get|set|erase, key, value?}`（真 nv_storage
-字符串键）、`sim.connectivity`（connectivity_manager 与 wifi_service 状态、
+`sim.nvs {action: get|set|get_u8|set_u8|erase, key, value?}`（真 nv_storage
+访问：字符串动词走字符串 API，`_u8` 走标量 u8 API）、`sim.connectivity`
+（connectivity_manager 与 wifi_service 状态、
 扫描缓存快照）、`sim.switcher {get?|action?}`（任务切换器可见性/显示/清空）、
  `sim.control_center {get?|action: show|hide}`（控制中心可见性/打开/关闭；顶部下拉手势
  也可用 `touch`/`drag` 复现）、

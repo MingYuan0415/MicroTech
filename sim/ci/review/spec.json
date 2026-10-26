@@ -53,6 +53,25 @@
     },
     {
       "app": "settings",
+      "page": "sound",
+      "states": [
+        {
+          "name": "volume",
+          "seed": [],
+          "expect_visible": [
+            "声音",
+            "音量",
+            "拖动即时生效,松手保存"
+          ],
+          "single_line": [
+            "音量"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "settings",
       "page": "wifi",
       "states": [
         {

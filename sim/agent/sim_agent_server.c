@@ -1357,6 +1357,15 @@ static cJSON *_handle(cJSON *request, bool *ok)
                   nv_storage_set_str(text, value->valuestring) == ESP_OK;
         }
         else if (verb != NULL && text != NULL &&
+                 strcmp(verb, "set_u8") == 0)
+        {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(params,
+                "value");
+            *ok = cJSON_IsNumber(value) && value->valueint >= 0 &&
+                  value->valueint <= UINT8_MAX &&
+                  nv_storage_set_u8(text, (uint8_t)value->valueint) == ESP_OK;
+        }
+        else if (verb != NULL && text != NULL &&
                  strcmp(verb, "get") == 0)
         {
             char stored[128];
@@ -1364,6 +1373,20 @@ static cJSON *_handle(cJSON *request, bool *ok)
             if (nv_storage_get_str(text, stored, &size) == ESP_OK)
             {
                 cJSON_AddStringToObject(result, "value", stored);
+            }
+            else
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error", "nvs key missing");
+            }
+        }
+        else if (verb != NULL && text != NULL &&
+                 strcmp(verb, "get_u8") == 0)
+        {
+            uint8_t stored = 0U;
+            if (nv_storage_get_u8(text, &stored) == ESP_OK)
+            {
+                cJSON_AddNumberToObject(result, "value", (double)stored);
             }
             else
             {

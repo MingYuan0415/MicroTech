@@ -148,6 +148,7 @@ target_include_directories(app_runtime_control_test PRIVATE
     fakes
     ../..
     ../../../layers/app_manager/app_core/include
+    ../../../layers/middleware/components/audio_service/include
     ../../../layers/middleware/components/connectivity_manager/include
     ../../../layers/middleware/components/device_link/include
     ../../../layers/middleware/components/device_link_service/include

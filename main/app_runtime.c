@@ -853,6 +853,13 @@ static esp_err_t _app_runtime_start_foundations(void)
         {
             return result;
         }
+        /* audio_service owns its own persisted setting, like every other
+         * module that stores one: the reset is aggregated here by owner. */
+        result = audio_service_reset_persisted_state();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
     }
 
     s_ownership.fs_attempted = true;
@@ -1133,6 +1140,14 @@ static esp_err_t _app_runtime_start_app_services(
         else
         {
             app_runtime_pm_set_audio_participant(true);
+            const esp_err_t volume_result = audio_service_restore_volume();
+            if (volume_result != ESP_OK)
+            {
+                /* The product default stays in place: a bad stored level must
+                 * not turn into a silent or muted boot. */
+                LOG_W("stored volume unavailable: %s",
+                      esp_err_to_name(volume_result));
+            }
         }
     }
 

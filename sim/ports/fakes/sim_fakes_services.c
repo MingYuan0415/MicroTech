@@ -15,6 +15,7 @@
 #include "host_factory_reset_service.h"
 #include "imu_service.h"
 #include "nv_storage.h"
+#include "nvs.h"
 #include "power_service.h"
 #include "sd_storage_service.h"
 #include "time_service.h"
@@ -35,6 +36,9 @@
 #include <sys/statvfs.h>
 #include <unistd.h>
 
+
+/* Keep in sync with AUDIO_SERVICE_VOLUME_KEY in audio_service.c. */
+#define SIM_AUDIO_VOLUME_KEY "volume"
 
 static uint8_t s_brightness = 192;
 static int32_t s_screen_timeout_ms = 30000;
@@ -500,6 +504,43 @@ esp_err_t audio_service_get_volume(uint8_t *percent)
     }
     *percent = (uint8_t)atomic_load(&s_audio_volume);
     return ESP_OK;
+}
+
+/* Mirrors the real service: apply, then store once, so a simulator restart
+ * reproduces the firmware behavior. */
+esp_err_t audio_service_set_volume_persisted(uint8_t percent)
+{
+    const esp_err_t applied = audio_service_set_volume(percent);
+    if (applied != ESP_OK)
+    {
+        return applied;
+    }
+    return nv_storage_set_u8(SIM_AUDIO_VOLUME_KEY, percent);
+}
+
+esp_err_t audio_service_restore_volume(void)
+{
+    uint8_t percent = 0U;
+    const esp_err_t stored = nv_storage_get_u8(SIM_AUDIO_VOLUME_KEY, &percent);
+    if (stored == ESP_ERR_NVS_NOT_FOUND)
+    {
+        return ESP_OK;
+    }
+    if (stored != ESP_OK)
+    {
+        return stored;
+    }
+    if (percent > 100U)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return audio_service_set_volume(percent);
+}
+
+esp_err_t audio_service_reset_persisted_state(void)
+{
+    const esp_err_t result = nv_storage_erase_key(SIM_AUDIO_VOLUME_KEY);
+    return result == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : result;
 }
 
 esp_err_t audio_service_set_mute(bool muted)

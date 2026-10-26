@@ -20,7 +20,7 @@ Commands:
   set-bluetooth <json|file>   # {"enabled":..,"bound":..,"active":..,"client_connected":..,"window_remaining_ms":..}
   offer-pairing [--token N] [--passkey N]
   sd <mount|umount|write|clear|list|svc> [--name REC_x.wav --seconds 3]
-  nvs <get|set|erase> <key> [value]
+  nvs <get|set|get_u8|set_u8|erase> <key> [value]
   connectivity
   apps
   set-time <epoch>
@@ -87,7 +87,7 @@ def main():
     sbt = sub.add_parser("set-bluetooth"); sbt.add_argument("json", help="JSON object (or file) with enabled/bound/active/client_connected/window_remaining_ms")
     op = sub.add_parser("offer-pairing"); op.add_argument("--token", type=int, default=None); op.add_argument("--passkey", type=int, default=None)
     sd = sub.add_parser("sd"); sd.add_argument("action", choices=["mount", "umount", "write", "clear", "list", "svc"]); sd.add_argument("--name"); sd.add_argument("--seconds", type=int)
-    nvs = sub.add_parser("nvs"); nvs.add_argument("action", choices=["get", "set", "erase"]); nvs.add_argument("key"); nvs.add_argument("value", nargs="?")
+    nvs = sub.add_parser("nvs"); nvs.add_argument("action", choices=["get", "set", "get_u8", "set_u8", "erase"]); nvs.add_argument("key"); nvs.add_argument("value", nargs="?")
     sub.add_parser("connectivity")
     sub.add_parser("apps")
     etp = sub.add_parser("set-time"); etp.add_argument("epoch", type=int)
@@ -163,8 +163,15 @@ def main():
                               **({"name": args.name} if args.name else {}),
                               **({"seconds": args.seconds} if args.seconds is not None else {})})
         elif args.cmd == "nvs":
+            value = args.value
+            if args.action.endswith("_u8") and value is not None:
+                # The u8 verbs carry a JSON number, the string verbs a JSON
+                # string; the agent type-checks both.
+                value = int(value, 0)
+            # Level 0 and the empty string are real values, so test for
+            # presence rather than truthiness.
             req = ("sim.nvs", {"action": args.action, "key": args.key,
-                               **({"value": args.value} if args.value else {})})
+                               **({"value": value} if value is not None else {})})
         elif args.cmd == "connectivity":
             req = ("sim.connectivity", {})
         elif args.cmd == "apps":

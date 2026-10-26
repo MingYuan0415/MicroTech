@@ -29,6 +29,15 @@ static uint32_t s_set_enabled_timeout;
 static esp_err_t s_local_result;
 static struct tm s_local_time;
 static time_service_quality_t s_quality;
+static uint8_t s_volume;
+static esp_err_t s_volume_get_result;
+static esp_err_t s_volume_set_result;
+static uint8_t s_volume_set_value;
+static unsigned s_volume_set_calls;
+/* Persisted-volume service fake. */
+static esp_err_t s_volume_persisted_result;
+static uint8_t s_volume_persisted_value;
+static unsigned s_volume_persisted_calls;
 
 static void _reset(void)
 {
@@ -50,6 +59,14 @@ static void _reset(void)
     s_local_result = ESP_OK;
     memset(&s_local_time, 0, sizeof(s_local_time));
     s_quality = TIME_SERVICE_QUALITY_RTC;
+    s_volume = 60U;
+    s_volume_get_result = ESP_OK;
+    s_volume_set_result = ESP_OK;
+    s_volume_set_value = UINT8_MAX;
+    s_volume_set_calls = 0U;
+    s_volume_persisted_result = ESP_OK;
+    s_volume_persisted_value = UINT8_MAX;
+    s_volume_persisted_calls = 0U;
 }
 
 static app_manager_control_center_ops_t _ops(void)
@@ -64,6 +81,8 @@ static app_manager_control_center_ops_t _ops(void)
     assert(ops.set_bluetooth != NULL);
     assert(ops.get_bluetooth_transitioning != NULL);
     assert(ops.get_clock != NULL);
+    assert(ops.get_volume != NULL);
+    assert(ops.set_volume != NULL);
     return ops;
 }
 
@@ -284,12 +303,112 @@ time_service_quality_t time_service_get_quality(void)
     return s_quality;
 }
 
+static void _test_volume(void)
+{
+    const app_manager_control_center_ops_t ops = _ops();
+    uint8_t percent = 0U;
+
+    _reset();
+    assert(ops.get_volume(&percent) == ESP_OK);
+    assert(percent == 60U);
+
+    /* The surface passes a slider value straight through; out-of-range input
+     * is rejected instead of being clamped silently. */
+    assert(ops.set_volume(0U) == ESP_OK);
+    assert(s_volume_set_calls == 1U);
+    assert(s_volume_set_value == 0U);
+    assert(s_volume == 0U);
+    assert(ops.set_volume(100U) == ESP_OK);
+    assert(s_volume_set_value == 100U);
+    assert(ops.set_volume(101U) == ESP_ERR_INVALID_ARG);
+    assert(s_volume_set_calls == 2U);
+    assert(ops.get_volume(NULL) == ESP_ERR_INVALID_ARG);
+
+    /* A refused request reports the service error and leaves the level. */
+    s_volume_set_result = ESP_FAIL;
+    assert(ops.set_volume(30U) == ESP_FAIL);
+    assert(s_volume == 100U);
+    percent = 0U;
+    assert(ops.get_volume(&percent) == ESP_OK);
+    assert(percent == 100U);
+
+    /* An uninitialized service keeps the row disabled through the getter. */
+    s_volume_get_result = ESP_ERR_INVALID_STATE;
+    assert(ops.get_volume(&percent) == ESP_ERR_INVALID_STATE);
+}
+
+/* Volume storage belongs to audio_service, so the bridge is only required to
+ * forward the two volume intents without duplicating storage logic. */
+static void _test_volume_forwarding(void)
+{
+    const app_manager_control_center_ops_t ops = _ops();
+    assert(ops.set_volume_persisted != NULL);
+
+    /* The preview path reaches the service and nothing else. */
+    _reset();
+    assert(ops.set_volume(70U) == ESP_OK);
+    assert(s_volume == 70U);
+    assert(s_volume_set_calls == 1U);
+    assert(s_volume_persisted_calls == 0U);
+
+    /* The settle path is forwarded verbatim to the persisted setter. */
+    _reset();
+    assert(ops.set_volume_persisted(40U) == ESP_OK);
+    assert(s_volume_persisted_calls == 1U);
+    assert(s_volume_persisted_value == 40U);
+    assert(s_volume == 40U);
+
+    /* Errors from the service are returned unchanged. */
+    _reset();
+    s_volume_persisted_result = ESP_FAIL;
+    assert(ops.set_volume_persisted(40U) == ESP_FAIL);
+
+    _reset();
+    s_volume_persisted_result = ESP_ERR_INVALID_ARG;
+    assert(ops.set_volume_persisted(200U) == ESP_ERR_INVALID_ARG);
+}
+
+esp_err_t audio_service_get_volume(uint8_t *percent)
+{
+    if (s_volume_get_result != ESP_OK)
+    {
+        return s_volume_get_result;
+    }
+    assert(percent != NULL);
+    *percent = s_volume;
+    return ESP_OK;
+}
+
+esp_err_t audio_service_set_volume(uint8_t percent)
+{
+    ++s_volume_set_calls;
+    s_volume_set_value = percent;
+    if (s_volume_set_result == ESP_OK)
+    {
+        s_volume = percent;
+    }
+    return s_volume_set_result;
+}
+
+esp_err_t audio_service_set_volume_persisted(uint8_t percent)
+{
+    ++s_volume_persisted_calls;
+    s_volume_persisted_value = percent;
+    if (s_volume_persisted_result == ESP_OK)
+    {
+        s_volume = percent;
+    }
+    return s_volume_persisted_result;
+}
+
 int main(void)
 {
     _test_wifi_state_mapping();
     _test_wifi_actions();
     _test_bluetooth();
     _test_clock();
+    _test_volume();
+    _test_volume_forwarding();
     printf("app_runtime_control host tests passed\n");
     return 0;
 }

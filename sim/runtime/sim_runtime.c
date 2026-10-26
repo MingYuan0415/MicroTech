@@ -13,6 +13,7 @@
 #include "app_manager.h"
 #include "app_manager_config.h"
 #include "app_product_config.h"
+#include "audio_service.h"
 #include "connectivity_manager.h"
 #include "network_runtime.h"
 #include "chore_service.h"
@@ -173,6 +174,30 @@ static esp_err_t _cc_get_clock(const char **time_text, const char **date_text)
     return ESP_OK;
 }
 
+static esp_err_t _cc_get_volume(uint8_t *percent)
+{
+    if (percent == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return audio_service_get_volume(percent);
+}
+
+static esp_err_t _cc_set_volume(uint8_t percent)
+{
+    if (percent > 100U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return audio_service_set_volume(percent);
+}
+
+/* Storage belongs to audio_service, so the bridge only forwards the settle. */
+static esp_err_t _cc_set_volume_persisted(uint8_t percent)
+{
+    return audio_service_set_volume_persisted(percent);
+}
+
 static esp_err_t _input_register(void (*cb)(app_manager_key_t,
         app_manager_key_event_t,
         void *),
@@ -215,6 +240,9 @@ esp_err_t sim_runtime_boot(void)
     {
         return result;
     }
+    /* Adopt the stored speaker level the way the firmware does after
+     * audio_service_init(), so a restart in the simulator reproduces it. */
+    (void)audio_service_restore_volume();
     const factory_reset_service_config_t reset_config =
     {
         .restart = sim_backends_restart,
@@ -373,6 +401,9 @@ esp_err_t sim_runtime_boot(void)
             .set_bluetooth = _cc_set_bluetooth,
             .get_bluetooth_transitioning = _cc_bluetooth_transitioning,
             .get_clock = _cc_get_clock,
+            .get_volume = _cc_get_volume,
+            .set_volume = _cc_set_volume,
+            .set_volume_persisted = _cc_set_volume_persisted,
         },
         .max_resident_apps = product->app_max_resident_apps,
         .resident_policy = product->app_resident_policy,

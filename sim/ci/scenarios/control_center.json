@@ -80,7 +80,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 292,
-   "y": 190
+   "y": 262
   },
   {
    "cmd": "step",
@@ -90,7 +90,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 292,
-   "y": 190
+   "y": 262
   },
   {
    "cmd": "wait_idle"
@@ -110,7 +110,7 @@
    "cmd": "touch",
    "action": "down",
    "x": 184,
-   "y": 388
+   "y": 430
   },
   {
    "cmd": "step",
@@ -120,7 +120,7 @@
    "cmd": "touch",
    "action": "up",
    "x": 184,
-   "y": 388
+   "y": 430
   },
   {
    "cmd": "wait_idle"

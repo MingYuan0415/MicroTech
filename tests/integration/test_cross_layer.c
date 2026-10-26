@@ -18,6 +18,7 @@
 #include "host_device_link_service.h"
 #include "host_factory_reset_service.h"
 #include "host_power.h"
+#include "nv_storage.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
 #include "weather_service.h"
@@ -711,6 +712,43 @@ static esp_err_t _query_visible_slider_on_ui(void *arg)
     return host_lv_visible_slider_snapshot(&snapshot->value,
                                            &snapshot->pressed,
                                            &snapshot->disabled) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+typedef struct cc_slider_request
+{
+    size_t index;
+    int32_t value;
+    visible_slider_snapshot_t snapshot;
+} cc_slider_request_t;
+
+static esp_err_t _cc_slider_drag_on_ui(void *arg)
+{
+    cc_slider_request_t *request = arg;
+    return host_lv_visible_slider_at_drag(request->index, request->value) ?
+           ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _cc_slider_release_on_ui(void *arg)
+{
+    const cc_slider_request_t *request = arg;
+    return host_lv_visible_slider_at_release(request->index) ?
+           ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _cc_slider_snapshot_on_ui(void *arg)
+{
+    cc_slider_request_t *request = arg;
+    return host_lv_visible_slider_at_snapshot(request->index,
+            &request->snapshot.value,
+            &request->snapshot.pressed,
+            &request->snapshot.disabled) ? ESP_OK
+           : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t _cc_slider_count_on_ui(void *arg)
+{
+    return host_lv_visible_slider_at_count(arg) ? ESP_OK :
+           ESP_ERR_NOT_FOUND;
 }
 
 static esp_err_t _touch_on_ui(void *arg)
@@ -2215,8 +2253,8 @@ static void _test_optional_services_unavailable(void)
     _click_action("连接向导");
     assert(_wait_for_active(APP_MANAGER_ID_SETUP));
     assert(_wait_for_text("Wi-Fi 不可用"));
-    _click_back();
-    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    host_lv_complete_generic_animations();
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK, NULL, NULL) == ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
@@ -3722,6 +3760,65 @@ static esp_err_t _cc_show_twice_on_ui(void *arg)
     return ESP_OK;
 }
 
+/* Opening settles into CC_STATE_VISIBLE only when the entrance animation
+ * completes, and the surface ignores slider input before that. */
+static esp_err_t _cc_show_settled_on_ui(void *arg)
+{
+    (void)arg;
+    const esp_err_t result = app_manager_control_center_show();
+    host_lv_complete_generic_animations();
+    return result;
+}
+
+static esp_err_t _cc_set_ops_on_ui(void *arg)
+{
+    app_manager_control_center_set_ops(arg);
+    return ESP_OK;
+}
+
+static esp_err_t _cc_volume_get(uint8_t *percent)
+{
+    return audio_service_get_volume(percent);
+}
+
+static esp_err_t _cc_volume_set(uint8_t percent)
+{
+    return audio_service_set_volume(percent);
+}
+
+/* Storage belongs to audio_service, so the bridge only forwards the settle. */
+static esp_err_t _cc_volume_set_persisted(uint8_t percent)
+{
+    return audio_service_set_volume_persisted(percent);
+}
+
+static void _cc_slider(size_t index, cc_slider_request_t *request)
+{
+    request->index = index;
+    assert(app_manager_ui_call(_cc_slider_snapshot_on_ui, request,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _cc_slider_drag(size_t index, int32_t value)
+{
+    cc_slider_request_t request = {.index = index, .value = value};
+    assert(app_manager_ui_call(_cc_slider_drag_on_ui, &request,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _cc_slider_release(size_t index)
+{
+    cc_slider_request_t request = {.index = index};
+    assert(app_manager_ui_call(_cc_slider_release_on_ui, &request,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
+static void _step_cc_poll(void)
+{
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+}
+
 typedef struct cc_probe
 {
     lv_obj_t *button;
@@ -3821,6 +3918,298 @@ static void _test_control_center_band_and_entering_toggle(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
+static void _test_control_center_volume_row(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    const app_manager_control_center_ops_t ops =
+    {
+        .get_volume = _cc_volume_get,
+        .set_volume = _cc_volume_set,
+        .set_volume_persisted = _cc_volume_set_persisted,
+    };
+    assert(app_manager_ui_call(_cc_set_ops_on_ui, (void *)&ops,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+
+    /* Slider 0 is brightness, slider 1 is the speaker row; the row reports
+     * the service level and applies the knob value as it moves. */
+    cc_slider_request_t volume = {0};
+    _cc_slider(1U, &volume);
+    assert(volume.snapshot.value == (int32_t)host_audio_volume());
+    assert(!volume.snapshot.disabled);
+    char seeded[8];
+    (void)snprintf(seeded, sizeof(seeded), "%u%%", (unsigned)host_audio_volume());
+    assert(_ui_has_text(seeded));
+
+    size_t slider_count = 0U;
+    assert(app_manager_ui_call(_cc_slider_count_on_ui, &slider_count,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(slider_count == 2U);
+
+    /* The first step after opening always reaches the service: the throttle
+     * window is cleared when the surface opens. Nothing is persisted while the
+     * knob moves; the settle below stores exactly once. */
+    host_nv_clear_volume();
+    const unsigned sets_before = host_audio_set_volume_count();
+    _cc_slider_drag(1U, 25);
+    assert(host_audio_volume() == 25U);
+    assert(host_audio_set_volume_count() == sets_before + 1U);
+    assert(_ui_has_text("25%"));
+    assert(!host_nv_volume_present());
+    _cc_slider_release(1U);
+    assert(host_nv_volume_present());
+    assert(host_nv_volume() == 25U);
+    assert(host_nv_volume_set_count() == 1U);
+    /* Exactly one codec write for the release: the persisted setter applies
+     * the level, so the throttled resend must not run on top of it. */
+    assert(host_audio_set_volume_count() == sets_before + 2U);
+
+    /* Steps inside the throttle window still move the label but do not write
+     * the codec; releasing forces the value the finger stopped on. The host
+     * fake only advances its tick on an explicit timer step, so the whole
+     * sequence below stays inside one window. */
+    const unsigned throttled_at = host_audio_set_volume_count();
+    _cc_slider_drag(1U, 40);
+    _cc_slider_drag(1U, 55);
+    _cc_slider_drag(1U, 70);
+    assert(_ui_has_text("70%"));
+    assert(host_audio_set_volume_count() == throttled_at);
+    assert(host_audio_volume() == 25U);
+    assert(host_nv_volume() == 25U);
+    _cc_slider_release(1U);
+    assert(host_audio_volume() == 70U);
+    assert(host_audio_set_volume_count() == throttled_at + 1U);
+    assert(host_nv_volume() == 70U);
+    assert(host_nv_volume_set_count() == 2U);
+
+    /* Advancing the clock re-opens the window, so the next step writes
+     * immediately instead of waiting for a release. */
+    _step_cc_poll();
+    const unsigned reopened_at = host_audio_set_volume_count();
+    _cc_slider_drag(1U, 80);
+    assert(host_audio_set_volume_count() == reopened_at + 1U);
+    assert(host_audio_volume() == 80U);
+    /* The throttled step above still must not have reached the storage. */
+    assert(host_nv_volume() == 70U);
+    _cc_slider_release(1U);
+    assert(host_nv_volume() == 80U);
+    assert(host_nv_volume_set_count() == 3U);
+
+    /* An unchanged value is never re-sent. */
+    _step_cc_poll();
+    const unsigned stable_at = host_audio_set_volume_count();
+    _cc_slider_drag(1U, 80);
+    assert(host_audio_set_volume_count() == stable_at);
+    _cc_slider_release(1U);
+    assert(host_audio_set_volume_count() == stable_at);
+
+    /* An external change (another owner) is picked up by the poll as long as
+     * no drag owns the knob. */
+    assert(audio_service_set_volume(90U) == ESP_OK);
+    _step_cc_poll();
+    _cc_slider(1U, &volume);
+    assert(volume.snapshot.value == 90);
+    assert(_ui_has_text("90%"));
+
+    /* A refused request leaves the knob where the finger put it; the poll
+     * snaps it back to the level the service still reports. The refused level
+     * must not be persisted either, or a restart would adopt it. */
+    host_audio_fail_next_volume();
+    const unsigned refused_at = host_audio_set_volume_count();
+    const unsigned nv_before_refusal = host_nv_volume_set_count();
+    _cc_slider_drag(1U, 100);
+    assert(host_audio_set_volume_count() == refused_at + 1U);
+    _cc_slider_release(1U);
+    assert(host_audio_volume() == 90U);
+    assert(host_nv_volume_set_count() == nv_before_refusal);
+    assert(host_nv_volume() == 80U);
+    _step_cc_poll();
+    _cc_slider(1U, &volume);
+    assert(volume.snapshot.value == 90);
+    assert(_ui_has_text("90%"));
+
+    /* The brightness row keeps working beside it: three rows now exist in
+     * creation order only when a volume bridge is present, so slider 0 stays
+     * the brightness track. */
+    cc_slider_request_t brightness = {0};
+    _cc_slider(0U, &brightness);
+    assert(!brightness.snapshot.disabled);
+
+    /* No audio path: the row reports the level as unavailable instead of
+     * letting a drag pretend to work. */
+    host_audio_set_available(false);
+    _step_cc_poll();
+    _cc_slider(1U, &volume);
+    assert(volume.snapshot.disabled);
+    assert(_ui_has_text("--"));
+    const unsigned unavailable_at = host_audio_set_volume_count();
+    const unsigned nv_unavailable_at = host_nv_volume_set_count();
+    /* A disabled slider still emits VALUE_CHANGED when driven directly, so
+     * this also proves the handler ignores it. */
+    _cc_slider_drag(1U, 10);
+    _cc_slider_release(1U);
+    assert(host_audio_set_volume_count() == unavailable_at);
+    assert(host_nv_volume_set_count() == nv_unavailable_at);
+
+    /* Restoring the path brings the level and the control back. */
+    host_audio_set_available(true);
+    _step_cc_poll();
+    _cc_slider(1U, &volume);
+    assert(!volume.snapshot.disabled);
+    assert(volume.snapshot.value == 90);
+    assert(_ui_has_text("90%"));
+
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+
+/* A volume bridge missing either half must not build the row at all, and the
+ * card has to shrink by exactly one slider row plus its gap. */
+static void _test_control_center_volume_row_hidden(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    const app_manager_control_center_ops_t ops =
+    {
+        .get_volume = _cc_volume_get,
+    };
+    assert(app_manager_ui_call(_cc_set_ops_on_ui, (void *)&ops,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+
+    /* Only the brightness track survives, so the creation-order index the
+     * volume row would have occupied does not exist. */
+    size_t slider_count = 0U;
+    assert(app_manager_ui_call(_cc_slider_count_on_ui, &slider_count,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(slider_count == 1U);
+    cc_slider_request_t snapshot = {0};
+    _cc_slider(0U, &snapshot);
+    assert(!snapshot.snapshot.disabled);
+    assert(!host_lv_visible_slider_at_snapshot(1U, &snapshot.snapshot.value,
+            &snapshot.snapshot.pressed, &snapshot.snapshot.disabled));
+    assert(!_ui_has_text("60%"));
+
+    /* Card height is derived from the rows it built. No Wi-Fi, Bluetooth or
+     * volume bridge is wired here, so the card holds the header, the brightness
+     * row and the action row only: 70 + (60 + 12) + (56 + 12) = 210. */
+    int32_t height = 0;
+    assert(host_lv_sys_layer_card_height(&height));
+    assert(height == 210);
+
+    /* A write-only bridge must not build the row either: the surface needs both
+     * halves, so this layout is identical to the missing-bridge one. */
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    const app_manager_control_center_ops_t write_only =
+    {
+        .set_volume = _cc_volume_set,
+    };
+    assert(app_manager_ui_call(_cc_set_ops_on_ui, (void *)&write_only,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_slider_count_on_ui, &slider_count,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(slider_count == 1U);
+    int32_t write_only_height = 0;
+    assert(host_lv_sys_layer_card_height(&write_only_height));
+    assert(write_only_height == height);
+
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+
+/* The settings sound page is the user-facing volume control: a drag previews
+ * through set_volume and only the release persists. */
+static void _test_settings_sound_page_volume(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    _click_action("声音");
+    assert(_wait_for_text("拖动即时生效,松手保存"));
+    /* The page transition swallows pointer input until it settles. */
+    host_lv_complete_generic_animations();
+
+    /* One slider, range 0..100, seeded from the service. */
+    size_t slider_count = 0U;
+    assert(app_manager_ui_call(_cc_slider_count_on_ui, &slider_count,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(slider_count == 1U);
+    cc_slider_request_t volume = {0};
+    _cc_slider(0U, &volume);
+    assert(volume.snapshot.value == (int32_t)host_audio_volume());
+    assert(!volume.snapshot.disabled);
+    char seeded[8];
+    (void)snprintf(seeded, sizeof(seeded), "%u%%", (unsigned)host_audio_volume());
+    assert(_ui_has_text(seeded));
+
+    /* A drag applies the level but writes nothing to storage. */
+    host_nv_clear_volume();
+    const unsigned sets_before = host_audio_set_volume_count();
+    _cc_slider_drag(0U, 30);
+    assert(host_audio_volume() == 30U);
+    assert(host_audio_set_volume_count() == sets_before + 1U);
+    assert(_ui_has_text("30%"));
+    assert(!host_nv_volume_present());
+    assert(_ui_has_text("正在应用"));
+
+    /* The release persists the settled level exactly once. */
+    _cc_slider_release(0U);
+    assert(host_nv_volume_present());
+    assert(host_nv_volume() == 30U);
+    assert(host_nv_volume_set_count() == 1U);
+    assert(_ui_has_text("已保存"));
+
+    /* Leaving and re-entering reads the service back. Sub-page back goes
+     * through the same navigation op the edge gesture submits. */
+    host_lv_complete_generic_animations();
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK, NULL, NULL) == ESP_OK);
+    assert(_ui_has_text("30%"));
+    _click_action("声音");
+    assert(_wait_for_text("拖动即时生效,松手保存"));
+    host_lv_complete_generic_animations();
+    _cc_slider(0U, &volume);
+    assert(volume.snapshot.value == 30);
+
+    /* No audio path greys the control instead of faking a level. */
+    host_audio_set_available(false);
+    host_lv_complete_generic_animations();
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK, NULL, NULL) == ESP_OK);
+    _click_action("声音");
+    assert(_wait_for_text("音频不可用"));
+    host_lv_complete_generic_animations();
+    _cc_slider(0U, &volume);
+    assert(volume.snapshot.disabled);
+    host_audio_set_available(true);
+
+    host_lv_complete_generic_animations();
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK, NULL, NULL) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+}
+
 int main(void)
 {
     _initialize_stack();
@@ -3842,6 +4231,9 @@ int main(void)
     _test_system_task_switcher();
     _test_pull_refresh_hold();
     _test_control_center_band_and_entering_toggle();
+    _test_control_center_volume_row();
+    _test_control_center_volume_row_hidden();
+    _test_settings_sound_page_volume();
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
     assert(app_manager_navigation_deinit() == ESP_OK);

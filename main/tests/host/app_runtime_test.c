@@ -1005,6 +1005,35 @@ esp_err_t audio_service_deinit(void)
     return _test_result(TEST_EVENT_AUDIO_DEINIT);
 }
 
+esp_err_t audio_service_get_volume(uint8_t *percent)
+{
+    assert(percent != NULL);
+    *percent = 60U;
+    return ESP_OK;
+}
+
+esp_err_t audio_service_set_volume(uint8_t percent)
+{
+    assert(percent <= 100U);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_set_volume_persisted(uint8_t percent)
+{
+    assert(percent <= 100U);
+    return ESP_OK;
+}
+
+esp_err_t audio_service_restore_volume(void)
+{
+    return ESP_OK;
+}
+
+esp_err_t audio_service_reset_persisted_state(void)
+{
+    return ESP_OK;
+}
+
 esp_err_t sd_storage_service_register_mount_ops(
     const sd_storage_service_mount_ops_t *ops)
 {

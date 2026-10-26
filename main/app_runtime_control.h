@@ -10,13 +10,17 @@ extern "C" {
 #endif
 
 /**
- * @brief Build the control-center bridge from connectivity, Device Link, and
- *        time services.
+ * @brief Build the control-center bridge from connectivity, Device Link,
+ *        time, and audio services.
  *
- * The getters are cheap and non-blocking; the setters only enqueue work in the
- * owning service (Bluetooth uses a zero wait). Every function pointer is always
+ * The getters are cheap and non-blocking. Bluetooth and brightness setters only
+ * enqueue work in the owning service; set_volume performs the short codec
+ * control transfer the audio service serializes, so the surface rate-limits it
+ * while a drag is in progress, and set_volume_persisted asks audio_service to
+ * store the level once the drag settles. Volume storage itself belongs to
+ * audio_service; this bridge never touches it. Every function pointer is always
  * populated; a service that is not yet ready makes its getter return an error,
- * which the surface renders as an unavailable tile.
+ * which the surface renders as an unavailable tile or row.
  *
  * @return Application-manager control-center operations.
  */
