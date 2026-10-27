@@ -425,6 +425,11 @@ baseline would no longer describe its own page — this pollution once manifeste
 as `recorder/files/detail` consistently gaining an extra "storage card or audio
 unavailable". The cost is one cold start per page; when driving an external sim
 with `--no-launch` a single session is kept and this isolation is not applied.
+Because that mode gives up the isolation, it is the only way to reach a sim
+this run did not launch: a busy agent port is an error rather than an implicit
+attach, so a second review run cannot quietly drive the session a first run is
+navigating (that showed up as `settings/wifi` captures whose height and failures
+moved between runs).
 
 Every scenario gets an independent sim process + independent NVS directory (the
 resident-app policy matches a cold start). Scenarios live in `sim/ci/scenarios/`

@@ -564,6 +564,28 @@ def _masked_diff(a, b, masks, tol=24):
     return sum(hist[1:]) / float(ia.size[0] * ia.size[1])
 
 
+def _session_ownership(no_launch, port_busy, port):
+    """Decide how this run gets a sim agent, or fail instead of attaching.
+
+    A busy port means some other session already owns the agent: a leftover dev
+    sim or a second review run. Attaching to it silently would drive a tree
+    someone else navigates, with per-page isolation off and no fixture seed, so
+    the captures stop describing the page under review and the failures move
+    between runs. run_ci.sh fails fast for the same reason; an operator who
+    really wants the external session asks for it explicitly with --no-launch.
+
+    Returns True when the caller must launch and own a sim process. Raises
+    ValueError when the port is occupied and --no-launch was not requested.
+    """
+    if no_launch:
+        return False
+    if port_busy:
+        raise ValueError(
+            'port %d already has a live agent (stop the dev/review session '
+            'or pass --no-launch to drive it deliberately)' % port)
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--spec', default='sim/ci/review/spec.json')
@@ -594,7 +616,12 @@ def main():
         ap.error(str(error))
 
     proc = None
-    owns_sim = not args.no_launch and not _port_open('127.0.0.1', args.port)
+    try:
+        owns_sim = _session_ownership(args.no_launch,
+                                      _port_open('127.0.0.1', args.port),
+                                      args.port)
+    except ValueError as error:
+        ap.error(str(error))
     if owns_sim:
         proc = _launch_sim(args.build, args.port,
                            os.path.join(args.build, 'review_nvs'), args.shots,
@@ -641,10 +668,14 @@ def _run_spec(runner, spec, args, proc, owns_sim=False):
             runner = Runner('127.0.0.1', args.port, args.shots, None,
                             args.update)
             runner.connect()
+        if owns_sim:
             # A fresh process starts with an empty card. States whose seeds
             # only navigate (files/detail, the settings pages) relied on a
             # sibling page creating this tree first; recreate it here so a
-            # page never depends on another page having run before it.
+            # page never depends on another page having run before it. The
+            # first session needs the same seed as a relaunched one: a subset
+            # run (`--pages`) starts at page_index 0, and its files states
+            # reach for this tree without any sibling page having created it.
             runner.call('sim.sd', {'action': 'fixture'})
         page_index += 1
         for state in page.get('states', []):

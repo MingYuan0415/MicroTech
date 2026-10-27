@@ -391,6 +391,11 @@ lv_result_t lv_snapshot_take_to_draw_buf(lv_obj_t *object,
         lv_draw_buf_t *draw_buf);
 /** @brief Delete a fake object. */
 void lv_obj_delete(lv_obj_t *object);
+/** @brief No-op deferred delete post for layout-only host tests. */
+static inline void lv_obj_delete_async(lv_obj_t *object)
+{
+    (void)object;
+}
 /** @brief Delete all children from a fake object. */
 void lv_obj_clean(lv_obj_t *object);
 /** @brief Register a fake event callback. */

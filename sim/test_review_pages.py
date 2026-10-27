@@ -95,6 +95,22 @@ class ReviewPagesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             review._selected_pages(spec, None)
 
+    def test_busy_port_is_never_silently_reused(self):
+        """A second run must not attach to a sim another run is driving.
+
+        Attaching skips per-page isolation and the fixture seed, so captures
+        describe whatever the other session navigated to and the failures move
+        between runs. Explicit --no-launch stays the one way to drive an
+        external session.
+        """
+        self.assertTrue(review._session_ownership(False, False, 5002))
+        self.assertFalse(review._session_ownership(True, False, 5002))
+        self.assertFalse(review._session_ownership(True, True, 5002))
+        with self.assertRaises(ValueError) as caught:
+            review._session_ownership(False, True, 5002)
+        self.assertIn('5002', str(caught.exception))
+        self.assertIn('--no-launch', str(caught.exception))
+
     def test_wait_idle_checks_payload(self):
         runner = Mock()
         runner.call.return_value = {'idle': False}
