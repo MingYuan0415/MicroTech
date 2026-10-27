@@ -286,7 +286,10 @@ table then `request_refresh`, real parse chain), `sim.pause {enabled}`,
 `sim.set_wifi_profile {ssid, password?}` (saves one network through the
 production `connectivity_manager_request_save_profile`, so UI review can build a
 multi-network list without BLE provisioning; a missing password saves an open
-network), `sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}`
+network), `sim.start_wifi_sweep {ssid?}` (issues one real connect through the
+production manager so the fallback cursor becomes observable; `ssid` targets a
+named saved network and omitting it starts from the selected one),
+`sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}`
 (loads
 port scan records; `trigger` injects a real SCAN_DONE, `wait_scan` polls the
 port scan window to ensure the event lands mid-scan, `request` first issues one
@@ -301,7 +304,8 @@ asynchronous final states and same-path replacement protection),
 nv_storage access: the string verbs use the string API and `_u8` the scalar
 u8 API),
 `sim.connectivity` (connectivity_manager and wifi_service state, scan cache
-snapshot), `sim.switcher {get?|action?}` (task switcher
+snapshot, and the fallback cursor as `attempt_index`/`attempt_total`),
+`sim.switcher {get?|action?}` (task switcher
 visibility/display/clear), `sim.control_center {get?|action: show|hide}`
 (control center visibility/open/close; the top pull-down gesture can also be
 reproduced with `touch`/`drag`), `sim.set_bluetooth

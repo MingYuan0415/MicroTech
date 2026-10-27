@@ -384,6 +384,13 @@ class Runner:
             # so a following screenshot observes the published profile list.
             for _ in range(6):
                 self.call('sim.step', {'ms': 33})
+        elif cmd == 'start_wifi_sweep':
+            self.call('sim.start_wifi_sweep',
+                      {k: step[k] for k in ('ssid',) if k in step})
+            # The manager admits the request on its worker and the executor then
+            # reports CONNECTING, so a screenshot taken now sees the sweep.
+            for _ in range(6):
+                self.call('sim.step', {'ms': 33})
         elif cmd == 'set_wifi_scan':
             self.call('sim.set_wifi_scan',
                       {k: step[k] for k in

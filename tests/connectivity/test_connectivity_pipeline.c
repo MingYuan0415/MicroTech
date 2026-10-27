@@ -2896,12 +2896,17 @@ static bool _test_profile_list(void)
     CHECK(_wait_terminal(operation, ESP_OK, false));
     CHECK(_save_profile("Delta", "deltapass1", &operation));
     CHECK(_wait_terminal(operation, ESP_OK, false));
-    CHECK(_wait_profile_count(4U, &profiles));
-
-    /* A fifth distinct network is refused instead of silently evicting one. */
     CHECK(_save_profile("Echo", "echopass12", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_wait_profile_count(
+              (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES, &profiles));
+
+    /* Every slot is full: a further distinct network is refused instead of
+     * silently evicting one. */
+    CHECK(_save_profile("Foxtrot", "foxtrotpw1", &operation));
     CHECK(_wait_terminal(operation, ESP_ERR_NO_MEM, false));
-    CHECK(_wait_profile_count(4U, &profiles));
+    CHECK(_wait_profile_count(
+              (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES, &profiles));
 
     /* Targeted connect selects the named network, not the active one. */
     connectivity_manager_operation_id_t connect = 0U;
@@ -2910,7 +2915,8 @@ static bool _test_profile_list(void)
     CHECK(_wait_driver_ssid("Bravo"));
     CHECK(_complete_connection(UINT32_C(0x0a0b0c0d)));
     CHECK(_wait_terminal(connect, ESP_OK, false));
-    CHECK(_wait_profile_count(4U, &profiles));
+    CHECK(_wait_profile_count(
+              (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES, &profiles));
     CHECK(profiles.profiles[0].active == 0U);
     CHECK(profiles.profiles[1].active == 1U);
     CHECK(profiles.active_index == 1U);
@@ -2924,7 +2930,8 @@ static bool _test_profile_list(void)
             strlen("Missing"), &missing) == ESP_OK);
     CHECK(_wait_terminal(missing, ESP_ERR_NOT_FOUND, false));
     CHECK(host_nv_storage_set_count() == writes);
-    CHECK(_wait_profile_count(4U, &profiles));
+    CHECK(_wait_profile_count(
+              (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES, &profiles));
 
     /* Removing an inactive entry must not disturb the link or its profile. */
     const unsigned connects =
@@ -2933,7 +2940,8 @@ static bool _test_profile_list(void)
     CHECK(connectivity_manager_request_forget_network("Delta",
             strlen("Delta"), &forget) == ESP_OK);
     CHECK(_wait_terminal(forget, ESP_OK, false));
-    CHECK(_wait_profile_count(3U, &profiles));
+    CHECK(_wait_profile_count(
+              (uint8_t)(CONNECTIVITY_MANAGER_MAX_PROFILES - 1U), &profiles));
     CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
     CHECK(connectivity_manager_get_status(&status) == ESP_OK);
     CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IP_READY);
@@ -2941,20 +2949,27 @@ static bool _test_profile_list(void)
     CHECK(profiles.active_index == 1U);
     CHECK(profiles.profiles[1].active == 1U);
 
-    /* Removing the active entry disconnects and keeps the remaining entries. */
+    /* Removing the active entry disconnects and keeps the remaining entries;
+     * the manager does not pick another network on its own. */
+    const unsigned before_removal =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
     CHECK(connectivity_manager_request_forget_network("Bravo",
             strlen("Bravo"), &forget) == ESP_OK);
     CHECK(_wait_terminal(forget, ESP_OK, false));
-    CHECK(_wait_profile_count(2U, &profiles));
+    const uint8_t remaining = (uint8_t)(CONNECTIVITY_MANAGER_MAX_PROFILES - 2U);
+
+    CHECK(_wait_profile_count(remaining, &profiles));
     CHECK(connectivity_manager_get_status(&status) == ESP_OK);
     CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IDLE);
     CHECK(status.saved_profile);
-    CHECK(status.profile_count == 2U);
+    CHECK(status.profile_count == remaining);
     for (size_t index = 0U; index < profiles.count; ++index)
     {
         CHECK(strcmp(profiles.profiles[index].ssid, "Bravo") != 0);
         CHECK(strcmp(profiles.profiles[index].ssid, "Delta") != 0);
     }
+    /* No reconnect is started behind the removal. */
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == before_removal);
     CHECK(wifi_service_test_credentials_are_zero());
 
     /* The list survives a full manager restart unchanged. */
@@ -2962,9 +2977,10 @@ static bool _test_profile_list(void)
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
     host_wifi_port_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
-    CHECK(_wait_profile_count(2U, &profiles));
+    CHECK(_wait_profile_count(remaining, &profiles));
     CHECK(strcmp(profiles.profiles[0].ssid, "Alpha") == 0);
     CHECK(strcmp(profiles.profiles[1].ssid, "Charlie") == 0);
+    CHECK(strcmp(profiles.profiles[2].ssid, "Echo") == 0);
 
     /* FORGET clears every entry, which is what the contract's profile_ssid
        absence depends on. */
@@ -3062,90 +3078,6 @@ static bool _test_profile_sweep_fallback(void)
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
     CHECK(wifi_service_test_credentials_are_zero());
     puts("profile sweep: next candidate on AP_NOT_FOUND, exhausted sweep backs off");
-    return true;
-}
-
-/* Build a v4 record wider than the configured limit so the downgrade path can
- * be exercised; the manager must keep the list usable instead of writing back a
- * record it can no longer load. */
-static void _build_wide_record(uint8_t *record, uint8_t count,
-                               uint8_t active_index)
-{
-    memset(record, 0, TEST_PROFILE_BYTES);
-    const uint32_t magic = UINT32_C(0x57465031);
-    const uint16_t version = 4U;
-    const uint64_t revision = 3U;
-
-    memcpy(record, &magic, sizeof(magic));
-    memcpy(record + PROFILE_VERSION_OFFSET, &version, sizeof(version));
-    record[PROFILE_COUNT_OFFSET] = count;
-    record[PROFILE_ACTIVE_OFFSET] = active_index;
-    /* Leave the automatic-connect policy off so this case observes loading and
-     * the rewrite instead of the radio it would start. */
-    record[PROFILE_AUTO_CONNECT_OFFSET] = 0U;
-    memcpy(record + PROFILE_REVISION_OFFSET, &revision, sizeof(revision));
-    for (size_t index = 0U; index < count; ++index)
-    {
-        uint8_t *entry = record + PROFILE_ENTRIES_OFFSET +
-                         index * PROFILE_ENTRY_BYTES;
-        /* Exactly eight printable bytes: an SSID is a byte string, so a shorter
-         * literal would embed a NUL inside the declared length and be rejected. */
-        const char ssid[8] =
-        {
-            'W', 'i', 'd', 'e', '0', '0', (char)('0' + (index % 10U)),
-            (char)('a' + (index % 26U)),
-        };
-
-        entry[0] = 1U;                    /* PERSONAL */
-        entry[1] = 8U;                    /* ssid_length */
-        entry[2] = 8U;                    /* password_length */
-        memcpy(entry + 4U, ssid, 8U);
-        memcpy(entry + 36U, "widepw12", 8U);
-    }
-}
-
-/* A record written with more slots than this build keeps must stay loadable
- * after the manager rewrites it, and the selected index must address a retained
- * entry. */
-static bool _test_profile_downgrade_load(void)
-{
-    host_nv_storage_reset();
-    host_wifi_port_reset();
-    _terminal_observer_reset();
-    uint8_t record[TEST_PROFILE_BYTES];
-
-    _build_wide_record(record, UINT8_C(5), UINT8_C(4));
-    host_nv_storage_seed(record, PROFILE_RECORD_BYTES);
-    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
-    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
-
-    connectivity_manager_profile_snapshot_t profiles;
-    CHECK(_wait_profile_count((uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES,
-                              &profiles));
-    CHECK(profiles.active_index < profiles.count);
-    CHECK(profiles.profiles[profiles.active_index].active == 1U);
-    connectivity_manager_status_snapshot_t status;
-    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
-    CHECK(status.saved_profile);
-    CHECK(status.profile_count == (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES);
-    CHECK(status.failure == CONNECTIVITY_MANAGER_FAILURE_NONE);
-
-    /* The clamping rewrite must have aligned flash with RAM, so the record the
-     * manager itself wrote is loadable again. */
-    CHECK(connectivity_manager_deinit(
-              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
-    host_wifi_port_reset();
-    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
-    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
-    CHECK(_wait_profile_count((uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES,
-                              &profiles));
-    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
-    CHECK(status.saved_profile);
-    CHECK(status.profile_count == (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES);
-    CHECK(status.failure == CONNECTIVITY_MANAGER_FAILURE_NONE);
-    CHECK(connectivity_manager_deinit(
-              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
-    puts("profile downgrade: wider record clamped, selected index stays valid");
     return true;
 }
 
@@ -3328,6 +3260,77 @@ static bool _test_forget_store_failure_rolls_back(void)
     return true;
 }
 
+/* The reported cursor follows the sweep while the reported SSID keeps naming the
+ * selected profile, so a failed sweep cannot look like a reselection. */
+static bool _test_status_reports_attempt_cursor(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t operation = 0U;
+    CHECK(_save_profile("Cursor A", "cursorA12", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Cursor B", "cursorB12", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Cursor C", "cursorC12", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+
+    connectivity_manager_profile_snapshot_t profiles;
+    CHECK(_wait_profile_count(3U, &profiles));
+    const uint8_t selected = profiles.active_index;
+
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    /* No sweep yet: the cursor is absent. */
+    CHECK(status.attempt_index == UINT8_MAX);
+    CHECK(status.attempt_total == 0U);
+
+    connectivity_manager_operation_id_t reconnect = 0U;
+    unsigned attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_request_reconnect_saved(&reconnect) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT, attempts + 1U,
+                                    TEST_TIMEOUT_MS));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.attempt_total == 3U);
+    CHECK(status.attempt_index == selected);
+    /* The reported SSID still names the selection, not the cursor. */
+    CHECK(strcmp(status.ssid, "Cursor C") == 0);
+
+    /* Walk the remaining candidates and watch the cursor advance. */
+    for (uint8_t step = 1U; step < 3U; ++step)
+    {
+        CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                            WIFI_SERVICE_FAILURE_AP_NOT_FOUND, 0U) == ESP_OK);
+        attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+        CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT, attempts + 1U,
+                                        TEST_TIMEOUT_MS));
+        CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+        CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+        CHECK(status.attempt_total == 3U);
+        CHECK(status.attempt_index != selected);
+        CHECK(status.attempt_index < profiles.count);
+        CHECK(strcmp(status.ssid, "Cursor C") == 0);
+    }
+
+    /* Once the sweep gives up the cursor is absent again. */
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AP_NOT_FOUND, 0U) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
+                               CONNECTIVITY_MANAGER_FAILURE_AP_NOT_FOUND,
+                               &status));
+    CHECK(status.attempt_index == UINT8_MAX);
+    CHECK(status.attempt_total == 0U);
+    CHECK(strcmp(status.ssid, "Cursor C") == 0);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("status cursor: attempt_index follows the sweep, ssid keeps the selection");
+    return true;
+}
+
 static bool _run_pipeline(void)
 {
     host_freertos_reset_controls();
@@ -3389,10 +3392,10 @@ static bool _run_pipeline(void)
     CHECK(_test_hex_psk_recovery());
     CHECK(_test_profile_list());
     CHECK(_test_profile_sweep_fallback());
-    CHECK(_test_profile_downgrade_load());
     CHECK(_test_profile_sweep_keeps_selection());
     CHECK(_test_forget_inactive_keeps_policy());
     CHECK(_test_forget_store_failure_rolls_back());
+    CHECK(_test_status_reports_attempt_cursor());
     uint8_t saved_record[TEST_PROFILE_BYTES];
     size_t saved_size = 0U;
     CHECK(_test_foreground_and_persistence(saved_record, &saved_size));

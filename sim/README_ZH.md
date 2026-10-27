@@ -220,6 +220,8 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `sim.set_wifi_profile {ssid, password?}`（经生产接口
 `connectivity_manager_request_save_profile` 保存一条已保存网络，使 UI 评审可在
 无 BLE 配网的情况下构造多网络列表；省略 password 时保存开放网络）、
+`sim.start_wifi_sweep {ssid?}`（经生产管理器发起一次真实连接，使回退游标可被观察；
+`ssid` 指定某个已保存网络，省略时从被选中的档位开始）、
 `sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}`（灌 port
 扫描记录；`trigger` 注入真实 SCAN_DONE，`wait_scan` 轮询 port 扫描窗口确保事件
 落在扫描中，`request` 先经 connectivity_manager 发起一次扫描）、
@@ -229,8 +231,8 @@ generation；`svc` 同时返回目标路径列表、operation_id/pending/last_er
 当前存储及已发布索引的 generation/revision，用于核对异步终态和同路径替换保护）、
 `sim.nvs {action: get|set|get_u8|set_u8|erase, key, value?}`（真 nv_storage
 访问：字符串动词走字符串 API，`_u8` 走标量 u8 API）、`sim.connectivity`
-（connectivity_manager 与 wifi_service 状态、
-扫描缓存快照）、`sim.switcher {get?|action?}`（任务切换器可见性/显示/清空）、
+（connectivity_manager 与 wifi_service 状态、扫描缓存快照，以及以
+`attempt_index`/`attempt_total` 上报的回退游标）、`sim.switcher {get?|action?}`（任务切换器可见性/显示/清空）、
  `sim.control_center {get?|action: show|hide}`（控制中心可见性/打开/关闭；顶部下拉手势
  也可用 `touch`/`drag` 复现）、
 `sim.set_bluetooth {enabled?,bound?,active?,client_connected?,window_remaining_ms?}`、

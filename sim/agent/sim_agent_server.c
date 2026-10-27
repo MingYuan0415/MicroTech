@@ -935,6 +935,40 @@ static cJSON *_handle(cJSON *request, bool *ok)
             }
         }
     }
+    else if (strcmp(method, "sim.start_wifi_sweep") == 0)
+    {
+        /* Drive the real fallback path so UI review can observe a sweep: the
+         * connect request is issued through the production manager and the
+         * executor is left attempting it, which is the state a device reports
+         * while it walks the saved list. Nothing is fabricated. */
+        const cJSON *ssid = params != NULL ?
+                            cJSON_GetObjectItemCaseSensitive(params, "ssid") : NULL;
+        const char *ssid_text = cJSON_GetStringValue(ssid);
+        connectivity_manager_operation_id_t operation = 0U;
+        esp_err_t sweep_result;
+
+        if (ssid_text != NULL && strlen(ssid_text) > 0U &&
+                strlen(ssid_text) <= CONNECTIVITY_MANAGER_SSID_MAX_BYTES)
+        {
+            sweep_result = connectivity_manager_request_connect_network(
+                               ssid_text, strlen(ssid_text), &operation);
+        }
+        else
+        {
+            sweep_result = connectivity_manager_request_reconnect_saved(
+                               &operation);
+        }
+        if (sweep_result != ESP_OK)
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error",
+                                    esp_err_to_name(sweep_result));
+        }
+        else
+        {
+            cJSON_AddNumberToObject(result, "operation", (double)operation);
+        }
+    }
     else if (strcmp(method, "sim.set_wifi_scan") == 0)
     {
         const cJSON *records = cJSON_GetObjectItemCaseSensitive(params,
@@ -1115,6 +1149,14 @@ static cJSON *_handle(cJSON *request, bool *ok)
             cJSON_AddBoolToObject(result, "auto_connect",
                                   status.auto_connect);
             cJSON_AddBoolToObject(result, "manual_hold", status.manual_hold);
+            cJSON_AddNumberToObject(result, "profile_count",
+                                    (double)status.profile_count);
+            /* Fallback cursor: which saved network the sweep is on, and how many
+             * it will visit. UINT8_MAX with total 0 means no sweep runs. */
+            cJSON_AddNumberToObject(result, "attempt_index",
+                                    (double)status.attempt_index);
+            cJSON_AddNumberToObject(result, "attempt_total",
+                                    (double)status.attempt_total);
             cJSON_AddNumberToObject(result, "scan_state_running",
                                     (double)scan.running);
             cJSON_AddNumberToObject(result, "scan_records",

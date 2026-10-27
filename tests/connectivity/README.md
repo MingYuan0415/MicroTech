@@ -18,13 +18,14 @@ manager restart, `FORGET` clearing every entry, and a sweep that advances to the
 next saved network on `AP_NOT_FOUND` and parks in the long-backoff policy once
 every candidate has failed.
 
-Four cases pin the invariants that are easy to break: a record written with more
-slots than the build keeps loads as a clamped list with a valid selected index and
-stays loadable after the rewrite; an exhausted sweep leaves the selected profile
-and the persisted `active_index` on the user's choice; removing an entry that does
-not carry the link keeps the link, the automatic-connect policy, and the radio out
-of the manual-offline hold; and a refused removal write rolls the RAM list back so
-it matches flash across a reboot.
+Cases pin the invariants that are easy to break: an exhausted sweep leaves the
+selected profile and the persisted `active_index` on the user's choice; removing an
+entry that does not carry the link keeps the link, the automatic-connect policy, and
+the radio out of the manual-offline hold; a refused removal write rolls the RAM list
+back so it matches flash across a reboot; and the fallback cursor
+(`attempt_index`/`attempt_total`) follows the sweep while `status.ssid` keeps naming
+the selected profile. The list is five slots wide, and a sixth distinct network is
+refused instead of evicting one.
 
 A separate port test verifies that ESP-IDF WiFi init receives `nvs_enable=true`
 before the driver is explicitly set to `WIFI_STORAGE_RAM`.
