@@ -92,11 +92,18 @@ def _launch_sim(build, port, nvs, shots, sd):
     shutil.rmtree(sd, ignore_errors=True)
     os.makedirs(shots, exist_ok=True)
     log = open(os.path.join(shots, 'review_sim.log'), 'wb')
+    # 模拟存储根同样按会话隔离：残留的天气快照会让本次会话一启动就带着
+    # 上一次的实况，空态断言随之失真。
+    data = os.path.join(build, 'review_data')
+    shutil.rmtree(data, ignore_errors=True)
+    environment = dict(os.environ)
+    environment['SIM_DATA_DIR'] = data
     proc = subprocess.Popen(
         [os.path.join(build, 'microtech_sim'), '--headless', '--ci',
          '--res-dir', os.path.join(build, 'sim_res_fs'),
          '--nvs-dir', nvs, '--sd-dir', sd, '--out-dir', shots,
-         '--agent-port', str(port)], stdout=log, stderr=subprocess.STDOUT)
+         '--agent-port', str(port)], stdout=log, stderr=subprocess.STDOUT,
+        env=environment)
     for _ in range(60):
         if _port_open('127.0.0.1', port):
             _launched.append(proc)

@@ -42,7 +42,11 @@ for scenario in "$ROOT"/sim/ci/scenarios/*.json; do
     name="$(basename "$scenario" .json)"
     nvs="$BUILD/ci_nvs_$name"
     sd="/tmp/mci_$(printf %s "$name" | cut -c1-8)"
-    rm -rf "$nvs" "$sd"
+    # 模拟存储根（天气缓存等）同样按场景隔离：残留快照会让下一个场景
+    # 冷启动就带着上一条场景的天气，空态断言随之失败。
+    data="$BUILD/ci_data_$name"
+    rm -rf "$nvs" "$sd" "$data"
+    SIM_DATA_DIR="$data" \
     "$BUILD/microtech_sim" --headless --ci --res-dir "$BUILD/sim_res_fs" \
         --nvs-dir "$nvs" --sd-dir "$sd" --out-dir "$BUILD/shots" --agent-port 5002 \
         >"$BUILD/sim_ci_$name.log" 2>&1 &

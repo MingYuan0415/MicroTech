@@ -82,6 +82,12 @@ CLI：`--headless`、`--ci`、`--res-dir <staged 资源目录>`、`--nvs-dir <NV
 `--swipe x1,y1,x2,y2[,steps]`、`--ci-step N`。`--frames N` 在 CI 中每次推进 33 ms，
 非 CI 中每次泵事件并呈现；`0` 表示驻留。截图只有显式指定 `--screenshot` 才生成，
 未指定 `--out-dir` 时写入当前目录，否则写入该目录。
+模拟存储（天气快照缓存及其它运行时数据文件）以 `SIM_DATA_DIR` 为根目录，默认是
+进程工作目录下的相对目录 `sim_data`，因此直接运行二进制会把它留在仓库根目录。
+各启动入口将产物统一收拢到 `build/` 下：`sim/dev.py` 使用 `build/sim/data` 并跨
+重启保留，与真机保留 `/data` 的语义一致；`sim/ci/run_ci.sh` 与
+`sim/tools/review_pages.py` 则为每条场景或每次审查会话分配各自的空目录，因为残留的
+快照会让下一次冷启动直接带上上一条场景的天气，使其空态断言失败。
 Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001）见
 `sim/tools/simctl.py`。
 

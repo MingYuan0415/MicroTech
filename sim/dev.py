@@ -24,6 +24,7 @@ BINARY = os.path.join(BUILD, 'microtech_sim')
 RES_DIR = os.path.join(BUILD, 'sim_res_fs')
 NVS_DIR = os.path.join(BUILD, 'dev_nvs')
 OUT_DIR = os.path.join(BUILD, 'shots')
+DATA_DIR = os.path.join(BUILD, 'data')
 PID_FILE = os.path.join(BUILD, 'dev.pid')
 LOG_FILE = os.path.join(BUILD, 'dev_session.log')
 PORT = 5002
@@ -295,8 +296,12 @@ def start_session(navigate=None, headless=False, online=False):
         launch_mode = '固定尺寸窗口'
     print('  启动会话：%s' % launch_mode)
     log = open(LOG_FILE, 'w')
+    # 天气缓存等模拟存储根固定落在 build/ 下，避免产物落在仓库根目录；
+    # 开发会话按设备语义保留跨重启状态，因此这里只补默认值、不清空。
+    environment = dict(os.environ)
+    environment.setdefault('SIM_DATA_DIR', DATA_DIR)
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                            start_new_session=True)
+                            start_new_session=True, env=environment)
     log.close()
     open(PID_FILE, 'w').write(str(proc.pid))
     if not _wait_socket(60, proc):

@@ -104,9 +104,17 @@ CLI: `--headless`, `--ci`, `--res-dir <staged resource directory>`,
 33 ms per iteration; outside CI each iteration pumps events and presents; `0`
 means residency. A screenshot is only produced when `--screenshot` is given
 explicitly; without `--out-dir` it goes to the current directory, otherwise
-into that directory. The agent protocol (TCP JSON-RPC, default
-`127.0.0.1:5002`, avoiding the on-device baseline port 5001) is documented in
-`sim/tools/simctl.py`.
+into that directory. Simulated storage (the weather snapshot cache and other
+runtime data files) is rooted at `SIM_DATA_DIR`, which defaults to the
+relative directory `sim_data` in the process working directory, so a direct
+run leaves it in the repository root. The launchers keep every artifact under
+`build/`: `sim/dev.py` uses `build/sim/data` and keeps it across restarts the
+way a device keeps `/data`, while `sim/ci/run_ci.sh` and
+`sim/tools/review_pages.py` give each scenario or review session its own
+emptied directory, because a retained snapshot would make the next cold start
+report the previous scenario's weather and break its empty-state asserts. The
+agent protocol (TCP JSON-RPC, default `127.0.0.1:5002`, avoiding the on-device
+baseline port 5001) is documented in `sim/tools/simctl.py`.
 
 ## Weather Integration (Live Network Data)
 
