@@ -22,6 +22,9 @@ typedef enum
     HOST_CONNECTIVITY_MANAGER_CALL_CANCEL,
     HOST_CONNECTIVITY_MANAGER_CALL_GET_STATUS,
     HOST_CONNECTIVITY_MANAGER_CALL_GET_SCAN_SNAPSHOT,
+    HOST_CONNECTIVITY_MANAGER_CALL_CONNECT_NETWORK,
+    HOST_CONNECTIVITY_MANAGER_CALL_FORGET_NETWORK,
+    HOST_CONNECTIVITY_MANAGER_CALL_GET_PROFILES,
     HOST_CONNECTIVITY_MANAGER_CALL_COUNT,
 } host_connectivity_manager_call_t;
 
@@ -47,6 +50,10 @@ esp_err_t host_connectivity_manager_publish_status(
 /** @brief Cache and publish a canonical scan snapshot. */
 esp_err_t host_connectivity_manager_publish_scan(
     const connectivity_manager_scan_snapshot_t *snapshot);
+
+/** @brief Replace the cached saved-network list without publishing. */
+esp_err_t host_connectivity_manager_cache_profiles(
+    const connectivity_manager_profile_snapshot_t *snapshot);
 
 /** @brief Publish a scan payload without changing the canonical cache. */
 esp_err_t host_connectivity_manager_publish_raw_scan(const void *payload,

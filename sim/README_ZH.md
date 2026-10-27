@@ -217,6 +217,9 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `sim.set_wifi {state}`（connected/disconnected）、`sim.set_imu {pitch,roll}`（度）、
 `sim.set_weather {endpoint,status,body}`
 （灌 sim_http 脚本表后 `request_refresh`，真解析链）、`sim.pause {enabled}`、
+`sim.set_wifi_profile {ssid, password?}`（经生产接口
+`connectivity_manager_request_save_profile` 保存一条已保存网络，使 UI 评审可在
+无 BLE 配网的情况下构造多网络列表；省略 password 时保存开放网络）、
 `sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}`（灌 port
 扫描记录；`trigger` 注入真实 SCAN_DONE，`wait_scan` 轮询 port 扫描窗口确保事件
 落在扫描中，`request` 先经 connectivity_manager 发起一次扫描）、

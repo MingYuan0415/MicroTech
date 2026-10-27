@@ -19,6 +19,32 @@
 #include <time.h>
 
 #define TEST_TIMEOUT_MS 5000U
+/* Storage width for one persisted profile record. The v4 saved-network
+ * record reserves five entry slots, so tests must not assume the
+ * previous 168-byte single-entry layout. */
+#define TEST_PROFILE_BYTES 1024U
+
+/* v4 saved-network record layout: fixed header, then five entry slots. */
+enum
+{
+    PROFILE_VERSION_OFFSET = 4U,
+    PROFILE_COUNT_OFFSET = 6U,
+    PROFILE_ACTIVE_OFFSET = 7U,
+    PROFILE_AUTO_CONNECT_OFFSET = 8U,
+    PROFILE_RESERVED_OFFSET = 9U,
+    PROFILE_REVISION_OFFSET = 16U,
+    PROFILE_SYNC_ID_OFFSET = 24U,
+    PROFILE_SYNC_DIGEST_OFFSET = 32U,
+    PROFILE_SYNC_VALID_OFFSET = 64U,
+    PROFILE_SYNC_RESERVED_OFFSET = 65U,
+    PROFILE_ENTRIES_OFFSET = 72U,
+    PROFILE_ENTRY_BYTES = 103U,
+    PROFILE_ENTRY_RESERVED_OFFSET = PROFILE_ENTRIES_OFFSET + 3U,
+    PROFILE_ENTRY_SSID_OFFSET = PROFILE_ENTRIES_OFFSET + 4U,
+    PROFILE_ENTRY_PASSWORD_OFFSET = PROFILE_ENTRIES_OFFSET + 36U,
+    PROFILE_ENTRY_TRAILING_OFFSET = PROFILE_ENTRIES_OFFSET + 101U,
+    PROFILE_RECORD_BYTES = 592U,
+};
 #define UI_TIMEOUT_MS   2000U
 #define STATUS_STATE_COUNT \
     ((size_t)CONNECTIVITY_MANAGER_STATE_SUSPENDED + 1U)
@@ -1138,7 +1164,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(status.profile_persisted);
     CHECK(status.auto_connect);
     CHECK(host_nv_storage_set_count() == 1U);
-    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
+    CHECK(host_nv_storage_copy(saved_record, TEST_PROFILE_BYTES, saved_size));
     CHECK(*saved_size > 0U);
     CHECK(_run_on_ui(_ui_barrier, NULL));
 
@@ -1166,7 +1192,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, &status));
     CHECK(status.profile_revision == 2U);
     CHECK(status.applied_client_sync_id == UINT64_C(0x1234));
-    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
+    CHECK(host_nv_storage_copy(saved_record, TEST_PROFILE_BYTES, saved_size));
 
     const unsigned idempotent_connects =
         host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
@@ -1211,7 +1237,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(connectivity_manager_get_status(&status) == ESP_OK);
     CHECK(status.profile_revision == 4U);
     CHECK(host_nv_storage_set_count() == policy_writes);
-    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
+    CHECK(host_nv_storage_copy(saved_record, TEST_PROFILE_BYTES, saved_size));
 
     const connectivity_manager_credentials_t conflicting_sync =
     {
@@ -1310,7 +1336,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
     CHECK(_complete_connection(UINT32_C(0x0302a8c0)));
     CHECK(_run_on_ui(_ui_barrier, NULL));
-    CHECK(host_nv_storage_copy(saved_record, 256U, saved_size));
+    CHECK(host_nv_storage_copy(saved_record, TEST_PROFILE_BYTES, saved_size));
 
     host_nv_storage_fail_next_set(ESP_FAIL);
     CHECK(_request_personal_connect("Candidate AP", "candidate1",
@@ -1323,7 +1349,7 @@ static bool _test_foreground_and_persistence(uint8_t saved_record[],
     CHECK(strcmp(status.ssid, "Candidate AP") == 0);
     CHECK(status.saved_profile);
     CHECK(!status.profile_persisted);
-    uint8_t retained[256];
+    uint8_t retained[TEST_PROFILE_BYTES];
     size_t retained_size = 0U;
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == *saved_size);
@@ -1696,7 +1722,7 @@ static bool _test_invalid_profile_record(const uint8_t record[], size_t size)
     CHECK(host_nv_storage_erase_count() == 0U);
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
-    uint8_t retained[256];
+    uint8_t retained[TEST_PROFILE_BYTES];
     size_t retained_size = 0U;
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == size);
@@ -1726,40 +1752,49 @@ static bool _test_invalid_profile(const uint8_t saved_record[],
                                   size_t saved_size)
 {
     connectivity_manager_status_snapshot_t status;
-    enum
-    {
-        PROFILE_VERSION_OFFSET = 4U,
-        PROFILE_RESERVED_OFFSET = 10U,
-        PROFILE_SSID_OFFSET = 12U,
-        PROFILE_PASSWORD_OFFSET = 44U,
-        PROFILE_TRAILING_RESERVED_OFFSET = 108U,
-        PROFILE_REVISION_OFFSET = 112U,
-        PROFILE_SYNC_DIGEST_OFFSET = 128U,
-        PROFILE_SYNC_VALID_OFFSET = 160U,
-        PROFILE_SYNC_RESERVED_OFFSET = 161U,
-    };
-    uint8_t corrupted[256];
-    CHECK(saved_size == 168U);
+    uint8_t corrupted[TEST_PROFILE_BYTES];
+    CHECK(saved_size == PROFILE_RECORD_BYTES);
     CHECK(saved_size <= sizeof(corrupted));
 
     memcpy(corrupted, saved_record, saved_size);
     corrupted[PROFILE_VERSION_OFFSET] ^= UINT8_C(0x7f);
     CHECK(_test_invalid_profile_record(corrupted, saved_size));
 
+    /* A saved slot whose SSID is empty must be rejected. */
     memcpy(corrupted, saved_record, saved_size);
-    corrupted[PROFILE_SSID_OFFSET] = 0U;
+    corrupted[PROFILE_ENTRY_SSID_OFFSET] = 0U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    /* A personal entry with an empty password must be rejected. */
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_ENTRY_PASSWORD_OFFSET] = 0U;
     CHECK(_test_invalid_profile_record(corrupted, saved_size));
 
     memcpy(corrupted, saved_record, saved_size);
-    corrupted[PROFILE_PASSWORD_OFFSET] = 0U;
+    corrupted[PROFILE_ENTRY_RESERVED_OFFSET] = 1U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_ENTRY_TRAILING_OFFSET] = 1U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    /* The count must stay inside the reserved slot array. */
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_COUNT_OFFSET] = 6U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    /* An empty list cannot select an active entry. */
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_COUNT_OFFSET] = 0U;
+    CHECK(_test_invalid_profile_record(corrupted, saved_size));
+
+    /* The active index must address a saved entry. */
+    memcpy(corrupted, saved_record, saved_size);
+    corrupted[PROFILE_ACTIVE_OFFSET] = 1U;
     CHECK(_test_invalid_profile_record(corrupted, saved_size));
 
     memcpy(corrupted, saved_record, saved_size);
     corrupted[PROFILE_RESERVED_OFFSET] = 1U;
-    CHECK(_test_invalid_profile_record(corrupted, saved_size));
-
-    memcpy(corrupted, saved_record, saved_size);
-    corrupted[PROFILE_TRAILING_RESERVED_OFFSET] = 1U;
     CHECK(_test_invalid_profile_record(corrupted, saved_size));
 
     memcpy(corrupted, saved_record, saved_size);
@@ -1808,14 +1843,9 @@ static bool _test_invalid_profile(const uint8_t saved_record[],
 static bool _test_sync_window_restart(const uint8_t saved_record[],
                                       size_t saved_size)
 {
-    enum
-    {
-        PROFILE_AUTO_CONNECT_OFFSET = 7U,
-        PROFILE_REVISION_OFFSET = 112U,
-    };
-    uint8_t profile[256];
+    uint8_t profile[TEST_PROFILE_BYTES];
 
-    CHECK(saved_size == 168U);
+    CHECK(saved_size == PROFILE_RECORD_BYTES);
     memcpy(profile, saved_record, saved_size);
     /* This is the persisted state after SetAutoConnect(false): policy
      * changes while the last SetCredentials identity remains intact. */
@@ -1864,45 +1894,90 @@ static bool _test_sync_window_restart(const uint8_t saved_record[],
     return true;
 }
 
+/* Legacy single-profile record offsets. v1/v2/v3 share the header and payload
+ * layout; v2 appends the revision and sync id, v3 appends the sync window. */
+enum
+{
+    LEGACY_MAGIC_OFFSET = 0U,
+    LEGACY_VERSION_OFFSET = 4U,
+    LEGACY_SECURITY_OFFSET = 6U,
+    LEGACY_AUTO_CONNECT_OFFSET = 7U,
+    LEGACY_SSID_LENGTH_OFFSET = 8U,
+    LEGACY_PASSWORD_LENGTH_OFFSET = 9U,
+    LEGACY_RESERVED_OFFSET = 10U,
+    LEGACY_SSID_OFFSET = 12U,
+    LEGACY_PASSWORD_OFFSET = 44U,
+    LEGACY_TRAILING_OFFSET = 109U,
+    LEGACY_REVISION_OFFSET = 112U,
+    LEGACY_SYNC_ID_OFFSET = 120U,
+    LEGACY_SYNC_DIGEST_OFFSET = 128U,
+    LEGACY_SYNC_VALID_OFFSET = 160U,
+    LEGACY_SYNC_RESERVED_OFFSET = 161U,
+    LEGACY_V1_BYTES = 112U,
+    LEGACY_V2_BYTES = 128U,
+    LEGACY_V3_BYTES = 168U,
+};
+
+/* Build a legacy single-profile record for the given version. */
+static void _build_legacy_record(uint8_t *record, size_t size, uint16_t version)
+{
+    static const char ssid[] = "Legacy AP";
+    static const char password[] = "password1";
+    const size_t ssid_length = sizeof(ssid) - 1U;
+    const size_t password_length = sizeof(password) - 1U;
+
+    memset(record, 0, size);
+    record[LEGACY_MAGIC_OFFSET] = 0x31U;
+    record[LEGACY_MAGIC_OFFSET + 1U] = 0x50U;
+    record[LEGACY_MAGIC_OFFSET + 2U] = 0x46U;
+    record[LEGACY_MAGIC_OFFSET + 3U] = 0x57U;
+    record[LEGACY_VERSION_OFFSET] = (uint8_t)(version & 0xffU);
+    record[LEGACY_VERSION_OFFSET + 1U] = (uint8_t)(version >> 8);
+    record[LEGACY_SECURITY_OFFSET] = (uint8_t)CONNECTIVITY_MANAGER_SECURITY_PERSONAL;
+    record[LEGACY_AUTO_CONNECT_OFFSET] = 1U;
+    record[LEGACY_SSID_LENGTH_OFFSET] = (uint8_t)ssid_length;
+    record[LEGACY_PASSWORD_LENGTH_OFFSET] = (uint8_t)password_length;
+    memcpy(&record[LEGACY_SSID_OFFSET], ssid, ssid_length);
+    memcpy(&record[LEGACY_PASSWORD_OFFSET], password, password_length);
+    if (version >= 2U)
+    {
+        /* profile_revision = 4 */
+        record[LEGACY_REVISION_OFFSET] = 0x04U;
+    }
+}
+
 static bool _test_legacy_profile_migration(const uint8_t saved_record[],
         size_t saved_size)
 {
-    enum
-    {
-        PROFILE_VERSION_OFFSET = 4U,
-        PROFILE_PASSWORD_LENGTH_OFFSET = 9U,
-        PROFILE_PASSWORD_OFFSET = 44U,
-        LEGACY_PROFILE_SIZE = 112U,
-        V2_PROFILE_SIZE = 128U,
-        PROFILE_SYNC_ID_OFFSET = 120U,
-        PROFILE_SYNC_VALID_OFFSET = 160U,
-    };
-    uint8_t legacy[LEGACY_PROFILE_SIZE];
-    uint8_t v2[V2_PROFILE_SIZE];
-    uint8_t retained[256];
+    (void)saved_record;
+    uint8_t legacy[LEGACY_V3_BYTES];
+    uint8_t retained[TEST_PROFILE_BYTES];
     size_t retained_size = 0U;
     connectivity_manager_status_snapshot_t status;
 
-    CHECK(saved_size == 168U);
-    memcpy(legacy, saved_record, sizeof(legacy));
-    legacy[PROFILE_VERSION_OFFSET] = 1U;
-    legacy[PROFILE_VERSION_OFFSET + 1U] = 0U;
+    CHECK(saved_size == PROFILE_RECORD_BYTES);
 
+    /* v1 (112 bytes) migrates to one v4 entry with revision 1. */
+    _build_legacy_record(legacy, LEGACY_V1_BYTES, 1U);
     host_nv_storage_reset();
-    host_nv_storage_seed(legacy, sizeof(legacy));
+    host_nv_storage_seed(legacy, LEGACY_V1_BYTES);
     host_wifi_port_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, &status));
     CHECK(status.saved_profile);
+    CHECK(status.profile_count == 1U);
     CHECK(host_nv_storage_set_count() == 1U);
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == saved_size);
+    CHECK(retained[PROFILE_COUNT_OFFSET] == 1U);
+    CHECK(retained[PROFILE_ACTIVE_OFFSET] == 0U);
     CHECK(retained[PROFILE_SYNC_VALID_OFFSET] == 0U);
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
 
+    /* A refused migration write keeps the original bytes and reports storage. */
     host_nv_storage_reset();
-    host_nv_storage_seed(legacy, sizeof(legacy));
+    host_nv_storage_seed(legacy, LEGACY_V1_BYTES);
     host_nv_storage_fail_next_set(ESP_FAIL);
     host_wifi_port_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
@@ -1911,18 +1986,19 @@ static bool _test_legacy_profile_migration(const uint8_t saved_record[],
                                &status));
     CHECK(!status.saved_profile);
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
-    CHECK(retained_size == sizeof(legacy));
-    CHECK(memcmp(retained, legacy, sizeof(legacy)) == 0);
+    CHECK(retained_size == LEGACY_V1_BYTES);
+    CHECK(memcmp(retained, legacy, LEGACY_V1_BYTES) == 0);
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
 
-    uint8_t invalid[LEGACY_PROFILE_SIZE];
-    memcpy(invalid, legacy, sizeof(invalid));
-    invalid[PROFILE_PASSWORD_LENGTH_OFFSET] = 1U;
-    memset(invalid + PROFILE_PASSWORD_OFFSET + 1U, 0,
-           sizeof(invalid) - PROFILE_PASSWORD_OFFSET - 1U);
+    /* An inconsistent legacy payload is rejected without touching flash. */
+    uint8_t invalid[LEGACY_V3_BYTES];
+    _build_legacy_record(invalid, sizeof(invalid), 1U);
+    invalid[LEGACY_PASSWORD_LENGTH_OFFSET] = 1U;
+    memset(invalid + LEGACY_PASSWORD_OFFSET + 1U, 0,
+           sizeof(invalid) - LEGACY_PASSWORD_OFFSET - 1U);
     host_nv_storage_reset();
-    host_nv_storage_seed(invalid, sizeof(invalid));
+    host_nv_storage_seed(invalid, LEGACY_V1_BYTES);
     host_wifi_port_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_IDLE,
@@ -1931,24 +2007,48 @@ static bool _test_legacy_profile_migration(const uint8_t saved_record[],
     CHECK(!status.saved_profile);
     CHECK(host_nv_storage_set_count() == 0U);
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
-    CHECK(retained_size == sizeof(invalid));
-    CHECK(memcmp(retained, invalid, sizeof(invalid)) == 0);
+    CHECK(retained_size == LEGACY_V1_BYTES);
+    CHECK(memcmp(retained, invalid, LEGACY_V1_BYTES) == 0);
     CHECK(connectivity_manager_deinit(
               CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
 
-    memcpy(v2, saved_record, sizeof(v2));
-    v2[PROFILE_VERSION_OFFSET] = 2U;
-    v2[PROFILE_VERSION_OFFSET + 1U] = 0U;
+    /* v2 (128 bytes) migrates with its revision and no sync identity. */
+    _build_legacy_record(legacy, LEGACY_V2_BYTES, 2U);
     host_nv_storage_reset();
-    host_nv_storage_seed(v2, sizeof(v2));
+    host_nv_storage_seed(legacy, LEGACY_V2_BYTES);
     host_wifi_port_reset();
     CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
     CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, &status));
     CHECK(status.saved_profile);
+    CHECK(status.profile_count == 1U);
     CHECK(status.applied_client_sync_id == 0U);
     CHECK(host_nv_storage_set_count() == 1U);
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == saved_size);
+    CHECK(retained[PROFILE_SYNC_VALID_OFFSET] == 0U);
+    for (size_t index = 0U; index < sizeof(uint64_t); ++index)
+    {
+        CHECK(retained[PROFILE_SYNC_ID_OFFSET + index] == 0U);
+    }
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+
+    /* v3 (168 bytes) keeps its revision and empty sync window. */
+    _build_legacy_record(legacy, LEGACY_V3_BYTES, 3U);
+    host_nv_storage_reset();
+    host_nv_storage_seed(legacy, LEGACY_V3_BYTES);
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, &status));
+    CHECK(status.saved_profile);
+    CHECK(status.profile_count == 1U);
+    CHECK(status.profile_revision == UINT64_C(4));
+    CHECK(status.applied_client_sync_id == 0U);
+    CHECK(host_nv_storage_set_count() == 1U);
+    CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
+    CHECK(retained_size == saved_size);
+    CHECK(retained[PROFILE_COUNT_OFFSET] == 1U);
+    CHECK(retained[PROFILE_ACTIVE_OFFSET] == 0U);
     CHECK(retained[PROFILE_SYNC_VALID_OFFSET] == 0U);
     for (size_t index = 0U; index < sizeof(uint64_t); ++index)
     {
@@ -2504,7 +2604,7 @@ static bool _test_candidate_restart_failure_preserves_profile(void)
     CHECK(_request_personal_connect("Durable A", "password1", &first));
     CHECK(_complete_connection(UINT32_C(0x01020304)));
     CHECK(_wait_terminal(first, ESP_OK, false));
-    uint8_t saved[256];
+    uint8_t saved[TEST_PROFILE_BYTES];
     size_t saved_size = 0U;
     CHECK(host_nv_storage_copy(saved, sizeof(saved), &saved_size));
     const unsigned writes = host_nv_storage_set_count();
@@ -2515,7 +2615,7 @@ static bool _test_candidate_restart_failure_preserves_profile(void)
     CHECK(_terminal_observer_count(second, ESP_OK, false) == 0U);
     CHECK(_terminal_observer_count(second, ESP_FAIL, false) == 1U);
     CHECK(host_nv_storage_set_count() == writes);
-    uint8_t retained[256];
+    uint8_t retained[TEST_PROFILE_BYTES];
     size_t retained_size = 0U;
     CHECK(host_nv_storage_copy(retained, sizeof(retained), &retained_size));
     CHECK(retained_size == saved_size && memcmp(retained, saved, saved_size) == 0);
@@ -2711,6 +2811,523 @@ static bool _test_suspended_candidate_preemption(bool cancel, bool forget)
     return true;
 }
 
+/* Save one profile without connecting so several entries can accumulate. */
+static bool _save_profile(const char *ssid, const char *password,
+                          connectivity_manager_operation_id_t *operation_id)
+{
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = ssid,
+        .ssid_length = strlen(ssid),
+        .password = password,
+        .password_length = strlen(password),
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    return connectivity_manager_request_save_profile(
+               &credentials, operation_id) == ESP_OK;
+}
+
+static bool _wait_profile_count(uint8_t expected,
+                                connectivity_manager_profile_snapshot_t *out)
+{
+    for (unsigned attempt = 0U; attempt < TEST_TIMEOUT_MS; ++attempt)
+    {
+        connectivity_manager_profile_snapshot_t snapshot;
+
+        if (connectivity_manager_get_profiles(&snapshot) == ESP_OK &&
+                snapshot.count == expected)
+        {
+            if (out != NULL)
+            {
+                *out = snapshot;
+            }
+            return true;
+        }
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+/* Multiple saved networks: upsert, capacity, targeted removal, and the
+ * password-free snapshot the UI reads. */
+static bool _test_profile_list(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_profile_snapshot_t profiles;
+    CHECK(_wait_profile_count(0U, &profiles));
+    CHECK(profiles.active_index == UINT8_MAX);
+
+    connectivity_manager_operation_id_t operation = 0U;
+    CHECK(_save_profile("Alpha", "alphapass", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_wait_profile_count(1U, &profiles));
+    CHECK(strcmp(profiles.profiles[0].ssid, "Alpha") == 0);
+    CHECK(profiles.profiles[0].active == 1U);
+    CHECK(profiles.active_index == 0U);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.saved_profile);
+    CHECK(status.profile_count == 1U);
+    CHECK(strcmp(status.ssid, "Alpha") == 0);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == 0U);
+
+    /* The same SSID replaces the entry instead of appending a duplicate. */
+    CHECK(_save_profile("Alpha", "newalphapass", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_wait_profile_count(1U, &profiles));
+    CHECK(strcmp(profiles.profiles[0].ssid, "Alpha") == 0);
+
+    CHECK(_save_profile("Bravo", "bravopass1", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_wait_profile_count(2U, &profiles));
+    /* Saving a network selects it, like the contract's SET_CREDENTIALS. */
+    CHECK(profiles.profiles[0].active == 0U);
+    CHECK(profiles.profiles[1].active == 1U);
+    CHECK(profiles.active_index == 1U);
+    CHECK(profiles.order[0] == 1U);
+    CHECK(profiles.order[1] == 0U);
+
+    CHECK(_save_profile("Charlie", "charliepw1", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Delta", "deltapass1", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_wait_profile_count(4U, &profiles));
+
+    /* A fifth distinct network is refused instead of silently evicting one. */
+    CHECK(_save_profile("Echo", "echopass12", &operation));
+    CHECK(_wait_terminal(operation, ESP_ERR_NO_MEM, false));
+    CHECK(_wait_profile_count(4U, &profiles));
+
+    /* Targeted connect selects the named network, not the active one. */
+    connectivity_manager_operation_id_t connect = 0U;
+    CHECK(connectivity_manager_request_connect_network("Bravo",
+            strlen("Bravo"), &connect) == ESP_OK);
+    CHECK(_wait_driver_ssid("Bravo"));
+    CHECK(_complete_connection(UINT32_C(0x0a0b0c0d)));
+    CHECK(_wait_terminal(connect, ESP_OK, false));
+    CHECK(_wait_profile_count(4U, &profiles));
+    CHECK(profiles.profiles[0].active == 0U);
+    CHECK(profiles.profiles[1].active == 1U);
+    CHECK(profiles.active_index == 1U);
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(strcmp(status.ssid, "Bravo") == 0);
+    const unsigned writes = host_nv_storage_set_count();
+
+    /* An unknown SSID completes with NOT_FOUND and leaves the list intact. */
+    connectivity_manager_operation_id_t missing = 0U;
+    CHECK(connectivity_manager_request_connect_network("Missing",
+            strlen("Missing"), &missing) == ESP_OK);
+    CHECK(_wait_terminal(missing, ESP_ERR_NOT_FOUND, false));
+    CHECK(host_nv_storage_set_count() == writes);
+    CHECK(_wait_profile_count(4U, &profiles));
+
+    /* Removing an inactive entry must not disturb the link or its profile. */
+    const unsigned connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    connectivity_manager_operation_id_t forget = 0U;
+    CHECK(connectivity_manager_request_forget_network("Delta",
+            strlen("Delta"), &forget) == ESP_OK);
+    CHECK(_wait_terminal(forget, ESP_OK, false));
+    CHECK(_wait_profile_count(3U, &profiles));
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IP_READY);
+    CHECK(strcmp(status.ssid, "Bravo") == 0);
+    CHECK(profiles.active_index == 1U);
+    CHECK(profiles.profiles[1].active == 1U);
+
+    /* Removing the active entry disconnects and keeps the remaining entries. */
+    CHECK(connectivity_manager_request_forget_network("Bravo",
+            strlen("Bravo"), &forget) == ESP_OK);
+    CHECK(_wait_terminal(forget, ESP_OK, false));
+    CHECK(_wait_profile_count(2U, &profiles));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IDLE);
+    CHECK(status.saved_profile);
+    CHECK(status.profile_count == 2U);
+    for (size_t index = 0U; index < profiles.count; ++index)
+    {
+        CHECK(strcmp(profiles.profiles[index].ssid, "Bravo") != 0);
+        CHECK(strcmp(profiles.profiles[index].ssid, "Delta") != 0);
+    }
+    CHECK(wifi_service_test_credentials_are_zero());
+
+    /* The list survives a full manager restart unchanged. */
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_profile_count(2U, &profiles));
+    CHECK(strcmp(profiles.profiles[0].ssid, "Alpha") == 0);
+    CHECK(strcmp(profiles.profiles[1].ssid, "Charlie") == 0);
+
+    /* FORGET clears every entry, which is what the contract's profile_ssid
+       absence depends on. */
+    connectivity_manager_operation_id_t forget_all = 0U;
+    CHECK(connectivity_manager_request_forget(&forget_all) == ESP_OK);
+    CHECK(_wait_terminal(forget_all, ESP_OK, false));
+    CHECK(_wait_profile_count(0U, &profiles));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(!status.saved_profile);
+    CHECK(status.profile_count == 0U);
+    CHECK(status.ssid[0] == '\0');
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("profile list: upsert, capacity, targeted removal, restart, forget-all");
+    return true;
+}
+
+/* Two saved networks: a failed candidate advances to the next one instead of
+ * consuming the executor's internal retries. */
+static bool _test_profile_sweep_fallback(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t operation = 0U;
+    CHECK(_save_profile("Sweep A", "sweepapass", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Sweep B", "sweepbpass", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+
+    connectivity_manager_profile_snapshot_t profiles;
+    CHECK(_wait_profile_count(2U, &profiles));
+    CHECK(strcmp(profiles.profiles[1].ssid, "Sweep B") == 0);
+    CHECK(profiles.profiles[1].active == 1U);
+
+    /* Reconnect starts on the selected entry, which is missing. */
+    connectivity_manager_operation_id_t reconnect = 0U;
+    CHECK(connectivity_manager_request_reconnect_saved(&reconnect) == ESP_OK);
+    CHECK(_wait_driver_ssid("Sweep B"));
+    const unsigned first_attempt =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AP_NOT_FOUND, 0U) == ESP_OK);
+    /* The next attempt must be the other saved network, immediately. */
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    first_attempt + 1U, TEST_TIMEOUT_MS));
+    CHECK(_wait_driver_ssid("Sweep A"));
+    CHECK(_complete_connection(UINT32_C(0x0a01a8c0)));
+    CHECK(_wait_terminal(reconnect, ESP_OK, false));
+    CHECK(_wait_profile_count(2U, &profiles));
+    CHECK(strcmp(profiles.profiles[0].ssid, "Sweep A") == 0);
+    CHECK(profiles.profiles[0].active == 1U);
+    CHECK(strcmp(profiles.profiles[1].ssid, "Sweep B") == 0);
+    CHECK(profiles.profiles[1].active == 0U);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IP_READY);
+    CHECK(strcmp(status.ssid, "Sweep A") == 0);
+
+    /* Every saved network failing surfaces the last classified failure. Sweep
+     * A is now selected, so B is the single fallback. */
+    connectivity_manager_operation_id_t failing = 0U;
+    unsigned attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_request_reconnect_saved(&failing) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    attempts + 1U, TEST_TIMEOUT_MS));
+    CHECK(_wait_driver_ssid("Sweep A"));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AP_NOT_FOUND, 0U) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                    attempts + 1U, TEST_TIMEOUT_MS));
+    CHECK(_wait_driver_ssid("Sweep B"));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_AP_NOT_FOUND, 0U) == ESP_OK);
+    connectivity_manager_status_snapshot_t retry;
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
+                               CONNECTIVITY_MANAGER_FAILURE_AP_NOT_FOUND,
+                               &retry));
+    /* An exhausted sweep parks in the long-backoff policy instead of publishing
+     * a failure terminal; cancellation ends the operation. */
+    CHECK(!retry.operation_complete);
+    CHECK(retry.retry_count == 1U);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == attempts);
+    CHECK(_terminal_observer_count(failing, ESP_FAIL, false) == 0U);
+    CHECK(connectivity_manager_cancel(failing) == ESP_OK);
+    CHECK(_wait_terminal(failing, ESP_ERR_NOT_FINISHED, false));
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(wifi_service_test_credentials_are_zero());
+    puts("profile sweep: next candidate on AP_NOT_FOUND, exhausted sweep backs off");
+    return true;
+}
+
+/* Build a v4 record wider than the configured limit so the downgrade path can
+ * be exercised; the manager must keep the list usable instead of writing back a
+ * record it can no longer load. */
+static void _build_wide_record(uint8_t *record, uint8_t count,
+                               uint8_t active_index)
+{
+    memset(record, 0, TEST_PROFILE_BYTES);
+    const uint32_t magic = UINT32_C(0x57465031);
+    const uint16_t version = 4U;
+    const uint64_t revision = 3U;
+
+    memcpy(record, &magic, sizeof(magic));
+    memcpy(record + PROFILE_VERSION_OFFSET, &version, sizeof(version));
+    record[PROFILE_COUNT_OFFSET] = count;
+    record[PROFILE_ACTIVE_OFFSET] = active_index;
+    /* Leave the automatic-connect policy off so this case observes loading and
+     * the rewrite instead of the radio it would start. */
+    record[PROFILE_AUTO_CONNECT_OFFSET] = 0U;
+    memcpy(record + PROFILE_REVISION_OFFSET, &revision, sizeof(revision));
+    for (size_t index = 0U; index < count; ++index)
+    {
+        uint8_t *entry = record + PROFILE_ENTRIES_OFFSET +
+                         index * PROFILE_ENTRY_BYTES;
+        /* Exactly eight printable bytes: an SSID is a byte string, so a shorter
+         * literal would embed a NUL inside the declared length and be rejected. */
+        const char ssid[8] =
+        {
+            'W', 'i', 'd', 'e', '0', '0', (char)('0' + (index % 10U)),
+            (char)('a' + (index % 26U)),
+        };
+
+        entry[0] = 1U;                    /* PERSONAL */
+        entry[1] = 8U;                    /* ssid_length */
+        entry[2] = 8U;                    /* password_length */
+        memcpy(entry + 4U, ssid, 8U);
+        memcpy(entry + 36U, "widepw12", 8U);
+    }
+}
+
+/* A record written with more slots than this build keeps must stay loadable
+ * after the manager rewrites it, and the selected index must address a retained
+ * entry. */
+static bool _test_profile_downgrade_load(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    uint8_t record[TEST_PROFILE_BYTES];
+
+    _build_wide_record(record, UINT8_C(5), UINT8_C(4));
+    host_nv_storage_seed(record, PROFILE_RECORD_BYTES);
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_profile_snapshot_t profiles;
+    CHECK(_wait_profile_count((uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES,
+                              &profiles));
+    CHECK(profiles.active_index < profiles.count);
+    CHECK(profiles.profiles[profiles.active_index].active == 1U);
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.saved_profile);
+    CHECK(status.profile_count == (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES);
+    CHECK(status.failure == CONNECTIVITY_MANAGER_FAILURE_NONE);
+
+    /* The clamping rewrite must have aligned flash with RAM, so the record the
+     * manager itself wrote is loadable again. */
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    CHECK(_wait_profile_count((uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES,
+                              &profiles));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.saved_profile);
+    CHECK(status.profile_count == (uint8_t)CONNECTIVITY_MANAGER_MAX_PROFILES);
+    CHECK(status.failure == CONNECTIVITY_MANAGER_FAILURE_NONE);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("profile downgrade: wider record clamped, selected index stays valid");
+    return true;
+}
+
+/* An exhausted sweep must keep the user's selection instead of leaving the last
+ * network it tried as the selected profile. */
+static bool _test_profile_sweep_keeps_selection(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t operation = 0U;
+    CHECK(_save_profile("Keep A", "keepa123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Keep B", "keepb123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Keep C", "keepc123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+
+    connectivity_manager_profile_snapshot_t profiles;
+    CHECK(_wait_profile_count(3U, &profiles));
+    CHECK(profiles.active_index == 2U);
+    const uint8_t selected = profiles.active_index;
+
+    connectivity_manager_operation_id_t reconnect = 0U;
+    unsigned attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    CHECK(connectivity_manager_request_reconnect_saved(&reconnect) == ESP_OK);
+    CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT, attempts + 1U,
+                                    TEST_TIMEOUT_MS));
+    CHECK(_wait_driver_ssid("Keep C"));
+    CHECK(_wait_wifi_service_status(WIFI_SERVICE_STATE_CONNECTING));
+    /* Both fallbacks fail; the third failure ends the sweep. */
+    for (unsigned step = 0U; step < 3U; ++step)
+    {
+        CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                            WIFI_SERVICE_FAILURE_AP_NOT_FOUND, 0U) == ESP_OK);
+        if (step < 2U)
+        {
+            attempts = host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+            CHECK(host_wifi_port_wait_calls(HOST_WIFI_PORT_CONNECT,
+                                            attempts + 1U,
+                                            TEST_TIMEOUT_MS));
+            CHECK(_wait_wifi_service_status(
+                      WIFI_SERVICE_STATE_CONNECTING));
+        }
+    }
+    connectivity_manager_status_snapshot_t retry;
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
+                               CONNECTIVITY_MANAGER_FAILURE_AP_NOT_FOUND,
+                               &retry));
+    /* The selected profile is still the user's choice, and the projected SSID
+     * agrees with it rather than naming the last network tried. */
+    CHECK(_wait_profile_count(3U, &profiles));
+    CHECK(profiles.active_index == selected);
+    CHECK(profiles.profiles[selected].active == 1U);
+    CHECK(strcmp(retry.ssid, "Keep C") == 0);
+
+    /* A durable write must not persist a drifted selection either. */
+    connectivity_manager_operation_id_t auto_op = 0U;
+    CHECK(connectivity_manager_set_auto_connect(false, &auto_op) == ESP_OK);
+    CHECK(_wait_terminal(auto_op, ESP_OK, false));
+    uint8_t record[TEST_PROFILE_BYTES];
+    size_t record_size = 0U;
+    CHECK(host_nv_storage_copy(record, sizeof(record), &record_size));
+    CHECK(record_size == PROFILE_RECORD_BYTES);
+    CHECK(record[PROFILE_ACTIVE_OFFSET] == selected);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("profile sweep: exhausted sweep keeps the selected profile");
+    return true;
+}
+
+/* Removing an entry that does not carry the link must not switch the radio into
+ * the manual-offline hold. */
+static bool _test_forget_inactive_keeps_policy(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t operation = 0U;
+    CHECK(_save_profile("Hold A", "holda123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Hold B", "holdb123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Hold C", "holdc123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+
+    connectivity_manager_operation_id_t connect = 0U;
+    CHECK(connectivity_manager_request_connect_network("Hold C",
+            strlen("Hold C"), &connect) == ESP_OK);
+    CHECK(_wait_driver_ssid("Hold C"));
+    CHECK(_complete_connection(UINT32_C(0x0a0b0c0d)));
+    CHECK(_wait_terminal(connect, ESP_OK, false));
+
+    const unsigned connects =
+        host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT);
+    connectivity_manager_operation_id_t forget = 0U;
+    CHECK(connectivity_manager_request_forget_network("Hold B",
+            strlen("Hold B"), &forget) == ESP_OK);
+    CHECK(_wait_terminal(forget, ESP_OK, false));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IP_READY);
+    CHECK(!status.manual_hold);
+    CHECK(status.ipv4_address == UINT32_C(0x0a0b0c0d));
+    CHECK(status.auto_connect);
+    CHECK(status.profile_count == 2U);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_CONNECT) == connects);
+
+    /* The automatic-connect policy is still in force, so a link loss schedules a
+     * retry instead of parking the radio offline. */
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_STA_DISCONNECTED,
+                        WIFI_SERVICE_FAILURE_LINK_LOST, 0U) == ESP_OK);
+    CHECK(_wait_status_failure(CONNECTIVITY_MANAGER_STATE_RETRY_WAIT,
+                               CONNECTIVITY_MANAGER_FAILURE_LINK_LOST,
+                               &status));
+    CHECK(!status.manual_hold);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("profile forget: inactive removal keeps the link and the policy");
+    return true;
+}
+
+/* A refused removal write must not leave the RAM list advertising a deletion
+ * that never reached flash. */
+static bool _test_forget_store_failure_rolls_back(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t operation = 0U;
+    CHECK(_save_profile("Roll A", "rolla123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    CHECK(_save_profile("Roll B", "rollb123", &operation));
+    CHECK(_wait_terminal(operation, ESP_OK, false));
+    connectivity_manager_profile_snapshot_t profiles;
+    CHECK(_wait_profile_count(2U, &profiles));
+
+    uint8_t before[TEST_PROFILE_BYTES];
+    size_t before_size = 0U;
+    CHECK(host_nv_storage_copy(before, sizeof(before), &before_size));
+
+    host_nv_storage_fail_next_set(ESP_FAIL);
+    connectivity_manager_operation_id_t forget = 0U;
+    CHECK(connectivity_manager_request_forget_network("Roll A",
+            strlen("Roll A"), &forget) == ESP_OK);
+    CHECK(_wait_terminal(forget, ESP_FAIL, false));
+
+    /* RAM and flash agree: both still hold the entry the removal tried to drop. */
+    CHECK(_wait_profile_count(2U, &profiles));
+    uint8_t after[TEST_PROFILE_BYTES];
+    size_t after_size = 0U;
+    CHECK(host_nv_storage_copy(after, sizeof(after), &after_size));
+    CHECK(after_size == before_size);
+    CHECK(memcmp(before, after, before_size) == 0);
+    CHECK(strcmp(profiles.profiles[0].ssid, "Roll A") == 0);
+    CHECK(strcmp(profiles.profiles[1].ssid, "Roll B") == 0);
+
+    /* A reboot observes the same list, so the rolled-back removal is invisible.
+     * The record keeps automatic connection enabled, so the boot may start an
+     * attempt; only the list contents matter here. */
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    host_wifi_port_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_profile_count(2U, &profiles));
+    CHECK(strcmp(profiles.profiles[0].ssid, "Roll A") == 0);
+    CHECK(strcmp(profiles.profiles[1].ssid, "Roll B") == 0);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    puts("profile forget: refused write rolls the removal back");
+    return true;
+}
+
 static bool _run_pipeline(void)
 {
     host_freertos_reset_controls();
@@ -2770,7 +3387,13 @@ static bool _run_pipeline(void)
     CHECK(_test_missing_profile_terminals());
     CHECK(_test_profile_read_failure_classification());
     CHECK(_test_hex_psk_recovery());
-    uint8_t saved_record[256];
+    CHECK(_test_profile_list());
+    CHECK(_test_profile_sweep_fallback());
+    CHECK(_test_profile_downgrade_load());
+    CHECK(_test_profile_sweep_keeps_selection());
+    CHECK(_test_forget_inactive_keeps_policy());
+    CHECK(_test_forget_store_failure_rolls_back());
+    uint8_t saved_record[TEST_PROFILE_BYTES];
     size_t saved_size = 0U;
     CHECK(_test_foreground_and_persistence(saved_record, &saved_size));
     CHECK(_test_sync_window_restart(saved_record, saved_size));

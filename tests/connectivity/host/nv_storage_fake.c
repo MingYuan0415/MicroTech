@@ -5,7 +5,9 @@
 #include <pthread.h>
 #include <string.h>
 
-#define HOST_NV_STORAGE_CAPACITY 256U
+/* Must stay above the largest record the manager may store: the v4 saved-network
+ * record reserves five entry slots (592 bytes). */
+#define HOST_NV_STORAGE_CAPACITY 1024U
 
 typedef struct host_nv_storage_state
 {

@@ -283,7 +283,11 @@ a missing pct falls back to the voltage-derived display),
 `sim.set_wifi {state}` (connected/disconnected), `sim.set_imu {pitch,roll}`
 (degrees), `sim.set_weather {endpoint,status,body}` (loads the sim_http script
 table then `request_refresh`, real parse chain), `sim.pause {enabled}`,
-`sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}` (loads
+`sim.set_wifi_profile {ssid, password?}` (saves one network through the
+production `connectivity_manager_request_save_profile`, so UI review can build a
+multi-network list without BLE provisioning; a missing password saves an open
+network), `sim.set_wifi_scan {records, request?, trigger?, wait_scan?, status?}`
+(loads
 port scan records; `trigger` injects a real SCAN_DONE, `wait_scan` polls the
 port scan window to ensure the event lands mid-scan, `request` first issues one
 scan through connectivity_manager), `sim.sd {action:

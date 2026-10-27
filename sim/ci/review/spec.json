@@ -95,6 +95,31 @@
           ]
         },
         {
+          "name": "saved_profiles",
+          "seed": [
+            {"cmd": "set_wifi_profile", "ssid": "HomeNet",
+             "password": "password1"},
+            {"cmd": "set_wifi_profile", "ssid": "办公室 Mesh 主节点",
+             "password": "password1"},
+            {"cmd": "navigate", "app": "settings", "page": "wifi"},
+            {"cmd": "step", "ms": 990}
+          ],
+          "expect_visible": [
+            "已保存网络",
+            "HomeNet",
+            "办公室 Mesh 主节点",
+            "当前"
+          ],
+          "single_line": [
+            "关闭后保持离线",
+            "开机后自动连接",
+            "清除本机保存"
+          ],
+          "allow_disabled": [
+            "忘记网络"
+          ]
+        },
+        {
           "name": "connected",
           "hardware_only": true
         },

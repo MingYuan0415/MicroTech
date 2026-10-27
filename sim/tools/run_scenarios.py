@@ -377,6 +377,13 @@ class Runner:
         elif cmd == 'offer_pairing':
             self.call('sim.offer_pairing',
                       {k: step[k] for k in ('token', 'passkey') if k in step})
+        elif cmd == 'set_wifi_profile':
+            self.call('sim.set_wifi_profile',
+                      {k: step[k] for k in ('ssid', 'password') if k in step})
+            # The manager applies the save on its worker; give it a few frames
+            # so a following screenshot observes the published profile list.
+            for _ in range(6):
+                self.call('sim.step', {'ms': 33})
         elif cmd == 'set_wifi_scan':
             self.call('sim.set_wifi_scan',
                       {k: step[k] for k in

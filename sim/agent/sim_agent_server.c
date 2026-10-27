@@ -889,6 +889,52 @@ static cJSON *_handle(cJSON *request, bool *ok)
         *ok = (host_device_link_service_offer_numeric_comparison(use_token,
             use_passkey) == ESP_OK);
     }
+    else if (strcmp(method, "sim.set_wifi_profile") == 0)
+    {
+        /* Persist one saved network through the production manager API so UI
+         * review can exercise the multi-profile list without BLE provisioning. */
+        const cJSON *ssid = params != NULL ?
+                            cJSON_GetObjectItemCaseSensitive(params, "ssid") : NULL;
+        const char *ssid_text = cJSON_GetStringValue(ssid);
+        const cJSON *password = params != NULL ?
+                                cJSON_GetObjectItemCaseSensitive(params,
+                                    "password") : NULL;
+        const char *password_text = cJSON_GetStringValue(password);
+        if (ssid_text == NULL || strlen(ssid_text) == 0U ||
+                strlen(ssid_text) > CONNECTIVITY_MANAGER_SSID_MAX_BYTES)
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid ssid");
+        }
+        else
+        {
+            const connectivity_manager_credentials_t credentials =
+            {
+                .ssid = ssid_text,
+                .ssid_length = strlen(ssid_text),
+                .password = password_text != NULL ? password_text : "",
+                .password_length = password_text != NULL ?
+                strlen(password_text) : 0U,
+                .security = password_text != NULL ?
+                CONNECTIVITY_MANAGER_SECURITY_PERSONAL :
+                CONNECTIVITY_MANAGER_SECURITY_OPEN,
+            };
+            connectivity_manager_operation_id_t operation = 0U;
+            const esp_err_t save_result =
+                connectivity_manager_request_save_profile(&credentials,
+                    &operation);
+            if (save_result != ESP_OK)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(save_result));
+            }
+            else
+            {
+                cJSON_AddNumberToObject(result, "operation", (double)operation);
+            }
+        }
+    }
     else if (strcmp(method, "sim.set_wifi_scan") == 0)
     {
         const cJSON *records = cJSON_GetObjectItemCaseSensitive(params,

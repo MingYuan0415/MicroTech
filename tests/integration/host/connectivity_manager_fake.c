@@ -26,6 +26,7 @@ typedef struct host_connectivity_manager_state
     host_connectivity_operation_t operation_kind;
     connectivity_manager_status_snapshot_t status;
     connectivity_manager_scan_snapshot_t scan;
+    connectivity_manager_profile_snapshot_t profiles;
     unsigned calls[HOST_CONNECTIVITY_MANAGER_CALL_COUNT];
 } host_connectivity_manager_state_t;
 
@@ -37,6 +38,9 @@ _Static_assert(sizeof(connectivity_manager_status_snapshot_t) <=
 _Static_assert(sizeof(connectivity_manager_scan_snapshot_t) <=
                EVENT_BUS_MAX_UI_PAYLOAD_SIZE,
                "connectivity scan exceeds event bus payload capacity");
+_Static_assert(sizeof(connectivity_manager_profile_snapshot_t) <=
+               EVENT_BUS_MAX_UI_PAYLOAD_SIZE,
+               "connectivity profiles exceed event bus payload capacity");
 
 static host_connectivity_manager_state_t s_connectivity =
 {
@@ -53,6 +57,10 @@ static host_connectivity_manager_state_t s_connectivity =
     },
     .scan = {
         .generation = 2U,
+    },
+    .profiles = {
+        .generation = 3U,
+        .active_index = UINT8_MAX,
     },
 };
 
@@ -188,6 +196,9 @@ void host_connectivity_manager_reset(void)
     s_connectivity.status.auto_connect = true;
     memset(&s_connectivity.scan, 0, sizeof(s_connectivity.scan));
     s_connectivity.scan.generation = 2U;
+    memset(&s_connectivity.profiles, 0, sizeof(s_connectivity.profiles));
+    s_connectivity.profiles.generation = 3U;
+    s_connectivity.profiles.active_index = UINT8_MAX;
     memset(s_connectivity.calls, 0, sizeof(s_connectivity.calls));
     (void)pthread_mutex_unlock(&s_connectivity.lock);
 }
@@ -334,6 +345,57 @@ esp_err_t connectivity_manager_get_status(
         return ESP_ERR_INVALID_ARG;
     }
     *snapshot = s_connectivity.status;
+    (void)pthread_mutex_unlock(&s_connectivity.lock);
+    return ESP_OK;
+}
+
+esp_err_t connectivity_manager_request_connect_network(
+    const char *ssid, size_t ssid_length,
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    if (ssid == NULL || ssid_length == 0U ||
+            ssid_length > CONNECTIVITY_MANAGER_SSID_MAX_BYTES)
+    {
+        (void)pthread_mutex_lock(&s_connectivity.lock);
+        ++s_connectivity.calls[
+            HOST_CONNECTIVITY_MANAGER_CALL_CONNECT_NETWORK];
+        (void)pthread_mutex_unlock(&s_connectivity.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    return _host_connectivity_admit_operation(
+               HOST_CONNECTIVITY_MANAGER_CALL_CONNECT_NETWORK,
+               HOST_CONNECTIVITY_OPERATION_CONNECT, out_operation_id);
+}
+
+esp_err_t connectivity_manager_request_forget_network(
+    const char *ssid, size_t ssid_length,
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    if (ssid == NULL || ssid_length == 0U ||
+            ssid_length > CONNECTIVITY_MANAGER_SSID_MAX_BYTES)
+    {
+        (void)pthread_mutex_lock(&s_connectivity.lock);
+        ++s_connectivity.calls[
+            HOST_CONNECTIVITY_MANAGER_CALL_FORGET_NETWORK];
+        (void)pthread_mutex_unlock(&s_connectivity.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    return _host_connectivity_admit_operation(
+               HOST_CONNECTIVITY_MANAGER_CALL_FORGET_NETWORK,
+               HOST_CONNECTIVITY_OPERATION_DISCONNECT, out_operation_id);
+}
+
+esp_err_t connectivity_manager_get_profiles(
+    connectivity_manager_profile_snapshot_t *snapshot)
+{
+    (void)pthread_mutex_lock(&s_connectivity.lock);
+    ++s_connectivity.calls[HOST_CONNECTIVITY_MANAGER_CALL_GET_PROFILES];
+    if (snapshot == NULL)
+    {
+        (void)pthread_mutex_unlock(&s_connectivity.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    *snapshot = s_connectivity.profiles;
     (void)pthread_mutex_unlock(&s_connectivity.lock);
     return ESP_OK;
 }
