@@ -182,6 +182,155 @@
    "method": "sim.control_center",
    "params": {"get": true},
    "expect": {"visible": false}
+  },
+  {
+   "cmd": "call",
+   "method": "sim.control_center",
+   "params": {"action": "show"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "long_press",
+   "x": 52,
+   "y": 262,
+   "ms": 700,
+   "settle_ms": 495
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "Wi-Fi 开关"}
+  },
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "call",
+   "method": "sim.control_center",
+   "params": {"action": "show"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "long_press",
+   "x": 222,
+   "y": 262,
+   "ms": 700,
+   "settle_ms": 495
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "蓝牙开关"}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "已关闭", "flags.hidden": false}
+  },
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "call",
+   "method": "sim.control_center",
+   "params": {"action": "show"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "long_press",
+   "x": 48,
+   "y": 108,
+   "ms": 700,
+   "settle_ms": 495
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "亮度"}
+  },
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "call",
+   "method": "sim.control_center",
+   "params": {"action": "show"}
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "long_press",
+   "x": 48,
+   "y": 180,
+   "ms": 700,
+   "settle_ms": 495
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.control_center",
+   "params": {"get": true},
+   "expect": {"visible": false}
+  },
+  {
+   "cmd": "tree_assert",
+   "params": {"include_layers": true},
+   "contains": {"type": "lv_label", "text": "音量"}
+  },
+  {
+   "cmd": "navigate",
+   "app": "home"
+  },
+  {
+   "cmd": "wait_idle"
   }
  ]
 }
