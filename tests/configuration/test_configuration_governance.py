@@ -140,7 +140,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             "CONFIG_MBEDTLS_DYNAMIC_BUFFER": "y",
             "CONFIG_LV_USE_QRCODE": "y",
             "CONFIG_LV_OS_NONE": "y",
-            "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "6144",
+            "CONFIG_CONNECTIVITY_MANAGER_TASK_STACK": "8192",
             "CONFIG_DEVICE_LINK_SERVICE_TASK_STACK": "6144",
             "CONFIG_MAIN_WEATHER_SERVER_BASE_URL":
                 '"https://weather.example.com"',
@@ -161,7 +161,7 @@ class ConfigurationGovernanceTest(unittest.TestCase):
                 "layers/middleware/components/connectivity_manager/Kconfig"
             ).read_text(encoding="utf-8"),
             r"config CONNECTIVITY_MANAGER_TASK_STACK\s+"
-            r"int[^\n]*\s+default 6144\b\s+range 4096 8192\b",
+            r"int[^\n]*\s+default 8192\b\s+range 4096 8192\b",
         )
 
     def test_device_link_contract_source_is_authoritative(self) -> None:
