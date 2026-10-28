@@ -37,18 +37,20 @@ Spec schema (JSON):
 Usage:
   python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json [--check]
       [--update] [--pages settings/wifi,...] [--golden DIR] [--shots DIR]
-      [--build build/sim] [--port 5002] [--no-launch] [--keep-sim]
+      [--build build/sim] [--port 0|N] [--no-launch] [--keep-sim]
       [--report out.json]
 
 Exit non-zero on any lint violation or baseline mismatch.
 """
 import argparse
+import fcntl
 import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +89,48 @@ def _stop_sim(proc, runner):
             proc.kill()
 
 
+_PORT_ALLOCATOR_LOCK = None
+_PORT_RESERVATION_LOCK = None
+
+
+def _allocate_port():
+    """Return an unused loopback port reserved through simulator startup."""
+    global _PORT_ALLOCATOR_LOCK, _PORT_RESERVATION_LOCK
+    lock_path = os.path.join(os.environ.get('TMPDIR') or '/tmp',
+                             'microtech-sim-port-allocator.lock')
+    _PORT_ALLOCATOR_LOCK = open(lock_path, 'w')
+    fcntl.flock(_PORT_ALLOCATOR_LOCK.fileno(), fcntl.LOCK_EX)
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(('127.0.0.1', 0))
+            port = sock.getsockname()[1]
+        if port == 5001:
+            continue
+        reservation_path = os.path.join(
+            os.environ.get('TMPDIR') or '/tmp',
+            'microtech-sim-port-%d.lock' % port)
+        reservation = open(reservation_path, 'w')
+        try:
+            fcntl.flock(reservation.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            reservation.close()
+            continue
+        _PORT_RESERVATION_LOCK = reservation
+        return port
+
+
+def _release_port_allocator():
+    global _PORT_ALLOCATOR_LOCK, _PORT_RESERVATION_LOCK
+    if _PORT_RESERVATION_LOCK is not None:
+        _PORT_RESERVATION_LOCK.close()
+        _PORT_RESERVATION_LOCK = None
+    if _PORT_ALLOCATOR_LOCK is not None:
+        fcntl.flock(_PORT_ALLOCATOR_LOCK.fileno(), fcntl.LOCK_UN)
+        _PORT_ALLOCATOR_LOCK.close()
+        _PORT_ALLOCATOR_LOCK = None
+
+
+
 def _launch_sim(build, port, nvs, shots, sd):
     shutil.rmtree(nvs, ignore_errors=True)
     shutil.rmtree(sd, ignore_errors=True)
@@ -94,7 +138,7 @@ def _launch_sim(build, port, nvs, shots, sd):
     log = open(os.path.join(shots, 'review_sim.log'), 'wb')
     # 模拟存储根同样按会话隔离：残留的天气快照会让本次会话一启动就带着
     # 上一次的实况，空态断言随之失真。
-    data = os.path.join(build, 'review_data')
+    data = os.path.join(shots, 'review_data')
     shutil.rmtree(data, ignore_errors=True)
     environment = dict(os.environ)
     environment['SIM_DATA_DIR'] = data
@@ -106,11 +150,14 @@ def _launch_sim(build, port, nvs, shots, sd):
         env=environment)
     for _ in range(60):
         if _port_open('127.0.0.1', port):
+            _release_port_allocator()
             _launched.append(proc)
             return proc
         if proc.poll() is not None:
+            _release_port_allocator()
             raise RuntimeError('sim exited during launch; see %s' % log.name)
         time.sleep(1)
+    _release_port_allocator()
     proc.terminate()
     raise RuntimeError('sim agent did not come up on port %d' % port)
 
@@ -591,8 +638,9 @@ def main():
     ap.add_argument('--spec', default='sim/ci/review/spec.json')
     ap.add_argument('--build', default='build/sim')
     ap.add_argument('--golden', default='sim/ci/golden/ui')
-    ap.add_argument('--shots', default='build/sim/review_shots')
-    ap.add_argument('--port', type=int, default=5002)
+    ap.add_argument('--shots', default=None)
+    ap.add_argument('--port', type=int, default=0,
+                    help='agent port; 0 allocates an isolated loopback port')
     ap.add_argument('--pages', default=None, help='app/page,app/page filter')
     ap.add_argument('--update', action='store_true',
                     help='write/refresh baselines instead of comparing')
@@ -608,6 +656,13 @@ def main():
     args = ap.parse_args()
     if args.check and args.update:
         ap.error('--check and --update are mutually exclusive')
+    if args.port == 0:
+        if args.no_launch:
+            ap.error('--no-launch requires an explicit --port')
+        args.port = _allocate_port()
+    if args.shots is None:
+        os.makedirs(args.build, exist_ok=True)
+        args.shots = tempfile.mkdtemp(prefix='review-', dir=args.build)
 
     spec = json.load(open(args.spec))
     try:
@@ -624,8 +679,8 @@ def main():
         ap.error(str(error))
     if owns_sim:
         proc = _launch_sim(args.build, args.port,
-                           os.path.join(args.build, 'review_nvs'), args.shots,
-                           '/tmp/mrsd')
+                           os.path.join(args.shots, 'review_nvs'), args.shots,
+                           os.path.join(args.shots, 'review_sd'))
     runner = Runner('127.0.0.1', args.port, args.shots, None, args.update)
     try:
         _run_spec(runner, spec, args, proc, owns_sim)

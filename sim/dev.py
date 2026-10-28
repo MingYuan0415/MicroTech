@@ -8,6 +8,8 @@
 模拟器会话。无头驱动与 CI 回归请直接使用 sim/tools/simctl.py 与
 sim/ci/run_ci.sh。
 """
+import atexit
+import fcntl
 import os
 import shlex
 import shutil
@@ -22,12 +24,8 @@ ROOT = os.path.dirname(SIM_ROOT)
 BUILD = os.path.join(ROOT, 'build', 'sim')
 BINARY = os.path.join(BUILD, 'microtech_sim')
 RES_DIR = os.path.join(BUILD, 'sim_res_fs')
-NVS_DIR = os.path.join(BUILD, 'dev_nvs')
-OUT_DIR = os.path.join(BUILD, 'shots')
-DATA_DIR = os.path.join(BUILD, 'data')
-PID_FILE = os.path.join(BUILD, 'dev.pid')
-LOG_FILE = os.path.join(BUILD, 'dev_session.log')
-PORT = 5002
+CONFIGURED_PORT = os.environ.get('SIM_AGENT_PORT')
+PORT = int(CONFIGURED_PORT or '5002')
 DISPLAY_ENV_KEYS = ('DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
                     'SDL_VIDEODRIVER')
 EXEC_RETRY_ATTEMPTS = 5
@@ -35,12 +33,110 @@ EXEC_RETRY_DELAY = 0.01
 LAST_NETWORK_ONLINE = False
 APPS = ['home', 'menu', 'clock', 'level', 'diagnostics', 'recorder',
         'settings', 'setup', 'weather']
+_PORT_LOCK = None
+_ALLOCATOR_LOCK = None
+ALLOCATOR_LOCK_PATH = os.path.join(
+    os.environ.get('TMPDIR') or '/tmp', 'microtech-sim-port-allocator.lock')
+PORT_LOCK_DIR = os.environ.get('TMPDIR') or '/tmp'
+OUT_DIR = os.path.join(BUILD, 'shots')
+DATA_DIR = os.path.join(BUILD, 'data')
+PID_FILE = os.path.join(BUILD, 'dev.pid')
+LOG_FILE = os.path.join(BUILD, 'dev_session.log')
 
 sys.path.insert(0, os.path.join(SIM_ROOT, 'tools'))
 from simctl import rpc  # noqa: E402
 
 
 # ------------------------------------------------------------- 会话工具
+
+def _port_open(port):
+    try:
+        sock = socket.create_connection(('127.0.0.1', port), timeout=0.2)
+        sock.close()
+        return True
+    except OSError:
+        return False
+
+
+def _reserve_port(port):
+    path = os.path.join(PORT_LOCK_DIR, 'microtech-sim-port-%d.lock' % port)
+    lock = open(path, 'w')
+    try:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        return None
+    return lock
+
+
+def _release_port():
+    global _PORT_LOCK, _ALLOCATOR_LOCK
+    if _PORT_LOCK is not None:
+        _PORT_LOCK.close()
+        _PORT_LOCK = None
+    if _ALLOCATOR_LOCK is not None:
+        fcntl.flock(_ALLOCATOR_LOCK.fileno(), fcntl.LOCK_UN)
+        _ALLOCATOR_LOCK.close()
+        _ALLOCATOR_LOCK = None
+
+
+def _acquire_allocator_lock():
+    lock = open(ALLOCATOR_LOCK_PATH, 'w')
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    return lock
+
+def _release_allocator_lock():
+    global _ALLOCATOR_LOCK
+    if _ALLOCATOR_LOCK is not None:
+        fcntl.flock(_ALLOCATOR_LOCK.fileno(), fcntl.LOCK_UN)
+        _ALLOCATOR_LOCK.close()
+        _ALLOCATOR_LOCK = None
+
+
+def _prepare_instance():
+    """Reserve a private interactive endpoint and artifact directory."""
+    global PORT, _PORT_LOCK, _ALLOCATOR_LOCK, NVS_DIR, OUT_DIR, DATA_DIR
+    global PID_FILE, LOG_FILE
+    os.makedirs(BUILD, exist_ok=True)
+    allocator_lock = _acquire_allocator_lock()
+    port_lock = None
+    try:
+        candidate = PORT
+        if not _port_open(candidate):
+            port_lock = _reserve_port(candidate)
+        if port_lock is None:
+            if CONFIGURED_PORT is not None:
+                raise RuntimeError(
+                    'simulator port %d is unavailable' % candidate)
+            while port_lock is None:
+                with socket.socket() as sock:
+                    sock.bind(('127.0.0.1', 0))
+                    candidate = sock.getsockname()[1]
+                if candidate != 5001:
+                    port_lock = _reserve_port(candidate)
+        _PORT_LOCK = port_lock
+        _ALLOCATOR_LOCK = allocator_lock
+        PORT = candidate
+        session_dir = os.environ.get('SIM_SESSION_DIR')
+        if session_dir is None and PORT != 5002:
+            session_dir = os.path.join(BUILD, 'instances', str(PORT))
+        if session_dir is not None:
+            NVS_DIR = os.path.join(session_dir, 'nvs')
+            OUT_DIR = os.path.join(session_dir, 'shots')
+            DATA_DIR = os.path.join(session_dir, 'data')
+            PID_FILE = os.path.join(session_dir, 'dev.pid')
+            LOG_FILE = os.path.join(session_dir, 'session.log')
+            os.makedirs(session_dir, exist_ok=True)
+    except Exception:
+        if port_lock is not None:
+            port_lock.close()
+        fcntl.flock(allocator_lock.fileno(), fcntl.LOCK_UN)
+        allocator_lock.close()
+        raise
+    atexit.register(_release_port)
+    _release_allocator_lock()
+
+
 
 def _pid_alive(pid):
     try:
@@ -185,26 +281,28 @@ def session_summary():
     app = result.get('active_app') or '未知页面'
     return '运行中 pid=%d（%s，%s，%s）' % (pid, mode, network, app)
 
-
 def build():
-    """增量编译；首次自动 configure。返回 True=成功。"""
-    if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
-        print('  首次配置 cmake ...')
-        rc = subprocess.call(['cmake', '-S', os.path.join(ROOT, 'sim'),
-                              '-B', BUILD, '-G', 'Ninja'],
-                             cwd=ROOT)
-        if rc != 0:
-            print('  configure 失败')
+    """Serialize incremental CMake/Ninja builds shared by simulator tools."""
+    os.makedirs(BUILD, exist_ok=True)
+    lock_path = os.path.join(BUILD, '.sim-ci-build.lock')
+    with open(lock_path, 'w') as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
+            print('  首次配置 cmake ...')
+            rc = subprocess.call(['cmake', '-S', os.path.join(ROOT, 'sim'),
+                                  '-B', BUILD, '-G', 'Ninja'], cwd=ROOT)
+            if rc != 0:
+                print('  configure 失败')
+                return False
+        proc = subprocess.run(['cmake', '--build', BUILD], cwd=ROOT,
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            tail = (proc.stdout + proc.stderr).splitlines()[-20:]
+            print('  编译失败：')
+            for line in tail:
+                print('   ', line)
             return False
-    proc = subprocess.run(['cmake', '--build', BUILD], cwd=ROOT,
-                          capture_output=True, text=True)
-    if proc.returncode != 0:
-        tail = (proc.stdout + proc.stderr).splitlines()[-20:]
-        print('  编译失败：')
-        for line in tail:
-            print('   ', line)
-        return False
-    return True
+        return True
 
 
 def _pick_network():
@@ -253,7 +351,7 @@ def _stop_started_process(proc):
     _clear_pid_file()
 
 
-def start_session(navigate=None, headless=False, online=False):
+def _start_session(navigate=None, headless=False, online=False):
     """后台启动常驻会话；navigate=app 时启动后自动跳转。"""
     pid = session_pid()
     if pid is not None:
@@ -294,7 +392,7 @@ def start_session(navigate=None, headless=False, online=False):
         launch_mode = '无头联网驻留'
     else:
         launch_mode = '固定尺寸窗口'
-    print('  启动会话：%s' % launch_mode)
+    print('  启动会话：%s（Agent 端口 %d）' % (launch_mode, PORT))
     log = open(LOG_FILE, 'w')
     # 天气缓存等模拟存储根固定落在 build/ 下，避免产物落在仓库根目录；
     # 开发会话按设备语义保留跨重启状态，因此这里只补默认值、不清空。
@@ -333,14 +431,44 @@ def start_session(navigate=None, headless=False, online=False):
         print('  网络状态设置失败：%s' % reply)
         _stop_started_process(proc)
         return False
-    if navigate:
-        if not _navigate(navigate):
-            print('  启动后导航失败，停止本次异常会话')
-            _stop_started_process(proc)
-            return False
+    if navigate and not _navigate(navigate):
+        print('  启动后导航失败，停止本次异常会话')
+        _stop_started_process(proc)
+        return False
     global LAST_NETWORK_ONLINE
     LAST_NETWORK_ONLINE = online
     return True
+
+
+def start_session(navigate=None, headless=False, online=False):
+    """Serialize endpoint validation and startup with other simulator tools."""
+    global _ALLOCATOR_LOCK, _PORT_LOCK, PORT
+    global NVS_DIR, OUT_DIR, DATA_DIR, PID_FILE, LOG_FILE
+    _ALLOCATOR_LOCK = _acquire_allocator_lock()
+    try:
+        pid = session_pid()
+        if CONFIGURED_PORT is None and pid is None and _port_open(PORT):
+            if _PORT_LOCK is not None:
+                _PORT_LOCK.close()
+            _PORT_LOCK = None
+            while _PORT_LOCK is None:
+                with socket.socket() as sock:
+                    sock.bind(('127.0.0.1', 0))
+                    candidate = sock.getsockname()[1]
+                if candidate != 5001 and not _port_open(candidate):
+                    _PORT_LOCK = _reserve_port(candidate)
+            PORT = candidate
+            session_dir = (os.environ.get('SIM_SESSION_DIR') or
+                           os.path.join(BUILD, 'instances', str(PORT)))
+            os.makedirs(session_dir, exist_ok=True)
+            NVS_DIR = os.path.join(session_dir, 'nvs')
+            OUT_DIR = os.path.join(session_dir, 'shots')
+            DATA_DIR = os.path.join(session_dir, 'data')
+            PID_FILE = os.path.join(session_dir, 'dev.pid')
+            LOG_FILE = os.path.join(session_dir, 'session.log')
+        return _start_session(navigate, headless, online)
+    finally:
+        _release_allocator_lock()
 
 
 def _wait_socket(seconds, proc=None):
@@ -533,6 +661,11 @@ MENU = """
 
 
 def main():
+    try:
+        _prepare_instance()
+    except (OSError, RuntimeError) as exc:
+        print('模拟器会话隔离失败：%s' % exc)
+        return
     print('工作目录：%s' % ROOT)
     try:
         while True:

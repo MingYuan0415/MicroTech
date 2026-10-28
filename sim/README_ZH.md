@@ -41,12 +41,15 @@ python3 sim/dev.py
 ```
 
 数字菜单只保留人类日常几件事：启动窗口（可选直达某页，联网/离线默认离线）、
-截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。退出（0 或 Ctrl+C）统一先停止模拟器会话。全部路径
-自动注入（`build/sim/dev_nvs`、`build/sim/shots`、端口 5002），零参数；
-无图形显示环境时启动自动转无头驻留。无头驱动、控件树、CI 回归与金样直接用
-`sim/tools/simctl.py` 与 `sh sim/ci/run_ci.sh [--update]`。开发入口会校验
-会话 PID 和 Agent 响应，端口 5002 被其他 Agent 占用时拒绝启动。
-联网会话使用宿主机真实 HTTP/HTTPS；离线无头会话使用 CI 时钟，不会发起天气请求。
+截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。退出（0 或 Ctrl+C）统一先停止
+模拟器会话。第一个开发会话使用端口 5002 和 `build/sim/dev_nvs`、`build/sim/shots`、
+`build/sim/data`；如果端口已被占用，后续启动会自动分配独立端口，并使用
+`build/sim/instances/<port>/` 下的状态。可用 `SIM_AGENT_PORT=N` 请求固定端口；驱动自动分配的会话时，
+将该端口传给 `simctl.py` 的 `--port N`。无图形显示环境时启动自动转无头驻留。
+CI 回归与金样使用 `sh sim/ci/run_ci.sh [--update]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
+独立端口及 NVS/SD/数据/截图目录。并发 CI 只在共享 CMake/Ninja 构建阶段串行。页面审查默认分配独立端口和运行目录；
+仅在使用 `--no-launch` 有意连接现有会话，或需要固定端点时才显式传入 `--port`。联网会话使用宿主机真实 HTTP/HTTPS；
+离线无头会话使用 CI 时钟，不会发起天气请求。
 
 开发入口同时记录会话启动时的 `DISPLAY`、`WAYLAND_DISPLAY`、`XDG_RUNTIME_DIR` 和
 `SDL_VIDEODRIVER`。远程桌面重连或切换图形会话后再次启动时，如果旧 PID 已确认是本项目

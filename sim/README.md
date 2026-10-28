@@ -51,15 +51,22 @@ The numeric menu keeps only the few things a human does daily: start the window
 (optionally jumping straight to a page; online/offline, offline by default),
 capture a page screenshot, reset device state, rebuild (incremental; while a
 session is running it prompts that a restart is needed to take effect). Exit
-(0 or Ctrl+C) always stops the simulator session first. All paths are injected
-automatically (`build/sim/dev_nvs`, `build/sim/shots`, port 5002), zero
-arguments; when there is no graphical display environment, starting
-automatically falls back to headless residency. For headless driving, the
-control tree, CI regression and golden samples, use `sim/tools/simctl.py` and
-`sh sim/ci/run_ci.sh [--update]` directly. The dev entry validates the session
-PID and the agent responses, and refuses to start when port 5002 is occupied by
-another agent. A networked session uses the host's real HTTP/HTTPS; an offline
-headless session uses the CI clock and issues no weather requests.
+(0 or Ctrl+C) always stops the simulator session first. The first development
+session uses port 5002 and `build/sim/dev_nvs`, `build/sim/shots`, and
+`build/sim/data`; if that endpoint is busy, another invocation automatically
+gets an isolated port and `build/sim/instances/<port>/` state. Set
+`SIM_AGENT_PORT=N` to request a fixed port, or pass `--port N` to `simctl.py`
+when driving an automatically allocated session. When there is no graphical
+display environment, starting automatically falls back to headless residency.
+For CI regression and golden samples, use `sh sim/ci/run_ci.sh [--update]`.
+Development sessions allocate distinct ports and per-instance state; CI runs
+allocate per-invocation ports and private NVS/SD/data/screenshot directories.
+Concurrent CI invocations serialize only their shared CMake/Ninja build. Page
+reviews also allocate a private port and run directory by default; pass
+`--port` explicitly only when intentionally attaching with `--no-launch` or
+when a stable endpoint is needed. A networked session uses the host's real
+HTTP/HTTPS; an offline headless session uses the CI clock and issues no weather
+requests.
 
 The dev entry also records the `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR`,
 and `SDL_VIDEODRIVER` values of the session at start. When you start it again

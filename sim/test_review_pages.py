@@ -1,6 +1,7 @@
 """Regressions for false-success cases in simulator review tooling."""
 import importlib.util
 import os
+import socket
 import tempfile
 from pathlib import Path
 import unittest
@@ -79,7 +80,15 @@ class FakePageRunner:
         raise AssertionError(method)
 
 
+
 class ReviewPagesTest(unittest.TestCase):
+    def test_default_port_allocator_returns_bindable_loopback_port(self):
+        port = review._allocate_port()
+        self.addCleanup(review._release_port_allocator)
+        self.assertNotEqual(port, 5001)
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', port))
+
     def _fake_page(self, travel, **kwargs):
         runner = FakePageRunner(travel, **kwargs)
         self.addCleanup(runner.dir.cleanup)
