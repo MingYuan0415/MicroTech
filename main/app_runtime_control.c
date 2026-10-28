@@ -167,7 +167,8 @@ static esp_err_t _control_set_volume(uint8_t percent)
 
 /* Storage ownership sits in audio_service, so the bridge only forwards the
  * settle. Keeping the split here preserves the UI distinction between a drag
- * preview and a committed level. */
+ * preview and a committed level; audio_service queues the flash write off the
+ * LVGL worker, whose stack lives in PSRAM. */
 static esp_err_t _control_set_volume_persisted(uint8_t percent)
 {
     return audio_service_set_volume_persisted(percent);

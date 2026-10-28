@@ -16,11 +16,11 @@ extern "C" {
  * The getters are cheap and non-blocking. Bluetooth and brightness setters only
  * enqueue work in the owning service; set_volume performs the short codec
  * control transfer the audio service serializes, so the surface rate-limits it
- * while a drag is in progress, and set_volume_persisted asks audio_service to
- * store the level once the drag settles. Volume storage itself belongs to
- * audio_service; this bridge never touches it. Every function pointer is always
- * populated; a service that is not yet ready makes its getter return an error,
- * which the surface renders as an unavailable tile or row.
+ * while a drag is in progress, and set_volume_persisted applies the level and
+ * queues the one-byte store once the drag settles. Volume storage itself
+ * belongs to audio_service; this bridge never touches it. Every function
+ * pointer is always populated; a service that is not yet ready makes its getter
+ * return an error, which the surface renders as an unavailable tile or row.
  *
  * @return Application-manager control-center operations.
  */
