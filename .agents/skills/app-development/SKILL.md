@@ -81,7 +81,10 @@ capacities in the owning headers instead of copying them from this skill.
 - Treat ops context and arguments as callback-scoped; copy any payload needed
   after the callback.
 - Keep blocking file, audio, parsing, network, and hardware work off the UI
-  worker; update UI only through owned snapshots or the UI dispatcher.
+  worker; update UI only through owned snapshots or the UI dispatcher. LVGL
+  callbacks run on the PSRAM-stacked `lvgl` worker, so never commit NVS or
+  write/erase internal flash there: queue the one-shot storage work on
+  `chore_service` or the owning service worker (see the `esp32` skill).
 
 ## Prohibited Patterns
 

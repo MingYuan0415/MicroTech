@@ -39,6 +39,30 @@ Waveshare board.
 - Use the BSP capability and lifecycle APIs. Do not let applications bypass
   the BSP to own GPIO, bus, power, or peripheral-driver state.
 
+## PSRAM Stacks and Flash Access
+
+- `CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM` permits PSRAM-backed task
+  stacks. The `lvgl` worker uses one (`stack_in_psram = true` in
+  `app_manager_lvgl_adapter.c`); the display-diagnostics task is another when
+  enabled, and any task created with `MALLOC_CAP_SPIRAM` is subject to the
+  same rule.
+- A flash write, erase, or commit disables the flash and PSRAM caches. If the
+  active stack pointer is in PSRAM, ESP-IDF asserts in
+  `spi_flash_disable_interrupts_caches_and_other_cpu()`; without the assert the
+  stack would be inaccessible while the cache is off.
+- Never perform an NVS commit or erase (`nv_storage_*` or `nvs_*` writes,
+  `nvs_erase_*`, `nvs_commit`), an `esp_partition_*` write or erase, an OTA
+  flash operation, or a flash-backed filesystem write from the LVGL worker, an
+  LVGL event/timer/draw callback, or any other PSRAM-stacked task. Queue small
+  storage work on `chore_service` (internal-RAM worker) or the owning service
+  worker, and keep new storage workers on an internal-RAM stack (the default
+  `xTaskCreate*` path, or `MALLOC_CAP_INTERNAL` with the caps APIs).
+- NVS and flash reads through the cache are allowed; the restriction is on
+  operations that disable the cache.
+- Do not move the LVGL worker stack to internal RAM to make a storage call
+  legal. `tests/display/README.md` requires the render task stack in PSRAM;
+  move the storage call off the worker instead.
+
 ## ESP32-S3 Pin Guardrails
 
 - Treat GPIO0, GPIO3, GPIO45, and GPIO46 as ESP32-S3 strapping pins. Verify
