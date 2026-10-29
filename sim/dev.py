@@ -24,6 +24,7 @@ ROOT = os.path.dirname(SIM_ROOT)
 BUILD = os.path.join(ROOT, 'build', 'sim')
 BINARY = os.path.join(BUILD, 'microtech_sim')
 RES_DIR = os.path.join(BUILD, 'sim_res_fs')
+NVS_DIR = os.path.join(BUILD, 'dev_nvs')
 CONFIGURED_PORT = os.environ.get('SIM_AGENT_PORT')
 PORT = int(CONFIGURED_PORT or '5002')
 DISPLAY_ENV_KEYS = ('DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',

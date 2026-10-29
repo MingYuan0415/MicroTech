@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Focused tests for the development-session lifecycle."""
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -85,6 +86,28 @@ class DevSessionTests(unittest.TestCase):
                 mock.patch.object(dev, 'build') as build:
             self.assertFalse(dev.start_session())
         build.assert_not_called()
+
+    def test_start_session_uses_default_nvs_dir(self):
+        proc = mock.Mock()
+        proc.pid = 123
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(dev, 'session_pid', return_value=None), \
+                    mock.patch.object(dev, 'agent_ready', return_value=False), \
+                    mock.patch.object(dev, 'build', return_value=True), \
+                    mock.patch.object(dev, 'OUT_DIR',
+                                      os.path.join(tmp, 'shots')), \
+                    mock.patch.object(dev, 'LOG_FILE',
+                                      os.path.join(tmp, 'session.log')), \
+                    mock.patch.object(dev, 'PID_FILE',
+                                      os.path.join(tmp, 'dev.pid')), \
+                    mock.patch.object(dev.subprocess, 'Popen',
+                                      return_value=proc) as popen, \
+                    mock.patch.object(dev, '_wait_socket', return_value=True), \
+                    mock.patch.object(dev, '_connect'), \
+                    mock.patch.object(dev, 'rpc', return_value={'ok': True}):
+                self.assertTrue(dev._start_session(headless=True))
+        cmd = popen.call_args[0][0]
+        self.assertEqual(cmd[cmd.index('--nvs-dir') + 1], dev.NVS_DIR)
 
     def test_agent_ready_rejects_non_object_reply(self):
         sock = mock.Mock()
