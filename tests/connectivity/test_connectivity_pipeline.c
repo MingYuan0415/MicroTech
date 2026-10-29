@@ -3340,7 +3340,8 @@ static bool _run_pipeline(void)
     CHECK(event_bus_init() == ESP_OK);
     CHECK(app_manager_get_ui_dispatch_fn(&s_real_ui_dispatch) == ESP_OK);
     CHECK(s_real_ui_dispatch != NULL);
-    CHECK(event_bus_register_ui_dispatch(_test_ui_dispatch) == ESP_OK);
+    CHECK(event_bus_register_ui_dispatch(
+              _test_ui_dispatch, EVENT_BUS_MAX_PENDING_UI_BATCHES) == ESP_OK);
     event_bus_sub_handle_t status_terminal_subscription =
         EVENT_BUS_SUB_HANDLE_INVALID;
     event_bus_sub_handle_t scan_terminal_subscription =

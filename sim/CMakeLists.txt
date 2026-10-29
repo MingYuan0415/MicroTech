@@ -128,6 +128,7 @@ set(APPS "${MT_ROOT}/layers/apps")
 set(SIM_LAYER_SOURCES
     "${MIDDLEWARE}/mt_log/src/mt_log.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
+    "${MIDDLEWARE}/event_bus/src/event_bus_core.c"
     "${MIDDLEWARE}/nv_storage/src/nv_storage.c"
     "${MIDDLEWARE}/nv_storage/src/nv_storage_blob.c"
     "${MIDDLEWARE}/timer_service/src/timer_service.c"

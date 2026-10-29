@@ -211,6 +211,18 @@ static esp_err_t _input_unregister(void)
     return ESP_OK;
 }
 
+/* Reserve mailbox slots for page commands and synchronous UI calls. */
+#define SIM_UI_DISPATCH_RESERVE 4U
+
+static uint32_t _sim_ui_dispatch_depth(void)
+{
+    uint32_t depth = CONFIG_APP_MANAGER_MAILBOX_CAPACITY;
+    depth = depth > SIM_UI_DISPATCH_RESERVE ?
+            depth - SIM_UI_DISPATCH_RESERVE : 1U;
+    return depth < EVENT_BUS_MAX_PENDING_UI_BATCHES ?
+           depth : EVENT_BUS_MAX_PENDING_UI_BATCHES;
+}
+
 esp_err_t sim_runtime_boot(void)
 {
     app_manager_ui_dispatch_fn dispatch = NULL;
@@ -442,7 +454,8 @@ esp_err_t sim_runtime_boot(void)
         fprintf(stderr, "sim boot: app_manager_get_ui_dispatch_fn failed %s\n", esp_err_to_name(result));
         return result;
     }
-    result = event_bus_register_ui_dispatch(dispatch);
+    result = event_bus_register_ui_dispatch(dispatch,
+                                            _sim_ui_dispatch_depth());
     if (result != ESP_OK)
     {
         fprintf(stderr, "sim boot: event_bus_register_ui_dispatch failed %s\n", esp_err_to_name(result));

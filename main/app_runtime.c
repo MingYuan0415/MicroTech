@@ -103,6 +103,18 @@ static const bsp_sd_ops_t *s_runtime_sd;
 static bsp_display_lease_t s_display_lease;
 static bool s_factory_reset_pending;
 
+/* Reserve mailbox slots for page commands and synchronous UI calls. */
+#define APP_RUNTIME_UI_DISPATCH_RESERVE 4U
+
+static uint32_t _app_runtime_ui_dispatch_depth(void)
+{
+    uint32_t depth = CONFIG_APP_MANAGER_MAILBOX_CAPACITY;
+    depth = depth > APP_RUNTIME_UI_DISPATCH_RESERVE ?
+            depth - APP_RUNTIME_UI_DISPATCH_RESERVE : 1U;
+    return depth < EVENT_BUS_MAX_PENDING_UI_BATCHES ?
+           depth : EVENT_BUS_MAX_PENDING_UI_BATCHES;
+}
+
 static void _app_runtime_restart(void *context)
 {
     (void)context;
@@ -515,8 +527,8 @@ static esp_err_t _app_runtime_stop_active_services(void)
         {
             return result;
         }
-        result = event_bus_unsubscribe(
-                     s_ownership.connectivity_subscription);
+        result = event_bus_unsubscribe_sync(
+                     s_ownership.connectivity_subscription, 1000U);
         if (result != ESP_OK && result != ESP_ERR_NOT_FOUND)
         {
             return result;
@@ -597,6 +609,12 @@ static esp_err_t _app_runtime_stop_app_services(void)
             return result;
         }
         s_ownership.app_manager_attempted = false;
+        /* The mailbox queue is gone, so no pending batch can be delivered. */
+        result = event_bus_abandon_pending_ui();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
     }
     /* Device Link is stopped after the App Manager so pages that own a
      * Device Link session can still close their windows during teardown. */
@@ -1054,7 +1072,9 @@ static esp_err_t _app_runtime_start_app_services(
     {
         return result;
     }
-    result = event_bus_register_ui_dispatch(s_ownership.ui_dispatch);
+    result = event_bus_register_ui_dispatch(
+                 s_ownership.ui_dispatch,
+                 _app_runtime_ui_dispatch_depth());
     if (result != ESP_OK)
     {
         return result;

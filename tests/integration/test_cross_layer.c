@@ -1416,7 +1416,8 @@ static void _initialize_stack(void)
     app_manager_ui_dispatch_fn dispatcher = NULL;
     assert(app_manager_get_ui_dispatch_fn(&dispatcher) == ESP_OK);
     assert(dispatcher != NULL);
-    assert(event_bus_register_ui_dispatch(dispatcher) == ESP_OK);
+    assert(event_bus_register_ui_dispatch(
+               dispatcher, EVENT_BUS_MAX_PENDING_UI_BATCHES) == ESP_OK);
 
     const ptrdiff_t app_descriptor_count =
         _app_manager_apps_end - _app_manager_apps_start;

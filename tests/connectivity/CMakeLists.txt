@@ -21,6 +21,7 @@ set(IDF_BT "$ENV{IDF_PATH}/components/bt")
 add_executable(test_connectivity_pipeline
     test_connectivity_pipeline.c
     host/freertos_host.c
+    host/host_dynamic_semaphore.c
     host/host_mailbox_port.c
     host/connectivity_manager_digest_fake.c
     host/nv_storage_fake.c
@@ -34,6 +35,7 @@ add_executable(test_connectivity_pipeline
     "${WIFI_SERVICE}/src/wifi_service_worker.c"
     "${WIFI_SERVICE}/src/wifi_service_worker_ops.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
+    "${MIDDLEWARE}/event_bus/src/event_bus_core.c"
     "${APP_CORE}/src/app_manager_mailbox.c"
     "${APPS}/setup_app/src/setup_wifi_adapter.c"
 )

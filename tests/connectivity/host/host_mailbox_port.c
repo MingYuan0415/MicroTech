@@ -9,7 +9,6 @@
 
 #define HOST_DYNAMIC_QUEUE_COUNT     2U
 #define HOST_DYNAMIC_QUEUE_BYTES   256U
-#define HOST_DYNAMIC_SEMAPHORE_COUNT 40U
 
 typedef struct host_dynamic_queue
 {
@@ -19,8 +18,6 @@ typedef struct host_dynamic_queue
 
 static pthread_mutex_t s_pool_lock = PTHREAD_MUTEX_INITIALIZER;
 static host_dynamic_queue_t s_dynamic_queues[HOST_DYNAMIC_QUEUE_COUNT];
-static StaticSemaphore_t
-s_dynamic_semaphores[HOST_DYNAMIC_SEMAPHORE_COUNT];
 
 struct host_timer
 {
@@ -61,37 +58,6 @@ QueueHandle_t xQueueCreate(UBaseType_t length, UBaseType_t item_size)
     }
     (void)pthread_mutex_unlock(&s_pool_lock);
     return queue;
-}
-
-static SemaphoreHandle_t _host_create_dynamic_semaphore(bool mutex)
-{
-    (void)pthread_mutex_lock(&s_pool_lock);
-    SemaphoreHandle_t semaphore = NULL;
-    for (size_t index = 0; index < HOST_DYNAMIC_SEMAPHORE_COUNT; ++index)
-    {
-        StaticSemaphore_t *candidate = &s_dynamic_semaphores[index];
-        if (!candidate->initialized)
-        {
-            semaphore = mutex ? xSemaphoreCreateMutexStatic(candidate) :
-                        xSemaphoreCreateBinaryStatic(candidate);
-            if (semaphore != NULL)
-            {
-                break;
-            }
-        }
-    }
-    (void)pthread_mutex_unlock(&s_pool_lock);
-    return semaphore;
-}
-
-SemaphoreHandle_t xSemaphoreCreateMutex(void)
-{
-    return _host_create_dynamic_semaphore(true);
-}
-
-SemaphoreHandle_t xSemaphoreCreateBinary(void)
-{
-    return _host_create_dynamic_semaphore(false);
 }
 
 static bool _host_timer_take_tick(struct host_timer *timer)

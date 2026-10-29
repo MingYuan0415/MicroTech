@@ -87,6 +87,7 @@ typedef enum
     TEST_EVENT_POWER_DEINIT,
     TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
     TEST_EVENT_APP_MANAGER_DEINIT,
+    TEST_EVENT_ABANDON_PENDING_UI,
     TEST_EVENT_UNREGISTER_UI_DISPATCH,
     TEST_EVENT_SYSTEM_PM_DEINIT,
     TEST_EVENT_CHORE_DEINIT,
@@ -523,10 +524,17 @@ esp_err_t event_bus_init(void)
     return _test_result(TEST_EVENT_EVENT_BUS_INIT);
 }
 
-esp_err_t event_bus_register_ui_dispatch(event_bus_ui_dispatch_fn dispatch)
+esp_err_t event_bus_register_ui_dispatch(event_bus_ui_dispatch_fn dispatch,
+        uint32_t queue_depth)
 {
     assert(dispatch == _test_ui_dispatch);
+    assert(queue_depth > 0U);
     return _test_result(TEST_EVENT_REGISTER_UI_DISPATCH);
+}
+
+esp_err_t event_bus_abandon_pending_ui(void)
+{
+    return _test_result(TEST_EVENT_ABANDON_PENDING_UI);
 }
 
 esp_err_t event_bus_unregister_ui_dispatch(
@@ -567,6 +575,21 @@ esp_err_t event_bus_subscribe(event_bus_msg_id_t msg_id, uint32_t sub_type,
         s_test.connectivity_callback = callback;
         s_test.connectivity_callback_context = user_data;
         *out_handle = 1U;
+    }
+    return result;
+}
+
+esp_err_t event_bus_unsubscribe_sync(event_bus_sub_handle_t handle,
+                                     uint32_t timeout_ms)
+{
+    assert(handle == 1U);
+    assert(timeout_ms > 0U);
+    const esp_err_t result = _test_result(
+                                 TEST_EVENT_CONNECTIVITY_UNSUBSCRIBE);
+    if (result == ESP_OK)
+    {
+        s_test.connectivity_callback = NULL;
+        s_test.connectivity_callback_context = NULL;
     }
     return result;
 }
@@ -1294,6 +1317,7 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
         TEST_EVENT_APP_MANAGER_DEINIT,
+        TEST_EVENT_ABANDON_PENDING_UI,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_CANCEL,
@@ -1529,6 +1553,7 @@ static void _test_cleanup_retry_before_restart(void)
         TEST_EVENT_DISPLAY_BENCHMARK_STOP,
         TEST_EVENT_UNREGISTER_WAKE_REQUESTER,
         TEST_EVENT_APP_MANAGER_DEINIT,
+        TEST_EVENT_ABANDON_PENDING_UI,
         TEST_EVENT_BLE_DEINIT,
         TEST_EVENT_UNREGISTER_UI_DISPATCH,
         TEST_EVENT_SYSTEM_PM_CANCEL,
