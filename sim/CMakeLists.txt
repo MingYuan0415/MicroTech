@@ -155,6 +155,7 @@ set(SIM_LAYER_SOURCES
     "${MIDDLEWARE}/sd_storage_service/src/sd_storage_service.c"
     "${MIDDLEWARE}/file_service/src/file_service.c"
     "${APP_THEME}/src/app_theme.c"
+    "${APP_THEME}/src/app_theme_lvgl.c"
     "${APP_CORE}/src/app_manager_pm.c"
     "${APP_CORE}/src/app_manager_pm_api.c"
     "${APP_CORE}/src/app_manager_pm_init.c"
