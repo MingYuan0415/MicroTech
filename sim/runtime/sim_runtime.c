@@ -332,6 +332,10 @@ esp_err_t sim_runtime_boot(void)
         .directory = "MicroTech/Recordings",
         .max_duration_seconds = 30U * 60U,
         .minimum_free_bytes = 8U * 1024U * 1024U,
+        /* Match the device product policy so the simulator exercises the same
+         * capture level as the board. */
+        .input_gain_db = 6U,
+        .warmup_ms = 1000U,
     };
     result = recorder_service_init(&recorder_config);
     if (result != ESP_OK)

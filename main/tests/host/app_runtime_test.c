@@ -1017,7 +1017,8 @@ esp_err_t audio_service_init(const audio_service_init_config_t *config)
     assert(config->stream.bits_per_sample == 16U);
     assert(config->stream.channels == 2U);
     assert(config->stream.mclk_multiple == 384U);
-    assert(config->volume_percent == 60U);
+    /* Product config runs the codec at unity: 0..100 maps to -50..0 dB. */
+    assert(config->volume_percent == 100U);
     assert(!config->muted);
     assert(config->pa_enabled);
     return _test_result(TEST_EVENT_AUDIO_INIT);

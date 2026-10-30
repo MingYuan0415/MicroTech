@@ -58,7 +58,10 @@ static const app_product_config_t s_product_config =
             .channels = 2U,
             .mclk_multiple = 384U,
         },
-        .volume_percent = 60U,
+        /* 0..100 maps to -50..0 dB after the ES8311 hardware gain, so 100 is
+         * unity. Anything below it stacks with the -6 dB PA trim and leaves a
+         * voice memo unusable next to the device's own playback. */
+        .volume_percent = 100U,
         .muted = false,
         .pa_enabled = true,
     },

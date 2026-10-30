@@ -1234,6 +1234,18 @@ static esp_err_t _app_runtime_start_app_services(
             .directory = "MicroTech/Recordings",
             .max_duration_seconds = 30U * 60U,
             .minimum_free_bytes = 8U * 1024U * 1024U,
+            /* The capture path runs the microphone mono at a fixed analog
+             * gain, so a take sits far below the playback level of
+             * synthesised audio. 6 dB lands a normal speaking voice near
+             * -14 dBFS peak: enough to match the rest of the device without
+             * eating the headroom a loud talker needs. */
+            .input_gain_db = 6U,
+            /* Measured on a take recorded at 24 dB of total gain: the codec
+             * enable transient sits at full scale for the first 40 ms and is
+             * still 2.7 kcounts at 250 ms. One second is the first interval
+             * that is clean, and a second of silence at the head of a memo is
+             * cheaper than a start click in it. */
+            .warmup_ms = 1000U,
         };
         result = recorder_service_init(&recorder_config);
         if (result != ESP_OK)
