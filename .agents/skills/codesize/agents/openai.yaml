@@ -1,0 +1,4 @@
+interface:
+  display_name: "MicroTech Code Size"
+  short_description: "Analyze MicroTech firmware size from map, archives, and build snapshots"
+  default_prompt: "Use $codesize to analyze this MicroTech build's code size, identify the largest contributors, and compare it with a baseline."

@@ -83,6 +83,7 @@ Load `.agents/skills/` on demand; do not preload everything:
 | Adversarial simulator review before a UI change is done | `ui-review` |
 | Board pins, buses, hardware constraints | `esp32` |
 | Display pipeline ownership, draw submission, flush handshake | `lvgl-integration` |
+| Firmware code size, map/archive analysis, build size comparison | `codesize` |
 
 The general build, configuration, debugging, and verification workflow is defined in this file; do not load a skill for it.
 
