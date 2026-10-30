@@ -11,6 +11,8 @@
 #define APP_PRODUCT_WIFI_TASK_PRIORITY        4U
 #define APP_PRODUCT_DEVICE_LINK_TASK_PRIORITY 4U
 #define APP_PRODUCT_WEATHER_TASK_PRIORITY      4U
+#define APP_PRODUCT_MUSIC_TASK_PRIORITY       4U
+#define APP_PRODUCT_MUSIC_AUDIO_PRIORITY      5U
 #define APP_PRODUCT_CHORE_TASK_PRIORITY        4U
 
 /* Recent-tasks keeps at most one pinned home task plus three business tasks
@@ -40,6 +42,10 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(
                "invalid product device-link task priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_WEATHER_TASK_PRIORITY),
                "invalid product weather task priority");
+_Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_MUSIC_TASK_PRIORITY),
+               "invalid product music task priority");
+_Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_MUSIC_AUDIO_PRIORITY),
+               "invalid product music audio priority");
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_CHORE_TASK_PRIORITY),
                "invalid product chore task priority");
 
@@ -86,6 +92,11 @@ static const app_product_config_t s_product_config =
         .daily_refresh_seconds = 4U * 60U * 60U,
         .manual_refresh_min_seconds = 60U,
         .allow_private_http = false,
+    },
+    .music = {
+        .api_task_priority = APP_PRODUCT_MUSIC_TASK_PRIORITY,
+        .audio_task_priority = APP_PRODUCT_MUSIC_AUDIO_PRIORITY,
+        .default_quality = MUSIC_QUALITY_HIGH,
     },
     .chore = {
         .task_priority = APP_PRODUCT_CHORE_TASK_PRIORITY,

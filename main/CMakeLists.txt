@@ -22,6 +22,7 @@ idf_component_register(
         recorder_service
         onboarding_service
         weather_service
+        music_service
         system_pm
         power_service
         imu_service

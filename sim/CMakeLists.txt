@@ -256,6 +256,7 @@ target_include_directories(microtech_sim PRIVATE
     "${MIDDLEWARE}/timer_service/include"
     "${MIDDLEWARE}/nv_storage/include"
     "${MIDDLEWARE}/recorder_service/include"
+    "${MIDDLEWARE}/music_service/include"
     "${MIDDLEWARE}/chore_service/include"
     "${MIDDLEWARE}/onboarding_service/include"
     "${MIDDLEWARE}/weather_service/include"

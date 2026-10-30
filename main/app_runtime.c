@@ -36,6 +36,7 @@
 #include "onboarding_service.h"
 #include "esp_timer.h"
 #include "weather_service.h"
+#include "music_service.h"
 
 #ifdef ESP_PLATFORM
     #include "esp_system.h"
@@ -64,6 +65,7 @@ typedef struct app_runtime_ownership
     bool display_lease_acquired;
     bool time_attempted;
     bool weather_attempted;
+    bool music_attempted;
     bool chore_attempted;
     bool system_pm_attempted;
     bool system_pm_cancelable;
@@ -160,6 +162,13 @@ static void _app_runtime_connectivity_event(
     {
         LOG_W("weather network update failed: %s",
               esp_err_to_name(weather_result));
+    }
+    const esp_err_t music_result = music_service_set_network_ready(
+                                       snapshot.ipv4_address != 0U);
+    if (music_result != ESP_OK && music_result != ESP_ERR_INVALID_STATE)
+    {
+        LOG_W("music network update failed: %s",
+              esp_err_to_name(music_result));
     }
 }
 
@@ -362,6 +371,7 @@ static bool _app_runtime_has_owned_resources(void)
                  s_ownership.bsp_attempted || s_ownership.display_lease_acquired ||
                  s_ownership.time_attempted ||
                  s_ownership.weather_attempted ||
+                 s_ownership.music_attempted ||
                  s_ownership.chore_attempted ||
                  s_ownership.system_pm_attempted ||
                  s_ownership.app_manager_attempted ||
@@ -555,6 +565,15 @@ static esp_err_t _app_runtime_stop_active_services(void)
         }
         s_ownership.sd_attempted = false;
         s_runtime_sd = NULL;
+    }
+    if (s_ownership.music_attempted)
+    {
+        result = music_service_deinit();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        s_ownership.music_attempted = false;
     }
     if (s_ownership.audio_attempted)
     {
@@ -874,6 +893,11 @@ static esp_err_t _app_runtime_start_foundations(void)
         /* audio_service owns its own persisted setting, like every other
          * module that stores one: the reset is aggregated here by owner. */
         result = audio_service_reset_persisted_state();
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        result = music_service_reset_persisted_state();
         if (result != ESP_OK)
         {
             return result;
@@ -1218,6 +1242,18 @@ static esp_err_t _app_runtime_start_app_services(
         }
         s_ownership.recorder_attempted = true;
     }
+    if (s_ownership.audio_attempted)
+    {
+        result = music_service_init(&context->product->music);
+        if (result != ESP_OK)
+        {
+            LOG_W("music service unavailable: %s", esp_err_to_name(result));
+        }
+        else
+        {
+            s_ownership.music_attempted = true;
+        }
+    }
     if (s_ownership.sd_attempted)
     {
         const file_service_config_t file_config =
@@ -1299,6 +1335,15 @@ static esp_err_t _app_runtime_start_connectivity(
             if (result != ESP_OK)
             {
                 return result;
+            }
+            if (s_ownership.music_attempted)
+            {
+                result = music_service_set_network_ready(
+                             status.ipv4_address != 0U);
+                if (result != ESP_OK && result != ESP_ERR_INVALID_STATE)
+                {
+                    return result;
+                }
             }
         }
     }

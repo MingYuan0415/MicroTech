@@ -22,8 +22,11 @@ typedef struct lv_event_dsc_t lv_event_dsc_t;
 typedef struct lv_display_t lv_display_t;
 /** @brief Opaque fake LVGL input device. */
 typedef struct lv_indev_t lv_indev_t;
-/** @brief Opaque fake LVGL image descriptor. */
-typedef struct lv_image_dsc_t lv_image_dsc_t;
+/** @brief Fake LVGL image descriptor. */
+typedef struct lv_image_dsc_t
+{
+    uint32_t marker;
+} lv_image_dsc_t;
 /** @brief Opaque fake LVGL chart series. */
 typedef struct lv_chart_series_t lv_chart_series_t;
 /** @brief Fake LVGL animation with the public timing fields used by LVGL. */

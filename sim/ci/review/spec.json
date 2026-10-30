@@ -3461,6 +3461,100 @@
           "no_golden": true
         }
       ]
+    },
+    {
+      "app": "music",
+      "page": "root",
+      "states": [
+        {
+          "name": "empty",
+          "seed": [],
+          "expect_visible": [
+            "音乐",
+            "退出登录",
+            "刷新"
+          ],
+          "single_line": [
+            "音乐"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "music",
+      "page": "login",
+      "states": [
+        {
+          "name": "default",
+          "seed": [],
+          "expect_visible": [
+            "登录",
+            "微信扫码"
+          ],
+          "single_line": [
+            "微信扫码"
+          ],
+          "allow_disabled": [
+            "微信扫码"
+          ]
+        }
+      ]
+    },
+    {
+      "app": "music",
+      "page": "player",
+      "states": [
+        {
+          "name": "idle",
+          "seed": [],
+          "expect_visible": [
+            "正在播放",
+            "暂无播放",
+            "播放",
+            "歌词"
+          ],
+          "single_line": [
+            "正在播放"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "music",
+      "page": "lyrics",
+      "states": [
+        {
+          "name": "empty",
+          "seed": [],
+          "expect_visible": [
+            "歌词"
+          ],
+          "single_line": [
+            "歌词"
+          ],
+          "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "music",
+      "page": "playlist",
+      "states": [
+        {
+          "name": "empty",
+          "seed": [],
+          "expect_visible": [
+            "歌单",
+            "正在加载…"
+          ],
+          "single_line": [
+            "歌单"
+          ],
+          "allow_disabled": []
+        }
+      ]
     }
   ]
 }

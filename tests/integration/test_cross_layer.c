@@ -60,6 +60,7 @@ static const char *const s_expected_app_ids[] =
     APP_MANAGER_ID_FILES,
     APP_MANAGER_ID_LEVEL,
     APP_MANAGER_ID_FLYBIRDS,
+    APP_MANAGER_ID_MUSIC,
     APP_MANAGER_ID_DIAGNOSTICS,
 };
 

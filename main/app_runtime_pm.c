@@ -14,6 +14,7 @@
 #include "recorder_service.h"
 #include "time_service.h"
 #include "weather_service.h"
+#include "music_service.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -70,6 +71,10 @@ static bool _app_runtime_pm_is_standby_allowed(void)
     {
         return false;
     }
+    if (music_service_is_playing())
+    {
+        return false;
+    }
     /* Pending deletes, a maintenance operation, or a running format block
      * standby; a mounted card with idle sessions does not. */
     if (s_sleep_context.file_participant && file_service_is_busy())
@@ -102,6 +107,7 @@ static bool _app_runtime_pm_commit_guard(uint32_t generation, void *context)
     return !atomic_load_explicit(&s_benchmark_inhibited,
                                  memory_order_acquire) &&
            !recorder_service_is_busy() &&
+           !music_service_is_playing() &&
            (!s_sleep_context.device_link_participant ||
             !device_link_service_is_busy()) &&
            app_manager_pm_standby_commit_guard(generation, NULL);

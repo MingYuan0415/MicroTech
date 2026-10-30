@@ -96,6 +96,11 @@ without a second stop; a suspend in READY is a no-op with `resume_required=false
   be reused only after a successful reap; a failed release keeps the session for
   open/close to retry. Double mute still holds the lease and supplies 20 ms of
   PCM.
+- `music_service`: online playback uses PLAYBACK. It configures the decoded
+  source rate/channel/bit depth before acquire, restores the product default
+  format after release, and keeps the lease independent of music App page
+  lifecycle; playback continues with the screen off while the system PM guard
+  blocks standby.
 - `main/display_benchmark.c`: the audio maintenance load uses MAINTENANCE and must
   not reuse another owner's stream. Settings are modified only after a complete
   save; a failed restore keeps the snapshot and lease, and a failed release keeps
