@@ -291,7 +291,7 @@ dependencies:
       require: private
       version: ^1.2.13
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.6.59
   espressif/qoi:
@@ -402,6 +402,7 @@ direct_dependencies:
 - espressif/esp_lcd_touch_ft5x06
 - espressif/esp_lvgl_adapter
 - espressif/esp_new_jpeg
+- espressif/libpng
 - event_bus
 - idf
 - joltwallet/littlefs
@@ -409,6 +410,6 @@ direct_dependencies:
 - nv_storage
 - sd_storage_service
 - wifi_service
-manifest_hash: 01edbf174a8e46ad8fb830917e1f56d0e037f844c878df5090fb06daaf5d6ee4
+manifest_hash: 01bd419b1600867af360ba1357ab04b9b9df012686f6c71dbdb88575f06d587f
 target: esp32s3
 version: 3.0.0

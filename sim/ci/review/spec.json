@@ -3503,12 +3503,15 @@
           "seed": [],
           "expect_visible": [
             "登录",
+            "QQ扫码",
             "微信扫码"
           ],
           "single_line": [
+            "QQ扫码",
             "微信扫码"
           ],
           "allow_disabled": [
+            "QQ扫码",
             "微信扫码"
           ]
         }

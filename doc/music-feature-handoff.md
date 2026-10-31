@@ -74,8 +74,8 @@ ERROR
   re-checks time quality, so SNTP completion does not require a new connectivity
   event.
 - `music_service_login_begin()` is accepted only when network and time are ready.
-- QQ login is rejected with `ESP_ERR_NOT_SUPPORTED`; the login page exposes only
-  the WeChat QR flow.
+- Both `MUSIC_LOGIN_TYPE_QQ` and `MUSIC_LOGIN_TYPE_WECHAT` are accepted; the
+  login page exposes QQ and WeChat QR entries.
 - A terminal QR failure enters `AUTH_REQUIRED`; a verified QR flow enters
   `READY` only after the credential is saved successfully.
 
@@ -88,11 +88,12 @@ Large objects are allocated in PSRAM:
 - `music_lyric_snapshot_t`: up to `MUSIC_SERVICE_MAX_LYRIC_LINES` parsed lines
   (256).
 - `music_image_t`: decoded RGB565 pixels plus source URL and token.
-- Stream buffers: 4 KiB input and 16 KiB PCM.
+- Stream buffers: 4 KiB input and 16 KiB initial PCM, grown on demand up to
+  256 KiB for decoder output frames.
 
-The service runtime state (`s_music`), the cookie jar (`s_cookies`), and both
-command queues also live in PSRAM. The small `s_stream` runtime block (72 B)
-stays in internal RAM. The API worker stack remains in internal RAM because
+The service runtime state (`s_music`), the 24-entry cookie jar (`s_cookies`),
+and both command queues also live in PSRAM. The small `s_stream` runtime block
+(72 B) stays in internal RAM. The API worker stack remains in internal RAM because
 credential save/erase goes through NVS, which disables the flash cache; a PSRAM
 stack would fault during that window. The audio worker runs from a PSRAM stack
 and uses the `audio_service` exclusive playback lease.
@@ -127,6 +128,25 @@ WeChat QR flow:
 7. The credential is written to NVS key `music_cred` with magic `MUS1` and version
    1. Only a successful save sets `credential_valid` and `READY`.
 
+QQ QR flow:
+
+1. The App calls `music_service_login_begin(MUSIC_LOGIN_TYPE_QQ)`.
+2. The API worker obtains `pt_login_sig` from
+   `https://xui.ptlogin2.qq.com/cgi-bin/xlogin`, then downloads the PNG QR from
+   `https://ssl.ptlogin2.qq.com/ptqrshow`. `ptqrtoken` is `hash33(qrsig)`.
+3. The API worker polls
+   `https://ssl.ptlogin2.qq.com/ptqrlogin` every 1.5 s. `66` means waiting,
+   `67` means scanned, `65` means expired, and `0` carries the `uin` and OAuth
+   authorization URL.
+4. The authorization URL is fetched with cookies; `p_skey` is read from the
+   cookie jar. A form POST to `https://graph.qq.com/oauth2.0/authorize` uses
+   `g_tk = hash33(p_skey, 5381)` and returns an OAuth `code`.
+5. The code is exchanged through `https://u.y.qq.com/cgi-bin/musicu.fcg` using
+   module `QQConnectLogin.LoginServer`, method `QQLogin`, and
+   `comm.tmeLoginType=2`.
+6. The credential is saved with `login_type=2`; the public status reports
+   `MUSIC_LOGIN_TYPE_QQ`.
+
 The credential blob contains `musicid`, `musickey`, `refresh_key`,
 `refresh_token`, and `expires_at`. Startup validates the blob and rejects an
 already-expired credential. Automatic token refresh is not implemented; expired
@@ -148,6 +168,14 @@ Catalog endpoints currently used:
 | Song URL | `vkey.GetVkeyServer/CgiGetVkey` |
 | Lyric | `music.musichallSong.PlayLyricInfo/GetPlayLyricInfo` |
 | Cover | `https://y.gtimg.cn/music/photo_new/T002R300x300M000<album_mid>.jpg` |
+
+The current catalog responses use the newer song schema: `songlist[].mid`,
+`file.media_mid`, `file.size_128mp3`, `file.size_320mp3`, and
+`file.size_flac`; playlist metadata is under `dirinfo`. The parser accepts the
+older `songmid`/`strMediaMid`/`size*` and `dissname` names as fallbacks.
+`CgiGetVkey` requires `songmid` and `songtype` arrays; the filename is built
+from `media_mid`. Lyrics are requested with `crypt: 0`, which returns
+Base64-encoded plain LRC text.
 
 `dirid == 201` identifies the QQ Music favorite bucket; other `GetPlaylistByUin`
 entries are created playlists. The home snapshot therefore has separate
@@ -175,6 +203,9 @@ Playback path:
 
 Audio fault policy:
 
+- `music_stream_init()` registers the MP3 and FLAC decoder implementations before
+  the audio worker opens `esp_audio_simple_dec`; the simple decoder wrapper does
+  not register the underlying codec by itself.
 - The stream task is stopped cooperatively with `shutdown/exited` atomics and an
   HTTP request cancellation. It is not deleted while it may own HTTP, decoder, or
   audio resources.
@@ -254,13 +285,15 @@ exclusive audio lease; `app_runtime_pm.c` blocks standby while
 ### 4.1 Implemented
 
 - Five-page `music_app` with launcher icon and App Manager registration.
-- WeChat QR login, QR display, scan/confirmation status, credential save, expiry
-  check, logout cleanup, and factory-reset erasure.
+- WeChat and QQ account QR login, QR display, scan/confirmation status,
+  credential save, expiry check, logout cleanup, and factory-reset erasure.
+- Player-page cover loading, replacement on track change, bounded retry, and
+  PSRAM ownership release.
 - Recommended playlists and logged-in user's created/favorite playlists.
 - Playlist detail and a paged playback queue that can play beyond the first 30
   songs; the playlist page currently loads up to 100 songs.
 - Song URL acquisition with quality fallback.
-- MP3/AAC/FLAC stream decode, cover decode, and LRC parsing.
+- MP3/FLAC stream decode, cover decode, and LRC parsing.
 - Play/pause, previous/next, repeat modes, auto-advance, stop, and exclusive
   audio lease handling.
 - Event-bus status/snapshot notifications and PM playback guard.
@@ -276,15 +309,17 @@ The current memory change has been built and measured:
 | Check | Result |
 | --- | --- |
 | `idf.py build` | PASS (0 warnings) |
-| `microtech.bin` | `0x2a06b0`; `0x5f950` bytes free in the 3 MiB app partition |
-| DIRAM | `217,906 / 341,760` bytes; `123,854` bytes free |
-| External RAM `.bss` | `46,440` bytes; `s_music` and `s_cookies` are in PSRAM |
+| `microtech.bin` | `0x2bdc20`; `0x423e0` bytes free in the 3 MiB app partition |
+| DIRAM | `219,074 / 341,760` bytes; `122,686` bytes free |
+| External RAM `.bss` | `51,096` bytes; `s_music`, `s_cookies`, and queues are in PSRAM |
+| `s_cookies` | `13,056 B` (24 entries) in PSRAM |
 | Queue item sizes | `592 B` (API), `520 B` (stream); both queues are PSRAM-backed |
 | Music internal footprint (calculated) | `≈10.3 KB` (was `≈28.5 KB`) |
 | `music_api` stack | `10,240 B`, still internal by design |
+| `music-service` host suite | 1 / 1 passed |
 
-The functional results below are from the earlier stage; they were not rerun for
-this allocation-only change:
+The existing functional suites remain green after the QQ/login and cover
+changes:
 
 | Check | Result |
 | --- | --- |
@@ -303,12 +338,14 @@ The stage commits are:
 - `layers/apps`: `707c938 feat(apps): add QQ Music application`
 - `layers/app_manager`: `79a28d6 feat(app_core): add music application identifier`
 
-The memory change is committed separately from those stage commits.
+The memory change and the QQ login/cover/stream playback changes are committed
+separately from those stage commits (middleware `43b65b1`, apps `aaa8561`,
+bsp `1ea201e`).
 
 ### 4.3 Known Boundaries
 
-1. QQ QR login and QQ Music App MQTT login are not implemented. The login page
-   exposes only WeChat QR.
+1. QQ Music App MQTT/QPlay login is not implemented; QQ account QR login is
+   implemented through the web ptlogin flow.
 2. `music_service_seek()` is reserved and returns `ESP_ERR_NOT_SUPPORTED`.
 3. Automatic credential refresh is not implemented; expired credentials force a
    new QR login.
@@ -316,14 +353,13 @@ The memory change is committed separately from those stage commits.
    that, but the page does not provide an explicit "load more" control.
 5. Credentials are stored in a plain NVS blob. Flash encryption / NVS encryption
    is not enabled in the current `sdkconfig`.
-6. The service has no standalone host test suite. Network, JSON, QR, TLS, and
-   audio paths are compiled by firmware builds and exercised through fakes, not
-   by a real network host test.
+6. A standalone `music-service` host suite covers the pure QQ login protocol
+   parsers; network, TLS, NVS, and audio paths remain covered by firmware builds,
+   simulator fakes, and on-device checks.
 7. QQ Music Web endpoints are unofficial and may change without notice; their
    response fields and error codes must be re-verified when behavior changes.
-8. The implementation has not been validated on real hardware for TLS handshake,
-   WeChat QR scanning, QQ account login, CDN playback, ES8311 output, or battery
-   behavior.
+8. CDN playback and ES8311 output have been verified on hardware; QQ account
+   scan/login, cover rendering, and battery behavior have not.
 9. The API worker stack remains in internal RAM because credential save/erase
    goes through NVS, which disables the flash cache. The feature's remaining
    internal footprint is therefore dominated by that 10,240 B stack; moving it
@@ -383,12 +419,23 @@ If login fails:
    expired.
 4. Check that `music.login.LoginServer/Login` returned `musicid` and `musickey`.
 
+If QQ login fails:
+
+1. Verify `xui.ptlogin2.qq.com`, `ssl.ptlogin2.qq.com`, and `graph.qq.com` are
+   reachable.
+2. Check that `pt_login_sig` and `qrsig` cookies were captured; the QR body
+   must start with `89 50 4E 47` (PNG).
+3. Check that the authorization redirect set `p_skey` and that
+   `graph.qq.com/oauth2.0/authorize` returned a `Location` with `code=`.
+4. Check that `QQConnectLogin.LoginServer/QQLogin` returned `musicid` and
+   `musickey`, and that the credential reports `login_type=2`.
+
 If playback fails:
 
 1. Verify `audio_service_acquire(PLAYBACK)` succeeded; another consumer may own
    the lease.
 2. Check the CDN URL is HTTPS and returns audio, not an HTML error page.
-3. Check the URL path extension before `?`; the decoder selects MP3/AAC/FLAC from
+3. Check the URL path extension before `?`; the decoder selects MP3/FLAC from
    that path.
 4. Check the stream task has exited cleanly before starting another track; a
    failed `audio_service_release()` retains the lease for retry.
@@ -422,7 +469,7 @@ If playback fails:
   automatically after time sync.
 - Scan the WeChat QR code and confirm the full login state sequence.
 - Verify real home recommendations, created playlists, and favorite playlists.
-- Play at least one MP3 and one lossless/AAC track through ES8311; verify volume,
+- Play at least one MP3 and one lossless/FLAC track through ES8311; verify volume,
   pause/resume, stop, next, and auto-advance.
 - Verify cover and lyric rendering for real songs.
 - Verify the worst memory case: open cover/lyrics while a track is playing, so
@@ -449,6 +496,24 @@ If playback fails:
 5. Only after the memory budget is stable: load-more, seek, HTTP keep-alive,
    endpoint-specific response limits, image cache, and NVS/flash encryption.
 
+### M4: QQ QR Login and Player Cover (Implemented)
+
+- Added the QQ ptlogin2 flow: `xlogin` -> `ptqrshow` (PNG) -> `ptqrlogin` ->
+  `p_skey` -> Graph OAuth `code` -> `QQConnectLogin.LoginServer/QQLogin`.
+- The `xlogin` page is about 285 KiB and is fetched in header-only mode; only
+  its cookies are used.
+- Added the 24-entry cookie jar, form-encoded Graph authorization, and PNG
+  RGB565 decoding through `espressif/libpng`.
+- Added QQ/WeChat entries to the login page and mapped `login_type=2` to
+  `MUSIC_LOGIN_TYPE_QQ`.
+- Added the player cover retry state machine, IMAGE failure isolation, and
+  aspect-fit LVGL scaling.
+- Added `music-service` host coverage for hash33, ptuiCB parsing, cookie
+  parsing, PNG signature, query extraction, and form encoding.
+
+On-device playback has been verified. Remaining for this stage: QQ scan/login,
+cover rendering, reboot, logout/factory-reset, and memory-leak acceptance.
+
 ## 7. File Map
 
 ```text
@@ -456,8 +521,12 @@ layers/middleware/components/music_service/
   include/music_service.h
   src/music_service.c
   src/music_net.c
+  src/music_login_protocol.c
+  src/music_login_protocol.h
   src/music_stream.c
   src/music_service_internal.h
+  tests/host/CMakeLists.txt
+  tests/host/music_login_protocol_test.c
   Kconfig
   CMakeLists.txt
   idf_component.yml
