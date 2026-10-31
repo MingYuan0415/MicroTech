@@ -81,7 +81,7 @@ ERROR
 
 ### 2.3 Queue and Snapshot Ownership
 
-All large objects are allocated in PSRAM:
+Large objects are allocated in PSRAM:
 
 - `music_home_snapshot_t`: up to 12 playlists per category, three categories.
 - `music_playlist_snapshot_t`: up to `MUSIC_SERVICE_MAX_SONGS` songs (100).
@@ -89,6 +89,13 @@ All large objects are allocated in PSRAM:
   (256).
 - `music_image_t`: decoded RGB565 pixels plus source URL and token.
 - Stream buffers: 4 KiB input and 16 KiB PCM.
+
+The service runtime state (`s_music`), the cookie jar (`s_cookies`), and both
+command queues also live in PSRAM. The small `s_stream` runtime block (72 B)
+stays in internal RAM. The API worker stack remains in internal RAM because
+credential save/erase goes through NVS, which disables the flash cache; a PSRAM
+stack would fault during that window. The audio worker runs from a PSRAM stack
+and uses the `audio_service` exclusive playback lease.
 
 `music_service_*_acquire()` transfers ownership of the snapshot to the caller;
 `music_service_*_release()` frees it. A page must release every acquired
@@ -213,7 +220,9 @@ Kconfig supplies:
 
 The API worker uses internal RAM for its stack. The audio worker uses a PSRAM
 stack through `xTaskCreatePinnedToCoreWithCaps()`. Both workers are pinned to core
-0; LVGL remains on the UI worker.
+0; LVGL remains on the UI worker. The API stack stays internal because credential
+save/erase calls `nv_storage_set_blob()` / `nv_storage_erase_key()`, and an NVS
+commit disables the flash cache; a PSRAM stack would fault in that window.
 
 ### 3.2 Public API Groups
 
@@ -257,16 +266,28 @@ exclusive audio lease; `app_runtime_pm.c` blocks standby while
 - Event-bus status/snapshot notifications and PM playback guard.
 - Simulator UI review scenarios and golden baselines for all five music pages.
 - Host fakes for main runtime, integration tests, and simulator.
+- Service state, cookie jar, and command queues in PSRAM; the API stack remains
+  internal because credential writes go through NVS.
 
 ### 4.2 Verification Evidence
 
-The latest committed stage has the following results:
+The current memory change has been built and measured:
 
 | Check | Result |
 | --- | --- |
-| `idf.py build` | PASS |
-| `microtech.bin` | `0x29f600`; `0x60a00` bytes free in the 3 MiB app partition |
-| DIRAM | `228,642 / 341,760` bytes; `113,118` bytes free |
+| `idf.py build` | PASS (0 warnings) |
+| `microtech.bin` | `0x2a06b0`; `0x5f950` bytes free in the 3 MiB app partition |
+| DIRAM | `217,906 / 341,760` bytes; `123,854` bytes free |
+| External RAM `.bss` | `46,440` bytes; `s_music` and `s_cookies` are in PSRAM |
+| Queue item sizes | `592 B` (API), `520 B` (stream); both queues are PSRAM-backed |
+| Music internal footprint (calculated) | `≈10.3 KB` (was `≈28.5 KB`) |
+| `music_api` stack | `10,240 B`, still internal by design |
+
+The functional results below are from the earlier stage; they were not rerun for
+this allocation-only change:
+
+| Check | Result |
+| --- | --- |
 | `main/tests/host` | 21 / 21 passed |
 | `tests/integration` | 2 / 2 passed |
 | `layers/apps/tests/host` | 15 / 15 passed |
@@ -281,6 +302,8 @@ The stage commits are:
 - `layers/middleware`: `452b4d1 feat(music): add QQ Music service`
 - `layers/apps`: `707c938 feat(apps): add QQ Music application`
 - `layers/app_manager`: `79a28d6 feat(app_core): add music application identifier`
+
+The memory change is committed separately from those stage commits.
 
 ### 4.3 Known Boundaries
 
@@ -301,6 +324,10 @@ The stage commits are:
 8. The implementation has not been validated on real hardware for TLS handshake,
    WeChat QR scanning, QQ account login, CDN playback, ES8311 output, or battery
    behavior.
+9. The API worker stack remains in internal RAM because credential save/erase
+   goes through NVS, which disables the flash cache. The feature's remaining
+   internal footprint is therefore dominated by that 10,240 B stack; moving it
+   requires isolating persistence work first.
 
 ## 5. Operational Notes
 
@@ -368,9 +395,29 @@ If playback fails:
 
 ## 6. Next Work Plan
 
-### P0: On-Device Acceptance
+### M0: Memory Baseline
 
-- Flash the staged build and verify boot without panic.
+- Save `build/microtech.map`, `build/microtech.elf`, and
+  `idf.py size --format json2` output before changing allocation domains.
+- Record `nm` placement of `s_music`, `s_cookies`, and `s_stream`.
+- Use the current build as the baseline; do not reuse the older
+  `228,642 / 113,118` numbers.
+
+### M1: Internal RAM Reduction (Implemented)
+
+- `s_music` and `s_cookies` use `EXT_RAM_BSS_ATTR`; both now report PSRAM
+  addresses.
+- The API and stream command queues use `xQueueCreateWithCaps(..., PSRAM)` and
+  `vQueueDeleteWithCaps()`.
+- `music_service_init()` logs item size, internal allocation cost, current free
+  bytes, and largest free block.
+- `music_api` logs stack high-water after login and after playback starts.
+- The API stack remains internal by design; see 2.3 and 3.1.
+
+### M2: Verification and On-Device Acceptance
+
+- Run the firmware build and compare DIRAM/PSRAM against M0.
+- Flash only after explicit user approval; verify boot without panic.
 - Verify network-ready and SNTP transitions; confirm `WAITING_TIME` leaves
   automatically after time sync.
 - Scan the WeChat QR code and confirm the full login state sequence.
@@ -378,33 +425,29 @@ If playback fails:
 - Play at least one MP3 and one lossless/AAC track through ES8311; verify volume,
   pause/resume, stop, next, and auto-advance.
 - Verify cover and lyric rendering for real songs.
+- Verify the worst memory case: open cover/lyrics while a track is playing, so
+  the API and stream TLS sessions overlap; no `ESP_ERR_NO_MEM` or cache fault.
 - Verify screen-off playback and `system_pm` standby blocking/release.
 - Verify logout and factory reset remove the credential and cached private data.
+- Run repeated page mounts, login/logout cycles, and at least ten tracks while
+  watching internal/PSRAM free bytes for leaks.
+- Record `music_api` and `music_stream` stack high-water marks.
 
-### P1: Robustness and Test Coverage
+### M3: Follow-up Work
 
-- Add standalone host tests for LRC parsing, URL/quality selection, login state
-  transitions, and command queue behavior.
-- Add mocked HTTP tests for 402/403/408, malformed JSON, empty playlist, and
-  oversized cover responses.
-- Re-check task shutdown timing with `esp_http_client_cancel_request()` and the
-  5-second stream read timeout on real hardware.
-- Verify pause suspend/resume behavior does not drop or duplicate PCM at the
-  decoder boundary.
-- Decide whether automatic credential refresh is required; if yes, implement a
-  refresh-token flow and test it on device.
-
-### P2: Product and Performance Work
-
-- Add explicit playlist pagination/load-more while keeping the 100-song page
-  limit or raising it with measured PSRAM headroom.
-- Implement range-based seek if the product requires a seek bar.
-- Evaluate HTTP keep-alive/session reuse and endpoint-specific response limits to
-  reduce TLS handshakes and PSRAM churn.
-- Add an image cache keyed by URL to avoid re-downloading covers on page remounts.
-- Consider NVS encryption / flash encryption for the credential blob.
-- Run a full sim UI review with populated home/playlist/player/lyrics states, not
-  only empty/fake states.
+1. If the 10,240 B API stack has at least 4,096 B high-water after login and
+   playback, reduce it to 8,192 B and require at least 2,048 B after the change.
+   Otherwise keep 10,240 B and document why.
+2. If internal RAM is still insufficient, isolate credential save/erase onto an
+   internal-stack persistence worker, then move the API stack to PSRAM. This
+   needs its own on-device cache-fault validation.
+3. Add the standalone service host suite: queue create/delete caps and failure
+   cleanup, cookie jar, LRC/URL/quality parsing, login transitions, and mocked
+   HTTP 402/403/408, malformed JSON, empty playlists, and oversized covers.
+4. Re-check task shutdown timing, `esp_http_client_cancel_request()`, pause/resume
+   PCM boundaries, and the automatic credential-refresh decision.
+5. Only after the memory budget is stable: load-more, seek, HTTP keep-alive,
+   endpoint-specific response limits, image cache, and NVS/flash encryption.
 
 ## 7. File Map
 
