@@ -79,7 +79,18 @@ Do not assume every service call change necessarily changes the interface.
 ## Run and Interpret
 
 ```sh
-cmake --build build/sim
+python3 tools/agent/mt.py ui --pages settings/wifi,settings/bluetooth
+python3 tools/agent/mt.py sim --scenario smoke_pages
+```
+
+`mt.py ui` builds the current simulator, runs the affected-page check on an
+isolated port, and prints state/failure counts plus the screenshot directory. Do
+not open every screenshot: the full spec currently has 34 pages and 82 states.
+Read only failing or changed states, and prefer tree coordinates/rendered lines
+over images when checking fit. Raw commands remain available:
+
+```sh
+cmake --build build/sim -- --quiet
 python3 sim/tools/review_pages.py --check --pages settings/wifi,settings/bluetooth
 sim/ci/run_ci.sh --scenario smoke_pages
 ```

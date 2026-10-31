@@ -46,7 +46,7 @@ python3 sim/dev.py
 `build/sim/data`；如果端口已被占用，后续启动会自动分配独立端口，并使用
 `build/sim/instances/<port>/` 下的状态。可用 `SIM_AGENT_PORT=N` 请求固定端口；驱动自动分配的会话时，
 将该端口传给 `simctl.py` 的 `--port N`。无图形显示环境时启动自动转无头驻留。
-CI 回归与金样使用 `sh sim/ci/run_ci.sh [--update]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
+CI 回归与金样使用 `sh sim/ci/run_ci.sh [--update] [--scenario NAME]... [--log-dir DIR]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
 独立端口及 NVS/SD/数据/截图目录。并发 CI 只在共享 CMake/Ninja 构建阶段串行。页面审查默认分配独立端口和运行目录；
 仅在使用 `--no-launch` 有意连接现有会话，或需要固定端点时才显式传入 `--port`。联网会话使用宿主机真实 HTTP/HTTPS；
 离线无头会话使用 CI 时钟，不会发起天气请求。
@@ -285,8 +285,14 @@ touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停
 
 ```sh
 sim/ci/run_ci.sh                    # 端口预检 + check_lv_conf + 构建 + staged parity + 全部场景
+sim/ci/run_ci.sh --scenario smoke_pages
+                                    # 只跑一条场景；可重复传 --scenario
 sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review 后入库）
 ```
+
+`--log-dir DIR` 把每条场景的模拟器日志与 `run_scenarios.py` JSON 报告保存在
+`DIR`（默认 `build/agent/sim/<timestamp>-<pid>`）。构建使用 Ninja 静默模式，只省略进度行，
+诊断信息仍会保留。`mt.py sim` 封装同一入口，只打印失败场景与日志目录。
 
 **场景 PNG 辅门禁当前挂起**：固件 GUI 仍在调整，场景基线目录
 `sim/ci/golden/scenarios/` 尚未入库，页面 review 基线使用 `sim/ci/golden/ui/`。
@@ -326,7 +332,9 @@ label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines
 NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`unmounted` 介质结尾
 的页面会被下一个页面继承，像素基线不再描述它自己的页面——这个污染曾表现为
 `recorder/files/detail` 稳定多出「存储卡或音频不可用」。代价是每页一次冷启动；
-`--no-launch` 驱动外部 sim 时保持单会话，不做此隔离。正因为会放弃这层隔离，
+`--no-launch` 驱动外部 sim 时保持单会话，不做此隔离。SD 背景目录使用较短的
+`/tmp` 路径，因为 `sd_storage_service` 的挂载路径缓冲仅 64 字节；截图与 NVS 仍位于
+调用方指定的 `--shots` 目录。正因为会放弃这层隔离，
 它是接入本次未自建会话的唯一方式：agent 端口被占用时直接报错，而不是隐式附着，
 否则第二次审查会悄悄驱动第一次审查正在导航的会话（表现为 `settings/wifi` 的截图
 高度与失败项在多次运行间漂移）。

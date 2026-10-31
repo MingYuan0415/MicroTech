@@ -58,7 +58,7 @@ gets an isolated port and `build/sim/instances/<port>/` state. Set
 `SIM_AGENT_PORT=N` to request a fixed port, or pass `--port N` to `simctl.py`
 when driving an automatically allocated session. When there is no graphical
 display environment, starting automatically falls back to headless residency.
-For CI regression and golden samples, use `sh sim/ci/run_ci.sh [--update]`.
+For CI regression and golden samples, use `sh sim/ci/run_ci.sh [--update] [--scenario NAME]... [--log-dir DIR]`.
 Development sessions allocate distinct ports and per-instance state; CI runs
 allocate per-invocation ports and private NVS/SD/data/screenshot directories.
 Concurrent CI invocations serialize only their shared CMake/Ninja build. Page
@@ -373,8 +373,16 @@ while paused. A CI session stays resident until `sim.exit` or a signal.
 
 ```sh
 sim/ci/run_ci.sh                    # port preflight + check_lv_conf + build + staged parity + all scenarios
+sim/ci/run_ci.sh --scenario smoke_pages
+                                    # one scenario; repeat --scenario for more
 sim/ci/run_ci.sh build/sim --update # regenerate PNG goldens (commit after manual review)
 ```
+
+`--log-dir DIR` keeps per-scenario simulator logs and `run_scenarios.py` JSON
+reports under `DIR` (default `build/agent/sim/<timestamp>-<pid>`). The build step uses
+Ninja's quiet mode, so progress lines are omitted while diagnostics remain.
+`mt.py sim` wraps the same entry point and prints only scenario failures plus the
+log directory.
 
 **The scenario PNG auxiliary gate is currently suspended**: the firmware GUI is
 still being adjusted, and the scenario baseline directory
@@ -436,6 +444,9 @@ baseline would no longer describe its own page — this pollution once manifeste
 as `recorder/files/detail` consistently gaining an extra "storage card or audio
 unavailable". The cost is one cold start per page; when driving an external sim
 with `--no-launch` a single session is kept and this isolation is not applied.
+The SD backing directory is a short `/tmp` path because
+`sd_storage_service` keeps its mount path in a 64-byte buffer; screenshots and
+NVS remain under the requested `--shots` directory.
 Because that mode gives up the isolation, it is the only way to reach a sim
 this run did not launch: a busy agent port is an error rather than an implicit
 attach, so a second review run cannot quietly drive the session a first run is

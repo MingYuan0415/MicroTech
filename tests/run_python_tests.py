@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # is what the group's tests import their modules relative to: the contract
 # submodule exposes `tooling.check` from its own root.
 GROUPS = {
+    "agent": (ROOT / "tools" / "agent" / "tests", "test_*.py", ROOT),
     "configuration": (ROOT / "tests" / "configuration", "test_*.py", ROOT),
     "contracts": (ROOT / "contracts" / "device_link" / "tests", "test_*.py",
                   ROOT / "contracts" / "device_link"),
@@ -28,7 +29,7 @@ GROUPS = {
 }
 
 
-def _run_group(name: str) -> int:
+def _run_group(name: str, verbose: bool) -> int:
     start = time.monotonic()
     source, pattern, working_directory = GROUPS[name]
     command = [
@@ -40,7 +41,7 @@ def _run_group(name: str) -> int:
         str(source),
         "-p",
         pattern,
-        "-v",
+        "-v" if verbose else "-q",
     ]
     result = subprocess.run(command, cwd=working_directory, check=False)
     elapsed = time.monotonic() - start
@@ -58,12 +59,17 @@ def main() -> int:
         default=["all"],
         help="test groups to run; default: all",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print every passing unittest case (default: quiet)",
+    )
     args = parser.parse_args()
     groups = list(GROUPS) if "all" in args.groups else args.groups
 
     failures = False
     for group in groups:
-        failures = _run_group(group) != 0 or failures
+        failures = _run_group(group, args.verbose) != 0 or failures
     return 1 if failures else 0
 
 

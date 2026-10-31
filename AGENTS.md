@@ -6,6 +6,7 @@
 - `layers/`: `bsp`, `middleware`, `app_manager`, `apps` — four independent Git submodules. Changes inside a layer are committed and pushed in the submodule; the parent repository updates the pointer in the same commit.
 - `sim/`: standalone host LVGL simulator, see [`sim/README.md`](sim/README.md). Agents bind `127.0.0.1:5002` only (5001 is reserved for the on-device baseline).
 - `tests/`: `connectivity` and `integration` are cross-layer host tests; `display` is the on-device benchmark tool. `managed_components/` is read-only.
+- `tools/agent/`: agent-facing command wrapper; see [`doc/agent-workflow.md`](doc/agent-workflow.md).
 
 ## Default Working Mode
 
@@ -13,6 +14,16 @@
 - **Minimal verification**: follow L0–L3 in "Host Tests and Verification Tiers" and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, display benchmarks, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
 - **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened.
 - Flash or erase only when the user explicitly asks.
+
+## Agent Tooling
+
+Agent-facing build, test, formatting, Git, simulator, and page-review commands go through
+`python3 tools/agent/mt.py` (see [`doc/agent-workflow.md`](doc/agent-workflow.md)). It prints a
+bounded `[PASS]`/`[FAIL]` summary and keeps the complete log under `.cache/agent/logs/`; read
+that log only when the summary is insufficient. Use `--full` for sanitizer reports,
+formatting/whitespace review, security review, and final acceptance evidence. The wrapper is a
+presentation layer: it does not add build or test gates, and the raw commands below remain valid
+for humans and CI.
 
 ## Build
 
@@ -29,6 +40,12 @@ Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`); ne
 Each suite is a standalone CMake project (C11, `-Wall -Wextra -Werror -Wpedantic`) with the same flow:
 
 ```sh
+python3 tools/agent/mt.py test <suite> [--profile none|address|thread]
+```
+
+Raw command for humans and CI:
+
+```sh
 cmake -S <suite path> -B /tmp/mt-<name> -G Ninja && cmake --build /tmp/mt-<name> && ctest --test-dir /tmp/mt-<name> --output-on-failure
 ```
 
@@ -41,18 +58,18 @@ cmake -S <suite path> -B /tmp/mt-<name> -G Ninja && cmake --build /tmp/mt-<name>
 | `layers/apps/` (pages, app_ui) | `layers/apps/tests/host`, `tests/integration` |
 | `layers/app_manager/` (app_core, app_theme) | `layers/app_manager/app_core/tests/host`, `tests/integration` |
 | network runtime/connectivity | `tests/connectivity` |
-| Kconfig/contract boundaries, resource manifests/assets | `python3 tests/run_python_tests.py configuration resources`; add `contracts` when the contract submodule changes |
+| Kconfig/contract boundaries, resource manifests/assets | `python3 tools/agent/mt.py py configuration resources`; add `contracts` when the contract submodule changes |
 
 `tests/integration` uses the none profile by default; sanitizers (`-D<suite>_SANITIZER=address|thread`) are enabled only when the change involves memory ownership or concurrency, and normally one profile matched to the risk. Host tests do not cover driver timing, RF, DMA, or power consumption; go to hardware when needed and record the verified scope.
 
 **Tiers** (matching "minimal verification"):
 
-- L0 per edit batch: run the `doc/code-style.md` §8.1 astyle pass over the changed files (idempotent) plus an incremental build of the affected projects.
-- L1 per task: run each affected host suite once.
-- L2 before a UI change is done: `sim/ci/run_ci.sh` ×1 and `sim/tools/review_pages.py --check` ×1; the final review scope follows the tiers in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
-- L3 commit/acceptance: the full checklist in `doc/code-style.md` §8.2.
+- L0 per edit batch: run `python3 tools/agent/mt.py fmt` over the changed files (idempotent) plus `python3 tools/agent/mt.py build <suite>` for the affected project.
+- L1 per task: run `python3 tools/agent/mt.py test <suite>` once for each affected host suite.
+- L2 before a UI change is done: `python3 tools/agent/mt.py sim` ×1 and `python3 tools/agent/mt.py ui --pages <affected>` ×1; the final review scope follows the tiers in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
+- L3 commit/acceptance: `python3 tools/agent/mt.py fmt --check`, `python3 tools/agent/mt.py git diff --check`, and the affected host suites; `--full` when reviewing formatting or sanitizer evidence.
 
-Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run.
+Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run. When a gate fails, read the summary first, then `python3 tools/agent/mt.py log --last --grep 'error:|FAILED'`; do not rerun only to see output.
 
 ## Device Faults
 

@@ -677,22 +677,28 @@ def main():
                                       args.port)
     except ValueError as error:
         ap.error(str(error))
+    sd_dir = None
     if owns_sim:
+        # sd_storage_service keeps its mount path in a 64-byte buffer, so the
+        # review's long screenshot/NVS tree cannot be used as the card root.
+        sd_dir = tempfile.mkdtemp(prefix='mt-review-sd-')
         proc = _launch_sim(args.build, args.port,
                            os.path.join(args.shots, 'review_nvs'), args.shots,
-                           os.path.join(args.shots, 'review_sd'))
+                           sd_dir)
     runner = Runner('127.0.0.1', args.port, args.shots, None, args.update)
     try:
-        _run_spec(runner, spec, args, proc, owns_sim)
+        _run_spec(runner, spec, args, proc, owns_sim, sd_dir)
     finally:
         if not args.keep_sim:
             for live in _launched:
                 _stop_sim(live, None)
             _launched[:] = []
+            if sd_dir:
+                shutil.rmtree(sd_dir, ignore_errors=True)
         runner.close()
 
 
-def _run_spec(runner, spec, args, proc, owns_sim=False):
+def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
     vw = (spec.get('viewport') or {}).get('w', 368)
     vh = (spec.get('viewport') or {}).get('h', 448)
     runner.connect()
@@ -719,7 +725,7 @@ def _run_spec(runner, spec, args, proc, owns_sim=False):
             _stop_sim(proc, runner)
             proc = _launch_sim(args.build, args.port,
                                os.path.join(args.build, 'review_nvs'),
-                               args.shots, '/tmp/mrsd')
+                               args.shots, sd_dir or '/tmp/mrsd')
             runner = Runner('127.0.0.1', args.port, args.shots, None,
                             args.update)
             runner.connect()
