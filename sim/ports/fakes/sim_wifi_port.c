@@ -477,8 +477,9 @@ esp_err_t wifi_service_port_stop(void)
     return result;
 }
 
-esp_err_t wifi_service_port_scan_start(void)
+esp_err_t wifi_service_port_scan_start(bool show_hidden)
 {
+    (void)show_hidden;
     (void)pthread_mutex_lock(&s_port.lock);
     esp_err_t result = _host_wifi_port_begin_locked(HOST_WIFI_PORT_SCAN_START);
     if (result == ESP_OK)
@@ -496,7 +497,8 @@ esp_err_t wifi_service_port_scan_start(void)
 
 esp_err_t wifi_service_port_scan_finish(
     wifi_service_port_scan_record_t *records, size_t capacity,
-    size_t *out_count, bool *out_truncated)
+    const wifi_service_scan_target_t *targets, size_t target_count,
+    uint8_t *out_matched_mask, size_t *out_count, bool *out_truncated)
 {
     (void)pthread_mutex_lock(&s_port.lock);
     esp_err_t result = _host_wifi_port_begin_locked(HOST_WIFI_PORT_SCAN_FINISH);
@@ -510,13 +512,31 @@ esp_err_t wifi_service_port_scan_finish(
     }
     s_port.leave_scan_owned_after_next_finish = false;
     if (result == ESP_OK && records != NULL && out_count != NULL &&
-            out_truncated != NULL)
+            out_truncated != NULL && out_matched_mask != NULL)
     {
         size_t count = s_port.scan_count < capacity ? s_port.scan_count :
                        capacity;
         memcpy(records, s_port.scan_records, count * sizeof(records[0]));
         *out_count = count;
         *out_truncated = s_port.scan_truncated || s_port.scan_count > capacity;
+        *out_matched_mask = 0U;
+        for (size_t target = 0U; target < target_count; ++target)
+        {
+            for (size_t index = 0U; index < s_port.scan_count; ++index)
+            {
+                const wifi_service_port_scan_record_t *record =
+                    &s_port.scan_records[index];
+
+                if (record->ssid_length == targets[target].ssid_length &&
+                        record->security == targets[target].security &&
+                        memcmp(record->ssid, targets[target].ssid,
+                               record->ssid_length) == 0)
+                {
+                    *out_matched_mask |= (uint8_t)(1U << target);
+                    break;
+                }
+            }
+        }
     }
     (void)pthread_mutex_unlock(&s_port.lock);
     return result;

@@ -955,7 +955,7 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         else
         {
-            sweep_result = connectivity_manager_request_reconnect_saved(
+            sweep_result = connectivity_manager_request_wifi_enable(
                                &operation);
         }
         if (sweep_result != ESP_OK)
@@ -1146,8 +1146,8 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                   status.radio_available);
             cJSON_AddBoolToObject(result, "saved_profile",
                                   status.saved_profile);
-            cJSON_AddBoolToObject(result, "auto_connect",
-                                  status.auto_connect);
+            cJSON_AddBoolToObject(result, "wifi_enabled",
+                                  status.wifi_enabled);
             cJSON_AddBoolToObject(result, "manual_hold", status.manual_hold);
             cJSON_AddNumberToObject(result, "profile_count",
                                     (double)status.profile_count);
@@ -1155,6 +1155,8 @@ static cJSON *_handle(cJSON *request, bool *ok)
              * it will visit. UINT8_MAX with total 0 means no sweep runs. */
             cJSON_AddNumberToObject(result, "attempt_index",
                                     (double)status.attempt_index);
+            cJSON_AddNumberToObject(result, "attempt_ordinal",
+                                    (double)status.attempt_ordinal);
             cJSON_AddNumberToObject(result, "attempt_total",
                                     (double)status.attempt_total);
             cJSON_AddNumberToObject(result, "scan_state_running",

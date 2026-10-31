@@ -48,12 +48,7 @@ target_compile_definitions(test_connectivity_pipeline PRIVATE
     WIFI_SERVICE_RETRY_DELAY_2_MS=200
     WIFI_SERVICE_RETRY_DELAY_3_MS=400
     WIFI_SERVICE_ASSOCIATION_TIMEOUT_MS=150
-    WIFI_SERVICE_DHCP_TIMEOUT_MS=150
-    CONNECTIVITY_MANAGER_RETRY_DELAY_1_MS=1000
-    CONNECTIVITY_MANAGER_RETRY_DELAY_2_MS=2000
-    CONNECTIVITY_MANAGER_RETRY_DELAY_3_MS=4000
-    CONNECTIVITY_MANAGER_RETRY_DELAY_MAX_MS=8000
-)
+    WIFI_SERVICE_DHCP_TIMEOUT_MS=150)
 target_include_directories(test_connectivity_pipeline PRIVATE
     host/include
     host/idf/include
@@ -75,9 +70,50 @@ target_compile_options(test_connectivity_pipeline PRIVATE
     -Werror
     -Wpedantic
     -Wno-variadic-macros
+    -Wno-unused-function
     -UNDEBUG
 )
 target_link_libraries(test_connectivity_pipeline PRIVATE Threads::Threads)
+
+add_executable(test_wifi_cycle
+    test_wifi_cycle.c
+    host/freertos_host.c
+    host/host_dynamic_semaphore.c
+    host/host_mailbox_port.c
+    host/connectivity_manager_digest_fake.c
+    host/nv_storage_fake.c
+    host/wifi_service_port_fake.c
+    "${CONNECTIVITY_MANAGER}/src/connectivity_manager.c"
+    "${CONNECTIVITY_MANAGER}/src/connectivity_manager_digest.c"
+    "${IDF_BT}/common/tinycrypt/src/sha256.c"
+    "${IDF_BT}/common/tinycrypt/src/utils.c"
+    "${WIFI_SERVICE}/src/wifi_service.c"
+    "${WIFI_SERVICE}/src/wifi_service_credentials.c"
+    "${WIFI_SERVICE}/src/wifi_service_worker.c"
+    "${WIFI_SERVICE}/src/wifi_service_worker_ops.c"
+    "${MIDDLEWARE}/event_bus/src/event_bus.c"
+    "${MIDDLEWARE}/event_bus/src/event_bus_core.c"
+    "${APP_CORE}/src/app_manager_mailbox.c"
+)
+target_compile_features(test_wifi_cycle PRIVATE c_std_11)
+target_compile_definitions(test_wifi_cycle PRIVATE
+    HOST_TEST=1 WIFI_SERVICE_TESTING=1
+    WIFI_SERVICE_RETRY_DELAY_1_MS=100 WIFI_SERVICE_RETRY_DELAY_2_MS=200
+    WIFI_SERVICE_RETRY_DELAY_3_MS=400 WIFI_SERVICE_ASSOCIATION_TIMEOUT_MS=150
+    WIFI_SERVICE_DHCP_TIMEOUT_MS=150 WIFI_SERVICE_SCAN_TIMEOUT_MS=300)
+target_include_directories(test_wifi_cycle PRIVATE
+    host/include host/idf/include
+    "${CONNECTIVITY_MANAGER}/include" "${CONNECTIVITY_MANAGER}/src"
+    "${IDF_BT}/common/tinycrypt/include"
+    "${WIFI_SERVICE}/include" "${WIFI_SERVICE}/src"
+    "${MIDDLEWARE}/event_bus/include" "${MIDDLEWARE}/nv_storage/include"
+    "${APP_CORE}/include" "${APP_CORE}/src")
+target_compile_options(test_wifi_cycle PRIVATE
+    -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
+    -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
+target_link_libraries(test_wifi_cycle PRIVATE Threads::Threads)
+add_test(NAME wifi_cycle COMMAND test_wifi_cycle)
+set_tests_properties(wifi_cycle PROPERTIES TIMEOUT 20)
 
 add_executable(test_connectivity_digest
     test_connectivity_digest.c

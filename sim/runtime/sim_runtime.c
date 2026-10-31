@@ -92,15 +92,9 @@ static esp_err_t _cc_set_wifi(bool enabled)
     connectivity_manager_operation_id_t operation = 0U;
     if (!enabled)
     {
-        return connectivity_manager_request_disconnect(&operation);
+        return connectivity_manager_request_wifi_disable(&operation);
     }
-    connectivity_manager_status_snapshot_t status;
-    if (connectivity_manager_get_status(&status) == ESP_OK &&
-            status.saved_profile)
-    {
-        return connectivity_manager_request_reconnect_saved(&operation);
-    }
-    return connectivity_manager_request_scan(&operation);
+    return connectivity_manager_request_wifi_enable(&operation);
 }
 
 static esp_err_t _cc_get_bluetooth(app_manager_radio_state_t *state)

@@ -53,7 +53,7 @@ static host_connectivity_manager_state_t s_connectivity =
         .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
         .available = true,
         .radio_available = true,
-        .auto_connect = true,
+        .wifi_enabled = true,
     },
     .scan = {
         .generation = 2U,
@@ -193,7 +193,7 @@ void host_connectivity_manager_reset(void)
     s_connectivity.status.failure = CONNECTIVITY_MANAGER_FAILURE_NONE;
     s_connectivity.status.available = true;
     s_connectivity.status.radio_available = true;
-    s_connectivity.status.auto_connect = true;
+    s_connectivity.status.wifi_enabled = true;
     memset(&s_connectivity.scan, 0, sizeof(s_connectivity.scan));
     s_connectivity.scan.generation = 2U;
     memset(&s_connectivity.profiles, 0, sizeof(s_connectivity.profiles));
@@ -274,7 +274,7 @@ esp_err_t connectivity_manager_request_connect(
                HOST_CONNECTIVITY_OPERATION_CONNECT, out_operation_id);
 }
 
-esp_err_t connectivity_manager_request_disconnect(
+esp_err_t connectivity_manager_request_wifi_disable(
     connectivity_manager_operation_id_t *out_operation_id)
 {
     return _host_connectivity_admit_operation(
@@ -282,7 +282,7 @@ esp_err_t connectivity_manager_request_disconnect(
                HOST_CONNECTIVITY_OPERATION_DISCONNECT, out_operation_id);
 }
 
-esp_err_t connectivity_manager_request_reconnect_saved(
+esp_err_t connectivity_manager_request_wifi_enable(
     connectivity_manager_operation_id_t *out_operation_id)
 {
     return _host_connectivity_admit_operation(
@@ -298,21 +298,6 @@ esp_err_t connectivity_manager_request_forget(
                HOST_CONNECTIVITY_OPERATION_DISCONNECT, out_operation_id);
 }
 
-esp_err_t connectivity_manager_set_auto_connect(
-    bool enabled, connectivity_manager_operation_id_t *out_operation_id)
-{
-    const esp_err_t result = _host_connectivity_admit_operation(
-                                 HOST_CONNECTIVITY_MANAGER_CALL_SET_AUTO_CONNECT,
-                                 HOST_CONNECTIVITY_OPERATION_POLICY,
-                                 out_operation_id);
-    if (result == ESP_OK)
-    {
-        (void)pthread_mutex_lock(&s_connectivity.lock);
-        s_connectivity.status.auto_connect = enabled;
-        (void)pthread_mutex_unlock(&s_connectivity.lock);
-    }
-    return result;
-}
 
 esp_err_t connectivity_manager_cancel(
     connectivity_manager_operation_id_t operation_id)

@@ -31,7 +31,8 @@ static esp_err_t _control_get_wifi(app_manager_radio_state_t *state,
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if (status.state == CONNECTIVITY_MANAGER_STATE_OFFLINE)
+    if (status.manual_hold || !status.wifi_enabled ||
+            status.state == CONNECTIVITY_MANAGER_STATE_OFFLINE)
     {
         *state = APP_MANAGER_RADIO_OFF;
     }
@@ -64,15 +65,9 @@ static esp_err_t _control_set_wifi(bool enabled)
     connectivity_manager_operation_id_t operation = 0U;
     if (!enabled)
     {
-        return connectivity_manager_request_disconnect(&operation);
+        return connectivity_manager_request_wifi_disable(&operation);
     }
-    connectivity_manager_status_snapshot_t status;
-    if (connectivity_manager_get_status(&status) == ESP_OK &&
-            status.saved_profile)
-    {
-        return connectivity_manager_request_reconnect_saved(&operation);
-    }
-    return connectivity_manager_request_scan(&operation);
+    return connectivity_manager_request_wifi_enable(&operation);
 }
 
 static esp_err_t _control_get_bluetooth(app_manager_radio_state_t *state)

@@ -101,6 +101,7 @@ typedef struct wifi_event_sta_disconnected
 } wifi_event_sta_disconnected_t;
 
 #define WIFI_SCAN_TYPE_ACTIVE    1
+#define WIFI_FAST_SCAN           0
 #define WIFI_ALL_CHANNEL_SCAN    1
 #define WIFI_CONNECT_AP_BY_SIGNAL 1
 

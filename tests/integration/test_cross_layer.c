@@ -510,13 +510,6 @@ static esp_err_t _click_back_on_ui(void *arg)
     return host_lv_click_back() ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-static esp_err_t _toggle_switch_on_ui(void *arg)
-{
-    const bool checked = *(const bool *)arg;
-    return host_lv_toggle_visible_switch(checked) ? ESP_OK :
-           ESP_ERR_NOT_FOUND;
-}
-
 typedef struct text_query
 {
     const char *text;
@@ -1123,12 +1116,6 @@ static void _click_back(void)
     {
         assert(result == ESP_OK);
     }
-}
-
-static void _toggle_switch(bool checked)
-{
-    assert(app_manager_ui_call(_toggle_switch_on_ui, &checked,
-                               UI_TIMEOUT_MS) == ESP_OK);
 }
 
 static bool _wait_for_text(const char *text)
@@ -2045,7 +2032,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
         .radio_available = true,
         .saved_profile = true,
         .profile_persisted = true,
-        .auto_connect = true,
+        .wifi_enabled = true,
     };
     memcpy(status.ssid, "Saved WiFi", sizeof("Saved WiFi"));
     assert(host_connectivity_manager_publish_status(&status) == ESP_OK);
@@ -2059,12 +2046,10 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     assert(_ui_text_has_font(
                "Saved WiFi", &s_theme_fonts[APP_THEME_FONT_BODY]));
     assert(_ui_text_has_font(
-               "自动连接", &s_theme_fonts[APP_THEME_FONT_BODY]));
-    assert(_ui_text_has_font(
                "开启 2 分钟绑定窗口",
                &s_theme_fonts[APP_THEME_FONT_SMALL]));
 
-    _click_action("断开连接");
+    _click_action("关闭 Wi-Fi");
     connectivity_manager_operation_id_t operation =
         host_connectivity_manager_current_operation();
     connectivity_manager_status_snapshot_t terminal = status;
@@ -2082,22 +2067,6 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     terminal.operation_complete = true;
     assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
     assert(_wait_for_text("已连接"));
-
-    _toggle_switch(false);
-    operation = host_connectivity_manager_current_operation();
-    terminal.operation_id = operation;
-    terminal.operation_complete = true;
-    terminal.auto_connect = false;
-    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
-    assert(_wait_for_text("自动连接已关闭"));
-
-    _toggle_switch(true);
-    operation = host_connectivity_manager_current_operation();
-    terminal.operation_id = operation;
-    terminal.operation_complete = true;
-    terminal.auto_connect = true;
-    assert(host_connectivity_manager_publish_status(&terminal) == ESP_OK);
-    assert(_wait_for_text("自动连接已启用"));
 
     _click_action("忘记网络");
     operation = host_connectivity_manager_current_operation();
@@ -2145,7 +2114,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
 
     const unsigned disconnects = host_connectivity_manager_call_count(
                                      HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_DISCONNECT);
-    _click_action("断开连接");
+    _click_action("关闭 Wi-Fi");
     const connectivity_manager_operation_id_t old_operation =
         host_connectivity_manager_current_operation();
     assert(old_operation != 0U);
@@ -2161,7 +2130,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
         .last_error = ESP_OK,
         .available = true,
         .radio_available = true,
-        .auto_connect = true,
+        .wifi_enabled = true,
     };
     assert(app_manager_ui_call(_publish_status_and_exit_setup_on_ui, &queued,
                                UI_TIMEOUT_MS) == ESP_OK);
@@ -2182,7 +2151,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
         .last_error = ESP_OK,
         .available = true,
         .radio_available = true,
-        .auto_connect = true,
+        .wifi_enabled = true,
         .operation_complete = true,
     };
     assert(event_bus_publish(
@@ -2269,7 +2238,7 @@ static void _test_optional_services_unavailable(void)
         .last_error = ESP_OK,
         .available = true,
         .radio_available = true,
-        .auto_connect = true,
+        .wifi_enabled = true,
     };
     assert(host_connectivity_manager_publish_status(&idle) == ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==

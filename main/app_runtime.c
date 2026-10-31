@@ -1401,6 +1401,30 @@ static esp_err_t _app_runtime_start_device_link(
     return ESP_OK;
 }
 
+static esp_err_t _app_runtime_start_deferred_wifi(void)
+{
+    connectivity_manager_status_snapshot_t status;
+    if (connectivity_manager_get_status(&status) != ESP_OK ||
+            !status.available || !status.wifi_enabled ||
+            !status.saved_profile || status.manual_hold ||
+            status.state != CONNECTIVITY_MANAGER_STATE_IDLE)
+    {
+        return ESP_OK;
+    }
+
+    /* The policy worker intentionally leaves the radio uninitialized during
+     * boot. Start the persisted-on Wi-Fi cycle only after the first LVGL frame
+     * and startup commit, so Wi-Fi DMA allocations cannot starve the panel. */
+    connectivity_manager_operation_id_t operation_id = 0U;
+    const esp_err_t result = connectivity_manager_request_wifi_enable(
+                                 &operation_id);
+    if (result != ESP_OK)
+    {
+        LOG_W("deferred Wi-Fi start failed: %s", esp_err_to_name(result));
+    }
+    return ESP_OK;
+}
+
 static esp_err_t _app_runtime_start_initial_app(void)
 {
     esp_err_t result = ESP_OK;
@@ -1535,6 +1559,10 @@ esp_err_t app_runtime_start(void)
         goto failed;
     }
 #endif
+
+    /* The display and startup commit are complete; now it is safe to spend
+     * internal DMA-capable memory on the Wi-Fi driver. */
+    (void)_app_runtime_start_deferred_wifi();
 
     atomic_store(&s_runtime_state, APP_RUNTIME_READY);
     app_runtime_pm_open_admission();

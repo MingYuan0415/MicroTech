@@ -1272,13 +1272,6 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "自动连接"
-   }
-  },
-  {
-   "cmd": "tree_assert",
-   "contains": {
-    "type": "lv_label",
     "text": "忘记网络"
    }
   },

@@ -34,15 +34,16 @@ static void _test_scan_normalization(void)
         _test_ap("delta", -50, 10, WIFI_AUTH_WPA2_PSK),
     };
     host_wifi_idf_set_scan_records(raw, sizeof(raw) / sizeof(raw[0]));
-    assert(wifi_service_port_scan_start() == ESP_OK);
+    assert(wifi_service_port_scan_start(false) == ESP_OK);
 
     wifi_service_port_scan_record_t records[WIFI_SERVICE_MAX_SCAN_RECORDS];
     size_t count = 0U;
     bool truncated = false;
+    uint8_t matched_mask = 0U;
     const unsigned clears_before = host_wifi_idf_scan_clear_count();
     assert(wifi_service_port_scan_finish(
-               records, WIFI_SERVICE_MAX_SCAN_RECORDS,
-               &count, &truncated) == ESP_OK);
+               records, WIFI_SERVICE_MAX_SCAN_RECORDS, NULL, 0U,
+               &matched_mask, &count, &truncated) == ESP_OK);
     assert(count == WIFI_SERVICE_MAX_SCAN_RECORDS);
     assert(truncated);
     assert(host_wifi_idf_scan_clear_count() == clears_before + 1U);
@@ -177,6 +178,37 @@ static void _test_stop_before_clear_and_deinit_retry(void)
     assert(!host_wifi_idf_is_initialized());
 }
 
+static void _test_scan_target_matching(void)
+{
+    const wifi_ap_record_t raw[] =
+    {
+        _test_ap("saved-open", -40, 1, WIFI_AUTH_OPEN),
+        _test_ap("saved-personal", -50, 6, WIFI_AUTH_WPA2_PSK),
+        _test_ap("other", -30, 11, WIFI_AUTH_WPA2_PSK),
+    };
+    wifi_service_scan_target_t targets[2];
+    memset(targets, 0, sizeof(targets));
+    memcpy(targets[0].ssid, "saved-open", strlen("saved-open"));
+    targets[0].ssid_length = strlen("saved-open");
+    targets[0].security = WIFI_SERVICE_SECURITY_OPEN;
+    memcpy(targets[1].ssid, "saved-personal", strlen("saved-personal"));
+    targets[1].ssid_length = strlen("saved-personal");
+    targets[1].security = WIFI_SERVICE_SECURITY_PERSONAL;
+
+    host_wifi_idf_set_scan_records(raw, sizeof(raw) / sizeof(raw[0]));
+    assert(wifi_service_port_scan_start(true) == ESP_OK);
+    wifi_service_port_scan_record_t records[WIFI_SERVICE_MAX_SCAN_RECORDS];
+    size_t count = 0U;
+    bool truncated = false;
+    uint8_t matched_mask = 0U;
+    assert(wifi_service_port_scan_finish(
+               records, WIFI_SERVICE_MAX_SCAN_RECORDS, targets, 2U,
+               &matched_mask, &count, &truncated) == ESP_OK);
+    assert(count == 3U);
+    assert(!truncated);
+    assert(matched_mask == 0x03U);
+}
+
 int main(void)
 {
     host_wifi_idf_reset();
@@ -200,6 +232,7 @@ int main(void)
     assert(event.failure == WIFI_SERVICE_FAILURE_AUTHENTICATION);
 
     _test_scan_normalization();
+    _test_scan_target_matching();
     _test_credentials_policy_and_ascii_psk();
 
     _test_stop_before_clear_and_deinit_retry();

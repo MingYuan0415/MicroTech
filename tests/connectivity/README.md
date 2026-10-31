@@ -1,34 +1,31 @@
 # Connectivity Pipeline Host Test
 
-This suite links the production connectivity manager, WiFi executor, event
-bus, UI mailbox, and Setup WiFi adapter. The host files replace only FreeRTOS,
-NVS, the mailbox timer, logging, and the ESP-IDF WiFi driver boundary.
+This suite links the production connectivity manager, Wi-Fi executor, event bus,
+UI mailbox, and Setup Wi-Fi adapter. Host files replace only FreeRTOS, NVS, the
+mailbox timer, logging, and the ESP-IDF Wi-Fi driver boundary.
 
-It covers versioned profile validation and migration, boot auto-connect, commit
-after IPv4, failed replacement retention, storage failures, foreground priority,
-cancel, forget, manual offline hold, the persistent auto-connect switch, long
-retry, association and DHCP timeouts, stale epochs, suspend/resume, queue
-overflow, credential zeroing, control timeout recovery, UI callback identity, and
-manager lifecycle cleanup.
+It covers versioned profile validation and migration, bounded scan-match-connect
+cycles, commit after IPv4, failed replacement retention, storage failures,
+foreground priority, cancel, forget, Wi-Fi enable/disable, per-profile attempt
+limits, scan target matching, association and DHCP timeouts, stale epochs,
+suspend/resume, credential zeroing, control timeout recovery, UI callback
+identity, and manager lifecycle cleanup.
 
 The saved-network list is covered separately: SSID upsert without duplicates,
 refusing a save when every slot is held, targeted connect and targeted removal,
 removal of the active entry versus an inactive one, list survival across a full
-manager restart, `FORGET` clearing every entry, and a sweep that advances to the
-next saved network on `AP_NOT_FOUND` and parks in the long-backoff policy once
-every candidate has failed.
+manager restart, and `FORGET` clearing every entry. `wifi_cycle` adds the policy
+invariants: only profiles present in the scan are attempted, each profile gets a
+bounded number of attempts, failover reaches the next saved profile, an
+exhausted cycle stops the radio and clears `wifi_enabled`, a scan can preempt a
+connect attempt after its terminal, and the selected SSID/attempt ordinal stay
+consistent through a failed sweep. It also covers NVS write failures during
+enable/disable/forget and removal of the last profile.
 
-Cases pin the invariants that are easy to break: an exhausted sweep leaves the
-selected profile and the persisted `active_index` on the user's choice; removing an
-entry that does not carry the link keeps the link, the automatic-connect policy, and
-the radio out of the manual-offline hold; a refused removal write rolls the RAM list
-back so it matches flash across a reboot; and the fallback cursor
-(`attempt_index`/`attempt_total`) follows the sweep while `status.ssid` keeps naming
-the selected profile. The list is five slots wide, and a sixth distinct network is
-refused instead of evicting one.
-
-A separate port test verifies that ESP-IDF WiFi init receives `nvs_enable=true`
-before the driver is explicitly set to `WIFI_STORAGE_RAM`.
+A separate port test verifies that ESP-IDF Wi-Fi init receives `nvs_enable=true`
+before the driver is explicitly set to `WIFI_STORAGE_RAM`, and that filtered
+scans report presence for saved SSIDs that are not in the strongest five UI
+records.
 
 Run from the repository root:
 

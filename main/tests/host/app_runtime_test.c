@@ -1126,7 +1126,7 @@ esp_err_t connectivity_manager_deinit(uint32_t timeout_ms)
     return _test_result(TEST_EVENT_CONNECTIVITY_DEINIT);
 }
 
-esp_err_t connectivity_manager_request_disconnect(
+esp_err_t connectivity_manager_request_wifi_disable(
     connectivity_manager_operation_id_t *out_operation_id)
 {
     assert(out_operation_id != NULL);
@@ -1134,7 +1134,7 @@ esp_err_t connectivity_manager_request_disconnect(
     return ESP_OK;
 }
 
-esp_err_t connectivity_manager_request_reconnect_saved(
+esp_err_t connectivity_manager_request_wifi_enable(
     connectivity_manager_operation_id_t *out_operation_id)
 {
     assert(out_operation_id != NULL);
@@ -1312,6 +1312,7 @@ static void _test_successful_lifecycle(void)
         TEST_EVENT_SCREEN_COMMIT,
         TEST_EVENT_STARTUP_COMMIT,
         TEST_EVENT_DISPLAY_BENCHMARK_START,
+        TEST_EVENT_CONNECTIVITY_GET_STATUS,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_TIME_NETWORK_READY,
         TEST_EVENT_TIME_NETWORK_READY,

@@ -99,6 +99,7 @@ static void _test_wifi_state_mapping(void)
     assert(ssid == NULL);
 
     s_connectivity.state = CONNECTIVITY_MANAGER_STATE_IP_READY;
+    s_connectivity.wifi_enabled = true;
     memcpy(s_connectivity.ssid, "Home", sizeof("Home"));
     ssid = NULL;
     assert(ops.get_wifi(&state, &ssid) == ESP_OK);
@@ -106,6 +107,7 @@ static void _test_wifi_state_mapping(void)
     assert(ssid != NULL && strcmp(ssid, "Home") == 0);
 
     s_connectivity.state = CONNECTIVITY_MANAGER_STATE_SCANNING;
+    s_connectivity.wifi_enabled = true;
     ssid = "stale";
     assert(ops.get_wifi(&state, &ssid) == ESP_OK);
     assert(state == APP_MANAGER_RADIO_ON_IDLE);
@@ -131,29 +133,26 @@ static void _test_wifi_actions(void)
     assert(s_scan_calls == 0U);
     assert(s_reconnect_calls == 0U);
 
-    /* Enabling without a saved profile starts discovery. */
-    s_connectivity.saved_profile = false;
-    assert(ops.set_wifi(true) == ESP_OK);
-    assert(s_scan_calls == 1U);
-    assert(s_reconnect_calls == 0U);
-
-    /* A saved profile is rejoined instead of rescanning. */
-    s_connectivity.saved_profile = true;
+    /* Enabling always starts the manager-owned connection cycle. */
     assert(ops.set_wifi(true) == ESP_OK);
     assert(s_reconnect_calls == 1U);
-    assert(s_scan_calls == 1U);
+    assert(s_scan_calls == 0U);
 
-    /* A failed status read also falls back to discovery. */
+    s_connectivity.saved_profile = true;
+    assert(ops.set_wifi(true) == ESP_OK);
+    assert(s_reconnect_calls == 2U);
+    assert(s_scan_calls == 0U);
+
+    /* A failed status read no longer changes the enable API. */
     s_connectivity_result = ESP_FAIL;
     assert(ops.set_wifi(true) == ESP_OK);
-    assert(s_scan_calls == 2U);
+    assert(s_reconnect_calls == 3U);
 
     /* Request failures propagate unchanged. */
     s_connectivity_result = ESP_OK;
     s_disconnect_result = ESP_ERR_INVALID_STATE;
     assert(ops.set_wifi(false) == ESP_ERR_INVALID_STATE);
-    s_connectivity.saved_profile = false;
-    s_scan_result = ESP_ERR_NO_MEM;
+    s_reconnect_result = ESP_ERR_NO_MEM;
     assert(ops.set_wifi(true) == ESP_ERR_NO_MEM);
 }
 
@@ -249,7 +248,7 @@ esp_err_t connectivity_manager_request_scan(
     return s_scan_result;
 }
 
-esp_err_t connectivity_manager_request_disconnect(
+esp_err_t connectivity_manager_request_wifi_disable(
     connectivity_manager_operation_id_t *out_operation_id)
 {
     assert(out_operation_id != NULL);
@@ -258,7 +257,7 @@ esp_err_t connectivity_manager_request_disconnect(
     return s_disconnect_result;
 }
 
-esp_err_t connectivity_manager_request_reconnect_saved(
+esp_err_t connectivity_manager_request_wifi_enable(
     connectivity_manager_operation_id_t *out_operation_id)
 {
     assert(out_operation_id != NULL);
