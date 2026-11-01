@@ -1,0 +1,19 @@
+{
+  "id": "neutral-fallback",
+  "skill": "design-contract",
+  "profile": "neutral",
+  "target": "generic_constrained",
+  "archetype": "settings_list",
+  "selection_mode": "design",
+  "brief": "No profile or target supplied. Resolve the contract and state the fallback.",
+  "must": [
+    "profile_id:neutral",
+    "target_id:generic_constrained",
+    "fallback stated explicitly"
+  ],
+  "must_not": [
+    "dark_sparse",
+    "panel_368x448_touch_60hz",
+    "current palette"
+  ]
+}

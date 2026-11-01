@@ -1,0 +1,22 @@
+{
+  "id": "mono-industrial-dashboard",
+  "skill": "visual-design",
+  "profile": "mono_industrial",
+  "target": "panel_480x480_touch_60hz",
+  "archetype": "status_dashboard",
+  "brief": "Plan a monochrome operations dashboard whose status is readable without hue.",
+  "must": [
+    "profile_id:mono_industrial",
+    "target_id:panel_480x480_touch_60hz",
+    "text or pattern carries status",
+    "square or minimal radius",
+    "compact density",
+    "report TYPOGRAPHY_UNSUPPORTED if type roles cannot map"
+  ],
+  "must_not": [
+    "accent colour as the only signal",
+    "rounded pill language",
+    "blur",
+    "large image"
+  ]
+}

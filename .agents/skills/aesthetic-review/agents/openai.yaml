@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aesthetic Review"
+  short_description: "Review UI against a style and target profile"
+  default_prompt: "Use $aesthetic-review to critique this MicroTech page against its resolved design profile."

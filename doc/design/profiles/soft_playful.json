@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "id": "soft_playful",
+  "version": 1,
+  "display_name": "Soft Playful",
+  "style_axes": {
+    "surface_model": "tonal",
+    "depth_model": "lightness",
+    "density": "spacious",
+    "corner_scale": "pill",
+    "type_scale": "editorial",
+    "decoration": "expressive",
+    "motion_level": "standard",
+    "contrast_profile": "normal",
+    "icon_style": "filled",
+    "color_temperature": "warm"
+  },
+  "roles": {
+    "canvas": "#FFF7FB",
+    "surface_1": "#FFFFFF",
+    "surface_2": "#FFE8F1",
+    "surface_pressed": "#FFD6E7",
+    "border": "#F0B7CF",
+    "ink": "#241820",
+    "ink_muted": "#6B4A5B",
+    "ink_faint": "#7F5D6D",
+    "accent": "#D6336C",
+    "on_accent": "#FFFFFF",
+    "success": "#2B8A3E",
+    "warning": "#B35C00",
+    "danger": "#C92A2A",
+    "focus": "#D6336C",
+    "track": "#FFD6E7",
+    "surface_low": "#FFF0F6",
+    "accent_tint": "#FCE4EE",
+    "success_tint": "#E4F4E8",
+    "warning_tint": "#FBEAD8",
+    "danger_tint": "#F9E0E0"
+  },
+  "scales": {
+    "space": [
+      1.0,
+      1.5,
+      2.0,
+      3.0,
+      4.0,
+      6.0,
+      8.0
+    ],
+    "radius": [
+      0.5,
+      1.5,
+      2.5,
+      4.0
+    ],
+    "type": {
+      "caption": 0.83,
+      "body": 1.0,
+      "title": 1.25,
+      "heading": 1.5,
+      "display": 2.33,
+      "hero": 4.0
+    }
+  },
+  "rules": {
+    "min_touch_mm": 8.0,
+    "min_contrast_body": 4.5,
+    "min_contrast_large": 3.0,
+    "min_contrast_ui": 3.0,
+    "max_accent_roles": 2,
+    "allow_gradients": true,
+    "allow_shadow": true,
+    "allow_blur": false,
+    "contrast_pairs": [
+      {
+        "foreground": "ink",
+        "background": "canvas",
+        "floor": "body"
+      },
+      {
+        "foreground": "ink_muted",
+        "background": "canvas",
+        "floor": "body"
+      },
+      {
+        "foreground": "ink_faint",
+        "background": "canvas",
+        "floor": "faint"
+      },
+      {
+        "foreground": "on_accent",
+        "background": "accent",
+        "floor": "body"
+      }
+    ],
+    "min_contrast_faint": 4.0
+  },
+  "requires": {
+    "color_modes": [
+      "rgb565"
+    ],
+    "min_refresh_hz": 30
+  },
+  "fixture": true
+}

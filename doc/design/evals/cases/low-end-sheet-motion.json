@@ -1,0 +1,19 @@
+{
+  "id": "low-end-sheet-motion",
+  "skill": "motion-interaction",
+  "profile": "soft_playful",
+  "target": "panel_240x320_touch_30hz",
+  "archetype": "form_dialog",
+  "brief": "Plan a bottom-sheet transition on a constrained target.",
+  "must": [
+    "motion at or below micro",
+    "at most two animated objects",
+    "no blur"
+  ],
+  "must_not": [
+    "standard motion",
+    "full-screen",
+    "spring",
+    "particles"
+  ]
+}

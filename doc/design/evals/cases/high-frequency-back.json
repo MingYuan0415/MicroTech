@@ -1,0 +1,20 @@
+{
+  "id": "high-frequency-back",
+  "skill": "motion-interaction",
+  "profile": "soft_playful",
+  "target": "panel_368x448_touch_60hz",
+  "archetype": "settings_list",
+  "brief": "Plan motion for back navigation used constantly.",
+  "must": [
+    "trigger:back",
+    "mechanism:none",
+    "duration 0"
+  ],
+  "must_not": [
+    "slide",
+    "fade",
+    "spring",
+    "300ms",
+    "loop"
+  ]
+}

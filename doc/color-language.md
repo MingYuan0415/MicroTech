@@ -27,12 +27,13 @@ Raw color values may appear only in
 | Role | Token (`APP_THEME_COLOR_*`) | Value | Notes |
 | --- | --- | --- | --- |
 | Canvas | `VOID` | `#000000` | Full-screen background; pixels off, mean luminance is power |
-| Card | `PLUME` | `#14191E` | Sparse dark layer, only where grouping is needed |
-| Pressed/selected base | `PLUME_HI` | `#1E262D` | Press **brightens**, never darkens |
-| Icon recess | `SUNKEN` | `#0A0E11` | Icon-chip base below PLUME |
-| Hairline | `HAIRLINE` | `#232C33` | 1 px dividers, non-semantic graphics, gesture-indicator base |
+| Card | `PLUME` | `#161B20` | Sparse dark layer, only where grouping is needed |
+| Pressed/selected base | `PLUME_HI` | `#222A31` | Press **brightens**, never darkens |
+| Icon recess | `SUNKEN` | `#0B0F12` | Icon-chip base below PLUME |
+| Hairline | `HAIRLINE` | `#242C33` | 1 px dividers, non-semantic graphics, gesture-indicator base |
 | Primary text | `INK` | `#EAF0F2` | 18.2:1 on VOID; deliberately below pure white to control bloom |
 | Secondary text | `INK_SOFT` | `#A9B6BC` | 10.1:1 on VOID |
+| Tertiary text | `INK_FAINT` | `#76838A` | 5.4:1 on VOID; 4.4:1 on PLUME |
 | Text on accent | `ON_ACCENT` | `#04141A` | Text and icons on any bright accent fill |
 | Primary accent (cyan) | `AZURE` | `#43C6DB` | Actions, active state, charging; 10.3:1 |
 | Time/standby (amber) | `AMBER` | `#FFB454` | Sun, waiting, time semantics; 11.9:1 |
@@ -40,8 +41,10 @@ Raw color values may appear only in
 | Danger | `CORAL` | `#FF6B6B` | Destructive actions, faults; 7.6:1 |
 
 `app_ui_theme.h` keeps historical names (`RAIN`=AZURE, `SUN`=AMBER,
-`WARNING`=CORAL, and so on). The old `WARNING_BG` is removed: warning banners are
-now an accent tint (see below).
+`WARNING`=CORAL, and so on). `APP_UI_COLOR_WARNING` is therefore the historical
+danger alias, not the semantic warning role; use `APP_UI_COLOR_SUN` for the
+amber warning role and document the mapping when a profile declares it. The old
+`WARNING_BG` is removed: warning banners are now an accent tint (see below).
 
 ## Usage Rules
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visual Design"
+  short_description: "Plan style-neutral visual direction and composition"
+  default_prompt: "Use $visual-design to create a profile-driven visual plan for this MicroTech page."

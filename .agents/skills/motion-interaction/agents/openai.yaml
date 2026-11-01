@@ -1,0 +1,4 @@
+interface:
+  display_name: "Motion and Interaction"
+  short_description: "Plan embedded-safe feedback and motion"
+  default_prompt: "Use $motion-interaction to plan press feedback and transitions within this target's motion budget."

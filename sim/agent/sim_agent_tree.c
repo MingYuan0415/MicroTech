@@ -14,6 +14,7 @@
 #include "app_resources_generated.h"
 #include "lvgl.h"
 #include "core/lv_obj_class_private.h"
+#include "core/lv_obj_private.h"
 
 #include "sim_agent_tree.h"
 
@@ -188,13 +189,16 @@ static void _add_style(cJSON *node, lv_obj_t *obj)
     cJSON *styles = cJSON_AddObjectToObject(node, "styles");
     lv_color_t bg = lv_obj_get_style_bg_color(obj, LV_PART_MAIN);
     lv_color_t fg = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
+    lv_color_t border = lv_obj_get_style_border_color(obj, LV_PART_MAIN);
     char *bg_hex = _color_hex(bg);
     char *fg_hex = _color_hex(fg);
+    char *border_hex = _color_hex(border);
 
     if (styles == NULL)
     {
         free(bg_hex);
         free(fg_hex);
+        free(border_hex);
         return;
     }
     if (bg_hex != NULL)
@@ -205,10 +209,21 @@ static void _add_style(cJSON *node, lv_obj_t *obj)
     {
         cJSON_AddStringToObject(styles, "text_color", fg_hex);
     }
+    if (border_hex != NULL)
+    {
+        cJSON_AddStringToObject(styles, "border_color", border_hex);
+    }
     free(bg_hex);
     free(fg_hex);
+    free(border_hex);
     cJSON_AddNumberToObject(styles, "bg_opa",
                             (double)lv_obj_get_style_bg_opa(obj,
+                                    LV_PART_MAIN));
+    cJSON_AddNumberToObject(styles, "border_width",
+                            (double)lv_obj_get_style_border_width(obj,
+                                    LV_PART_MAIN));
+    cJSON_AddNumberToObject(styles, "border_opa",
+                            (double)lv_obj_get_style_border_opa(obj,
                                     LV_PART_MAIN));
     cJSON_AddNumberToObject(styles, "radius",
                             (double)lv_obj_get_style_radius(obj,
@@ -225,6 +240,15 @@ static void _add_style(cJSON *node, lv_obj_t *obj)
     cJSON_AddNumberToObject(styles, "pad_bottom",
                             (double)lv_obj_get_style_pad_bottom(obj,
                                     LV_PART_MAIN));
+    cJSON_AddNumberToObject(styles, "pad_row",
+                            (double)lv_obj_get_style_pad_row(obj,
+                                    LV_PART_MAIN));
+    cJSON_AddNumberToObject(styles, "pad_column",
+                            (double)lv_obj_get_style_pad_column(obj,
+                                    LV_PART_MAIN));
+    cJSON_AddNumberToObject(styles, "ext_click_pad",
+                            obj->spec_attr != NULL
+                            ? (double)obj->spec_attr->ext_click_pad : 0.0);
     const lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
     if (font != NULL)
     {

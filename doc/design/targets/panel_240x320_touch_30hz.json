@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "panel_240x320_touch_30hz",
+  "version": 1,
+  "display": {
+    "width": 240,
+    "height": 320,
+    "dpi": 160,
+    "color_mode": "rgb565",
+    "refresh_hz": 30,
+    "orientation": "portrait",
+    "emissive": false
+  },
+  "input": {
+    "touch": true,
+    "keypad": false,
+    "encoder": false,
+    "min_touch_mm": 7.0
+  },
+  "resources": {
+    "cpu_class": "constrained",
+    "ram_class": "low",
+    "base_space_px": 3,
+    "base_radius_px": 10,
+    "base_font_px": 20,
+    "max_motion_level": "micro",
+    "max_motion_ms": 120,
+    "max_animated_objects": 2,
+    "allow_blur": false,
+    "allow_shadow": false,
+    "allow_gradients": false,
+    "max_image_bytes": 32768,
+    "max_icon_count": 16,
+    "available_font_px": [
+      16,
+      18,
+      20,
+      24,
+      26,
+      28,
+      30,
+      32,
+      40,
+      48,
+      56,
+      70,
+      80
+    ],
+    "typography_tolerance_px": 1
+  },
+  "supported": false,
+  "fixture": true
+}

@@ -21,6 +21,7 @@ python3 tools/agent/mt.py test apps
 python3 tools/agent/mt.py test integration
 python3 tools/agent/mt.py test weather-service --profile address
 python3 tools/agent/mt.py py configuration resources docs
+python3 tools/agent/mt.py py design-skills docs skill-tools
 python3 tools/agent/mt.py fmt --check
 python3 tools/agent/mt.py git status
 python3 tools/agent/mt.py git diff
@@ -44,6 +45,11 @@ Host suites are discovered from their `CMakeLists.txt`:
 A suite's sanitizer option is read from its `CMakeLists.txt`; do not guess the
 name. `mt.py list` shows the alias and option. `connectivity` needs `IDF_PATH`.
 Hardware-only work (`tests/display`) is intentionally not a wrapper suite.
+
+Python groups are selected separately with `mt.py py`; `design-skills` covers
+the design-contract, aesthetic-review and motion-interaction helper tests,
+while `skill-tools` covers the LVGL layout audit helper. These groups are
+opt-in test entry points, not build gates.
 
 Build directories live under `build/agent/host/<alias>/<profile>`. `build/sim`
 and the root `build/` directory are reused, so incremental artifacts survive

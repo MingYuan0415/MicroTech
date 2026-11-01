@@ -98,6 +98,11 @@ Load `.agents/skills/` on demand; do not preload everything:
 | App/Page lifecycle, routing, navigation, arguments | `app-development` |
 | LVGL layout, text wrapping, clipping, touch/scroll propagation | `lvgl-ui-layout` |
 | Adversarial simulator review before a UI change is done | `ui-review` |
+| Design profiles, target capabilities, style switching | `design-contract` |
+| New page visual direction, composition, typography, colour roles | `visual-design` |
+| Aesthetic critique and profile-relative design QA | `aesthetic-review` |
+| Press feedback, transitions, gestures and embedded motion budgets | `motion-interaction` |
+| Task clarity, labels, errors, navigation and usability heuristics | `ux-heuristics` |
 | Board pins, buses, hardware constraints | `esp32` |
 | Display pipeline ownership, draw submission, flush handshake | `lvgl-integration` |
 | Firmware code size, map/archive analysis, build size comparison | `codesize` |

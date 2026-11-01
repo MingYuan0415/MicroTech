@@ -301,9 +301,9 @@ generation；`svc` 同时返回目标路径列表、operation_id/pending/last_er
 | --- | --- |
 | `type` | `lv_obj_class` 的名称（如 `lv_label`） |
 | `coords` | 绝对屏幕坐标 `x,y,w,h` |
-| `flags` | `visible` / `clickable` / `scrollable` |
+| `flags` | `visible` / `hidden` / `clickable` / `scrollable` / `floating` |
 | `state` | `pressed` / `checked` / `focused` / `disabled` |
-| `styles` | `LV_PART_MAIN` 的颜色、透明度、圆角、padding、行高 |
+| `styles` | `LV_PART_MAIN` 的颜色、透明度、边框颜色/宽度/透明度、圆角、padding、行列间距、行高、`ext_click_pad` |
 | `children` | 子节点数组 |
 
 label 额外提供 `long_mode`（`0 WRAP / 1 DOTS / 2 SCROLL / 3 SCROLL_CIRCULAR /

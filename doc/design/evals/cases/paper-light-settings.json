@@ -1,0 +1,24 @@
+{
+  "id": "paper-light-settings",
+  "skill": "visual-design",
+  "profile": "paper_light",
+  "target": "panel_240x320_touch_30hz",
+  "archetype": "settings_list",
+  "brief": "Plan a compact settings list with a single primary action; use the paper-light visual language.",
+  "must": [
+    "profile_id:paper_light",
+    "target_id:panel_240x320_touch_30hz",
+    "light surfaces",
+    "compact or comfortable density",
+    "motion at or below micro"
+  ],
+  "must_not": [
+    "368",
+    "448",
+    "AMOLED",
+    "dark_sparse",
+    "blur",
+    "spring",
+    "raw hex"
+  ]
+}

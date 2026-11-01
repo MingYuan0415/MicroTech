@@ -1,0 +1,4 @@
+interface:
+  display_name: "UX Heuristics"
+  short_description: "Audit task clarity, errors and navigation"
+  default_prompt: "Use $ux-heuristics to review this MicroTech flow for usability and product clarity."

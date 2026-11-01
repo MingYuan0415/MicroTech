@@ -1,0 +1,238 @@
+{
+  "styles": [
+    "neutral",
+    "dark_sparse",
+    "paper_light",
+    "mono_industrial",
+    "soft_playful"
+  ],
+  "targets": [
+    "panel_368x448_touch_60hz",
+    "panel_240x320_touch_30hz",
+    "panel_480x480_touch_60hz",
+    "panel_128x64_mono_keypad",
+    "generic_constrained"
+  ],
+  "archetypes": [
+    "settings_list",
+    "form_dialog",
+    "status_dashboard"
+  ],
+  "runs": [
+    {
+      "id": "dark-368-settings",
+      "style": "dark_sparse",
+      "target": "panel_368x448_touch_60hz",
+      "archetype": "settings_list",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "dark-240-form",
+      "style": "dark_sparse",
+      "target": "panel_240x320_touch_30hz",
+      "archetype": "form_dialog",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "dark-480-dashboard",
+      "style": "dark_sparse",
+      "target": "panel_480x480_touch_60hz",
+      "archetype": "status_dashboard",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "dark-128-settings",
+      "style": "dark_sparse",
+      "target": "panel_128x64_mono_keypad",
+      "archetype": "settings_list",
+      "expect": "COLOR_MODE_UNSUPPORTED"
+    },
+    {
+      "id": "paper-368-form",
+      "style": "paper_light",
+      "target": "panel_368x448_touch_60hz",
+      "archetype": "form_dialog",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "paper-240-dashboard",
+      "style": "paper_light",
+      "target": "panel_240x320_touch_30hz",
+      "archetype": "status_dashboard",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "paper-480-settings",
+      "style": "paper_light",
+      "target": "panel_480x480_touch_60hz",
+      "archetype": "settings_list",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "paper-generic-form",
+      "style": "paper_light",
+      "target": "generic_constrained",
+      "archetype": "form_dialog",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "mono-368-dashboard",
+      "style": "mono_industrial",
+      "target": "panel_368x448_touch_60hz",
+      "archetype": "status_dashboard",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "mono-240-settings",
+      "style": "mono_industrial",
+      "target": "panel_240x320_touch_30hz",
+      "archetype": "settings_list",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "mono-480-form",
+      "style": "mono_industrial",
+      "target": "panel_480x480_touch_60hz",
+      "archetype": "form_dialog",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "mono-128-dashboard",
+      "style": "mono_industrial",
+      "target": "panel_128x64_mono_keypad",
+      "archetype": "status_dashboard",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "soft-368-settings",
+      "style": "soft_playful",
+      "target": "panel_368x448_touch_60hz",
+      "archetype": "settings_list",
+      "expect": "warning",
+      "expect_codes": [
+        "EFFECT_DOWNGRADED"
+      ]
+    },
+    {
+      "id": "soft-240-form",
+      "style": "soft_playful",
+      "target": "panel_240x320_touch_30hz",
+      "archetype": "form_dialog",
+      "expect": "warning",
+      "expect_codes": [
+        "EFFECT_DOWNGRADED",
+        "MOTION_DOWNGRADED"
+      ]
+    },
+    {
+      "id": "soft-480-dashboard",
+      "style": "soft_playful",
+      "target": "panel_480x480_touch_60hz",
+      "archetype": "status_dashboard",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "soft-generic-settings",
+      "style": "soft_playful",
+      "target": "generic_constrained",
+      "archetype": "settings_list",
+      "expect": "warning",
+      "expect_codes": [
+        "EFFECT_DOWNGRADED",
+        "MOTION_DOWNGRADED"
+      ]
+    },
+    {
+      "id": "dark-generic-settings",
+      "style": "dark_sparse",
+      "target": "generic_constrained",
+      "archetype": "settings_list",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "paper-128-dashboard",
+      "style": "paper_light",
+      "target": "panel_128x64_mono_keypad",
+      "archetype": "status_dashboard",
+      "expect": "COLOR_MODE_UNSUPPORTED"
+    },
+    {
+      "id": "mono-generic-form",
+      "style": "mono_industrial",
+      "target": "generic_constrained",
+      "archetype": "form_dialog",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "soft-128-dashboard",
+      "style": "soft_playful",
+      "target": "panel_128x64_mono_keypad",
+      "archetype": "status_dashboard",
+      "expect": "COLOR_MODE_UNSUPPORTED"
+    },
+    {
+      "id": "neutral-368-settings",
+      "style": "neutral",
+      "target": "panel_368x448_touch_60hz",
+      "archetype": "settings_list",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "neutral-240-form",
+      "style": "neutral",
+      "target": "panel_240x320_touch_30hz",
+      "archetype": "form_dialog",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "neutral-480-dashboard",
+      "style": "neutral",
+      "target": "panel_480x480_touch_60hz",
+      "archetype": "status_dashboard",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "neutral-128-settings",
+      "style": "neutral",
+      "target": "panel_128x64_mono_keypad",
+      "archetype": "settings_list",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "neutral-generic-form",
+      "style": "neutral",
+      "target": "generic_constrained",
+      "archetype": "form_dialog",
+      "expect": "ok",
+      "expect_codes": []
+    }
+  ]
+}

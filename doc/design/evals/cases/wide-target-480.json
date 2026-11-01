@@ -1,0 +1,19 @@
+{
+  "id": "wide-target-480",
+  "skill": "visual-design",
+  "profile": "paper_light",
+  "target": "panel_480x480_touch_60hz",
+  "archetype": "settings_list",
+  "brief": "Plan a settings page for a larger square target without reusing the current panel layout.",
+  "must": [
+    "target_id:panel_480x480_touch_60hz",
+    "composition changes for a square target",
+    "no current panel constants"
+  ],
+  "must_not": [
+    "368",
+    "448",
+    "current row heights",
+    "current margins"
+  ]
+}

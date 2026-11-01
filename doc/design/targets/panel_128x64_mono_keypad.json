@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "panel_128x64_mono_keypad",
+  "version": 1,
+  "display": {
+    "width": 128,
+    "height": 64,
+    "dpi": 100,
+    "color_mode": "mono",
+    "refresh_hz": 30,
+    "orientation": "landscape",
+    "emissive": false
+  },
+  "input": {
+    "touch": false,
+    "keypad": true,
+    "encoder": true,
+    "min_touch_mm": 0.0
+  },
+  "resources": {
+    "cpu_class": "constrained",
+    "ram_class": "low",
+    "base_space_px": 2,
+    "base_radius_px": 4,
+    "base_font_px": 12,
+    "max_motion_level": "none",
+    "max_motion_ms": 0,
+    "max_animated_objects": 0,
+    "allow_blur": false,
+    "allow_shadow": false,
+    "allow_gradients": false,
+    "max_image_bytes": 4096,
+    "max_icon_count": 8,
+    "available_font_px": [
+      10,
+      12,
+      16,
+      18,
+      24,
+      28,
+      36,
+      48,
+      70,
+      80
+    ],
+    "typography_tolerance_px": 1
+  },
+  "supported": false,
+  "fixture": true
+}

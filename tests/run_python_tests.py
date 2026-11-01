@@ -12,9 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# name -> (source directory, pattern, working directory). The working directory
-# is what the group's tests import their modules relative to: the contract
-# submodule exposes `tooling.check` from its own root.
+# name -> (source directory or directories, pattern, working directory). The
+# working directory is what the group's tests import their modules relative to:
+# the contract submodule exposes `tooling.check` from its own root.
 GROUPS = {
     "agent": (ROOT / "tools" / "agent" / "tests", "test_*.py", ROOT),
     "configuration": (ROOT / "tests" / "configuration", "test_*.py", ROOT),
@@ -26,28 +26,37 @@ GROUPS = {
     "sim-tools": (ROOT / "sim", "test_*.py", ROOT),
     "skill-tools": (ROOT / ".agents" / "skills" / "lvgl-ui-layout" / "tests",
                     "test_*.py", ROOT),
+    "design-skills": ([
+        ROOT / ".agents" / "skills" / "design-contract" / "tests",
+        ROOT / ".agents" / "skills" / "aesthetic-review" / "tests",
+        ROOT / ".agents" / "skills" / "motion-interaction" / "tests",
+    ], "test_*.py", ROOT),
 }
 
 
 def _run_group(name: str, verbose: bool) -> int:
     start = time.monotonic()
     source, pattern, working_directory = GROUPS[name]
-    command = [
-        sys.executable,
-        "-m",
-        "unittest",
-        "discover",
-        "-s",
-        str(source),
-        "-p",
-        pattern,
-        "-v" if verbose else "-q",
-    ]
-    result = subprocess.run(command, cwd=working_directory, check=False)
+    sources = source if isinstance(source, (list, tuple)) else [source]
+    return_code = 0
+    for source_dir in sources:
+        command = [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            str(source_dir),
+            "-p",
+            pattern,
+            "-v" if verbose else "-q",
+        ]
+        result = subprocess.run(command, cwd=working_directory, check=False)
+        return_code = return_code or result.returncode
     elapsed = time.monotonic() - start
-    status = "PASS" if result.returncode == 0 else "FAIL"
+    status = "PASS" if return_code == 0 else "FAIL"
     print(f"[{status}] {name} duration={elapsed:.2f}s")
-    return result.returncode
+    return return_code
 
 
 def main() -> int:

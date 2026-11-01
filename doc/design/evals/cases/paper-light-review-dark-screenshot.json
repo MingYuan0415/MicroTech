@@ -1,0 +1,16 @@
+{
+  "id": "paper-light-review-dark-screenshot",
+  "skill": "aesthetic-review",
+  "profile": "paper_light",
+  "target": "panel_368x448_touch_60hz",
+  "archetype": "settings_list",
+  "brief": "Review a dark screenshot while the active profile is paper_light.",
+  "must": [
+    "PROFILE_MISMATCH",
+    "do not score the dark palette as a paper-light failure"
+  ],
+  "must_not": [
+    "call the page too dark for paper_light without a mismatch",
+    "switch profile to make the finding disappear"
+  ]
+}

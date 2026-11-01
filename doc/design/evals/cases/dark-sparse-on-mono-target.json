@@ -1,0 +1,17 @@
+{
+  "id": "dark-sparse-on-mono-target",
+  "skill": "design-contract",
+  "profile": "dark_sparse",
+  "target": "panel_128x64_mono_keypad",
+  "archetype": "status_dashboard",
+  "brief": "Attempt to resolve the dark colour profile against a monochrome keypad target.",
+  "must": [
+    "COLOR_MODE_UNSUPPORTED",
+    "target_id:panel_128x64_mono_keypad"
+  ],
+  "must_not": [
+    "silently approximate colour with grayscale",
+    "assume touch"
+  ],
+  "expected_error": "COLOR_MODE_UNSUPPORTED"
+}

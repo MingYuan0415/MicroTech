@@ -1,0 +1,19 @@
+{
+  "id": "mono-keypad-flow",
+  "skill": "ux-heuristics",
+  "profile": "mono_industrial",
+  "target": "panel_128x64_mono_keypad",
+  "archetype": "status_dashboard",
+  "brief": "Review a keypad-only flow with no touch and no colour.",
+  "must": [
+    "keypad or encoder path for every action",
+    "text/pattern status",
+    "no touch assumptions"
+  ],
+  "must_not": [
+    "tap",
+    "swipe",
+    "hover",
+    "colour-only status"
+  ]
+}

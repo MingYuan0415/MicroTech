@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Contract"
+  short_description: "Resolve and validate design profiles and targets"
+  default_prompt: "Use $design-contract to resolve a style profile and target profile before designing or reviewing a MicroTech UI."

@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "id": "dark_sparse",
+  "version": 1,
+  "display_name": "Dark Sparse",
+  "style_axes": {
+    "surface_model": "tonal",
+    "depth_model": "lightness",
+    "density": "comfortable",
+    "corner_scale": "rounded",
+    "type_scale": "editorial",
+    "decoration": "sparse",
+    "motion_level": "micro",
+    "contrast_profile": "high",
+    "icon_style": "outline",
+    "color_temperature": "cool"
+  },
+  "roles": {
+    "canvas": "#000000",
+    "surface_1": "#161B20",
+    "surface_2": "#1A2026",
+    "surface_pressed": "#222A31",
+    "border": "#242C33",
+    "ink": "#EAF0F2",
+    "ink_muted": "#A9B6BC",
+    "ink_faint": "#76838A",
+    "accent": "#43C6DB",
+    "on_accent": "#04141A",
+    "success": "#4FDD8B",
+    "warning": "#FFB454",
+    "danger": "#FF6B6B",
+    "focus": "#7DD8E7",
+    "track": "#2C353D",
+    "surface_low": "#0B0F12",
+    "accent_tint": "#0B2024",
+    "success_tint": "#0D2416",
+    "warning_tint": "#291D0E",
+    "danger_tint": "#291111"
+  },
+  "scales": {
+    "space": [
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      6.0,
+      8.0,
+      12.0
+    ],
+    "radius": [
+      0.0,
+      1.0,
+      1.6667,
+      2.3333
+    ],
+    "type": {
+      "caption": 0.83,
+      "body": 1.0,
+      "title": 1.25,
+      "heading": 1.5,
+      "display": 2.33,
+      "hero": 4.0
+    }
+  },
+  "rules": {
+    "min_touch_mm": 6.0,
+    "min_contrast_body": 4.5,
+    "min_contrast_large": 3.0,
+    "min_contrast_ui": 3.0,
+    "max_accent_roles": 2,
+    "allow_gradients": false,
+    "allow_shadow": false,
+    "allow_blur": false,
+    "contrast_pairs": [
+      {
+        "foreground": "ink",
+        "background": "canvas",
+        "floor": "body"
+      },
+      {
+        "foreground": "ink_muted",
+        "background": "canvas",
+        "floor": "body"
+      },
+      {
+        "foreground": "ink_faint",
+        "background": "canvas",
+        "floor": "faint"
+      },
+      {
+        "foreground": "on_accent",
+        "background": "accent",
+        "floor": "body"
+      }
+    ],
+    "min_contrast_faint": 4.0
+  },
+  "requires": {
+    "color_modes": [
+      "rgb565"
+    ],
+    "min_refresh_hz": 30
+  },
+  "compatibility": {
+    "colors": {
+      "canvas": "APP_THEME_COLOR_VOID",
+      "surface_1": "APP_THEME_COLOR_PLUME",
+      "surface_2": "APP_THEME_COLOR_SHEET",
+      "surface_pressed": "APP_THEME_COLOR_PLUME_HI",
+      "border": "APP_THEME_COLOR_HAIRLINE",
+      "ink": "APP_THEME_COLOR_INK",
+      "ink_muted": "APP_THEME_COLOR_INK_SOFT",
+      "ink_faint": "APP_THEME_COLOR_INK_FAINT",
+      "accent": "APP_THEME_COLOR_AZURE",
+      "on_accent": "APP_THEME_COLOR_ON_ACCENT",
+      "success": "APP_THEME_COLOR_MINT",
+      "warning": "APP_THEME_COLOR_AMBER",
+      "danger": "APP_THEME_COLOR_CORAL",
+      "focus": "APP_THEME_COLOR_AZURE_HI",
+      "track": "APP_THEME_COLOR_TRACK",
+      "surface_low": "APP_THEME_COLOR_SUNKEN",
+      "accent_tint": "APP_THEME_COLOR_AZURE_TINT",
+      "success_tint": "APP_THEME_COLOR_MINT_TINT",
+      "warning_tint": "APP_THEME_COLOR_AMBER_TINT",
+      "danger_tint": "APP_THEME_COLOR_CORAL_TINT"
+    },
+    "app_aliases": {
+      "canvas": "APP_UI_COLOR_BACKGROUND",
+      "surface_1": "APP_UI_COLOR_SURFACE",
+      "surface_2": "APP_UI_COLOR_SHEET",
+      "surface_pressed": "APP_UI_COLOR_SURFACE_HI",
+      "surface_low": "APP_UI_COLOR_SURFACE_LO",
+      "border": "APP_UI_COLOR_HAIRLINE",
+      "track": "APP_UI_COLOR_TRACK",
+      "ink": "APP_UI_COLOR_TEXT",
+      "ink_muted": "APP_UI_COLOR_MUTED",
+      "ink_faint": "APP_UI_COLOR_FAINT",
+      "accent": "APP_UI_COLOR_RAIN",
+      "on_accent": "APP_UI_COLOR_ON_ACCENT",
+      "success": "APP_UI_COLOR_SUCCESS",
+      "warning": "APP_UI_COLOR_SUN",
+      "danger": "APP_UI_COLOR_WARNING",
+      "focus": "APP_UI_COLOR_RAIN_HI",
+      "accent_tint": "APP_UI_COLOR_RAIN_TINT",
+      "success_tint": "APP_UI_COLOR_SUCCESS_TINT",
+      "warning_tint": "APP_UI_COLOR_SUN_TINT",
+      "danger_tint": "APP_UI_COLOR_WARNING_TINT"
+    },
+    "metric_checks": {
+      "APP_UI_PAGE_MARGIN": 16,
+      "APP_UI_CARD_PAD": 16,
+      "APP_UI_GAP": 12,
+      "APP_UI_GAP_TIGHT": 8,
+      "APP_UI_RADIUS_CONTROL": 12,
+      "APP_UI_RADIUS_CARD": 20,
+      "APP_UI_RADIUS_SHEET": 28
+    }
+  },
+  "fixture": false
+}

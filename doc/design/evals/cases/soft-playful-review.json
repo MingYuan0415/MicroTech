@@ -1,0 +1,17 @@
+{
+  "id": "soft-playful-review",
+  "skill": "aesthetic-review",
+  "profile": "soft_playful",
+  "target": "panel_368x448_touch_60hz",
+  "archetype": "form_dialog",
+  "brief": "Review a rounded, decorated page in the soft profile.",
+  "must": [
+    "do not penalise rounded corners as such",
+    "check contrast, hierarchy and touch targets"
+  ],
+  "must_not": [
+    "demand square corners",
+    "demand a monochrome palette",
+    "call decoration a defect without a hierarchy reason"
+  ]
+}

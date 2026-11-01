@@ -388,9 +388,9 @@ fields:
 | --- | --- |
 | `type` | the name of the `lv_obj_class` (e.g. `lv_label`) |
 | `coords` | absolute screen coordinates `x,y,w,h` |
-| `flags` | `visible` / `clickable` / `scrollable` |
+| `flags` | `visible` / `hidden` / `clickable` / `scrollable` / `floating` |
 | `state` | `pressed` / `checked` / `focused` / `disabled` |
-| `styles` | `LV_PART_MAIN` color, opacity, radius, padding, line height |
+| `styles` | `LV_PART_MAIN` color, opacity, border color/width/opacity, radius, padding, row/column gap, line height, `ext_click_pad` |
 | `children` | child node array |
 
 Labels additionally provide `long_mode` (`0 WRAP / 1 DOTS / 2 SCROLL / 3

@@ -1,0 +1,22 @@
+{
+  "id": "soft-playful-onboarding",
+  "skill": "visual-design",
+  "profile": "soft_playful",
+  "target": "panel_368x448_touch_60hz",
+  "archetype": "form_dialog",
+  "brief": "Plan a short first-run setup flow with a warm, soft visual language.",
+  "must": [
+    "profile_id:soft_playful",
+    "target_id:panel_368x448_touch_60hz",
+    "rounded language",
+    "spacious density",
+    "motion at or below standard"
+  ],
+  "must_not": [
+    "368 is the only supported width",
+    "blur",
+    "spring",
+    "particles",
+    "five competing primary actions"
+  ]
+}

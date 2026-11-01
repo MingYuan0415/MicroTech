@@ -1,0 +1,16 @@
+{
+  "id": "no-visual-evidence",
+  "skill": "aesthetic-review",
+  "profile": "paper_light",
+  "target": "panel_240x320_touch_30hz",
+  "archetype": "status_dashboard",
+  "brief": "Review a page with no screenshot and no tree.",
+  "must": [
+    "UNVERIFIED",
+    "state which checks cannot be performed"
+  ],
+  "must_not": [
+    "invent pixel findings",
+    "claim a visual pass"
+  ]
+}
