@@ -42,10 +42,16 @@ The middleware public contract is
 `layers/middleware/components/music_service/include/music_service.h`. The
 middleware implementation is split into:
 
-- `music_service.c`: singleton state, API worker, command queue, login flow,
-  snapshot replacement, credential lifecycle.
-- `music_net.c`: HTTP/HTTPS, cookie jar, JSON/JSONP, WeChat QR, catalog, song URL,
-  lyric, JPEG cover decode.
+- `music_service.c`: singleton state, API worker, command queue, status/event
+  publication, snapshot cache, and lifecycle.
+- `music_snapshot.c`: reference-counted PSRAM payload allocation and release.
+- `music_http.c`: HTTP/HTTPS transport, redirects, response limits, cookie jar.
+- `music_api.c`: QQ `musicu.fcg` POST envelope and bounded JSON helpers.
+- `music_auth.c`: QQ/WeChat QR flows, login sessions, credential persistence and
+  refresh/expiry checks.
+- `music_catalog.c`: home, playlist, song URL, quality fallback and catalog
+  parsing.
+- `music_media.c`: cover/QR image decode and LRC parsing.
 - `music_stream.c`: CDN stream read, `esp_audio_simple_dec`, PCM writes through
   `audio_service`, stream worker lifecycle.
 - `music_service_internal.h`: private command enum, credential blob, runtime
@@ -357,13 +363,14 @@ bsp `1ea201e`).
 2. `music_service_seek()` is reserved and returns `ESP_ERR_NOT_SUPPORTED`.
 3. Automatic credential refresh is not implemented; expired credentials force a
    new QR login.
-4. The playlist page is bounded to 100 songs; the playback queue can page beyond
-   that, but the page does not provide an explicit "load more" control.
+4. The playlist page loads its first 30 rows and exposes a "load more" action;
+   the playback queue can page beyond the 100-song UI window.
 5. Credentials are stored in a plain NVS blob. Flash encryption / NVS encryption
    is not enabled in the current `sdkconfig`.
 6. A standalone `music-service` host suite covers the pure QQ login protocol
    parsers. The opt-in simulator real backend (`SIM_MUSIC_BACKEND=real`) adds
-   real `music_service.c`/`music_net.c`, live HTTPS, and host libsndfile
+   real `music_service.c`, `music_catalog.c`, `music_auth.c`, and their
+   supporting HTTP/media modules, live HTTPS, and host libsndfile
    MP3/FLAC decoding; its audio sink and `music_stream.c` replacement remain
    host-only fakes, so final audio verification stays on device.
 7. QQ Music Web endpoints are unofficial and may change without notice; their
@@ -532,13 +539,18 @@ cover rendering, reboot, logout/factory-reset, and memory-leak acceptance.
 layers/middleware/components/music_service/
   include/music_service.h
   src/music_service.c
-  src/music_net.c
-  src/music_login_protocol.c
-  src/music_login_protocol.h
+  src/music_snapshot.c / music_snapshot.h
+  src/music_http.c / music_http.h
+  src/music_api.c / music_api.h
+  src/music_auth.c / music_auth.h
+  src/music_catalog.c
+  src/music_media.c / music_media.h
+  src/music_login_protocol.c / music_login_protocol.h
   src/music_stream.c
   src/music_service_internal.h
   tests/host/CMakeLists.txt
   tests/host/music_login_protocol_test.c
+  tests/host/music_snapshot_test.c
   Kconfig
   CMakeLists.txt
   idf_component.yml

@@ -209,7 +209,7 @@ SDL_VIDEODRIVER=dummy ./build/sim-real/microtech_sim --headless \
     --agent-port 5002 --frames 0
 ```
 
-This backend compiles the production `music_service.c` and `music_net.c`,
+This backend compiles the production `music_service.c`, `music_catalog.c`, and `music_auth.c`,
 including the real QQ/WeChat HTTPS flow. It replaces only the device stream
 implementation with `sim/ports/sim_music_stream.c`: the adapter downloads the
 real CDN URL with libcurl, decodes the real MP3/FLAC stream with the host

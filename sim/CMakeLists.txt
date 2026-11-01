@@ -187,7 +187,9 @@ if(SIM_MUSIC_BACKEND STREQUAL "real")
         "${MIDDLEWARE}/music_service/src/music_snapshot.c"
         "${MIDDLEWARE}/music_service/src/music_http.c"
         "${MIDDLEWARE}/music_service/src/music_media.c"
-        "${MIDDLEWARE}/music_service/src/music_net.c"
+        "${MIDDLEWARE}/music_service/src/music_api.c"
+        "${MIDDLEWARE}/music_service/src/music_auth.c"
+        "${MIDDLEWARE}/music_service/src/music_catalog.c"
         "${MIDDLEWARE}/music_service/src/music_login_protocol.c")
 endif()
 

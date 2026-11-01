@@ -160,7 +160,7 @@ SDL_VIDEODRIVER=dummy ./build/sim-real/microtech_sim --headless \
     --agent-port 5002 --frames 0
 ```
 
-该后端编译真实的 `music_service.c` 与 `music_net.c`，包含真实 QQ/微信
+该后端编译真实的 `music_service.c`、`music_catalog.c` 与 `music_auth.c`，包含真实 QQ/微信
 HTTPS 流程；仅将设备 stream 实现替换为 `sim/ports/sim_music_stream.c`：
 适配器用 libcurl 下载真实 CDN URL，用宿主 `libsndfile.so.1`（`dlopen`）
 解码真实 MP3/FLAC，再把 PCM 写入模拟器的 fake audio service。不模拟
