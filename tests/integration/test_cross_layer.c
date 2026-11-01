@@ -18,6 +18,7 @@
 #include "host_device_link_service.h"
 #include "host_factory_reset_service.h"
 #include "host_power.h"
+#include "music_service.h"
 #include "nv_storage.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
@@ -34,7 +35,7 @@
 
 #define UI_TIMEOUT_MS 1000U
 #define WAIT_ATTEMPTS 2000U
-#define LIFECYCLE_OBSERVATION_CAPACITY 1536U
+#define LIFECYCLE_OBSERVATION_CAPACITY 4096U
 #define LIFECYCLE_ID_BYTES 32U
 
 EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
@@ -1400,6 +1401,7 @@ static void _initialize_stack(void)
     }
     assert(app_manager_mailbox_init() == ESP_OK);
     assert(event_bus_init() == ESP_OK);
+    assert(music_service_init(NULL) == ESP_OK);
 
     app_manager_ui_dispatch_fn dispatcher = NULL;
     assert(app_manager_get_ui_dispatch_fn(&dispatcher) == ESP_OK);
@@ -2299,6 +2301,11 @@ static void _assert_real_page_start_contract(void)
         {APP_MANAGER_ID_SETTINGS, "display"},
         {APP_MANAGER_ID_SETTINGS, "about"},
         {APP_MANAGER_ID_SETUP, "root"},
+        {APP_MANAGER_ID_MUSIC, "root"},
+        {APP_MANAGER_ID_MUSIC, "playlist"},
+        {APP_MANAGER_ID_MUSIC, "player"},
+        {APP_MANAGER_ID_MUSIC, "lyrics"},
+        {APP_MANAGER_ID_MUSIC, "login"},
     };
 
     for (size_t page = 0;
@@ -2562,6 +2569,184 @@ static void _test_other_real_app_screen_lifecycles(void)
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(_ui_has_text("08:30"));
     _assert_event_slot_headroom(3);
+}
+
+static void _assert_music_no_leases(void)
+{
+    for (int resource = 0; resource < HOST_MUSIC_RESOURCE_COUNT; ++resource)
+    {
+        assert(host_music_active_lease_count(resource) == 0U);
+    }
+}
+
+static bool _wait_for_music_lease(int resource, unsigned expected)
+{
+    for (unsigned attempt = 0; attempt < WAIT_ATTEMPTS; ++attempt)
+    {
+        if (host_music_active_lease_count(resource) == expected)
+        {
+            return true;
+        }
+        assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                                   UI_TIMEOUT_MS) == ESP_OK);
+        _sleep_one_ms();
+    }
+    return false;
+}
+
+/**
+ * Exercise the screen lifecycle of one Music page.
+ *
+ * Music pages own one foreground timer and one subscription.  A page that
+ * retains an immutable service snapshot across navigation declares it through
+ * retained_resource; pages with a cover expect one image lease.  Screen pause
+ * unmounts the page and must drop every lease, while screen resume remounts
+ * and re-establishes the foreground resources.
+ */
+static void _exercise_music_page_screen_lifecycle(
+    const char *page_id, const char *visible_text,
+    int retained_resource, bool expects_image)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_MUSIC));
+    assert(app_page_is_actived(APP_MANAGER_ID_MUSIC, page_id));
+    assert(_wait_for_text_with_timers(visible_text));
+    if (retained_resource >= 0)
+    {
+        assert(_wait_for_music_lease(retained_resource, 1U));
+    }
+    if (expects_image)
+    {
+        assert(_wait_for_music_lease(HOST_MUSIC_RESOURCE_IMAGE, 1U));
+    }
+    lv_resource_counts_t resources = _lv_resource_counts();
+    assert(resources.objects > 0);
+    assert(resources.timers == 1U);
+    assert(_wait_for_dynamic_task_count(0U));
+    _assert_event_slot_headroom(1U);
+
+    const size_t starts_before = _lifecycle_observed(
+                                     APP_MANAGER_ID_MUSIC, page_id,
+                                     APP_MANAGER_MSG_ONSTART,
+                                     APP_MANAGER_LIFECYCLE_OBSERVER_AFTER);
+    const size_t resumes_before = _lifecycle_observed(
+                                      APP_MANAGER_ID_MUSIC, page_id,
+                                      APP_MANAGER_MSG_ONRESUME,
+                                      APP_MANAGER_LIFECYCLE_OBSERVER_AFTER);
+    const size_t pauses_before = _lifecycle_observed(
+                                     APP_MANAGER_ID_MUSIC, page_id,
+                                     APP_MANAGER_MSG_ONPAUSE,
+                                     APP_MANAGER_LIFECYCLE_OBSERVER_AFTER);
+
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    resources = _lv_resource_counts();
+    assert(resources.objects == 0);
+    assert(resources.screens == 1U);
+    assert(resources.timers == 0U);
+    assert(_wait_for_dynamic_task_count(0U));
+    _assert_event_slot_headroom(0U);
+    _assert_music_no_leases();
+    assert(!app_manager_is_actived(APP_MANAGER_ID_MUSIC));
+    assert(!app_page_is_actived(APP_MANAGER_ID_MUSIC, page_id));
+    assert(app_manager_get_active_app_id() == NULL);
+
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_is_actived(APP_MANAGER_ID_MUSIC));
+    assert(app_page_is_actived(APP_MANAGER_ID_MUSIC, page_id));
+    assert(app_manager_is_page_present(APP_MANAGER_ID_MUSIC, page_id));
+    resources = _lv_resource_counts();
+    assert(resources.objects > 0);
+    assert(resources.screens == 2U);
+    assert(resources.timers == 1U);
+    assert(_wait_for_dynamic_task_count(0U));
+    _assert_event_slot_headroom(1U);
+    assert(_wait_for_text_with_timers(visible_text));
+    if (retained_resource >= 0)
+    {
+        assert(_wait_for_music_lease(retained_resource, 1U));
+    }
+    if (expects_image)
+    {
+        assert(_wait_for_music_lease(HOST_MUSIC_RESOURCE_IMAGE, 1U));
+    }
+
+    assert(_lifecycle_observed(
+               APP_MANAGER_ID_MUSIC, page_id, APP_MANAGER_MSG_ONSTART,
+               APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == starts_before);
+    assert(_lifecycle_observed(
+               APP_MANAGER_ID_MUSIC, page_id, APP_MANAGER_MSG_ONRESUME,
+               APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == resumes_before + 1U);
+    assert(_lifecycle_observed(
+               APP_MANAGER_ID_MUSIC, page_id, APP_MANAGER_MSG_ONPAUSE,
+               APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == pauses_before + 1U);
+}
+
+static void _test_music_page_screen_lifecycles(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    host_music_seed_success();
+
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MUSIC, NULL) ==
+           ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "root"));
+    _exercise_music_page_screen_lifecycle(
+        "root", "Hi, 测试用户", -1, true);
+
+    _click_action("打开歌单");
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "playlist"));
+    _exercise_music_page_screen_lifecycle(
+        "playlist", "测试曲目 1", HOST_MUSIC_RESOURCE_PLAYLIST, true);
+
+    _click_action("播放全部");
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
+    _exercise_music_page_screen_lifecycle(
+        "player", "正在播放", -1, true);
+
+    _click_action("歌词");
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "lyrics"));
+    _exercise_music_page_screen_lifecycle(
+        "lyrics", "第一行测试歌词", HOST_MUSIC_RESOURCE_LYRIC, false);
+
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "playlist"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "root"));
+
+    assert(music_service_login_begin(MUSIC_LOGIN_TYPE_QQ) == ESP_OK);
+    _click_action("Hi, 测试用户");
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "login"));
+    assert(_wait_for_text_with_timers("使用对应 App 扫描二维码"));
+    assert(_wait_for_music_lease(HOST_MUSIC_RESOURCE_QR, 1U));
+    lv_resource_counts_t resources = _lv_resource_counts();
+    assert(resources.timers == 1U);
+    _assert_event_slot_headroom(1U);
+
+    const unsigned cancels_before = host_music_login_cancel_count();
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(host_music_login_cancel_count() == cancels_before + 1U);
+    resources = _lv_resource_counts();
+    assert(resources.objects == 0);
+    assert(resources.timers == 0U);
+    _assert_music_no_leases();
+
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_text_with_timers("QQ 音乐账号"));
+    assert(host_music_active_lease_count(HOST_MUSIC_RESOURCE_QR) == 0U);
+    resources = _lv_resource_counts();
+    assert(resources.timers == 1U);
+    _assert_event_slot_headroom(1U);
+
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MUSIC, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(app_manager_get_running_apps() == 1U);
+    _assert_music_no_leases();
+    host_music_reset();
 }
 
 static void _test_host_audio_lease_contract(void)
@@ -4191,6 +4376,7 @@ int main(void)
     _test_latest_power_backpressure();
     _test_latest_wifi_backpressure_and_reopen();
     _test_optional_services_unavailable();
+    _test_music_page_screen_lifecycles();
     _assert_real_page_start_contract();
     _test_other_real_app_screen_lifecycles();
     _test_flybirds_failed_pause_keeps_ticking();

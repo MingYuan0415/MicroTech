@@ -2901,6 +2901,11 @@ void *heap_caps_malloc(size_t size, uint32_t caps)
     return malloc(size);
 }
 
+void *heap_caps_calloc(size_t count, size_t size, uint32_t caps)
+{
+    return host_lv_heap_caps_aligned_calloc(sizeof(void *), count, size, caps);
+}
+
 /* Deterministic caps-dependent heap figures mirroring the simulator stub so
  * the task switcher memory footer renders stable values under host tests. */
 size_t heap_caps_get_total_size(uint32_t caps)

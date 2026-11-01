@@ -204,6 +204,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_ALIGN_TOP_MID              3
 #define LV_ALIGN_BOTTOM_LEFT          4
 #define LV_ALIGN_OUT_BOTTOM_LEFT      5
+#define LV_IMAGE_ALIGN_COVER          12
 #define LV_ANIM_OFF                   0
 #define LV_ANIM_ON                    1
 #define LV_BAR_MODE_RANGE             1
@@ -311,6 +312,9 @@ extern const lv_font_t host_lv_default_font;
 #define LV_SYMBOL_OK        "ok"
 #define LV_SYMBOL_PAUSE     "pause"
 #define LV_SYMBOL_PLAY      "play"
+#define LV_SYMBOL_PREV      "previous"
+#define LV_SYMBOL_NEXT      "next"
+#define LV_SYMBOL_DOWN      "down"
 #define LV_SYMBOL_POWER     "power"
 #define LV_SYMBOL_REFRESH   "refresh"
 #define LV_SYMBOL_RIGHT     "right"
@@ -379,6 +383,18 @@ void lv_canvas_set_draw_buf(lv_obj_t *canvas, lv_draw_buf_t *draw_buf);
 void lv_canvas_fill_bg(lv_obj_t *canvas, lv_color_t color, lv_opa_t opacity);
 /** @brief Bind a fake Image to a draw buffer or other source. */
 void lv_image_set_src(lv_obj_t *image, const void *source);
+/** @brief No-op image scaling for layout-only host tests. */
+static inline void lv_image_set_scale(lv_obj_t *image, uint32_t scale)
+{
+    (void)image;
+    (void)scale;
+}
+/** @brief No-op image content alignment for layout-only host tests. */
+static inline void lv_image_set_inner_align(lv_obj_t *image, int align)
+{
+    (void)image;
+    (void)align;
+}
 /** @brief Initialize a caller-owned fake draw buffer. */
 lv_result_t lv_draw_buf_init(lv_draw_buf_t *draw_buf, uint32_t width,
                              uint32_t height, lv_color_format_t color_format,
@@ -832,6 +848,7 @@ HOST_LV_NOOP_4(lv_obj_set_flex_align, lv_obj_t *, int, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_hor, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_ver, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_opa, lv_obj_t *, int, int)
+HOST_LV_NOOP_3(lv_obj_set_style_clip_corner, lv_obj_t *, bool, int)
 HOST_LV_NOOP_3(lv_obj_set_style_arc_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_arc_opa, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_arc_color, lv_obj_t *, lv_color_t, int)

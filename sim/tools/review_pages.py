@@ -171,6 +171,16 @@ def _descendant_texts(node):
     return out
 
 
+def _descendant_semantics(node):
+    out = []
+    semantic_id = node.get('image_semantic_id')
+    if semantic_id and semantic_id != 'dynamic':
+        out.append(semantic_id)
+    for child in node.get('children') or []:
+        out.extend(_descendant_semantics(child))
+    return out
+
+
 # Kinsoku sets mirrored from app_ui_wrap_prose(): a line must not start with
 # closing punctuation and must not end with an opener.
 FORBIDDEN_START = '，。、；：！？）】」』…'
@@ -567,9 +577,11 @@ def _lint(tree, page, state, vw, vh):
             v.append('unreachable control %s at %r' % (node.get('type'), coords))
         if state_flags.get('disabled'):
             texts = _descendant_texts(node)
-            if (node.get('type') not in allow_disabled_types and
-                    not any(any(a in t for a in allow_disabled)
-                            for t in texts)):
+            semantics = _descendant_semantics(node)
+            allowed = (any(any(a in t for a in allow_disabled)
+                           for t in texts) or
+                       any(s in allow_disabled for s in semantics))
+            if node.get('type') not in allow_disabled_types and not allowed:
                 v.append('unexpected disabled control %s %r'
                          % (node.get('type'), texts[:1]))
 
@@ -755,10 +767,13 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                     # session; hop through the app root first, then the page.
                     runner.call('sim.navigate',
                                 {'app': page['app'], 'page': 'root'})
-                    runner.call('sim.step', {'ms': 33 * 15})
                     if page_id != 'root':
                         runner.call('sim.navigate',
                                     {'app': page['app'], 'page': page_id})
+                    runner.call('sim.step', {'ms': 33 * 10})
+                    # Seed only after the target page is mounted. A preceding
+                    # mount-time service refresh can otherwise replace a newly
+                    # installed fixture before the capture observes it.
                     for seed in state.get('seed', []):
                         runner._step(seed)
                     runner.call('sim.step', {'ms': 33 * 30})

@@ -333,8 +333,9 @@ a missing pct falls back to the voltage-derived display),
 (degrees), `sim.set_weather {endpoint,status,body}` (loads the sim_http script
 table then `request_refresh`, real parse chain), `sim.pause {enabled}`,
 `sim.music {action}` (`status`, `login`, `cancel_login`, `logout`, `refresh`,
-`play_pause`, `next`, `prev`, `stop`, `set_mode`; the opt-in real backend also
-accepts `play_url` and `stream_status` for decoder bring-up),
+`play_pause`, `next`, `prev`, `stop`, `set_mode`; fake builds also accept
+`fixture {name}` to atomically install a deterministic Music state), while the
+opt-in real backend accepts `play_url` and `stream_status` for decoder bring-up,
 `sim.set_wifi_profile {ssid, password?}` (saves one network through the
 production `connectivity_manager_request_save_profile`, so UI review can build a
 multi-network list without BLE provisioning; a missing password saves an open

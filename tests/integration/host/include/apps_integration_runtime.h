@@ -348,4 +348,39 @@ void host_nv_clear_volume(void);
 /** @brief Fail the next current-owner release, retaining its lease in ERROR. */
 void host_audio_fail_next_release(void);
 
+/** @brief Music immutable resources exposed by the host-service fake. */
+typedef enum host_music_resource
+{
+    HOST_MUSIC_RESOURCE_HOME = 0,
+    HOST_MUSIC_RESOURCE_PLAYLIST,
+    HOST_MUSIC_RESOURCE_LYRIC,
+    HOST_MUSIC_RESOURCE_QR,
+    HOST_MUSIC_RESOURCE_IMAGE,
+    HOST_MUSIC_RESOURCE_COUNT,
+} host_music_resource_t;
+
+/** @brief Reset the Music fake to a logged-in READY service with no content. */
+void host_music_reset(void);
+/**
+ * @brief Seed one complete Music catalog, player, lyric, QR, and image set.
+ *
+ * Every immutable payload is retained by the fake until reset. Successful
+ * acquisitions are opt-in so the default service remains empty and idle.
+ */
+void host_music_seed_success(void);
+/** @brief Reject the next Music acquire call for a resource with NOT_FOUND. */
+void host_music_fail_next_acquire(int resource, esp_err_t result);
+/** @brief Delay Music acquisitions until this many calls have failed. */
+void host_music_delay_acquire(int resource, unsigned attempts);
+/** @brief Return the active Music lease count for one resource. */
+unsigned host_music_active_lease_count(int resource);
+/** @brief Return accepted Music lease acquisitions for one resource. */
+unsigned host_music_acquire_count(int resource);
+/** @brief Return released Music leases for one resource. */
+unsigned host_music_release_count(int resource);
+/** @brief Select one player state and failure for lifecycle assertions. */
+void host_music_set_player_state(int state, int failure);
+/** @brief Return accepted Music login cancellations. */
+unsigned host_music_login_cancel_count(void);
+
 #endif /* __CROSS_LAYER_RUNTIME_H__ */

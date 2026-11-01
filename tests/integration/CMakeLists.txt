@@ -52,6 +52,7 @@ add_executable(test_cross_layer
     "${APP_THEME}/src/app_theme.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
     "${MIDDLEWARE}/event_bus/src/event_bus_core.c"
+    "${MIDDLEWARE}/music_service/src/music_snapshot.c"
     "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"
     ${INTEGRATION_APP_SOURCES}
     "${MIDDLEWARE}/timer_service/src/timer_service.c"
@@ -98,6 +99,7 @@ target_include_directories(test_cross_layer PRIVATE
     "${MIDDLEWARE}/nv_storage/include"
     "${MIDDLEWARE}/recorder_service/include"
     "${MIDDLEWARE}/music_service/include"
+    "${MIDDLEWARE}/music_service/src"
     "${MIDDLEWARE}/chore_service/include"
     "${MIDDLEWARE}/onboarding_service/include"
     "${MIDDLEWARE}/weather_service/include"

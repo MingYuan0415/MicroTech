@@ -413,6 +413,11 @@ class Runner:
             self.call('sim.nvs',
                       {k: step[k] for k in
                        ('action', 'key', 'value') if k in step})
+        elif cmd == 'music':
+            self.call('sim.music',
+                      {k: step[k] for k in
+                       ('action', 'type', 'mode', 'name', 'path', 'url')
+                       if k in step})
         elif cmd == 'set_weather':
             path = step['file']
             if not os.path.isabs(path):

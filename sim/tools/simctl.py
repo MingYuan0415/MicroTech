@@ -28,7 +28,7 @@ Commands:
   set-imu <pitch_deg> <roll_deg>
   pause <on|off>
   set-weather <endpoint> <file>
-  music <status|login|cancel_login|logout|refresh|play_pause|next|prev|stop|set_mode> [value]
+  music <status|login|cancel_login|logout|refresh|play_pause|next|prev|stop|set_mode|fixture> [value]
   pm [--off-ms N] [--standby-ms N] [--get]
   exit
 """
@@ -209,6 +209,8 @@ def main():
                 music["url"] = args.value
             elif args.action == "qr_save" and args.value is not None:
                 music["path"] = args.value
+            elif args.action == "fixture" and args.value is not None:
+                music["name"] = args.value
             req = ("sim.music", music)
         elif args.cmd == "exit":
             req = ("sim.exit", {})

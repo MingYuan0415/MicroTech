@@ -48,6 +48,8 @@
 #include "weather_service.h"
 #ifdef SIM_MUSIC_REAL
     #include "music_service_internal.h"
+#else
+    #include "sim_fakes_music.h"
 #endif
 #include "host_device_link_service.h"
 #include "host_wifi_port.h"
@@ -1512,6 +1514,56 @@ static cJSON *_handle(cJSON *request, bool *ok)
         {
             *ok = false;
             cJSON_AddStringToObject(result, "error", "invalid music action");
+        }
+        else if (strcmp(verb, "fixture") == 0)
+        {
+#ifdef SIM_MUSIC_REAL
+            *ok = false;
+            cJSON_AddStringToObject(result, "error",
+                                    esp_err_to_name(ESP_ERR_NOT_SUPPORTED));
+#else
+            const cJSON *name = params != NULL ?
+                                cJSON_GetObjectItemCaseSensitive(params,
+                                    "name") : NULL;
+            const char *fixture_name = cJSON_GetStringValue(name);
+            sim_music_fixture_status_t fixture_status;
+            const esp_err_t fixture_result =
+                fixture_name != NULL ?
+                host_music_service_set_fixture(fixture_name) :
+                ESP_ERR_INVALID_ARG;
+            *ok = fixture_result == ESP_OK &&
+                  host_music_service_get_fixture_status(
+                      &fixture_status) == ESP_OK;
+            if (*ok)
+            {
+                cJSON_AddStringToObject(result, "fixture",
+                                        fixture_status.fixture);
+                cJSON_AddNumberToObject(result, "generation",
+                                        (double)fixture_status.generation);
+                cJSON_AddNumberToObject(result, "state",
+                                        (double)fixture_status.state);
+                cJSON_AddNumberToObject(result, "failure",
+                                        (double)fixture_status.failure);
+                cJSON_AddNumberToObject(result, "player_state",
+                                        (double)fixture_status.player_state);
+                cJSON_AddNumberToObject(result, "home_count",
+                                        (double)fixture_status.home_count);
+                cJSON_AddNumberToObject(result, "playlist_count",
+                                        (double)fixture_status.playlist_count);
+                cJSON_AddNumberToObject(result, "lyric_lines",
+                                        (double)fixture_status.lyric_lines);
+                cJSON_AddBoolToObject(result, "qr_available",
+                                      fixture_status.qr_available);
+            }
+            else
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        fixture_name == NULL ?
+                                        esp_err_to_name(
+                                            ESP_ERR_INVALID_ARG) :
+                                        esp_err_to_name(fixture_result));
+            }
+#endif
         }
         else if (strcmp(verb, "status") == 0)
         {

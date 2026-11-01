@@ -298,6 +298,11 @@ static void _add_type_value(cJSON *node, lv_obj_t *obj,
                 return;
             }
         }
+        if (lv_image_src_get_type(src) == LV_IMAGE_SRC_VARIABLE)
+        {
+            cJSON_AddStringToObject(node, "image_semantic_id", "dynamic");
+            return;
+        }
         cJSON_AddStringToObject(node, "image_semantic_id", "unknown");
         return;
     }

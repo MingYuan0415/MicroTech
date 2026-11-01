@@ -181,10 +181,13 @@ set(SIM_LAYER_SOURCES
     "${APP_CORE}/src/app_manager_display_diagnostics.c"
     "${APP_CORE}/src/app_manager_lvgl_adapter.c")
 
+list(APPEND SIM_LAYER_SOURCES
+    "${MIDDLEWARE}/music_service/src/music_service_cache.c"
+    "${MIDDLEWARE}/music_service/src/music_snapshot.c")
+
 if(SIM_MUSIC_BACKEND STREQUAL "real")
     list(APPEND SIM_LAYER_SOURCES
         "${MIDDLEWARE}/music_service/src/music_service.c"
-        "${MIDDLEWARE}/music_service/src/music_snapshot.c"
         "${MIDDLEWARE}/music_service/src/music_http.c"
         "${MIDDLEWARE}/music_service/src/music_media.c"
         "${MIDDLEWARE}/music_service/src/music_api.c"
@@ -247,6 +250,9 @@ if(SIM_MUSIC_BACKEND STREQUAL "real")
         "ports/sim_music_stream.c"
         "ports/sim_jpeg_dec.c"
         "ports/sim_base64.c")
+else()
+    list(APPEND SIM_PORT_SOURCES
+        "ports/fakes/sim_fakes_music.c")
 endif()
 
 add_executable(microtech_sim
@@ -266,6 +272,7 @@ target_include_directories(microtech_sim PRIVATE
     "${MT_ROOT}/main"
     "${CMAKE_CURRENT_LIST_DIR}/bsp"
     "${CMAKE_CURRENT_LIST_DIR}/ports"
+    "${CMAKE_CURRENT_LIST_DIR}/ports/fakes"
     "${CMAKE_CURRENT_LIST_DIR}/runtime"
     "${CMAKE_CURRENT_LIST_DIR}/agent"
     "${MT_ROOT}/managed_components/lvgl__lvgl/src"
