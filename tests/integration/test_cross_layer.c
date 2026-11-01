@@ -19,6 +19,7 @@
 #include "host_factory_reset_service.h"
 #include "host_power.h"
 #include "music_service.h"
+#include "music_app_internal.h"
 #include "nv_storage.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
@@ -272,6 +273,29 @@ static esp_err_t _navigate(app_manager_nav_operation_t operation,
         .app_id = app_id,
         .page_id = page_id,
     };
+    return app_manager_navigate(&request, UI_TIMEOUT_MS);
+}
+
+static esp_err_t _navigate_music_playlist(const music_playlist_ref_t *ref)
+{
+    const music_playlist_arguments_t arguments =
+    {
+        .ref = *ref,
+    };
+    app_manager_nav_request_t request =
+    {
+        .operation = APP_MANAGER_NAV_OP_OPEN_PAGE,
+        .app_id = APP_MANAGER_ID_MUSIC,
+        .page_id = MUSIC_PAGE_PLAYLIST,
+        .has_arguments = true,
+        .arguments =
+        {
+            .version = APP_MANAGER_TYPED_BLOB_VERSION,
+            .type = MUSIC_ARGUMENT_PLAYLIST,
+            .size = sizeof(arguments),
+        },
+    };
+    memcpy(request.arguments.payload, &arguments, sizeof(arguments));
     return app_manager_navigate(&request, UI_TIMEOUT_MS);
 }
 
@@ -2301,9 +2325,10 @@ static void _assert_real_page_start_contract(void)
         {APP_MANAGER_ID_SETTINGS, "display"},
         {APP_MANAGER_ID_SETTINGS, "about"},
         {APP_MANAGER_ID_SETUP, "root"},
-        {APP_MANAGER_ID_MUSIC, "root"},
-        {APP_MANAGER_ID_MUSIC, "playlist"},
         {APP_MANAGER_ID_MUSIC, "player"},
+        {APP_MANAGER_ID_MUSIC, "sidebar"},
+        {APP_MANAGER_ID_MUSIC, "playlist"},
+        {APP_MANAGER_ID_MUSIC, "queue"},
         {APP_MANAGER_ID_MUSIC, "lyrics"},
         {APP_MANAGER_ID_MUSIC, "login"},
     };
@@ -2689,57 +2714,70 @@ static void _test_music_page_screen_lifecycles(void)
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MUSIC, NULL) ==
            ESP_OK);
-    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
     _exercise_music_page_screen_lifecycle(
-        "root", "Hi, 测试用户", -1, true);
+        "player", "测试曲目 1", -1, false);
 
-    _click_action("打开歌单");
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_MUSIC,
+                     "sidebar") == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "sidebar"));
+    _exercise_music_page_screen_lifecycle(
+        "sidebar", "我的测试歌单", -1, false);
+
+    music_playlist_ref_t playlist_ref = {0};
+    playlist_ref.id = 1001U;
+    playlist_ref.tid = 1001U;
+    playlist_ref.kind = MUSIC_PLAYLIST_KIND_RECOMMENDED;
+    assert(_navigate_music_playlist(&playlist_ref) == ESP_OK);
     assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "playlist"));
     _exercise_music_page_screen_lifecycle(
         "playlist", "测试曲目 1", HOST_MUSIC_RESOURCE_PLAYLIST, true);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "sidebar"));
 
-    _click_action("播放全部");
-    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_MUSIC,
+                     "queue") == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "queue"));
     _exercise_music_page_screen_lifecycle(
-        "player", "正在播放", -1, true);
+        "queue", "测试曲目 1", HOST_MUSIC_RESOURCE_QUEUE, false);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "sidebar"));
 
-    _click_action("歌词");
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_MUSIC,
+                     "lyrics") == ESP_OK);
     assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "lyrics"));
     _exercise_music_page_screen_lifecycle(
         "lyrics", "第一行测试歌词", HOST_MUSIC_RESOURCE_LYRIC, false);
-
     _click_back();
-    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
-    _click_back();
-    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "playlist"));
-    _click_back();
-    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "root"));
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "sidebar"));
 
     assert(music_service_login_begin(MUSIC_LOGIN_TYPE_QQ) == ESP_OK);
-    _click_action("Hi, 测试用户");
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_MUSIC,
+                     "login") == ESP_OK);
     assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "login"));
-    assert(_wait_for_text_with_timers("使用对应 App 扫描二维码"));
+    assert(_wait_for_text_with_timers("QQ 扫码登录"));
     assert(_wait_for_music_lease(HOST_MUSIC_RESOURCE_QR, 1U));
-    lv_resource_counts_t resources = _lv_resource_counts();
-    assert(resources.timers == 1U);
-    _assert_event_slot_headroom(1U);
-
+    lv_resource_counts_t login_resources = _lv_resource_counts();
+    assert(login_resources.timers == 1U);
     const unsigned cancels_before = host_music_login_cancel_count();
     assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(host_music_login_cancel_count() == cancels_before + 1U);
-    resources = _lv_resource_counts();
-    assert(resources.objects == 0);
-    assert(resources.timers == 0U);
+    login_resources = _lv_resource_counts();
+    assert(login_resources.objects == 0);
+    assert(login_resources.timers == 0U);
     _assert_music_no_leases();
-
     assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
-    assert(_wait_for_text_with_timers("QQ 音乐账号"));
+    assert(_wait_for_text_with_timers("已登录"));
     assert(host_music_active_lease_count(HOST_MUSIC_RESOURCE_QR) == 0U);
-    resources = _lv_resource_counts();
-    assert(resources.timers == 1U);
-    _assert_event_slot_headroom(1U);
+    login_resources = _lv_resource_counts();
+    assert(login_resources.timers == 1U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "sidebar"));
+
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
 
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MUSIC, NULL) ==
            ESP_OK);
@@ -4038,15 +4076,16 @@ static void _test_control_center_band_and_entering_toggle(void)
     const int32_t edge_width = app_manager_back_gesture_edge_width();
     assert(edge_width > 0);
 
-    /* The band starts at the edge-back width and stops 58 px before the
-     * right edge: 42 px page action button + 16 px page margin. */
+    /* Both top corners reserve room for page controls: 52 px control plus
+     * 24 px margin. Keep the centre of the display available for the pull. */
     cc_band_bounds_t band = {0};
     assert(app_manager_ui_call(_cc_band_query_on_ui, &band,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(band.y == 0);
     assert(band.height == 40);
-    assert(band.x == edge_width);
-    assert(band.x + band.width == display_width - 58);
+    assert(band.x == 76);
+    assert(band.x + band.width == display_width - 76);
+    assert(edge_width > 0);
 
     /* A tap inside the reserved action-button area must reach the page, not
      * be swallowed by the armed band. */

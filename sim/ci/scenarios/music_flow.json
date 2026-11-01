@@ -1,41 +1,199 @@
 {
  "name": "music-flow",
  "steps": [
-  {"cmd": "music", "action": "fixture", "name": "catalog_playing"},
-  {"cmd": "navigate", "app": "music", "page": "root"},
-  {"cmd": "step", "times": 20},
-  {"cmd": "wait_idle"},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "音乐"}},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "今日推荐"}},
-  {"cmd": "screenshot", "name": "music_home.png"},
-  {"cmd": "tap_text", "text": "打开歌单"},
-  {"cmd": "step", "times": 20},
-  {"cmd": "wait_idle"},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "歌单"}},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "模拟晨间歌单"}},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "模拟曲目 01"}},
-  {"cmd": "screenshot", "name": "music_playlist.png"},
-  {"cmd": "tap_text", "text": "播放全部"},
-  {"cmd": "step", "times": 20},
-  {"cmd": "wait_idle"},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "正在播放"}},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "模拟曲目 01"}},
-  {"cmd": "assert_result", "method": "sim.music", "params": {"action": "status"}, "expect": {"player_state": 2}},
-  {"cmd": "screenshot", "name": "music_player.png"},
-  {"cmd": "music", "action": "next"},
-  {"cmd": "step", "times": 10},
-  {"cmd": "wait_idle"},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "模拟曲目 02"}},
-  {"cmd": "tap_text", "text": "歌词"},
-  {"cmd": "step", "times": 20},
-  {"cmd": "wait_idle"},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "歌词"}},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "第一束模拟晨光"}},
-  {"cmd": "screenshot", "name": "music_lyrics.png"},
-  {"cmd": "tap_text", "text": "播放器"},
-  {"cmd": "step", "times": 20},
-  {"cmd": "wait_idle"},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "正在播放"}},
-  {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "模拟曲目 02"}}
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "catalog_playing"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 01"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "落在安静的屏幕"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "节拍沿着时间向前"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "我们把此刻留在歌里"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_player.png"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "个性电台"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "每日推荐"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "喜欢"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "自建歌单"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "收藏歌单"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "退出登录"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_sidebar.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music",
+   "page": "queue"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "播放列表"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 01"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_queue.png"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "模拟曲目 02"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 02"
+   }
+  },
+  {
+   "cmd": "tap_text",
+   "text": "第一束模拟晨光"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "歌词"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "第一束模拟晨光"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_lyrics.png"
+  }
  ]
 }

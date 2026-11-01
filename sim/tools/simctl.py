@@ -28,7 +28,7 @@ Commands:
   set-imu <pitch_deg> <roll_deg>
   pause <on|off>
   set-weather <endpoint> <file>
-  music <status|login|cancel_login|logout|refresh|play_pause|next|prev|stop|set_mode|fixture> [value]
+  music <status|login|scan|confirm|cancel_login|logout|refresh|play_pause|next|prev|stop|set_mode|fixture> [value]
   pm [--off-ms N] [--standby-ms N] [--get]
   exit
 """

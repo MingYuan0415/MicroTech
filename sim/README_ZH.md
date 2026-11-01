@@ -175,7 +175,9 @@ QR 登录仍需要手机实际扫码一次；凭据保存在本次会话的 NVS 
 该后端只用于非 CI 会话：`--ci` 会把所有未注册 URL 当作离线。
 `sim/tools/music_flow.py` 驱动会等待扫码、打开第一条真实歌单、播放歌曲并检查
 播放位置是否推进；运行方式为
-`python3 sim/tools/music_flow.py --port 5002`。设备的
+`python3 sim/tools/music_flow.py --port 5002`。确定性 fake 后端可用
+`sim/ci/scenarios/music_login_flow.json` 走完退出登录 → 开屏检查 → 登录方式 →
+QQ 二维码 → 已扫码 → 登录成功 → 侧边栏，全程不需要手机。设备的
 `music_stream.c` 解码/传输路径在此模式下不编译，最终仍以上板验证为准。
 
 ## 已知设备语义要点（踩坑记录）
@@ -258,7 +260,8 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `sim.set_weather {endpoint,status,body}`
 （灌 sim_http 脚本表后 `request_refresh`，真解析链）、`sim.pause {enabled}`、
 `sim.music {action}`（`status`、`login`、`cancel_login`、`logout`、`refresh`、
-`play_pause`、`next`、`prev`、`stop`、`set_mode`；可选的 real 后端还接受
+`play_pause`、`next`、`prev`、`stop`、`set_mode`；fake 构建还接受
+`fixture {name}`，以及 `scan`、`confirm` 推进扫码与登录成功；可选的 real 后端还接受
 `play_url` 与 `stream_status` 用于解码器自查）、
 `sim.set_wifi_profile {ssid, password?}`（经生产接口
 `connectivity_manager_request_save_profile` 保存一条已保存网络，使 UI 评审可在

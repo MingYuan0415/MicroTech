@@ -1630,6 +1630,28 @@ static cJSON *_handle(cJSON *request, bool *ok)
             const esp_err_t music_result = music_service_login_cancel();
             *ok = music_result == ESP_OK;
         }
+#ifndef SIM_MUSIC_REAL
+        else if (strcmp(verb, "scan") == 0)
+        {
+            const esp_err_t music_result = host_music_service_login_scan();
+            *ok = music_result == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(music_result));
+            }
+        }
+        else if (strcmp(verb, "confirm") == 0)
+        {
+            const esp_err_t music_result = host_music_service_login_confirm();
+            *ok = music_result == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(music_result));
+            }
+        }
+#endif
         else if (strcmp(verb, "logout") == 0)
         {
             const esp_err_t music_result = music_service_logout();

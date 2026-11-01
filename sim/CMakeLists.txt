@@ -183,6 +183,7 @@ set(SIM_LAYER_SOURCES
 
 list(APPEND SIM_LAYER_SOURCES
     "${MIDDLEWARE}/music_service/src/music_service_cache.c"
+    "${MIDDLEWARE}/music_service/src/music_queue_model.c"
     "${MIDDLEWARE}/music_service/src/music_snapshot.c")
 
 if(SIM_MUSIC_BACKEND STREQUAL "real")

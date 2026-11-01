@@ -1,0 +1,102 @@
+{
+ "name": "music-login-flow",
+ "steps": [
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "logged_out"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 30
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "QQ 扫码登录"
+   }
+  },
+  {
+   "cmd": "tap_text",
+   "text": "QQ 扫码登录"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_login_qr.png"
+  },
+  {
+   "cmd": "music",
+   "action": "scan"
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "已扫码，请确认"
+   }
+  },
+  {
+   "cmd": "music",
+   "action": "confirm"
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "登录成功"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_login_success.png"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music",
+   "page": "sidebar"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "Hi, 模拟用户"
+   }
+  }
+ ]
+}

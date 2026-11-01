@@ -762,6 +762,8 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                 want = state.get('expect_visible', [])
                 page_id = page.get('page', 'root')
                 tree = None
+                for seed in state.get('pre_seed', []):
+                    runner._step(seed)
                 for _ in range(3):
                     # Intra-app page navigation can be dropped after a long
                     # session; hop through the app root first, then the page.

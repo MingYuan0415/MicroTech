@@ -197,11 +197,14 @@ extern const lv_font_t host_lv_default_font;
         (name).flush_count = 0U; \
     } while (0)
 
+typedef int lv_text_align_t;
+
 #define LV_ALIGN_TOP_LEFT             0
 #define LV_ALIGN_TOP_RIGHT            2
 #define LV_ALIGN_BOTTOM_RIGHT         6
 #define LV_ALIGN_CENTER               1
 #define LV_ALIGN_TOP_MID              3
+#define LV_ALIGN_BOTTOM_MID          7
 #define LV_ALIGN_BOTTOM_LEFT          4
 #define LV_ALIGN_OUT_BOTTOM_LEFT      5
 #define LV_IMAGE_ALIGN_COVER          12
@@ -288,6 +291,7 @@ extern const lv_font_t host_lv_default_font;
 #define LV_STATE_PRESSED              1
 #define LV_STATE_CHECKED              (1U << 5)
 #define LV_STATE_DISABLED             (1U << 7)
+#define LV_TEXT_ALIGN_LEFT           2
 #define LV_TEXT_ALIGN_CENTER          0
 #define LV_TEXT_ALIGN_RIGHT           1
 
@@ -390,6 +394,12 @@ static inline void lv_image_set_scale(lv_obj_t *image, uint32_t scale)
     (void)scale;
 }
 /** @brief No-op image content alignment for layout-only host tests. */
+static inline void lv_image_set_antialias(lv_obj_t *image, bool antialias)
+{
+    (void)image;
+    (void)antialias;
+}
+
 static inline void lv_image_set_inner_align(lv_obj_t *image, int align)
 {
     (void)image;
@@ -834,6 +844,9 @@ HOST_LV_NOOP_3(lv_obj_set_style_pad_top, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_radius, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_translate_y, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_shadow_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_shadow_opa, lv_obj_t *, int, int)
+HOST_LV_NOOP_3(lv_obj_set_style_outline_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_outline_opa, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_transform_height, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_transform_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_align, lv_obj_t *, int, int)

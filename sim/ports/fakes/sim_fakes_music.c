@@ -12,7 +12,7 @@
 #include <string.h>
 
 #define SIM_MUSIC_FIXTURE_GENERATION UINT64_C(1)
-#define SIM_MUSIC_QR_SIZE 29U
+#define SIM_MUSIC_QR_SIZE 49U
 #define SIM_MUSIC_CATALOG_COUNT 5U
 #define SIM_MUSIC_PARTIAL_COUNT 2U
 #define SIM_MUSIC_PARTIAL_TOTAL 12U
@@ -69,14 +69,14 @@ static sim_music_state_t s_music =
     .status =
     {
         .generation = SIM_MUSIC_FIXTURE_GENERATION,
-        .state = MUSIC_SERVICE_STATE_READY,
+        .state = MUSIC_SERVICE_STATE_LOGGED_OUT,
         .failure = MUSIC_SERVICE_FAILURE_NONE,
         .network_ready = true,
         .time_ready = true,
-        .logged_in = true,
+        .logged_in = false,
         .audio_available = true,
         .login_type = MUSIC_LOGIN_TYPE_QQ,
-        .user_name = "模拟用户",
+        .user_name = "",
     },
     .player =
     {
@@ -166,6 +166,7 @@ static void _publish_fixture(void)
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYLIST, 0U);
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_LYRIC, 0U);
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_QUEUE, 0U);
 }
 
 static void _fill_playlist(music_playlist_t *playlist, uint64_t id,
@@ -198,9 +199,11 @@ static music_home_snapshot_t *_create_home(uint32_t catalog_total)
     home->generation = SIM_MUSIC_FIXTURE_GENERATION;
     home->recommended_ok = true;
     home->personal_ok = true;
+    home->collected_ok = true;
     home->recommended_count = 3U;
     home->my_favorite_count = 2U;
     home->my_created_count = 1U;
+    home->my_collected_count = 2U;
     _fill_playlist(&home->recommended[0], 1001U, 0U, 1001U,
                    MUSIC_PLAYLIST_KIND_RECOMMENDED, "模拟晨间歌单",
                    "模拟音乐", catalog_total);
@@ -211,7 +214,7 @@ static music_home_snapshot_t *_create_home(uint32_t catalog_total)
                    MUSIC_PLAYLIST_KIND_RECOMMENDED, "夜间电台",
                    "模拟音乐", 24U);
     _fill_playlist(&home->my_favorite[0], 2001U, 0U, 2001U,
-                   MUSIC_PLAYLIST_KIND_MY_FAVORITE, "收藏节拍",
+                   MUSIC_PLAYLIST_KIND_MY_FAVORITE, "我喜欢的音乐",
                    "模拟用户", 16U);
     _fill_playlist(&home->my_favorite[1], 2002U, 0U, 2002U,
                    MUSIC_PLAYLIST_KIND_MY_FAVORITE, "循环清单",
@@ -219,6 +222,12 @@ static music_home_snapshot_t *_create_home(uint32_t catalog_total)
     _fill_playlist(&home->my_created[0], 3001U, 7U, 3001U,
                    MUSIC_PLAYLIST_KIND_MY_CREATED, "我的现场",
                    "模拟用户", 11U);
+    _fill_playlist(&home->my_collected[0], 4001U, 0U, 4001U,
+                   MUSIC_PLAYLIST_KIND_MY_COLLECTED, "收藏节拍",
+                   "模拟音乐", 16U);
+    _fill_playlist(&home->my_collected[1], 4002U, 0U, 4002U,
+                   MUSIC_PLAYLIST_KIND_MY_COLLECTED, "深夜收藏",
+                   "模拟音乐", 8U);
     return home;
 }
 
@@ -486,7 +495,7 @@ static esp_err_t _prepare_fixture(const char *name,
 {
     if (strcmp(name, "empty") == 0)
     {
-        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_READY,
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_LOGGED_OUT,
                            MUSIC_SERVICE_FAILURE_NONE);
         return ESP_OK;
     }
@@ -532,7 +541,28 @@ static esp_err_t _prepare_fixture(const char *name,
                                 SIM_MUSIC_LONG_COUNT,
                                 SIM_MUSIC_LONG_TOTAL, 21000U, fixture);
     }
-    if (strcmp(name, "catalog_pending") == 0)
+    if (strcmp(name, "catalog_long_lyric") == 0)
+    {
+        const esp_err_t result = _prepare_catalog(
+                                     name, MUSIC_SERVICE_FAILURE_NONE,
+                                     MUSIC_PLAYBACK_PLAYING,
+                                     SIM_MUSIC_CATALOG_COUNT,
+                                     SIM_MUSIC_CATALOG_COUNT, 42000U,
+                                     fixture);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        if (fixture->lyric != NULL && fixture->lyric->line_count > 2U)
+        {
+            (void)snprintf(fixture->lyric->lines[2].text,
+                           sizeof(fixture->lyric->lines[2].text),
+                           "%s", "当坊间最善舞的女儿死了这一句故意写得很长");
+        }
+        return ESP_OK;
+    }
+    if (strcmp(name, "catalog_pending") == 0 ||
+            strcmp(name, "catalog_idle") == 0)
     {
         _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_READY,
                            MUSIC_SERVICE_FAILURE_NONE);
@@ -542,6 +572,32 @@ static esp_err_t _prepare_fixture(const char *name,
             _release_fixture(fixture);
             return ESP_ERR_NO_MEM;
         }
+        return ESP_OK;
+    }
+    if (strcmp(name, "catalog_no_collected") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_READY,
+                           MUSIC_SERVICE_FAILURE_NONE);
+        fixture->home = _create_home(SIM_MUSIC_CATALOG_COUNT);
+        if (fixture->home == NULL)
+        {
+            _release_fixture(fixture);
+            return ESP_ERR_NO_MEM;
+        }
+        fixture->home->collected_ok = false;
+        fixture->home->my_collected_count = 0U;
+        return ESP_OK;
+    }
+    if (strcmp(name, "waiting_network") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_WAITING_NETWORK,
+                           MUSIC_SERVICE_FAILURE_NONE);
+        return ESP_OK;
+    }
+    if (strcmp(name, "logged_out") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_LOGGED_OUT,
+                           MUSIC_SERVICE_FAILURE_NONE);
         return ESP_OK;
     }
     if (strcmp(name, "login_waiting") == 0)
@@ -560,6 +616,18 @@ static esp_err_t _prepare_fixture(const char *name,
     {
         _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_ERROR,
                            MUSIC_SERVICE_FAILURE_AUTH);
+        return ESP_OK;
+    }
+    if (strcmp(name, "login_expired") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_AUTH_REQUIRED,
+                           MUSIC_SERVICE_FAILURE_AUTH);
+        fixture->login_qr = _create_qr(MUSIC_LOGIN_TYPE_QQ);
+        if (fixture->login_qr == NULL)
+        {
+            _release_fixture(fixture);
+            return ESP_ERR_NO_MEM;
+        }
         return ESP_OK;
     }
     if (strcmp(name, "service_error") == 0)
@@ -599,6 +667,11 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     {
         (void)snprintf(status->qr_status, sizeof(status->qr_status),
                        "请使用QQ扫码");
+    }
+    else if (strcmp(fixture->name, "login_expired") == 0)
+    {
+        (void)snprintf(status->qr_status, sizeof(status->qr_status),
+                       "二维码已过期，请重新登录");
     }
     else if (fixture->failure == MUSIC_SERVICE_FAILURE_AUTH)
     {
@@ -670,7 +743,8 @@ esp_err_t host_music_service_get_fixture_status(
     {
         status->home_count = s_music.home->my_created_count +
                              s_music.home->my_favorite_count +
-                             s_music.home->recommended_count;
+                             s_music.home->recommended_count +
+                             s_music.home->my_collected_count;
     }
     if (s_music.playlist != NULL)
     {
@@ -682,6 +756,91 @@ esp_err_t host_music_service_get_fixture_status(
     }
     status->qr_available = s_music.login_qr != NULL;
     (void)pthread_mutex_unlock(&s_music.lock);
+    return ESP_OK;
+}
+
+esp_err_t host_music_service_login_scan(void)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.status.state != MUSIC_SERVICE_STATE_QR_READY ||
+            s_music.login_qr == NULL)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_music.status.state = MUSIC_SERVICE_STATE_QR_SCANNED;
+    s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
+    (void)snprintf(s_music.status.qr_status,
+                   sizeof(s_music.status.qr_status),
+                   "已扫码，请在手机上确认");
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_STATUS, 0U);
+    return ESP_OK;
+}
+
+esp_err_t host_music_service_login_confirm(void)
+{
+    music_image_t *old_qr = NULL;
+    music_home_snapshot_t *home = NULL;
+    music_playlist_snapshot_t *playlist = NULL;
+    music_lyric_snapshot_t *lyric = NULL;
+
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.status.state != MUSIC_SERVICE_STATE_QR_SCANNED &&
+            s_music.status.state != MUSIC_SERVICE_STATE_QR_READY &&
+            s_music.status.state != MUSIC_SERVICE_STATE_AUTHENTICATING)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_music.home == NULL)
+    {
+        home = _create_home(SIM_MUSIC_CATALOG_COUNT);
+    }
+    if (s_music.playlist == NULL)
+    {
+        playlist = _create_playlist(SIM_MUSIC_CATALOG_COUNT,
+                                    SIM_MUSIC_CATALOG_COUNT);
+    }
+    if (s_music.lyric == NULL)
+    {
+        lyric = _create_lyric();
+    }
+    if (s_music.home == NULL && home == NULL)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_NO_MEM;
+    }
+    old_qr = s_music.login_qr;
+    s_music.login_qr = NULL;
+    s_music.status.state = MUSIC_SERVICE_STATE_READY;
+    s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
+    s_music.status.logged_in = true;
+    s_music.status.qr_available = false;
+    s_music.status.qr_status[0] = '\0';
+    (void)snprintf(s_music.status.user_name,
+                   sizeof(s_music.status.user_name), "模拟用户");
+    if (home != NULL)
+    {
+        s_music.home = home;
+    }
+    if (playlist != NULL)
+    {
+        s_music.playlist = playlist;
+    }
+    if (lyric != NULL)
+    {
+        s_music.lyric = lyric;
+    }
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    music_snapshot_release(old_qr);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_STATUS, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_HOME, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYLIST, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_LYRIC, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
     return ESP_OK;
 }
 
@@ -987,12 +1146,18 @@ static music_image_t *_create_cover(const char *url, uint16_t width,
     {
         for (uint16_t x = 0U; x < width; ++x)
         {
-            const uint32_t checker = ((x / 8U) ^ (y / 8U)) & 1U;
-            const uint16_t red = (uint16_t)((x * 31U + seed) & 0x1FU);
-            const uint16_t green = (uint16_t)((y * 63U + (seed >> 5U)) &
-                                              0x3FU);
-            const uint16_t blue = (uint16_t)(checker * 31U +
-                                             ((seed >> 11U) & 0x0FU));
+            const uint16_t shade = (uint16_t)(((uint32_t)x * 2U + y) * 32U /
+                                              ((uint32_t)width * 2U +
+                                               height));
+            uint16_t red = (uint16_t)(1U + shade / 6U);
+            uint16_t green = (uint16_t)(8U + shade / 2U +
+                                        ((seed >> 5U) & 3U));
+            uint16_t blue = (uint16_t)(14U + shade + ((seed >> 9U) & 7U));
+            if (((x + (uint32_t)y * 2U + (seed & 31U)) % 97U) < 6U)
+            {
+                green = (uint16_t)(green + 10U);
+                blue = (uint16_t)(blue + 6U);
+            }
             pixels[(size_t)y * width + x] =
                 (uint16_t)((red << 11U) | (green << 5U) | blue);
         }
@@ -1071,6 +1236,42 @@ static void _select_queue_song_locked(uint16_t index)
                    "%s", song->cover_url);
 }
 
+esp_err_t music_service_queue_acquire(const music_queue_snapshot_t **snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *snapshot = NULL;
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (!s_music.queue_valid || s_music.queue_count == 0U)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_NOT_FOUND;
+    }
+    const size_t bytes = offsetof(music_queue_snapshot_t, songs) +
+                         (size_t)s_music.queue_count *
+                         sizeof(s_music.queue[0]);
+    music_queue_snapshot_t *queue = music_snapshot_alloc(bytes, NULL);
+    if (queue == NULL)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_NO_MEM;
+    }
+    queue->generation = s_music.generation;
+    queue->count = s_music.queue_count;
+    memcpy(queue->songs, s_music.queue,
+           (size_t)s_music.queue_count * sizeof(s_music.queue[0]));
+    (void)pthread_mutex_unlock(&s_music.lock);
+    *snapshot = queue;
+    return ESP_OK;
+}
+
+void music_service_queue_release(const music_queue_snapshot_t *snapshot)
+{
+    music_snapshot_release((void *)snapshot);
+}
+
 esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
                                       uint16_t start_index)
 {
@@ -1104,6 +1305,87 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
     s_music.player.generation = s_music.generation;
     s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
     (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_QUEUE, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
+    return ESP_OK;
+}
+
+esp_err_t music_service_queue_play(uint16_t index)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (!s_music.queue_valid || index >= s_music.queue_count)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    _set_generation_locked();
+    _select_queue_song_locked(index);
+    s_music.player.state = MUSIC_PLAYBACK_PLAYING;
+    s_music.player.failure = MUSIC_SERVICE_FAILURE_NONE;
+    s_music.player.generation = s_music.generation;
+    s_music.player.play_generation = s_music.generation;
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
+    return ESP_OK;
+}
+
+esp_err_t music_service_queue_remove(uint16_t index)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (!s_music.queue_valid || index >= s_music.queue_count)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const uint16_t old_index = s_music.queue_index;
+    const uint16_t old_count = s_music.queue_count;
+    const bool playing = s_music.player.state == MUSIC_PLAYBACK_PLAYING ||
+                         s_music.player.state == MUSIC_PLAYBACK_BUFFERING;
+    if (index + 1U < old_count)
+    {
+        memmove(&s_music.queue[index], &s_music.queue[index + 1U],
+                (size_t)(old_count - index - 1U) *
+                sizeof(s_music.queue[0]));
+    }
+    s_music.queue_count = (uint16_t)(old_count - 1U);
+    uint16_t new_index = old_index;
+    if (s_music.queue_count == 0U)
+    {
+        new_index = 0U;
+        s_music.queue_valid = false;
+        s_music.play_valid = false;
+        memset(&s_music.player, 0, sizeof(s_music.player));
+        s_music.player.state = MUSIC_PLAYBACK_IDLE;
+        s_music.player.mode = MUSIC_PLAY_MODE_SEQUENTIAL;
+        s_music.player.quality = MUSIC_QUALITY_HIGH;
+    }
+    else
+    {
+        if (index < old_index)
+        {
+            new_index = (uint16_t)(old_index - 1U);
+        }
+        else if (index == old_index)
+        {
+            new_index = old_index < s_music.queue_count ? old_index :
+                        (uint16_t)(s_music.queue_count - 1U);
+        }
+        s_music.queue_index = new_index;
+        if (index == old_index && playing)
+        {
+            _select_queue_song_locked(new_index);
+            s_music.player.state = MUSIC_PLAYBACK_PLAYING;
+            s_music.player.failure = MUSIC_SERVICE_FAILURE_NONE;
+        }
+        else
+        {
+            s_music.player.queue_index = new_index;
+            s_music.player.queue_count = s_music.queue_count;
+        }
+    }
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_QUEUE, 0U);
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
     return ESP_OK;
 }

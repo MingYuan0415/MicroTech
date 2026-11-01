@@ -38,4 +38,10 @@ esp_err_t host_music_service_set_fixture(const char *name);
 esp_err_t host_music_service_get_fixture_status(
     sim_music_fixture_status_t *status);
 
+/** @brief Move a waiting fake QR session to the scanned state. */
+esp_err_t host_music_service_login_scan(void);
+
+/** @brief Complete the fake QR session and publish a logged-in catalog. */
+esp_err_t host_music_service_login_confirm(void);
+
 #endif /* __SIM_FAKES_MUSIC_H__ */

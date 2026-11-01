@@ -49,7 +49,9 @@ class SimClient:
 
     def touch(self, x, y):
         self.call("sim.touch", {"action": "down", "x": x, "y": y})
+        self.call("sim.step", {"ms": 33})
         self.call("sim.touch", {"action": "up", "x": x, "y": y})
+        self.call("sim.step", {"ms": 330})
 
 
 def _walk(node):
@@ -72,6 +74,19 @@ def _first_action_row(tree, min_y):
 
 def _tree_has_text(tree, text):
     return any(node.get("text") == text for node in _walk(tree))
+
+
+def _find_text_node(tree, text):
+    for node in _walk(tree):
+        if node.get("text") == text:
+            return node
+    return None
+
+
+def _tap_node(client, node):
+    coords = node.get("coords", {})
+    client.touch(coords.get("x", 0) + coords.get("w", 0) // 2,
+                 coords.get("y", 0) + coords.get("h", 0) // 2)
 
 
 def _wait_for_status(client, predicate, timeout, label):
@@ -141,26 +156,24 @@ def main():
                 args.login_timeout, "QQ login")
             print("login ready: user=%s" % status.get("user_name"))
 
-        client.call("sim.navigate", {"app": "music", "page": "root"})
+        client.call("sim.navigate", {"app": "music"})
         client.wait_idle()
-        print("root:", client.screenshot("music_flow_root"))
-        tree = _wait_for_tree_text(client, "推荐歌单", 20.0)
-        row = _first_action_row(tree, 220)
-        if row is None:
-            raise RuntimeError("no recommendation row on music root")
-        x = row["coords"]["x"] + row["coords"]["w"] // 2
-        y = row["coords"]["y"] + row["coords"]["h"] // 2
-        client.touch(x, y)
+        print("player:", client.screenshot("music_flow_home"))
+        client.touch(42, 25)
         client.wait_idle()
-        tree = _wait_for_tree_text(client, "已加载", 20.0)
+        tree = _wait_for_tree_text(client, "个性电台", 20.0)
+        daily = _find_text_node(tree, "每日推荐")
+        if daily is None:
+            raise RuntimeError("no daily recommendation shortcut")
+        _tap_node(client, daily)
+        client.wait_idle()
+        tree = _wait_for_tree_text(client, "歌单", 20.0)
         print("playlist:", client.screenshot("music_flow_playlist"))
 
         row = _first_action_row(tree, 150)
         if row is None:
             raise RuntimeError("no song row in playlist")
-        x = row["coords"]["x"] + row["coords"]["w"] // 2
-        y = row["coords"]["y"] + row["coords"]["h"] // 2
-        client.touch(x, y)
+        _tap_node(client, row)
         client.wait_idle()
         player = _wait_for_status(
             client,

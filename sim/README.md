@@ -227,7 +227,10 @@ The real backend is for a non-CI
 session: `--ci` deliberately makes every unregistered URL offline. The
 `sim/tools/music_flow.py` driver performs the QR wait, opens the first real
 playlist, starts a track, and checks that the player position advances; run it
-as `python3 sim/tools/music_flow.py --port 5002`. The device
+as `python3 sim/tools/music_flow.py --port 5002`. For the deterministic fake
+backend, `sim/ci/scenarios/music_login_flow.json` walks logout → start-page
+check → login method → QQ QR → scanned → login success → sidebar without a
+phone. The device
 `music_stream.c` decoder/transport path is not compiled in this mode; decode
 correctness for the device path remains a hardware check.
 
@@ -334,7 +337,9 @@ a missing pct falls back to the voltage-derived display),
 table then `request_refresh`, real parse chain), `sim.pause {enabled}`,
 `sim.music {action}` (`status`, `login`, `cancel_login`, `logout`, `refresh`,
 `play_pause`, `next`, `prev`, `stop`, `set_mode`; fake builds also accept
-`fixture {name}` to atomically install a deterministic Music state), while the
+`fixture {name}` to atomically install a deterministic Music state, plus
+`scan` and `confirm` to move a fake QR session through scanned and logged-in),
+while the
 opt-in real backend accepts `play_url` and `stream_status` for decoder bring-up,
 `sim.set_wifi_profile {ssid, password?}` (saves one network through the
 production `connectivity_manager_request_save_profile`, so UI review can build a

@@ -20,6 +20,7 @@ typedef struct host_music_payloads
 {
     music_home_snapshot_t *home;
     music_playlist_snapshot_t *playlist;
+    music_queue_snapshot_t *queue;
     music_lyric_snapshot_t *lyric;
     music_image_t *qr;
     music_image_t *image;
@@ -64,6 +65,7 @@ static void _release_payloads(host_music_payloads_t *payloads)
 {
     music_snapshot_release(payloads->home);
     music_snapshot_release(payloads->playlist);
+    music_snapshot_release(payloads->queue);
     music_snapshot_release(payloads->lyric);
     music_snapshot_release(payloads->qr);
     music_snapshot_release(payloads->image);
@@ -120,14 +122,16 @@ static music_home_snapshot_t *_create_home(void)
     home->generation = HOST_MUSIC_GENERATION;
     home->recommended_ok = true;
     home->personal_ok = true;
+    home->collected_ok = true;
     home->my_created_count = 1U;
     home->my_favorite_count = 1U;
     home->recommended_count = 2U;
+    home->my_collected_count = 1U;
     _fill_playlist(&home->my_created[0], 3001U,
                    MUSIC_PLAYLIST_KIND_MY_CREATED, "我的测试歌单",
                    "测试用户", HOST_MUSIC_SONG_COUNT);
     _fill_playlist(&home->my_favorite[0], 2001U,
-                   MUSIC_PLAYLIST_KIND_MY_FAVORITE, "测试收藏",
+                   MUSIC_PLAYLIST_KIND_MY_FAVORITE, "我喜欢的音乐",
                    "测试用户", HOST_MUSIC_SONG_COUNT);
     _fill_playlist(&home->recommended[0], 1001U,
                    MUSIC_PLAYLIST_KIND_RECOMMENDED, "测试推荐",
@@ -135,6 +139,9 @@ static music_home_snapshot_t *_create_home(void)
     _fill_playlist(&home->recommended[1], 1002U,
                    MUSIC_PLAYLIST_KIND_RECOMMENDED, "测试电台",
                    "QQ 音乐", 8U);
+    _fill_playlist(&home->my_collected[0], 4001U,
+                   MUSIC_PLAYLIST_KIND_MY_COLLECTED, "测试收藏歌单",
+                   "QQ 音乐", HOST_MUSIC_SONG_COUNT);
     return home;
 }
 
@@ -159,6 +166,24 @@ static music_playlist_snapshot_t *_create_playlist(void)
         _fill_song(&playlist->songs[index], index);
     }
     return playlist;
+}
+
+static music_queue_snapshot_t *_create_queue(void)
+{
+    const size_t bytes = offsetof(music_queue_snapshot_t, songs) +
+                         HOST_MUSIC_SONG_COUNT * sizeof(music_song_t);
+    music_queue_snapshot_t *queue = music_snapshot_alloc(bytes, NULL);
+    if (queue == NULL)
+    {
+        return NULL;
+    }
+    queue->generation = HOST_MUSIC_GENERATION;
+    queue->count = HOST_MUSIC_SONG_COUNT;
+    for (uint16_t index = 0U; index < HOST_MUSIC_SONG_COUNT; ++index)
+    {
+        _fill_song(&queue->songs[index], index);
+    }
+    return queue;
 }
 
 static music_lyric_snapshot_t *_create_lyric(void)
@@ -243,9 +268,10 @@ static esp_err_t _create_seed_payloads(host_music_payloads_t *payloads)
     memset(payloads, 0, sizeof(*payloads));
     payloads->home = _create_home();
     payloads->playlist = _create_playlist();
+    payloads->queue = _create_queue();
     payloads->lyric = _create_lyric();
     if (payloads->home == NULL || payloads->playlist == NULL ||
-            payloads->lyric == NULL)
+            payloads->queue == NULL || payloads->lyric == NULL)
     {
         _release_payloads(payloads);
         return ESP_ERR_NO_MEM;
@@ -663,6 +689,35 @@ void music_service_playlist_release(const music_playlist_snapshot_t *snapshot)
     _release_payload(HOST_MUSIC_RESOURCE_PLAYLIST, snapshot);
 }
 
+esp_err_t music_service_queue_acquire(const music_queue_snapshot_t **snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *snapshot = NULL;
+    esp_err_t result = ESP_OK;
+    if (_check_acquire(HOST_MUSIC_RESOURCE_QUEUE, &result) != ESP_OK)
+    {
+        return result;
+    }
+    (void)pthread_mutex_lock(&s_music.lock);
+    const music_queue_snapshot_t *leased =
+        _acquire_payload(HOST_MUSIC_RESOURCE_QUEUE, s_music.payloads.queue);
+    (void)pthread_mutex_unlock(&s_music.lock);
+    if (leased == NULL)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    *snapshot = leased;
+    return ESP_OK;
+}
+
+void music_service_queue_release(const music_queue_snapshot_t *snapshot)
+{
+    _release_payload(HOST_MUSIC_RESOURCE_QUEUE, snapshot);
+}
+
 esp_err_t music_service_lyric_acquire(const char *songmid,
                                       const music_lyric_snapshot_t **snapshot)
 {
@@ -776,6 +831,102 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
     s_music.player.queue_index = start_index;
     _set_generation_locked();
     (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U,
+             MUSIC_SERVICE_FAILURE_NONE);
+    return ESP_OK;
+}
+
+esp_err_t music_service_queue_play(uint16_t index)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    music_queue_snapshot_t *queue = s_music.payloads.queue;
+    if (queue == NULL || index >= queue->count)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const music_song_t *song = &queue->songs[index];
+    s_music.player.state = MUSIC_PLAYBACK_PLAYING;
+    s_music.player.failure = MUSIC_SERVICE_FAILURE_NONE;
+    s_music.player.queue_index = index;
+    s_music.player.queue_count = queue->count;
+    s_music.player.duration_ms = song->duration_ms;
+    s_music.player.position_ms = 0U;
+    (void)snprintf(s_music.player.title, sizeof(s_music.player.title), "%s",
+                   song->title);
+    (void)snprintf(s_music.player.artist, sizeof(s_music.player.artist), "%s",
+                   song->artist);
+    (void)snprintf(s_music.player.songmid, sizeof(s_music.player.songmid),
+                   "%s", song->songmid);
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U,
+             MUSIC_SERVICE_FAILURE_NONE);
+    return ESP_OK;
+}
+
+esp_err_t music_service_queue_remove(uint16_t index)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    music_queue_snapshot_t *queue = s_music.payloads.queue;
+    if (queue == NULL || index >= queue->count)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const uint16_t old_count = queue->count;
+    music_queue_snapshot_t *next = NULL;
+    if (old_count > 1U)
+    {
+        const size_t bytes = offsetof(music_queue_snapshot_t, songs) +
+                             (size_t)(old_count - 1U) * sizeof(music_song_t);
+        next = music_snapshot_alloc(bytes, NULL);
+        if (next == NULL)
+        {
+            (void)pthread_mutex_unlock(&s_music.lock);
+            return ESP_ERR_NO_MEM;
+        }
+        next->generation = HOST_MUSIC_GENERATION + 1U;
+        next->count = (uint16_t)(old_count - 1U);
+        if (index > 0U)
+        {
+            memcpy(next->songs, queue->songs,
+                   (size_t)index * sizeof(music_song_t));
+        }
+        if (index + 1U < old_count)
+        {
+            memcpy(&next->songs[index], &queue->songs[index + 1U],
+                   (size_t)(old_count - index - 1U) *
+                   sizeof(music_song_t));
+        }
+    }
+    music_queue_snapshot_t *old = queue;
+    s_music.payloads.queue = next;
+    if (next == NULL)
+    {
+        memset(&s_music.player, 0, sizeof(s_music.player));
+        s_music.player.state = MUSIC_PLAYBACK_IDLE;
+        s_music.player.queue_index = 0U;
+        s_music.player.queue_count = 0U;
+    }
+    else
+    {
+        if (s_music.player.queue_index > index)
+        {
+            --s_music.player.queue_index;
+        }
+        else if (s_music.player.queue_index == index &&
+                 s_music.player.queue_index >= next->count)
+        {
+            s_music.player.queue_index = (uint16_t)(next->count - 1U);
+        }
+        s_music.player.queue_count = next->count;
+    }
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    music_snapshot_release(old);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_QUEUE, 0U,
+             MUSIC_SERVICE_FAILURE_NONE);
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U,
              MUSIC_SERVICE_FAILURE_NONE);
     return ESP_OK;
