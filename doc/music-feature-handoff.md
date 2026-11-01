@@ -218,7 +218,11 @@ Audio fault policy:
   audio resources.
 - A failed `audio_service_release()` keeps the lease handle for retry; the service
   does not overwrite it.
-- Pause calls `audio_service_suspend()`; resume calls `audio_service_resume()`.
+- Pause releases the exclusive playback lease and closes the codec, so another
+  audio consumer can use the device while music is paused. Resume reconfigures
+  the stream's saved PCM format and acquires the lease again. System PM still
+  uses `audio_service_suspend()` / `audio_service_resume()` for a lease it must
+  retain across sleep.
 - `music_service_is_playing()` reads an atomic public state for the PM guard.
 
 ### 2.6 App Pages
@@ -283,9 +287,10 @@ the API worker handles time readiness internally and also refreshes home when it
 becomes ready.
 
 Factory reset calls `music_service_reset_persisted_state()` after NVS storage is
-available. The service also survives page pause/screen off while playback owns the
-exclusive audio lease; `app_runtime_pm.c` blocks standby while
-`music_service_is_playing()` is true.
+available. Active playback owns the exclusive audio lease, so
+`app_runtime_pm.c` blocks standby while `music_service_is_playing()` is true.
+Pausing releases the lease; the stream keeps its decoder/network state and
+reacquires it on resume. System PM suspend retains the lease independently.
 
 ## 4. Current Status
 
