@@ -22,7 +22,9 @@
 #include "time_service.h"
 #include "weather_service.h"
 
-EVENT_BUS_DEFINE_ID(MUSIC_SERVICE_MSG);
+#if !defined(SIM_MUSIC_REAL)
+    EVENT_BUS_DEFINE_ID(MUSIC_SERVICE_MSG);
+#endif
 
 #include <assert.h>
 #include <dirent.h>
@@ -60,6 +62,13 @@ static atomic_bool s_time_sync_blocked;
 static atomic_bool s_time_sync_entered;
 static atomic_int s_audio_state = AUDIO_SERVICE_STATE_READY;
 static atomic_uint s_audio_volume = 60U;
+static audio_service_config_t s_audio_config =
+{
+    .sample_rate_hz = 16000U,
+    .bits_per_sample = 16U,
+    .channels = 2U,
+    .mclk_multiple = 384U,
+};
 static atomic_bool s_audio_muted;
 static atomic_bool s_audio_pa_enabled;
 static atomic_uint s_audio_read_count;
@@ -100,6 +109,13 @@ void host_runtime_reset(void)
     s_audio_fail_next_release = false;
     atomic_store(&s_audio_state, AUDIO_SERVICE_STATE_READY);
     atomic_store(&s_audio_volume, 60U);
+    s_audio_config = (audio_service_config_t)
+    {
+        .sample_rate_hz = 16000U,
+        .bits_per_sample = 16U,
+        .channels = 2U,
+        .mclk_multiple = 384U,
+    };
     atomic_store(&s_audio_muted, false);
     atomic_store(&s_audio_pa_enabled, false);
     atomic_store(&s_audio_read_count, 0U);
@@ -326,19 +342,29 @@ void host_audio_fail_next_release(void)
 
 
 
+esp_err_t audio_service_configure(const audio_service_config_t *config)
+{
+    if (config == NULL || config->sample_rate_hz == 0U ||
+            config->bits_per_sample == 0U || config->channels == 0U ||
+            config->mclk_multiple == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (atomic_load(&s_audio_state) != AUDIO_SERVICE_STATE_READY)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_audio_config = *config;
+    return ESP_OK;
+}
+
 esp_err_t audio_service_get_config(audio_service_config_t *config)
 {
     if (config == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    *config = (audio_service_config_t)
-    {
-        .sample_rate_hz = 16000U,
-        .bits_per_sample = 16U,
-        .channels = 2U,
-        .mclk_multiple = 384U,
-    };
+    *config = s_audio_config;
     return ESP_OK;
 }
 
@@ -1030,6 +1056,7 @@ esp_err_t esp_vfs_fat_info(const char *base_path, uint64_t *total_bytes,
 }
 
 
+#if !defined(SIM_MUSIC_REAL)
 esp_err_t music_service_init(const music_service_config_t *config)
 {
     (void)config;
@@ -1171,3 +1198,4 @@ bool music_service_is_playing(void)
 {
     return false;
 }
+#endif /* !SIM_MUSIC_REAL */

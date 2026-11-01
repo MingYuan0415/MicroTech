@@ -30,5 +30,10 @@ BaseType_t xQueueReceive(QueueHandle_t queue, void *item,
 UBaseType_t uxQueueMessagesWaiting(QueueHandle_t queue);
 /** @brief Delete a host queue. */
 void vQueueDelete(QueueHandle_t queue);
+/** @brief ESP-IDF capability-aware queue creation maps to the host queue. */
+#define xQueueCreateWithCaps(length, item_size, caps) \
+    xQueueCreate((length), (item_size))
+/** @brief ESP-IDF capability-aware queue deletion maps to the host queue. */
+#define vQueueDeleteWithCaps(queue) vQueueDelete(queue)
 
 #endif /* __SIM_FREERTOS_QUEUE_H__ */

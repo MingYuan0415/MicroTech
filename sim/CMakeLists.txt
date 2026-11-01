@@ -125,6 +125,14 @@ set(APP_THEME "${MT_ROOT}/layers/app_manager/app_theme")
 set(MIDDLEWARE "${MT_ROOT}/layers/middleware/components")
 set(APPS "${MT_ROOT}/layers/apps")
 
+set(SIM_MUSIC_BACKEND "fake" CACHE STRING
+    "Music backend: fake (UI-only) or real (QQ network + host decode)")
+set_property(CACHE SIM_MUSIC_BACKEND PROPERTY STRINGS fake real)
+if(NOT SIM_MUSIC_BACKEND STREQUAL "fake" AND
+        NOT SIM_MUSIC_BACKEND STREQUAL "real")
+    message(FATAL_ERROR "SIM_MUSIC_BACKEND must be fake or real")
+endif()
+
 set(SIM_LAYER_SOURCES
     "${MIDDLEWARE}/mt_log/src/mt_log.c"
     "${MIDDLEWARE}/event_bus/src/event_bus.c"
@@ -172,6 +180,13 @@ set(SIM_LAYER_SOURCES
     "${APP_CORE}/src/app_manager_control_center.c"
     "${APP_CORE}/src/app_manager_display_diagnostics.c"
     "${APP_CORE}/src/app_manager_lvgl_adapter.c")
+
+if(SIM_MUSIC_BACKEND STREQUAL "real")
+    list(APPEND SIM_LAYER_SOURCES
+        "${MIDDLEWARE}/music_service/src/music_service.c"
+        "${MIDDLEWARE}/music_service/src/music_net.c"
+        "${MIDDLEWARE}/music_service/src/music_login_protocol.c")
+endif()
 
 # apps + fakes must land in the executable as sources (or whole-archive):
 # with only the .ld fragment, GNU ld drops unreferenced objects and the
@@ -222,10 +237,22 @@ set(SIM_PORT_SOURCES
     "agent/sim_agent_server.c"
     "agent/sim_agent_tree.c")
 
+if(SIM_MUSIC_BACKEND STREQUAL "real")
+    list(APPEND SIM_PORT_SOURCES
+        "ports/sim_music_stream.c"
+        "ports/sim_jpeg_dec.c"
+        "ports/sim_base64.c")
+endif()
+
 add_executable(microtech_sim
     ${SIM_PORT_SOURCES}
     ${SIM_LAYER_SOURCES}
     ${SIM_APP_SOURCES})
+
+if(SIM_MUSIC_BACKEND STREQUAL "real")
+    set_source_files_properties("ports/sim_jpeg_dec.c"
+        PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter")
+endif()
 
 target_include_directories(microtech_sim PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/gen_inc"
@@ -257,6 +284,8 @@ target_include_directories(microtech_sim PRIVATE
     "${MIDDLEWARE}/nv_storage/include"
     "${MIDDLEWARE}/recorder_service/include"
     "${MIDDLEWARE}/music_service/include"
+    "${MIDDLEWARE}/music_service/src"
+    "${CMAKE_CURRENT_LIST_DIR}/third_party"
     "${MIDDLEWARE}/chore_service/include"
     "${MIDDLEWARE}/onboarding_service/include"
     "${MIDDLEWARE}/weather_service/include"
@@ -279,6 +308,9 @@ target_compile_definitions(microtech_sim PRIVATE
     APP_RESOURCES_ENABLED=1
     "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\""
     LV_KCONFIG_IGNORE)
+if(SIM_MUSIC_BACKEND STREQUAL "real")
+    target_compile_definitions(microtech_sim PRIVATE SIM_MUSIC_REAL=1)
+endif()
 target_compile_options(microtech_sim PRIVATE
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG
     "-include;${SIM_SDKCONFIG_GENERATED}")
@@ -294,6 +326,7 @@ target_link_libraries(microtech_sim PRIVATE
     ${SDL2_LIBRARIES}
     CURL::libcurl
     Threads::Threads
+    ${CMAKE_DL_LIBS}
     m)
 
 add_dependencies(microtech_sim sim_resources)

@@ -44,7 +44,11 @@
 #include "sim_lv_adapter.h"
 #include "sim_png.h"
 #include "sim_time.h"
+#include "music_service.h"
 #include "weather_service.h"
+#ifdef SIM_MUSIC_REAL
+    #include "music_service_internal.h"
+#endif
 #include "host_device_link_service.h"
 #include "host_wifi_port.h"
 #include "connectivity_manager.h"
@@ -1493,6 +1497,273 @@ static cJSON *_handle(cJSON *request, bool *ok)
         {
             *ok = false;
             cJSON_AddStringToObject(result, "error", "invalid nvs params");
+        }
+    }
+    else if (strcmp(method, "sim.music") == 0)
+    {
+        const cJSON *action = params != NULL ?
+                              cJSON_GetObjectItemCaseSensitive(params,
+                                  "action") : NULL;
+        const char *verb = cJSON_GetStringValue(action);
+        if (verb == NULL)
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid music action");
+        }
+        else if (strcmp(verb, "status") == 0)
+        {
+            music_service_status_t status;
+            music_player_status_t player;
+            memset(&status, 0, sizeof(status));
+            memset(&player, 0, sizeof(player));
+            const esp_err_t status_result = music_service_get_status(&status);
+            const esp_err_t player_result =
+                music_service_get_player_status(&player);
+            *ok = status_result == ESP_OK && player_result == ESP_OK;
+            if (*ok)
+            {
+                cJSON_AddNumberToObject(result, "state", (double)status.state);
+                cJSON_AddNumberToObject(result, "failure",
+                                        (double)status.failure);
+                cJSON_AddBoolToObject(result, "logged_in", status.logged_in);
+                cJSON_AddBoolToObject(result, "qr_available",
+                                      status.qr_available);
+                cJSON_AddNumberToObject(result, "login_type",
+                                        (double)status.login_type);
+                cJSON_AddStringToObject(result, "qr_status",
+                                        status.qr_status);
+                cJSON_AddStringToObject(result, "user_name",
+                                        status.user_name);
+                cJSON_AddNumberToObject(result, "player_state",
+                                        (double)player.state);
+                cJSON_AddNumberToObject(result, "player_failure",
+                                        (double)player.failure);
+                cJSON_AddNumberToObject(result, "position_ms",
+                                        (double)player.position_ms);
+                cJSON_AddNumberToObject(result, "duration_ms",
+                                        (double)player.duration_ms);
+                cJSON_AddStringToObject(result, "title", player.title);
+                cJSON_AddStringToObject(result, "artist", player.artist);
+                cJSON_AddStringToObject(result, "songmid", player.songmid);
+            }
+            else
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        "music service unavailable");
+            }
+        }
+        else if (strcmp(verb, "login") == 0)
+        {
+            const cJSON *type = params != NULL ?
+                                cJSON_GetObjectItemCaseSensitive(params,
+                                    "type") : NULL;
+            const char *type_text = cJSON_GetStringValue(type);
+            const music_login_type_t login_type =
+                (type_text != NULL && strcmp(type_text, "qq") == 0) ?
+                MUSIC_LOGIN_TYPE_QQ : MUSIC_LOGIN_TYPE_WECHAT;
+            const esp_err_t music_result = music_service_login_begin(
+                                               login_type);
+            *ok = music_result == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(music_result));
+            }
+        }
+        else if (strcmp(verb, "cancel_login") == 0)
+        {
+            const esp_err_t music_result = music_service_login_cancel();
+            *ok = music_result == ESP_OK;
+        }
+        else if (strcmp(verb, "logout") == 0)
+        {
+            const esp_err_t music_result = music_service_logout();
+            *ok = music_result == ESP_OK;
+        }
+        else if (strcmp(verb, "refresh") == 0)
+        {
+            const esp_err_t music_result = music_service_refresh_home(true);
+            *ok = music_result == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(music_result));
+            }
+        }
+        else if (strcmp(verb, "qr_save") == 0)
+        {
+            const cJSON *path = params != NULL ?
+                                cJSON_GetObjectItemCaseSensitive(params,
+                                    "path") : NULL;
+            const char *path_text = cJSON_GetStringValue(path);
+            char default_path[320];
+            (void)snprintf(default_path, sizeof(default_path), "%s/music_qr.png",
+                           s_out_dir);
+            const char *output = path_text != NULL ? path_text : default_path;
+            *ok = false;
+#ifdef SIM_MUSIC_REAL
+            music_service_lock();
+            const music_image_t *image = s_music.login_qr;
+            if (image != NULL)
+            {
+                *ok = sim_png_save_rgb565(output,
+                                          (const uint16_t *)image->pixels,
+                                          image->width, image->height, 3) == 0;
+            }
+            else
+            {
+                *ok = sim_png_save_frame(output, 1) == 0;
+            }
+            music_service_unlock();
+            if (*ok)
+            {
+                cJSON_AddStringToObject(result, "path", output);
+            }
+#else
+            const music_image_t *image = NULL;
+            const esp_err_t music_result =
+                music_service_login_qr_acquire(&image);
+            *ok = music_result == ESP_OK && image != NULL;
+            if (*ok)
+            {
+                *ok = sim_png_save_rgb565(output,
+                                          (const uint16_t *)image->pixels,
+                                          image->width, image->height, 3) == 0;
+                cJSON_AddStringToObject(result, "path", output);
+                music_service_login_qr_release(image);
+            }
+#endif
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error", "QR image unavailable");
+            }
+        }
+        else if (strcmp(verb, "play_pause") == 0)
+        {
+            const esp_err_t music_result = music_service_play_pause();
+            *ok = music_result == ESP_OK;
+        }
+        else if (strcmp(verb, "next") == 0)
+        {
+            const esp_err_t music_result = music_service_next();
+            *ok = music_result == ESP_OK;
+        }
+        else if (strcmp(verb, "prev") == 0)
+        {
+            const esp_err_t music_result = music_service_prev();
+            *ok = music_result == ESP_OK;
+        }
+        else if (strcmp(verb, "stop") == 0)
+        {
+            const esp_err_t music_result = music_service_stop();
+            *ok = music_result == ESP_OK;
+        }
+        else if (strcmp(verb, "set_mode") == 0)
+        {
+            const cJSON *mode = params != NULL ?
+                                cJSON_GetObjectItemCaseSensitive(params,
+                                    "mode") : NULL;
+            const esp_err_t music_result = cJSON_IsNumber(mode) ?
+                                           music_service_set_mode(
+                                               (music_play_mode_t)mode->valueint) :
+                                           ESP_ERR_INVALID_ARG;
+            *ok = music_result == ESP_OK;
+        }
+#ifdef SIM_MUSIC_REAL
+        else if (strcmp(verb, "play_url") == 0)
+        {
+            const cJSON *url = params != NULL ?
+                               cJSON_GetObjectItemCaseSensitive(params,
+                                   "url") : NULL;
+            const cJSON *duration = params != NULL ?
+                                    cJSON_GetObjectItemCaseSensitive(params,
+                                        "duration_ms") : NULL;
+            const char *url_text = cJSON_GetStringValue(url);
+            const esp_err_t music_result = url_text != NULL ?
+                                           music_stream_play(url_text,
+                                               cJSON_IsNumber(duration) ?
+                                               (uint32_t)duration->valuedouble : 0U) :
+                                           ESP_ERR_INVALID_ARG;
+            *ok = music_result == ESP_OK;
+            if (!*ok)
+            {
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(music_result));
+            }
+        }
+        else if (strcmp(verb, "stream_status") == 0)
+        {
+            music_stream_status_t stream_status;
+            memset(&stream_status, 0, sizeof(stream_status));
+            const esp_err_t music_result =
+                music_stream_get_status(&stream_status);
+            *ok = music_result == ESP_OK;
+            if (*ok)
+            {
+                cJSON_AddNumberToObject(result, "state",
+                                        (double)stream_status.state);
+                cJSON_AddNumberToObject(result, "failure",
+                                        (double)stream_status.failure);
+                cJSON_AddNumberToObject(result, "position_ms",
+                                        (double)stream_status.position_ms);
+                cJSON_AddNumberToObject(result, "duration_ms",
+                                        (double)stream_status.duration_ms);
+                cJSON_AddBoolToObject(result, "playing",
+                                      music_stream_is_playing());
+            }
+        }
+        else if (strcmp(verb, "image") == 0)
+        {
+            const cJSON *url = params != NULL ?
+                               cJSON_GetObjectItemCaseSensitive(params,
+                                   "url") : NULL;
+            const cJSON *width = params != NULL ?
+                                 cJSON_GetObjectItemCaseSensitive(params,
+                                     "width") : NULL;
+            const cJSON *height = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(params,
+                                      "height") : NULL;
+            const cJSON *token = params != NULL ?
+                                 cJSON_GetObjectItemCaseSensitive(params,
+                                     "token") : NULL;
+            const char *url_text = cJSON_GetStringValue(url);
+            const music_image_t *image = NULL;
+            const esp_err_t music_result = url_text != NULL ?
+                                           music_service_image_acquire(url_text,
+                                               cJSON_IsNumber(width) ?
+                                               (uint16_t)width->valuedouble : 200U,
+                                               cJSON_IsNumber(height) ?
+                                               (uint16_t)height->valuedouble : 200U,
+                                               cJSON_IsNumber(token) ?
+                                               (uint32_t)token->valuedouble : 1U,
+                                               &image) :
+                                           ESP_ERR_INVALID_ARG;
+            if (music_result == ESP_ERR_NOT_FOUND)
+            {
+                *ok = true;
+                cJSON_AddBoolToObject(result, "queued", true);
+            }
+            else if (music_result == ESP_OK && image != NULL)
+            {
+                *ok = true;
+                cJSON_AddNumberToObject(result, "width", image->width);
+                cJSON_AddNumberToObject(result, "height", image->height);
+                cJSON_AddNumberToObject(result, "bytes",
+                                        (double)image->data_size);
+                music_service_image_release(image);
+            }
+            else
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        esp_err_to_name(music_result));
+            }
+        }
+#endif
+        else
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "unknown music action");
         }
     }
     else if (strcmp(method, "sim.set_weather") == 0)

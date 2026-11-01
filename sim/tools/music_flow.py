@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Drive the simulator real-music backend from QR login to playback.
+
+Start a real-backend simulator first (for example `python3 sim/dev.py`), then run:
+
+    python3 sim/tools/music_flow.py --port 5002
+
+The only manual step is scanning the QQ QR with a phone. The credential is
+persisted in the simulator's NVS directory; later runs skip the login wait.
+"""
+import argparse
+import json
+import os
+import socket
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(__file__))
+from simctl import rpc  # noqa: E402
+
+MUSIC_SERVICE_STATE_READY = 7
+MUSIC_PLAYBACK_PLAYING = 2
+MUSIC_SERVICE_STATE_WAITING_NETWORK = 1
+MUSIC_SERVICE_STATE_WAITING_TIME = 2
+
+
+class SimClient:
+    def __init__(self, port):
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+    def close(self):
+        self.sock.close()
+
+    def call(self, method, params=None):
+        reply = rpc(self.sock, method, params)
+        if not reply.get("ok"):
+            raise RuntimeError(reply.get("error", "sim request failed"))
+        return reply.get("result", {})
+
+    def wait_idle(self, timeout_ms=6000):
+        return self.call("sim.wait_idle", {"timeout_ms": timeout_ms})
+
+    def screenshot(self, name):
+        return self.call("sim.screenshot",
+                         {"name": name, "wait_idle": True}).get("path")
+
+    def tree(self):
+        return self.call("sim.tree").get("tree", {})
+
+    def touch(self, x, y):
+        self.call("sim.touch", {"action": "down", "x": x, "y": y})
+        self.call("sim.touch", {"action": "up", "x": x, "y": y})
+
+
+def _walk(node):
+    yield node
+    for child in node.get("children", []):
+        yield from _walk(child)
+
+
+def _first_action_row(tree, min_y):
+    candidates = []
+    for node in _walk(tree):
+        coords = node.get("coords", {})
+        if (node.get("flags", {}).get("clickable") and
+                coords.get("w", 0) > 300 and coords.get("y", 0) >= min_y):
+            candidates.append(node)
+    if not candidates:
+        return None
+    return min(candidates, key=lambda node: node["coords"]["y"])
+
+
+def _tree_has_text(tree, text):
+    return any(node.get("text") == text for node in _walk(tree))
+
+
+def _wait_for_status(client, predicate, timeout, label):
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        last = client.call("sim.music", {"action": "status"})
+        if predicate(last):
+            return last
+        time.sleep(0.5)
+    raise RuntimeError("%s timed out; last status=%s" %
+                       (label, json.dumps(last, ensure_ascii=False)))
+
+
+def _wait_for_tree_text(client, text, timeout):
+    deadline = time.time() + timeout
+    tree = None
+    while time.time() < deadline:
+        tree = client.tree()
+        if _tree_has_text(tree, text):
+            return tree
+        time.sleep(0.5)
+        client.wait_idle()
+    raise RuntimeError("timed out waiting for %r" % text)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=5002)
+    parser.add_argument("--login-timeout", type=float, default=300.0,
+                        help="seconds to wait for the phone scan")
+    parser.add_argument("--qr-path", default=None)
+    args = parser.parse_args()
+
+    client = SimClient(args.port)
+    try:
+        status = client.call("sim.music", {"action": "status"})
+        print("music status: state=%s logged_in=%s" %
+              (status.get("state"), status.get("logged_in")))
+        if status.get("state") in (MUSIC_SERVICE_STATE_WAITING_NETWORK,
+                                   MUSIC_SERVICE_STATE_WAITING_TIME):
+            status = _wait_for_status(
+                client,
+                lambda s: s.get("state") not in
+                (MUSIC_SERVICE_STATE_WAITING_NETWORK,
+                 MUSIC_SERVICE_STATE_WAITING_TIME),
+                10.0, "music service time/network")
+        if status.get("state") != MUSIC_SERVICE_STATE_READY or not status.get("logged_in"):
+            client.call("sim.music", {"action": "login", "type": "qq"})
+            _wait_for_status(client,
+                             lambda s: s.get("qr_available"),
+                             10.0, "QR ready")
+            try:
+                qr_params = {"action": "qr_save"}
+                if args.qr_path is not None:
+                    qr_params["path"] = args.qr_path
+                print("QR saved:", client.call("sim.music",
+                                               qr_params).get("path"))
+            except RuntimeError as exc:
+                print("QR save skipped:", exc)
+            print("Scan the QR with QQ; waiting up to %.0f s ..." %
+                  args.login_timeout)
+            status = _wait_for_status(
+                client,
+                lambda s: s.get("state") == MUSIC_SERVICE_STATE_READY and
+                s.get("logged_in"),
+                args.login_timeout, "QQ login")
+            print("login ready: user=%s" % status.get("user_name"))
+
+        client.call("sim.navigate", {"app": "music", "page": "root"})
+        client.wait_idle()
+        print("root:", client.screenshot("music_flow_root"))
+        tree = _wait_for_tree_text(client, "推荐歌单", 20.0)
+        row = _first_action_row(tree, 220)
+        if row is None:
+            raise RuntimeError("no recommendation row on music root")
+        x = row["coords"]["x"] + row["coords"]["w"] // 2
+        y = row["coords"]["y"] + row["coords"]["h"] // 2
+        client.touch(x, y)
+        client.wait_idle()
+        tree = _wait_for_tree_text(client, "已加载", 20.0)
+        print("playlist:", client.screenshot("music_flow_playlist"))
+
+        row = _first_action_row(tree, 150)
+        if row is None:
+            raise RuntimeError("no song row in playlist")
+        x = row["coords"]["x"] + row["coords"]["w"] // 2
+        y = row["coords"]["y"] + row["coords"]["h"] // 2
+        client.touch(x, y)
+        client.wait_idle()
+        player = _wait_for_status(
+            client,
+            lambda s: s.get("player_state") == MUSIC_PLAYBACK_PLAYING and
+            s.get("position_ms", 0) > 0,
+            45.0, "CDN playback")
+        print("player:", json.dumps(player, ensure_ascii=False))
+        print("player screenshot:", client.screenshot("music_flow_player"))
+
+        client.call("sim.navigate", {"app": "music", "page": "lyrics"})
+        client.wait_idle()
+        print("lyrics:", client.screenshot("music_flow_lyrics"))
+        print("PASS")
+        return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        print("FAIL:", exc, file=sys.stderr)
+        return 1
+    finally:
+        client.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

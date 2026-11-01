@@ -28,6 +28,7 @@ Commands:
   set-imu <pitch_deg> <roll_deg>
   pause <on|off>
   set-weather <endpoint> <file>
+  music <status|login|cancel_login|logout|refresh|play_pause|next|prev|stop|set_mode> [value]
   pm [--off-ms N] [--standby-ms N] [--get]
   exit
 """
@@ -62,6 +63,8 @@ def _read_timeout(args):
         return 15.0 if not args.no_wait else 5.0
     if args.cmd == "set-wifi-scan":
         return 45.0
+    if args.cmd == "music":
+        return 30.0
     if args.cmd in ("pm", "navigate"):
         return 15.0
     return 10.0
@@ -95,6 +98,7 @@ def main():
     ei = sub.add_parser("set-imu"); ei.add_argument("pitch", type=float); ei.add_argument("roll", type=float)
     pp = sub.add_parser("pause"); pp.add_argument("enabled", choices=["on", "off"])
     ew = sub.add_parser("set-weather"); ew.add_argument("endpoint"); ew.add_argument("file")
+    mu = sub.add_parser("music"); mu.add_argument("action"); mu.add_argument("value", nargs="?")
     sub.add_parser("exit")
     pm = sub.add_parser("pm"); pm.add_argument("--off-ms", type=int, default=None); pm.add_argument("--standby-ms", type=int, default=None); pm.add_argument("--get", action="store_true")
     args = ap.parse_args()
@@ -195,6 +199,17 @@ def main():
             req = ("sim.set_weather", {"endpoint": args.endpoint,
                                        "status": 200,
                                        "body": open(args.file).read()})
+        elif args.cmd == "music":
+            music = {"action": args.action}
+            if args.action == "login":
+                music["type"] = args.value if args.value else "qq"
+            elif args.action == "set_mode" and args.value is not None:
+                music["mode"] = int(args.value)
+            elif args.action == "play_url" and args.value is not None:
+                music["url"] = args.value
+            elif args.action == "qr_save" and args.value is not None:
+                music["path"] = args.value
+            req = ("sim.music", music)
         elif args.cmd == "exit":
             req = ("sim.exit", {})
         elif args.cmd == "pm":

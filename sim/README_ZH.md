@@ -9,7 +9,8 @@
 
 ```sh
 sudo apt install build-essential cmake ninja-build python3 python3-pip \
-    libsdl2-dev libcurl4-openssl-dev
+    libsdl2-dev libcurl4-openssl-dev libsndfile1
+# 可选的 real 音乐后端通过 dlopen 使用运行库 libsndfile1，不需要开发头文件。
 # 不要 apt install libfreetype-dev 来链接 sim：发行版 2.13.x 与设备 2.14.3 不符。
 # FreeType 2.14.3 使用树内 managed_components/espressif__freetype/freetype 源码。
 # sim 的 CMake 需要 $ENV{IDF_PATH}（tinycrypt 源/头），因此先导出 IDF 环境；
@@ -40,10 +41,13 @@ LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 python3 sim/dev.py
 ```
 
-数字菜单只保留人类日常几件事：启动窗口（可选直达某页，联网/离线默认离线）、
-截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。退出（0 或 Ctrl+C）统一先停止
-模拟器会话。第一个开发会话使用端口 5002 和 `build/sim/dev_nvs`、`build/sim/shots`、
-`build/sim/data`；如果端口已被占用，后续启动会自动分配独立端口，并使用
+数字菜单只保留人类日常几件事：启动窗口（可选直达某页，联网/离线；真实音乐后端
+默认联网）、截图页面、重置设备状态、重新编译（增量，会话运行中会提示重启生效）。
+`dev.py` 默认选择真实音乐后端；设置 `SIM_MUSIC_BACKEND=fake` 可回到确定性 fake
+后端。退出（0 或 Ctrl+C）统一先停止
+模拟器会话。第一个开发会话使用端口 5002 和 `build/sim-real/dev_nvs`、
+`build/sim-real/shots`、`build/sim-real/data`（`SIM_MUSIC_BACKEND=fake` 时为
+`build/sim/...`）；如果端口已被占用，后续启动会自动分配独立端口，并使用
 `build/sim/instances/<port>/` 下的状态。可用 `SIM_AGENT_PORT=N` 请求固定端口；驱动自动分配的会话时，
 将该端口传给 `simctl.py` 的 `--port N`。无图形显示环境时启动自动转无头驻留。
 CI 回归与金样使用 `sh sim/ci/run_ci.sh [--update] [--scenario NAME]... [--log-dir DIR]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
@@ -87,7 +91,8 @@ CLI：`--headless`、`--ci`、`--res-dir <staged 资源目录>`、`--nvs-dir <NV
 未指定 `--out-dir` 时写入当前目录，否则写入该目录。
 模拟存储（天气快照缓存及其它运行时数据文件）以 `SIM_DATA_DIR` 为根目录，默认是
 进程工作目录下的相对目录 `sim_data`，因此直接运行二进制会把它留在仓库根目录。
-各启动入口将产物统一收拢到 `build/` 下：`sim/dev.py` 使用 `build/sim/data` 并跨
+各启动入口将产物统一收拢到 `build/` 下：`sim/dev.py` 真实后端使用
+`build/sim-real/data`（fake 后端使用 `build/sim/data`）并跨
 重启保留，与真机保留 `/data` 的语义一致；`sim/ci/run_ci.sh` 与
 `sim/tools/review_pages.py` 则为每条场景或每次审查会话分配各自的空目录，因为残留的
 快照会让下一次冷启动直接带上上一条场景的天气，使其空态断言失败。
@@ -140,6 +145,38 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
 Wi-Fi 扫描与关联/RSSI、真实音频 I2S 链路、`system_pm` 待机/深睡、SD FAT 格式化
 与挂载失败语义、RTC 闹钟、DMA/QSPI 时序、factory reset 的实际重启。CI 的
 SD 容量为固定值（见下），不代表真机 `statvfs`。
+
+## Real 音乐后端（可选）
+
+默认 CMake 构建继续使用确定性的 fake 音乐服务；`dev.py` 默认选择 real 后端。
+如需在宿主上跑真实 QQ 音乐服务和
+解码器，可单独配置：
+
+```sh
+cmake -S sim -B build/sim-real -G Ninja -DSIM_MUSIC_BACKEND=real
+cmake --build build/sim-real
+SDL_VIDEODRIVER=dummy ./build/sim-real/microtech_sim --headless \
+    --res-dir build/sim-real/sim_res_fs --nvs-dir build/sim-real/nvs \
+    --agent-port 5002 --frames 0
+```
+
+该后端编译真实的 `music_service.c` 与 `music_net.c`，包含真实 QQ/微信
+HTTPS 流程；仅将设备 stream 实现替换为 `sim/ports/sim_music_stream.c`：
+适配器用 libcurl 下载真实 CDN URL，用宿主 `libsndfile.so.1`（`dlopen`）
+解码真实 MP3/FLAC，再把 PCM 写入模拟器的 fake audio service。不模拟
+扬声器、I2S、ES8311 或 PA。
+
+QR 登录仍需要手机实际扫码一次；凭据保存在本次会话的 NVS 目录，因此
+使用同一 `--nvs-dir` 重启后会自动登录。用
+`python3 sim/tools/simctl.py music status` 查看状态；`music login qq`、
+`music refresh`、`music play_pause` 等 `sim.music` 动作驱动真实服务。
+登录页可见时，`music qr_save` 可把当前二维码/画面保存到本次会话的截图目录，
+供手机扫描；传入路径可覆盖默认位置。
+该后端只用于非 CI 会话：`--ci` 会把所有未注册 URL 当作离线。
+`sim/tools/music_flow.py` 驱动会等待扫码、打开第一条真实歌单、播放歌曲并检查
+播放位置是否推进；运行方式为
+`python3 sim/tools/music_flow.py --port 5002`。设备的
+`music_stream.c` 解码/传输路径在此模式下不编译，最终仍以上板验证为准。
 
 ## 已知设备语义要点（踩坑记录）
 
@@ -220,6 +257,9 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `sim.set_wifi {state}`（connected/disconnected）、`sim.set_imu {pitch,roll}`（度）、
 `sim.set_weather {endpoint,status,body}`
 （灌 sim_http 脚本表后 `request_refresh`，真解析链）、`sim.pause {enabled}`、
+`sim.music {action}`（`status`、`login`、`cancel_login`、`logout`、`refresh`、
+`play_pause`、`next`、`prev`、`stop`、`set_mode`；可选的 real 后端还接受
+`play_url` 与 `stream_status` 用于解码器自查）、
 `sim.set_wifi_profile {ssid, password?}`（经生产接口
 `connectivity_manager_request_save_profile` 保存一条已保存网络，使 UI 评审可在
 无 BLE 配网的情况下构造多网络列表；省略 password 时保存开放网络）、

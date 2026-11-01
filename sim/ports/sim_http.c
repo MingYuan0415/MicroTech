@@ -143,14 +143,21 @@ static bool _script_snapshot(const char *url, sim_http_script_t *out)
 struct weather_host_http_client
 {
     char *url;
+    esp_http_client_method_t method;
     http_event_handle_cb handler;
     void *user_data;
     long timeout_ms;
     bool disable_auto_redirect;
     char **headers;
     size_t header_count;
+    char *post_field;
+    size_t post_field_len;
     atomic_bool cancel;
     int status_code;
+    bool collect_body;
+    uint8_t *stream_body;
+    size_t stream_size;
+    size_t stream_offset;
 };
 
 static esp_err_t _emit(esp_http_client_handle_t client,
@@ -194,6 +201,7 @@ esp_http_client_handle_t esp_http_client_init(
         return NULL;
     }
     client->url = strdup(config->url);
+    client->method = config->method;
     client->handler = config->event_handler;
     client->user_data = config->user_data;
     client->timeout_ms = config->timeout_ms > 0 ? config->timeout_ms : 30000;
@@ -229,6 +237,26 @@ esp_err_t esp_http_client_set_header(esp_http_client_handle_t client,
     }
     client->headers = grown;
     client->headers[client->header_count++] = joined;
+    return ESP_OK;
+}
+
+esp_err_t esp_http_client_set_post_field(esp_http_client_handle_t client,
+        const char *data, int len)
+{
+    if (client == NULL || data == NULL || len < 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char *copy = malloc((size_t)len + 1U);
+    if (copy == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(copy, data, (size_t)len);
+    copy[len] = '\0';
+    free(client->post_field);
+    client->post_field = copy;
+    client->post_field_len = (size_t)len;
     return ESP_OK;
 }
 
@@ -273,6 +301,18 @@ static size_t _write_cb(char *data, size_t size, size_t nitems, void *userp)
     if (atomic_load(&client->cancel))
     {
         return 0;
+    }
+    if (client->collect_body)
+    {
+        uint8_t *grown = realloc(client->stream_body,
+                                 client->stream_size + len);
+        if (grown == NULL)
+        {
+            return 0;
+        }
+        client->stream_body = grown;
+        memcpy(client->stream_body + client->stream_size, data, len);
+        client->stream_size += len;
     }
     if (_emit(client, HTTP_EVENT_ON_DATA, data, (int)len, NULL, NULL) !=
             ESP_OK)
@@ -339,6 +379,17 @@ esp_err_t esp_http_client_perform(esp_http_client_handle_t client)
     curl_easy_setopt(curl, CURLOPT_URL, client->url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, client->timeout_ms);
+    if (client->post_field != NULL)
+    {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, client->post_field);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,
+                         (long)client->post_field_len);
+    }
+    else if (client->method == HTTP_METHOD_POST)
+    {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
+    }
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION,
                      client->disable_auto_redirect ? 0L : 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _write_cb);
@@ -379,6 +430,60 @@ int esp_http_client_get_status_code(esp_http_client_handle_t client)
     return client == NULL ? 0 : client->status_code;
 }
 
+esp_err_t esp_http_client_open(esp_http_client_handle_t client,
+                               int write_len)
+{
+    (void)write_len;
+    if (client == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    free(client->stream_body);
+    client->stream_body = NULL;
+    client->stream_size = 0U;
+    client->stream_offset = 0U;
+    client->collect_body = true;
+    const esp_err_t result = esp_http_client_perform(client);
+    client->collect_body = false;
+    return result;
+}
+
+int64_t esp_http_client_fetch_headers(esp_http_client_handle_t client)
+{
+    if (client == NULL)
+    {
+        return -1;
+    }
+    return (int64_t)client->stream_size;
+}
+
+int esp_http_client_read(esp_http_client_handle_t client, char *buffer,
+                         int len)
+{
+    if (client == NULL || buffer == NULL || len <= 0)
+    {
+        return -1;
+    }
+    if (client->stream_offset >= client->stream_size)
+    {
+        return 0;
+    }
+    size_t remaining = client->stream_size - client->stream_offset;
+    size_t copy = (size_t)len < remaining ? (size_t)len : remaining;
+    memcpy(buffer, client->stream_body + client->stream_offset, copy);
+    client->stream_offset += copy;
+    return (int)copy;
+}
+
+esp_err_t esp_http_client_close(esp_http_client_handle_t client)
+{
+    if (client == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
 esp_err_t esp_http_client_cancel_request(esp_http_client_handle_t client)
 {
     if (client == NULL)
@@ -400,6 +505,8 @@ esp_err_t esp_http_client_cleanup(esp_http_client_handle_t client)
         free(client->headers[i]);
     }
     free(client->headers);
+    free(client->post_field);
+    free(client->stream_body);
     free(client->url);
     free(client);
     return ESP_OK;

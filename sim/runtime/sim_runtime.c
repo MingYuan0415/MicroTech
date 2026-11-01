@@ -24,6 +24,7 @@
 #include "app_resources_generated.h"
 #include "event_bus.h"
 #include "imu_service.h"
+#include "music_service.h"
 #include "nv_storage.h"
 #include "power_service.h"
 #include "file_service.h"
@@ -460,6 +461,23 @@ esp_err_t sim_runtime_boot(void)
         return result;
     }
 
+#ifdef SIM_MUSIC_REAL
+    result = music_service_init(&product->music);
+    if (result != ESP_OK)
+    {
+        fprintf(stderr, "sim boot: music_service_init failed %s\n",
+                esp_err_to_name(result));
+        return result;
+    }
+    result = music_service_set_network_ready(true);
+    if (result != ESP_OK)
+    {
+        fprintf(stderr, "sim boot: music_service_set_network_ready failed %s\n",
+                esp_err_to_name(result));
+        return result;
+    }
+#endif
+
     result = weather_service_init(&product->weather);
     if (result != ESP_OK)
     {
@@ -478,6 +496,10 @@ esp_err_t sim_runtime_boot(void)
                 esp_err_to_name(result));
         return result;
     }
+#ifdef SIM_MUSIC_REAL
+    (void)time_service_set_network_ready(true);
+    (void)time_service_request_sync();
+#endif
 
     int discovered = app_manager_builtin_discover();
     if (discovered <= 0)

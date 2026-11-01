@@ -354,12 +354,16 @@ bsp `1ea201e`).
 5. Credentials are stored in a plain NVS blob. Flash encryption / NVS encryption
    is not enabled in the current `sdkconfig`.
 6. A standalone `music-service` host suite covers the pure QQ login protocol
-   parsers; network, TLS, NVS, and audio paths remain covered by firmware builds,
-   simulator fakes, and on-device checks.
+   parsers. The opt-in simulator real backend (`SIM_MUSIC_BACKEND=real`) adds
+   real `music_service.c`/`music_net.c`, live HTTPS, and host libsndfile
+   MP3/FLAC decoding; its audio sink and `music_stream.c` replacement remain
+   host-only fakes, so final audio verification stays on device.
 7. QQ Music Web endpoints are unofficial and may change without notice; their
    response fields and error codes must be re-verified when behavior changes.
-8. CDN playback and ES8311 output have been verified on hardware; QQ account
-   scan/login, cover rendering, and battery behavior have not.
+8. CDN playback and ES8311 output have been verified on hardware; the opt-in
+   simulator real backend has now exercised QQ QR login, catalog, CDN playback,
+   cover rendering, and lyrics on a host, while hardware account scan/login and
+   battery behavior remain separate checks.
 9. The API worker stack remains in internal RAM because credential save/erase
    goes through NVS, which disables the flash cache. The feature's remaining
    internal footprint is therefore dominated by that 10,240 B stack; moving it

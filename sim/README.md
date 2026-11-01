@@ -11,7 +11,9 @@ single usage and contract document.
 
 ```sh
 sudo apt install build-essential cmake ninja-build python3 python3-pip \
-    libsdl2-dev libcurl4-openssl-dev
+    libsdl2-dev libcurl4-openssl-dev libsndfile1
+# The opt-in real music backend uses libsndfile1 at runtime through dlopen;
+# it does not need the libsndfile development headers.
 # Do not apt install libfreetype-dev to link sim: the distro 2.13.x does not
 # match the device's 2.14.3.
 # FreeType 2.14.3 uses the in-tree
@@ -48,12 +50,15 @@ python3 sim/dev.py
 ```
 
 The numeric menu keeps only the few things a human does daily: start the window
-(optionally jumping straight to a page; online/offline, offline by default),
-capture a page screenshot, reset device state, rebuild (incremental; while a
-session is running it prompts that a restart is needed to take effect). Exit
+(optionally jumping straight to a page; online/offline; the real music backend
+defaults to online), capture a page screenshot, reset device state, rebuild
+(incremental; while a session is running it prompts that a restart is needed to
+take effect). `dev.py` selects the real music backend by default; set
+`SIM_MUSIC_BACKEND=fake` for the deterministic fake backend. Exit
 (0 or Ctrl+C) always stops the simulator session first. The first development
-session uses port 5002 and `build/sim/dev_nvs`, `build/sim/shots`, and
-`build/sim/data`; if that endpoint is busy, another invocation automatically
+session uses port 5002 and `build/sim-real/dev_nvs`, `build/sim-real/shots`,
+`build/sim-real/data` for the real backend (`build/sim/...` for
+`SIM_MUSIC_BACKEND=fake`); if that endpoint is busy, another invocation automatically
 gets an isolated port and `build/sim/instances/<port>/` state. Set
 `SIM_AGENT_PORT=N` to request a fixed port, or pass `--port N` to `simctl.py`
 when driving an automatically allocated session. When there is no graphical
@@ -115,7 +120,8 @@ into that directory. Simulated storage (the weather snapshot cache and other
 runtime data files) is rooted at `SIM_DATA_DIR`, which defaults to the
 relative directory `sim_data` in the process working directory, so a direct
 run leaves it in the repository root. The launchers keep every artifact under
-`build/`: `sim/dev.py` uses `build/sim/data` and keeps it across restarts the
+`build/`: `sim/dev.py` uses `build/sim-real/data` for the real backend
+(`build/sim/data` for fake) and keeps it across restarts the
 way a device keeps `/data`, while `sim/ci/run_ci.sh` and
 `sim/tools/review_pages.py` give each scenario or review session its own
 emptied directory, because a retained snapshot would make the next cold start
@@ -188,6 +194,42 @@ audio I2S path, `system_pm` standby/deep sleep, SD FAT formatting and
 mount-failure semantics, the RTC alarm, DMA/QSPI timing, the actual reboot of a
 factory reset. CI's SD capacity is a fixed value (see below) and does not
 represent hardware `statvfs`.
+
+## Real Music Backend (opt-in)
+
+The default CMake build keeps the deterministic fake music service; `dev.py`
+selects the real backend by default. To exercise the real QQ Music service and
+decoder on the host, configure a separate build:
+
+```sh
+cmake -S sim -B build/sim-real -G Ninja -DSIM_MUSIC_BACKEND=real
+cmake --build build/sim-real
+SDL_VIDEODRIVER=dummy ./build/sim-real/microtech_sim --headless \
+    --res-dir build/sim-real/sim_res_fs --nvs-dir build/sim-real/nvs \
+    --agent-port 5002 --frames 0
+```
+
+This backend compiles the production `music_service.c` and `music_net.c`,
+including the real QQ/WeChat HTTPS flow. It replaces only the device stream
+implementation with `sim/ports/sim_music_stream.c`: the adapter downloads the
+real CDN URL with libcurl, decodes the real MP3/FLAC stream with the host
+`libsndfile.so.1` (loaded with `dlopen`), and writes PCM to the simulator's fake
+audio service. No speaker/I2S/ES8311/PA path is simulated.
+
+A QR login still requires one physical phone scan. The credential is stored in
+the session's NVS directory, so subsequent launches with the same `--nvs-dir`
+start logged in. Use `python3 sim/tools/simctl.py music status` to inspect the
+state; `music login qq`, `music refresh`, `music play_pause`, and the other
+`sim.music` actions drive the real service. With the login page visible,
+`music qr_save` saves the current QR/frame into the session's screenshot directory
+for a phone scan; pass an explicit path to override it.
+The real backend is for a non-CI
+session: `--ci` deliberately makes every unregistered URL offline. The
+`sim/tools/music_flow.py` driver performs the QR wait, opens the first real
+playlist, starts a track, and checks that the player position advances; run it
+as `python3 sim/tools/music_flow.py --port 5002`. The device
+`music_stream.c` decoder/transport path is not compiled in this mode; decode
+correctness for the device path remains a hardware check.
 
 ## Known Device-Semantics Pitfalls
 
@@ -290,6 +332,9 @@ a missing pct falls back to the voltage-derived display),
 `sim.set_wifi {state}` (connected/disconnected), `sim.set_imu {pitch,roll}`
 (degrees), `sim.set_weather {endpoint,status,body}` (loads the sim_http script
 table then `request_refresh`, real parse chain), `sim.pause {enabled}`,
+`sim.music {action}` (`status`, `login`, `cancel_login`, `logout`, `refresh`,
+`play_pause`, `next`, `prev`, `stop`, `set_mode`; the opt-in real backend also
+accepts `play_url` and `stream_status` for decoder bring-up),
 `sim.set_wifi_profile {ssid, password?}` (saves one network through the
 production `connectivity_manager_request_save_profile`, so UI review can build a
 multi-network list without BLE provisioning; a missing password saves an open

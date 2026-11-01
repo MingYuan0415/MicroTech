@@ -651,6 +651,7 @@ def _excluded(path: str) -> bool:
     return (
         "managed_components/" in path
         or "XPowersLib/" in path
+        or "sim/third_party/" in path
         or Path(path).name.startswith("mmap_generate_")
     )
 

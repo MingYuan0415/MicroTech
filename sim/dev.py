@@ -2,7 +2,7 @@
 """MicroTech 模拟器开发助手：数字菜单，零参数，面向快速查看页面。
 
 用法：
-    python3 sim/dev.py
+    python3 sim/dev.py [--real-music]
 
 所有产物固定在 build/ 下；会话端口 5002。退出（0 或 Ctrl+C）一律先停止
 模拟器会话。无头驱动与 CI 回归请直接使用 sim/tools/simctl.py 与
@@ -21,7 +21,13 @@ import time
 
 SIM_ROOT = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SIM_ROOT)
-BUILD = os.path.join(ROOT, 'build', 'sim')
+if '--real-music' in sys.argv:
+    os.environ['SIM_MUSIC_BACKEND'] = 'real'
+elif '--fake-music' in sys.argv:
+    os.environ['SIM_MUSIC_BACKEND'] = 'fake'
+MUSIC_BACKEND = os.environ.get('SIM_MUSIC_BACKEND', 'real')
+BUILD = os.path.join(ROOT, 'build',
+                     'sim-real' if MUSIC_BACKEND == 'real' else 'sim')
 BINARY = os.path.join(BUILD, 'microtech_sim')
 RES_DIR = os.path.join(BUILD, 'sim_res_fs')
 NVS_DIR = os.path.join(BUILD, 'dev_nvs')
@@ -33,7 +39,7 @@ EXEC_RETRY_ATTEMPTS = 5
 EXEC_RETRY_DELAY = 0.01
 LAST_NETWORK_ONLINE = False
 APPS = ['home', 'menu', 'clock', 'level', 'diagnostics', 'recorder',
-        'settings', 'setup', 'weather']
+        'settings', 'setup', 'weather', 'music']
 _PORT_LOCK = None
 _ALLOCATOR_LOCK = None
 ALLOCATOR_LOCK_PATH = os.path.join(
@@ -291,7 +297,9 @@ def build():
         if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
             print('  首次配置 cmake ...')
             rc = subprocess.call(['cmake', '-S', os.path.join(ROOT, 'sim'),
-                                  '-B', BUILD, '-G', 'Ninja'], cwd=ROOT)
+                                  '-B', BUILD, '-G', 'Ninja',
+                                  '-DSIM_MUSIC_BACKEND=' + MUSIC_BACKEND],
+                                 cwd=ROOT)
             if rc != 0:
                 print('  configure 失败')
                 return False
@@ -310,8 +318,11 @@ def _pick_network():
     print('  网络模式：')
     print('    1  联网（真实 HTTP/HTTPS 请求）')
     print('    2  离线（不发起天气请求）')
-    raw = input('  选择网络 [2]: ').strip()
-    if raw in ('', '2'):
+    default = '1' if MUSIC_BACKEND == 'real' else '2'
+    raw = input('  选择网络 [%s]: ' % default).strip()
+    if raw == '':
+        raw = default
+    if raw == '2':
         return False
     if raw == '1':
         return True
@@ -422,6 +433,14 @@ def _start_session(navigate=None, headless=False, online=False):
         try:
             reply = rpc(sock, 'sim.set_wifi',
                         {'state': 'connected' if online else 'disconnected'})
+            if MUSIC_BACKEND == 'real':
+                deadline = time.time() + 5.0
+                while time.time() < deadline:
+                    music = rpc(sock, 'sim.music', {'action': 'status'})
+                    result = music.get('result', {}) if isinstance(music, dict) else {}
+                    if result.get('state') not in (1, 2):
+                        break
+                    time.sleep(0.25)
         finally:
             sock.close()
     except (OSError, RuntimeError, ValueError, AttributeError) as exc:
@@ -657,6 +676,7 @@ MENU = """
  0  退出（停止模拟器会话）
 
  无头驱动：sim/tools/simctl.py（网络/息屏：set-wifi、pm）
+ 真实音乐：默认已启用；fake：SIM_MUSIC_BACKEND=fake python3 sim/dev.py
  CI 回归与金样：sh sim/ci/run_ci.sh [--update]
 """
 
@@ -668,6 +688,7 @@ def main():
         print('模拟器会话隔离失败：%s' % exc)
         return
     print('工作目录：%s' % ROOT)
+    print('音乐后端：%s（构建目录 %s）' % (MUSIC_BACKEND, BUILD))
     try:
         while True:
             print(MENU)
