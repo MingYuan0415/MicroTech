@@ -82,6 +82,7 @@ typedef struct app_runtime_ownership
     bool sd_attempted;
     bool connectivity_owned;
     event_bus_sub_handle_t connectivity_subscription;
+    event_bus_sub_handle_t time_subscription;
     bool device_link_attempted;
 #if CONFIG_MAIN_DISPLAY_BENCHMARK
     bool display_benchmark_attempted;
@@ -169,6 +170,31 @@ static void _app_runtime_connectivity_event(
     {
         LOG_W("music network update failed: %s",
               esp_err_to_name(music_result));
+    }
+}
+
+static void _app_runtime_time_event(
+    event_bus_msg_id_t msg_id, uint32_t sub_type,
+    const void *payload, size_t payload_size, void *user_data)
+{
+    (void)user_data;
+    if (msg_id != TIME_SERVICE_MSG ||
+            sub_type != TIME_SERVICE_MSG_SUB_TYPE_QUALITY ||
+            payload == NULL || payload_size != sizeof(time_service_quality_t))
+    {
+        return;
+    }
+    if (!s_ownership.music_attempted)
+    {
+        return;
+    }
+    time_service_quality_t quality;
+    memcpy(&quality, payload, sizeof(quality));
+    const esp_err_t result = music_service_set_time_ready(
+                                 quality != TIME_SERVICE_QUALITY_INVALID);
+    if (result != ESP_OK && result != ESP_ERR_INVALID_STATE)
+    {
+        LOG_W("music time update failed: %s", esp_err_to_name(result));
     }
 }
 
@@ -681,6 +707,16 @@ static esp_err_t _app_runtime_stop_platform_services(void)
         }
         s_ownership.chore_attempted = false;
     }
+    if (s_ownership.time_subscription != EVENT_BUS_SUB_HANDLE_INVALID)
+    {
+        result = event_bus_unsubscribe_sync(s_ownership.time_subscription,
+                                            1000U);
+        if (result != ESP_OK && result != ESP_ERR_NOT_FOUND)
+        {
+            return result;
+        }
+        s_ownership.time_subscription = EVENT_BUS_SUB_HANDLE_INVALID;
+    }
     if (s_ownership.time_attempted)
     {
         result = time_service_deinit();
@@ -984,6 +1020,16 @@ static esp_err_t _app_runtime_start_platform(
         return result;
     }
     app_runtime_pm_set_time_participant(true);
+    s_ownership.time_subscription = EVENT_BUS_SUB_HANDLE_INVALID;
+    result = event_bus_subscribe(TIME_SERVICE_MSG,
+                                 TIME_SERVICE_MSG_SUB_TYPE_QUALITY,
+                                 _app_runtime_time_event, NULL,
+                                 EVENT_BUS_DISPATCH_PUBLISHER,
+                                 &s_ownership.time_subscription);
+    if (result != ESP_OK)
+    {
+        return result;
+    }
 
     const timer_service_config_t timer_config =
     {

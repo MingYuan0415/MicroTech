@@ -374,6 +374,12 @@ cleanup:
     {
         _set_status(MUSIC_PLAYBACK_IDLE, MUSIC_SERVICE_FAILURE_NONE);
     }
+    else
+    {
+        music_service_stream_failed(
+            s_stream.status.failure != MUSIC_SERVICE_FAILURE_NONE ?
+            s_stream.status.failure : MUSIC_SERVICE_FAILURE_INTERNAL);
+    }
     pthread_mutex_lock(&s_stream.lock);
     if (s_stream.active_generation == generation)
     {
@@ -433,7 +439,8 @@ esp_err_t music_stream_deinit(void)
     return ESP_OK;
 }
 
-esp_err_t music_stream_play(const char *url, uint32_t duration_ms)
+esp_err_t music_stream_play(const char *url, uint32_t duration_ms,
+                            uint32_t generation)
 {
     if (!s_stream.initialized || url == NULL || url[0] == '\0')
     {
@@ -451,10 +458,12 @@ esp_err_t music_stream_play(const char *url, uint32_t duration_ms)
     }
     (void)snprintf(command->url, sizeof(command->url), "%s", url);
     command->duration_ms = duration_ms;
+    command->generation = generation;
     atomic_store_explicit(&s_stream.stop, false, memory_order_release);
     atomic_store_explicit(&s_stream.pause, false, memory_order_release);
     pthread_mutex_lock(&s_stream.lock);
-    command->generation = ++s_stream.active_generation;
+    s_stream.active_generation = generation;
+    s_stream.status.generation = generation;
     pthread_mutex_unlock(&s_stream.lock);
     pthread_t thread;
     if (pthread_create(&thread, NULL, _stream_task, command) != 0)
@@ -497,6 +506,11 @@ esp_err_t music_stream_stop(void)
         pthread_join(thread, NULL);
     }
     return ESP_OK;
+}
+
+uint32_t music_stream_get_stack_high_water(void)
+{
+    return 0U;
 }
 
 bool music_stream_is_playing(void)

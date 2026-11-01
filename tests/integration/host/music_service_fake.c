@@ -26,6 +26,22 @@ esp_err_t music_service_set_network_ready(bool ready)
     (void)ready;
     return ESP_OK;
 }
+
+esp_err_t music_service_set_time_ready(bool ready)
+{
+    (void)ready;
+    return ESP_OK;
+}
+
+esp_err_t music_service_get_diagnostics(music_service_diagnostics_t *diagnostics)
+{
+    if (diagnostics == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    return ESP_OK;
+}
 esp_err_t music_service_login_begin(music_login_type_t type)
 {
     (void)type;

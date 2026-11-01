@@ -184,6 +184,7 @@ set(SIM_LAYER_SOURCES
 if(SIM_MUSIC_BACKEND STREQUAL "real")
     list(APPEND SIM_LAYER_SOURCES
         "${MIDDLEWARE}/music_service/src/music_service.c"
+        "${MIDDLEWARE}/music_service/src/music_snapshot.c"
         "${MIDDLEWARE}/music_service/src/music_net.c"
         "${MIDDLEWARE}/music_service/src/music_login_protocol.c")
 endif()

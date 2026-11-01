@@ -563,6 +563,15 @@ esp_err_t event_bus_subscribe(event_bus_msg_id_t msg_id, uint32_t sub_type,
                               event_bus_dispatch_context_t context,
                               event_bus_sub_handle_t *out_handle)
 {
+    if (msg_id == TIME_SERVICE_MSG)
+    {
+        assert(sub_type == TIME_SERVICE_MSG_SUB_TYPE_QUALITY);
+        assert(callback != NULL);
+        assert(context == EVENT_BUS_DISPATCH_PUBLISHER);
+        assert(out_handle != NULL);
+        *out_handle = 2U;
+        return ESP_OK;
+    }
     assert(msg_id == CONNECTIVITY_MANAGER_MSG);
     assert(sub_type ==
            CONNECTIVITY_MANAGER_MSG_SUB_TYPE_STATUS_SNAPSHOT);
@@ -582,6 +591,11 @@ esp_err_t event_bus_subscribe(event_bus_msg_id_t msg_id, uint32_t sub_type,
 esp_err_t event_bus_unsubscribe_sync(event_bus_sub_handle_t handle,
                                      uint32_t timeout_ms)
 {
+    if (handle == 2U)
+    {
+        assert(timeout_ms > 0U);
+        return ESP_OK;
+    }
     assert(handle == 1U);
     assert(timeout_ms > 0U);
     const esp_err_t result = _test_result(

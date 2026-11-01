@@ -166,7 +166,7 @@ def main():
             client,
             lambda s: s.get("player_state") == MUSIC_PLAYBACK_PLAYING and
             s.get("position_ms", 0) > 0,
-            45.0, "CDN playback")
+            90.0, "CDN playback")
         print("player:", json.dumps(player, ensure_ascii=False))
         print("player screenshot:", client.screenshot("music_flow_player"))
 

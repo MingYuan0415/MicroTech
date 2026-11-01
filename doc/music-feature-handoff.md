@@ -70,9 +70,10 @@ ERROR
 
 - `music_service_set_network_ready(false)` enters `WAITING_NETWORK`.
 - If the network is up but `time_service_get_quality()` is invalid, the service
-  enters `WAITING_TIME`. The API worker wakes at least once per second and
-  re-checks time quality, so SNTP completion does not require a new connectivity
-  event.
+  enters `WAITING_TIME`. `time_service` publishes a quality-change event;
+  `main/app_runtime.c` forwards it through `music_service_set_time_ready()`.
+  The API worker uses a one-second bounded fallback only while waiting for time,
+  so normal idle operation has no periodic wake.
 - `music_service_login_begin()` is accepted only when network and time are ready.
 - Both `MUSIC_LOGIN_TYPE_QQ` and `MUSIC_LOGIN_TYPE_WECHAT` are accepted; the
   login page exposes QQ and WeChat QR entries.
@@ -292,15 +293,22 @@ exclusive audio lease; `app_runtime_pm.c` blocks standby while
 - Recommended playlists and logged-in user's created/favorite playlists.
 - Playlist detail and a paged playback queue that can play beyond the first 30
   songs; the playlist page currently loads up to 100 songs.
-- Song URL acquisition with quality fallback.
-- MP3/FLAC stream decode, cover decode, and LRC parsing.
+- Song URL acquisition with quality fallback (lossless -> high -> standard) and
+  actual-quality reporting.
+- MP3/FLAC stream decode, cover decode, and LRC parsing. PCM writes complete
+  partial BSP writes with bounded retries, and 24-bit PCM is converted to
+  16-bit when the BSP has no matching clock pair.
 - Play/pause, previous/next, repeat modes, auto-advance, stop, and exclusive
   audio lease handling.
-- Event-bus status/snapshot notifications and PM playback guard.
+- Event-bus status/snapshot notifications and PM playback guard, including the
+  interval between accepting a play command and the stream task starting.
 - Simulator UI review scenarios and golden baselines for all five music pages.
 - Host fakes for main runtime, integration tests, and simulator.
+- Reference-counted snapshot/image ownership; pages borrow snapshots and
+  replacing a cache entry does not invalidate a page that still holds one.
 - Service state, cookie jar, and command queues in PSRAM; the API stack remains
-  internal because credential writes go through NVS.
+  internal because credential writes go through NVS. The stream worker is
+  created lazily on the first playback.
 
 ### 4.2 Verification Evidence
 

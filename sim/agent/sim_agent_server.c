@@ -62,6 +62,9 @@ static pthread_t s_accept_thread;
 static atomic_bool s_running;
 static pthread_mutex_t s_rpc_lock = PTHREAD_MUTEX_INITIALIZER;
 static char s_out_dir[256] = "shots";
+#ifdef SIM_MUSIC_REAL
+    static uint32_t s_sim_stream_generation;
+#endif
 
 typedef enum sim_wait_idle_result
 {
@@ -1682,7 +1685,8 @@ static cJSON *_handle(cJSON *request, bool *ok)
             const esp_err_t music_result = url_text != NULL ?
                                            music_stream_play(url_text,
                                                cJSON_IsNumber(duration) ?
-                                               (uint32_t)duration->valuedouble : 0U) :
+                                               (uint32_t)duration->valuedouble : 0U,
+                                               ++s_sim_stream_generation) :
                                            ESP_ERR_INVALID_ARG;
             *ok = music_result == ESP_OK;
             if (!*ok)
