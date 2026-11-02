@@ -2725,9 +2725,9 @@ static void _test_music_page_screen_lifecycles(void)
         "sidebar", "我的测试歌单", -1, false);
 
     music_playlist_ref_t playlist_ref = {0};
-    playlist_ref.id = 1001U;
-    playlist_ref.tid = 1001U;
-    playlist_ref.kind = MUSIC_PLAYLIST_KIND_RECOMMENDED;
+    playlist_ref.id = 0U;
+    playlist_ref.dirid = 201U;
+    playlist_ref.kind = MUSIC_PLAYLIST_KIND_MY_FAVORITE;
     assert(_navigate_music_playlist(&playlist_ref) == ESP_OK);
     assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "playlist"));
     _exercise_music_page_screen_lifecycle(

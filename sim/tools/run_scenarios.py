@@ -89,6 +89,20 @@ def _walk_actionable(node, blocked=False):
         yield from _walk_actionable(child, blocked)
 
 
+def _text_targets(node, text, ancestors=(), blocked=False):
+    """Yield the nearest actionable ancestor (or the text node itself)."""
+    blocked = blocked or node.get('flags', {}).get('hidden', False) or node.get('state', {}).get('disabled', False)
+    target = node if node.get('flags', {}).get('clickable') else None
+    for ancestor in reversed(ancestors):
+        if ancestor.get('flags', {}).get('clickable'):
+            target = ancestor
+            break
+    if not blocked and node.get('text') == text and target is not None:
+        yield node, target
+    for child in node.get('children', []) + node.get('overlays', []):
+        yield from _text_targets(child, text, ancestors + (node,), blocked)
+
+
 class Runner:
     def __init__(self, host, port, out_dir, golden, update):
         self.host, self.port = host, port
@@ -296,20 +310,23 @@ class Runner:
             else:
                 raise AssertionError('file browser root not reachable')
         elif cmd == 'tap_text':
+            nodes = []
             for attempt in range(12):
                 tree = self.call('sim.tree')['tree']
                 time.sleep(0.05)
-                nodes = [node for node in _walk_actionable(tree)
-                         if node.get('text') == step['text'] and
-                         node.get('flags', {}).get('visible', True) and
-                         64 <= node['coords']['y'] and
-                         node['coords']['y'] + node['coords']['h'] <= 448]
+                nodes = [target for label, target in
+                         _text_targets(tree, step['text'])
+                         if label.get('flags', {}).get('visible', True) and
+                         64 <= label['coords']['y'] and
+                         label['coords']['y'] + label['coords']['h'] <= 448]
                 if nodes:
                     break
                 targets = [node for node in _walk(tree) if node.get('text') == step['text']]
                 above = targets and targets[-1]['coords']['y'] < 64
                 if targets and all(node.get('coords', {}).get('y', 0) >= 64 and
-                                   node.get('coords', {}).get('y', 0) < 448 for node in targets):
+                                   node.get('coords', {}).get('y', 0) +
+                                   node.get('coords', {}).get('h', 0) <= 448
+                                   for node in targets):
                     self.call('sim.step', {'ms': 330})
                     continue
                 self._step({'cmd': 'drag', 'x0': 180, 'y0': 170 if above else 390,

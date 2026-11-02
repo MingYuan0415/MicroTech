@@ -78,7 +78,8 @@ static void _fill_playlist(music_playlist_t *playlist, uint64_t id,
 {
     memset(playlist, 0, sizeof(*playlist));
     playlist->ref.id = id;
-    playlist->ref.dirid = kind == MUSIC_PLAYLIST_KIND_MY_CREATED ? 7U : 0U;
+    playlist->ref.dirid = kind == MUSIC_PLAYLIST_KIND_MY_CREATED ? 7U :
+                          kind == MUSIC_PLAYLIST_KIND_MY_FAVORITE ? 201U : 0U;
     playlist->ref.tid = (uint32_t)id;
     playlist->ref.kind = (uint8_t)kind;
     (void)snprintf(playlist->title, sizeof(playlist->title), "%s", title);

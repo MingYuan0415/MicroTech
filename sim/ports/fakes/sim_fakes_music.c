@@ -16,7 +16,7 @@
 #define SIM_MUSIC_CATALOG_COUNT 5U
 #define SIM_MUSIC_PARTIAL_COUNT 2U
 #define SIM_MUSIC_PARTIAL_TOTAL 12U
-#define SIM_MUSIC_LONG_COUNT MUSIC_SERVICE_MAX_SONGS
+#define SIM_MUSIC_LONG_COUNT 10U
 #define SIM_MUSIC_LONG_TOTAL 137U
 
 EVENT_BUS_DEFINE_ID(MUSIC_SERVICE_MSG);
@@ -41,6 +41,7 @@ typedef struct sim_music_state
     bool play_valid;
     bool player_unavailable;
     bool playlist_failed;
+    uint8_t playlist_failures_remaining;
     bool queue_failed;
     bool lyric_failed;
     char lyric_songmid[MUSIC_SERVICE_SONGMID_BYTES];
@@ -64,6 +65,7 @@ typedef struct sim_music_fixture
     bool play_valid;
     bool player_unavailable;
     bool playlist_failed;
+    uint8_t playlist_failures_remaining;
     bool queue_failed;
     bool lyric_failed;
     char lyric_songmid[MUSIC_SERVICE_SONGMID_BYTES];
@@ -221,9 +223,9 @@ static music_home_snapshot_t *_create_home(uint32_t catalog_total)
     _fill_playlist(&home->recommended[2], 1003U, 0U, 1003U,
                    MUSIC_PLAYLIST_KIND_RECOMMENDED, "夜间电台",
                    "模拟音乐", 24U);
-    _fill_playlist(&home->my_favorite[0], 2001U, 0U, 2001U,
+    _fill_playlist(&home->my_favorite[0], 0U, 201U, 0U,
                    MUSIC_PLAYLIST_KIND_MY_FAVORITE, "我喜欢的音乐",
-                   "模拟用户", 16U);
+                   "模拟用户", catalog_total);
     _fill_playlist(&home->my_favorite[1], 2002U, 0U, 2002U,
                    MUSIC_PLAYLIST_KIND_MY_FAVORITE, "循环清单",
                    "模拟用户", 9U);
@@ -276,9 +278,9 @@ static music_playlist_snapshot_t *_create_playlist(uint16_t count,
     playlist->total = total;
     playlist->offset = 0U;
     playlist->count = count;
-    _fill_playlist(&playlist->playlist, 1001U, 0U, 1001U,
-                   MUSIC_PLAYLIST_KIND_RECOMMENDED, "模拟晨间歌单",
-                   "模拟音乐", total);
+    _fill_playlist(&playlist->playlist, 0U, 201U, 0U,
+                   MUSIC_PLAYLIST_KIND_MY_FAVORITE, "我喜欢的音乐",
+                   "模拟用户", total);
     for (uint16_t index = 0U; index < count; ++index)
     {
         _fill_song(&playlist->songs[index], index);
@@ -651,6 +653,19 @@ static esp_err_t _prepare_fixture(const char *name,
         fixture->player_unavailable = true;
         return ESP_OK;
     }
+    if (strcmp(name, "catalog_fail_twice") == 0)
+    {
+        const esp_err_t result = _prepare_catalog(
+                                     name, MUSIC_SERVICE_FAILURE_NONE,
+                                     MUSIC_PLAYBACK_PAUSED,
+                                     SIM_MUSIC_LONG_COUNT,
+                                     SIM_MUSIC_LONG_TOTAL, 21000U, fixture);
+        if (result == ESP_OK)
+        {
+            fixture->playlist_failures_remaining = 2U;
+        }
+        return result;
+    }
     if (strcmp(name, "playlist_failed") == 0)
     {
         _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_READY,
@@ -757,6 +772,8 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     }
     s_music.player_unavailable = fixture->player_unavailable;
     s_music.playlist_failed = fixture->playlist_failed;
+    s_music.playlist_failures_remaining =
+        fixture->playlist_failures_remaining;
     s_music.queue_failed = fixture->queue_failed;
     s_music.lyric_failed = fixture->lyric_failed;
     s_music.home = fixture->home;
@@ -1155,6 +1172,37 @@ void music_service_home_release(const music_home_snapshot_t *snapshot)
     music_snapshot_release((void *)snapshot);
 }
 
+static const music_playlist_t *_find_home_playlist(
+    const music_home_snapshot_t *home, const music_playlist_ref_t *ref)
+{
+    if (home == NULL || ref == NULL)
+    {
+        return NULL;
+    }
+    const music_playlist_t *sections[] = {home->recommended, home->my_favorite,
+                                          home->my_created, home->my_collected
+                                         };
+    const size_t counts[] = {home->recommended_count, home->my_favorite_count,
+                             home->my_created_count, home->my_collected_count
+                            };
+    for (size_t section = 0U;
+            section < sizeof(sections) / sizeof(sections[0]); ++section)
+    {
+        for (size_t index = 0U; index < counts[section]; ++index)
+        {
+            const music_playlist_ref_t *candidate = &sections[section][index].ref;
+            if (candidate->id == ref->id &&
+                    candidate->dirid == ref->dirid &&
+                    candidate->tid == ref->tid &&
+                    candidate->kind == ref->kind)
+            {
+                return &sections[section][index];
+            }
+        }
+    }
+    return NULL;
+}
+
 esp_err_t music_service_playlist_acquire(const music_playlist_ref_t *ref,
         uint16_t offset, uint16_t count,
         const music_playlist_snapshot_t **snapshot)
@@ -1170,31 +1218,34 @@ esp_err_t music_service_playlist_acquire(const music_playlist_ref_t *ref,
         (void)pthread_mutex_unlock(&s_music.lock);
         return ESP_ERR_INVALID_STATE;
     }
+    if (s_music.playlist_failures_remaining > 0U)
+    {
+        --s_music.playlist_failures_remaining;
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     music_playlist_snapshot_t *playlist = s_music.playlist;
-    const bool direct = ref == NULL || ref->id == 0U;
-    const bool matches = direct ? playlist != NULL :
-                         music_service_playlist_cache_matches(playlist, ref,
-                             offset, count);
+    const music_playlist_t *metadata = _find_home_playlist(s_music.home, ref);
+    const bool matches = playlist != NULL && (ref == NULL || metadata != NULL);
     if (matches)
     {
-        if (offset >= playlist->total)
+        const uint32_t total = metadata != NULL ?
+                               metadata->track_count : playlist->total;
+        if (offset >= total)
         {
             (void)pthread_mutex_unlock(&s_music.lock);
             return ESP_ERR_NOT_FOUND;
         }
-        uint32_t remaining = playlist->total - offset;
+        uint32_t remaining = total - offset;
         uint16_t slice_count = count;
         if (remaining < slice_count)
         {
             slice_count = (uint16_t)remaining;
         }
-        if (offset == 0U && slice_count == playlist->count)
+        if (offset == 0U && playlist->offset == 0U &&
+                playlist->count < slice_count)
         {
-            music_playlist_snapshot_t *retained =
-                music_snapshot_retain(playlist);
-            (void)pthread_mutex_unlock(&s_music.lock);
-            *snapshot = retained;
-            return retained != NULL ? ESP_OK : ESP_ERR_NO_MEM;
+            slice_count = playlist->count;
         }
         const size_t bytes = offsetof(music_playlist_snapshot_t, songs) +
                              (size_t)slice_count * sizeof(music_song_t);
@@ -1206,8 +1257,15 @@ esp_err_t music_service_playlist_acquire(const music_playlist_ref_t *ref,
             return ESP_ERR_NO_MEM;
         }
         slice->generation = playlist->generation;
-        slice->playlist = playlist->playlist;
-        slice->total = playlist->total;
+        if (metadata != NULL)
+        {
+            slice->playlist = *metadata;
+        }
+        else
+        {
+            slice->playlist = playlist->playlist;
+        }
+        slice->total = total;
         slice->offset = offset;
         slice->count = slice_count;
         for (uint16_t index = 0U; index < slice_count; ++index)
@@ -1425,12 +1483,9 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
         (void)pthread_mutex_unlock(&s_music.lock);
         return ESP_ERR_NOT_FOUND;
     }
-    const bool direct = ref == NULL || ref->id == 0U;
-    const bool matches = direct ||
-                         (s_music.playlist->playlist.ref.id == ref->id &&
-                          s_music.playlist->playlist.ref.dirid == ref->dirid &&
-                          s_music.playlist->playlist.ref.tid == ref->tid &&
-                          s_music.playlist->playlist.ref.kind == ref->kind);
+    const music_playlist_t *metadata =
+        _find_home_playlist(s_music.home, ref);
+    const bool matches = ref == NULL || metadata != NULL;
     if (!matches || start_index >= s_music.playlist->count)
     {
         (void)pthread_mutex_unlock(&s_music.lock);
@@ -1439,7 +1494,7 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
     memcpy(s_music.queue, s_music.playlist->songs,
            (size_t)s_music.playlist->count * sizeof(s_music.queue[0]));
     s_music.queue_count = s_music.playlist->count;
-    s_music.play_ref = s_music.playlist->playlist.ref;
+    s_music.play_ref = ref != NULL ? *ref : s_music.playlist->playlist.ref;
     s_music.queue_valid = true;
     _set_generation_locked();
     _select_queue_song_locked(start_index);

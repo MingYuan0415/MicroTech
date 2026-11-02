@@ -880,6 +880,14 @@
         },
         {
           "name": "populated",
+          "navigate_args": {
+            "playlist_ref": {
+              "id": 1001,
+              "dirid": 0,
+              "tid": 1001,
+              "kind": 2
+            }
+          },
           "seed": [
             {
               "cmd": "set_time",
@@ -3771,6 +3779,14 @@
       "states": [
         {
           "name": "pending",
+          "navigate_args": {
+            "playlist_ref": {
+              "id": 1001,
+              "dirid": 0,
+              "tid": 1001,
+              "kind": 2
+            }
+          },
           "pre_seed": [
             {
               "cmd": "music",
@@ -3818,6 +3834,14 @@
         },
         {
           "name": "partial",
+          "navigate_args": {
+            "playlist_ref": {
+              "id": 1001,
+              "dirid": 0,
+              "tid": 1001,
+              "kind": 2
+            }
+          },
           "expect_visible": [
             "歌单",
             "共 12 首 · 第 1 / 2 页",
@@ -3850,6 +3874,14 @@
         },
         {
           "name": "long",
+          "navigate_args": {
+            "playlist_ref": {
+              "id": 1001,
+              "dirid": 0,
+              "tid": 1001,
+              "kind": 2
+            }
+          },
           "expect_visible": [
             "歌单",
             "共 137 首 · 第 1 / 14 页",
@@ -3882,6 +3914,14 @@
         },
         {
           "name": "failed_retry",
+          "navigate_args": {
+            "playlist_ref": {
+              "id": 1001,
+              "dirid": 0,
+              "tid": 1001,
+              "kind": 2
+            }
+          },
           "expect_visible": [
             "歌单",
             "歌单加载失败",

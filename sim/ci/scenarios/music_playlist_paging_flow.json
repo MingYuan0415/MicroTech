@@ -8,8 +8,41 @@
   },
   {
    "cmd": "navigate",
-   "app": "music",
-   "page": "playlist"
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "每日推荐"
   },
   {
    "cmd": "step",

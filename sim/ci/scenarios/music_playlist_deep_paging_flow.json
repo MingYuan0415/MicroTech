@@ -1,0 +1,128 @@
+{
+ "name": "music-playlist-deep-paging-flow",
+ "steps": [
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "catalog_long"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "每日推荐"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "下一页"
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "下一页"
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "下一页"
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "下一页"
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "下一页"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "共 137 首 · 第 6 / 14 页"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 51"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_playlist_page6.png"
+  }
+ ]
+}

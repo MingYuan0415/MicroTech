@@ -779,8 +779,9 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                     runner.call('sim.navigate',
                                 {'app': page['app'], 'page': 'root'})
                     if page_id != 'root':
-                        runner.call('sim.navigate',
-                                    {'app': page['app'], 'page': page_id})
+                        navigation = {'app': page['app'], 'page': page_id}
+                        navigation.update(state.get('navigate_args') or {})
+                        runner.call('sim.navigate', navigation)
                     runner.call('sim.step', {'ms': 33 * 10})
                     # Seed only after the target page is mounted. A preceding
                     # mount-time service refresh can otherwise replace a newly

@@ -45,6 +45,7 @@
 #include "sim_png.h"
 #include "sim_time.h"
 #include "music_service.h"
+#include "music_app_internal.h"
 #include "weather_service.h"
 #ifdef SIM_MUSIC_REAL
     #include "music_service_internal.h"
@@ -629,6 +630,31 @@ static cJSON *_handle(cJSON *request, bool *ok)
             {
                 nav.page_id = page->valuestring;
                 nav.operation = APP_MANAGER_NAV_OP_OPEN_PAGE;
+            }
+            const cJSON *ref = cJSON_GetObjectItemCaseSensitive(
+                                   params, "playlist_ref");
+            if (cJSON_IsObject(ref))
+            {
+                music_playlist_arguments_t arguments = {0};
+                const cJSON *id = cJSON_GetObjectItemCaseSensitive(ref, "id");
+                const cJSON *dirid = cJSON_GetObjectItemCaseSensitive(ref,
+                    "dirid");
+                const cJSON *tid = cJSON_GetObjectItemCaseSensitive(ref, "tid");
+                const cJSON *kind = cJSON_GetObjectItemCaseSensitive(ref,
+                    "kind");
+                arguments.ref.id = cJSON_IsNumber(id) ?
+                                   (uint64_t)id->valuedouble : 0U;
+                arguments.ref.dirid = cJSON_IsNumber(dirid) ?
+                                      (uint32_t)dirid->valuedouble : 0U;
+                arguments.ref.tid = cJSON_IsNumber(tid) ?
+                                    (uint32_t)tid->valuedouble : 0U;
+                arguments.ref.kind = cJSON_IsNumber(kind) ?
+                                     (uint8_t)kind->valuedouble : 0U;
+                nav.has_arguments = true;
+                nav.arguments.version = APP_MANAGER_TYPED_BLOB_VERSION;
+                nav.arguments.type = MUSIC_ARGUMENT_PLAYLIST;
+                nav.arguments.size = sizeof(arguments);
+                memcpy(nav.arguments.payload, &arguments, sizeof(arguments));
             }
             const esp_err_t res = app_manager_navigate_async(&nav, NULL, NULL);
             *ok = (res == ESP_OK);

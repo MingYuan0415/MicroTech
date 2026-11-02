@@ -1,0 +1,105 @@
+{
+ "name": "music-playlist-short-page-flow",
+ "steps": [
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "catalog_partial"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "喜欢"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "共 12 首 · 第 1 / 2 页"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 01"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 02"
+   }
+  },
+  {
+   "cmd": "tap_text",
+   "text": "下一页"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "共 12 首 · 第 2 / 2 页"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 03"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_playlist_short_page2.png"
+  }
+ ]
+}
