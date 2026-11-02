@@ -35,6 +35,15 @@ cmake --build build/sim
 LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 `sim/CMakeLists.txt` 内固化，命令行无需重复传。
 
+默认面板为 368x448（ESP32-S3）。ESP32-P4 版型请用 `-DSIM_PANEL=320x480` 另建
+构建目录；framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期尺寸。
+`sim/ci/golden/` 的 golden 回归仍以 368x448 为基线。
+
+```sh
+cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480
+cmake --build build/sim-p4
+```
+
 ## 日常开发（推荐入口）
 
 ```sh
@@ -351,7 +360,8 @@ sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review �
 
 **全页基线（`review_pages.py`）**：页面滚动容器到达视口底部（内容被屏幕下沿裁掉）
 时，harness 分段拖动取条带（`sim.touch` 拖动 + `sim.tree` 的 `scroll.top`/`bottom`
-真值），拼接为 `368 x (448 + 可达滚动量)` 的全页图：基线尺寸即页面真实高度
+真值），拼接为 `368 x (448 + 可达滚动量)` 的全页图；以下示例使用 368x448 S3
+基线，P4 构建使用 320x480 并遵循相同的拼接几何规则。基线尺寸即页面真实高度
 （如 `settings/about` 为 `368x674`），前 448 行与同状态的单帧截图逐字节一致
 （页面 chrome 保留）。滚动容器整体落在视口内（如 `recorder/files` 的列表），或
 尾部不超过 LVGL 拖动阈值（`MIN_REACHABLE_TRAVEL`）的页面，输出单帧 `368x448`。

@@ -15,6 +15,13 @@ The board profile for the Waveshare ESP32-S3 Touch AMOLED 1.8 is fixed at:
   depth 2;
 - PSRAM Direct DMA off, TE off.
 
+The ESP32-P4 profile is fixed at 320x480 RGB565 over 4-wire SPI at 80 MHz,
+1 data line, 20-line logical transfer/DMA chunks and queue depth 2; PSRAM
+Direct DMA and TE are off. The benchmark campaigns and analyzer in this
+directory currently target the ESP32-S3 baseline; the P4 transport is reported
+as `spi` by the display configuration log, but a P4 performance campaign has
+not yet been established.
+
 These values come from the BSP private profile and the read-only transport
 descriptor; they do not enter Kconfig or the benchmark defaults. LVGL's 60-line
 dual PSRAM draw buffer, Snapshot, task stacks, diagnostics gate, and core

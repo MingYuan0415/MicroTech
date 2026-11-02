@@ -1,0 +1,20 @@
+{
+  "id": "panel-p4-settings",
+  "skill": "design-contract",
+  "profile": "neutral",
+  "target": "panel_320x480_touch_30hz",
+  "archetype": "settings_list",
+  "selection_mode": "design",
+  "brief": "Resolve the neutral profile on the ESP32-P4 320x480 panel and state the 30 Hz motion budget.",
+  "must": [
+    "profile_id:neutral",
+    "target_id:panel_320x480_touch_30hz",
+    "30 Hz refresh",
+    "standard motion budget"
+  ],
+  "must_not": [
+    "panel_368x448_touch_60hz",
+    "60 Hz",
+    "assume keypad input"
+  ]
+}

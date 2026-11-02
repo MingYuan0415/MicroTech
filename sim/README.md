@@ -43,6 +43,16 @@ The LVGL options (DEMOS/EXAMPLES/THORVG=OFF, `LV_BUILD_CONF_PATH`) are already
 fixed inside `sim/CMakeLists.txt`, so the command line does not need to repeat
 them.
 
+The default panel is 368x448 (ESP32-S3). For the ESP32-P4 board build a second
+directory with `-DSIM_PANEL=320x480`; the framebuffer, SDL window, PNG encoder
+and agent geometry follow the selected compile-time size. The golden regression
+under `sim/ci/golden/` remains the 368x448 baseline.
+
+```sh
+cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480
+cmake --build build/sim-p4
+```
+
 ## Daily Development (Recommended Entry)
 
 ```sh
@@ -459,13 +469,14 @@ intentional changes; an unexpected change means the gate is working.
 reaches the bottom of the viewport (content is clipped by the screen's lower
 edge), the harness drags in segments to capture strips (a `sim.touch` drag plus
 the `scroll.top`/`bottom` ground truth from `sim.tree`) and stitches them into a
-`368 x (448 + reachable scroll amount)` full-page image: the baseline size is
-the page's real height (for example `368x674` for `settings/about`), and the
-first 448 rows are byte-identical to a single-frame screenshot in the same state
-(the page chrome is preserved). A page whose scroll container lies entirely
-within the viewport (such as the `recorder/files` list), or whose tail does not
-exceed the LVGL drag threshold (`MIN_REACHABLE_TRAVEL`), is output as a single
-`368x448` frame.
+`368 x (448 + reachable scroll amount)` full-page image: these examples use the
+368x448 S3 baseline; a P4 build uses 320x480 and the same stitched-geometry
+rules. The baseline size is the page's real height (for example `368x674` for
+`settings/about`), and the first 448 rows are byte-identical to a single-frame
+screenshot in the same state (the page chrome is preserved). A page whose scroll
+container lies entirely within the viewport (such as the `recorder/files` list),
+or whose tail does not exceed the LVGL drag threshold (`MIN_REACHABLE_TRAVEL`),
+is output as a single `368x448` frame.
 Content below the fold (`flags.visible` false) participates in the checks as
 well: lint uses `_walk_on_screen` (skipping only `flags.hidden` subtrees), and
 `single_line`, `expect_visible`, `expect_image`, and the baselines all cover

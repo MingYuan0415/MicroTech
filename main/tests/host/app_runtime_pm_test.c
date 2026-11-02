@@ -259,7 +259,7 @@ static system_pm_config_t _test_build_config(bool wifi_participant,
         bool imu_participant, bool audio_participant, bool time_participant)
 {
     system_pm_config_t config;
-    assert(app_runtime_pm_build_system_config(&config) == ESP_OK);
+    assert(app_runtime_pm_build_system_config(&config, true) == ESP_OK);
     assert(config.prepare_sleep != NULL);
     assert(config.complete_sleep != NULL);
     assert(config.sleep_hook_context != NULL);
@@ -594,18 +594,26 @@ static void _test_config_and_bridges(void)
 
     _test_reset();
     s_test.expose_input = false;
-    assert(app_runtime_pm_build_system_config(&config) == ESP_ERR_INVALID_STATE);
+    assert(app_runtime_pm_build_system_config(&config, true) == ESP_ERR_INVALID_STATE);
     _test_reset();
     s_test.wake_descriptor.gpio_mask = 0U;
-    assert(app_runtime_pm_build_system_config(&config) == ESP_ERR_INVALID_STATE);
+    assert(app_runtime_pm_build_system_config(&config, true) ==
+           ESP_ERR_INVALID_STATE);
+    _test_reset();
+    s_test.wake_descriptor.gpio_mask = 0U;
+    assert(app_runtime_pm_build_system_config(&config, false) ==
+           ESP_ERR_NOT_SUPPORTED);
     _test_reset();
     s_test.wake_descriptor.gpio_mask = UINT64_C(0x1F);
-    assert(app_runtime_pm_build_system_config(&config) == ESP_ERR_INVALID_SIZE);
+    assert(app_runtime_pm_build_system_config(&config, true) == ESP_ERR_INVALID_SIZE);
 }
 
 static void _test_standby_admission(void)
 {
     _test_reset();
+    system_pm_config_t config;
+    assert(app_runtime_pm_build_system_config(&config, true) == ESP_OK);
+    _test_clear_trace();
     app_manager_standby_ops_t ops = app_runtime_pm_get_standby_ops();
     assert(ops.is_standby_allowed != NULL);
     assert(ops.is_standby_allowed());
@@ -665,6 +673,9 @@ static void _test_benchmark_standby_inhibitor(void)
 static void _test_standby_race(void)
 {
     _test_reset();
+    system_pm_config_t config = _test_build_config(false, false, false, false);
+    (void)config;
+    _test_clear_trace();
     test_standby_thread_t request =
     {
         .ops = app_runtime_pm_get_standby_ops(),

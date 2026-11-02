@@ -10,7 +10,9 @@ from pathlib import Path
 import yaml
 
 
-EXCLUDED_PARTS = {"managed_components", "build", ".git"}
+# `firmware/` holds standalone ESP-IDF projects with their own
+# dependencies.lock (for example the C6 coprocessor), not root components.
+EXCLUDED_PARTS = {"managed_components", "build", ".git", ".cache", "firmware"}
 WILDCARD_VERSIONS = {"", "*"}
 # name, optional [extras], exact ==, version without a second '=', optional
 # PEP 508 environment marker. Rejects 'foo==1.0==bar' and accepts inline
@@ -26,6 +28,48 @@ class DependencyPinTest(unittest.TestCase):
         self.lock = yaml.safe_load(
             (self.root / "dependencies.lock").read_text(encoding="utf-8")
         ) or {}
+        self.target = self._sdkconfig_target()
+
+    def _sdkconfig_target(self) -> str:
+        path = self.root / "sdkconfig"
+        if not path.exists():
+            return ""
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("CONFIG_IDF_TARGET="):
+                return line.split("=", 1)[1].strip().strip('"')
+        return ""
+
+    def _condition_matches(self, condition: str) -> bool:
+        exact = re.fullmatch(r"target\s*==\s*([A-Za-z0-9_]+)", condition)
+        if exact:
+            return exact.group(1) == self.target
+        negated = re.fullmatch(r"target\s*!=\s*([A-Za-z0-9_]+)", condition)
+        if negated:
+            return negated.group(1) != self.target
+        member = re.fullmatch(r"target\s+in\s*\[([^\]]*)\]", condition)
+        if member:
+            names = {item.strip() for item in member.group(1).split(",")
+                     if item.strip()}
+            return self.target in names
+        # A rule the checker cannot evaluate is treated as applicable so the
+        # dependency still has to be locked for the active target.
+        return True
+
+    def _dependency_applies(self, spec) -> bool:
+        if not isinstance(spec, dict):
+            return True
+        rules = spec.get("rules")
+        if not rules:
+            return True
+        # The lock describes the active target only; a target-scoped manifest
+        # entry for another target is expected to be absent.
+        if not self.target:
+            return False
+        for rule in rules:
+            condition = str((rule or {}).get("if", "")).strip()
+            if not condition or self._condition_matches(condition):
+                return True
+        return False
 
     def _manifests(self):
         for path in sorted(self.root.rglob("idf_component.yml")):
@@ -75,6 +119,8 @@ class DependencyPinTest(unittest.TestCase):
                 if name == "idf":
                     continue
                 if isinstance(spec, dict) and "path" in spec:
+                    continue
+                if not self._dependency_applies(spec):
                     continue
                 if name in locked or name.rsplit("/", 1)[-1] in locked_short:
                     continue

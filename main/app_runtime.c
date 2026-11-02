@@ -22,6 +22,7 @@
 #include "fs_storage/fs_storage.h"
 #include "imu_service.h"
 #include "network_runtime.h"
+#include "p4_radio_runtime.h"
 #include "nv_storage.h"
 #include "power_service.h"
 #include "ble_nimble_port.h"
@@ -632,6 +633,13 @@ static esp_err_t _app_runtime_stop_active_services(void)
         s_ownership.power_attempted = false;
         app_runtime_pm_clear_power();
     }
+#if CONFIG_IDF_TARGET_ESP32P4
+    result = p4_radio_runtime_deinit();
+    if (result != ESP_OK)
+    {
+        return result;
+    }
+#endif
     return result;
 }
 
@@ -1065,7 +1073,16 @@ static esp_err_t _app_runtime_start_platform(
     s_ownership.display_lease_acquired = true;
 
     system_pm_config_t system_pm_config;
-    result = app_runtime_pm_build_system_config(&system_pm_config);
+    result = app_runtime_pm_build_system_config(
+                 &system_pm_config, context->product->system_pm_supported);
+    if (result == ESP_ERR_NOT_SUPPORTED)
+    {
+        /* This board has no RTC-capable key GPIO, so a CPU light-sleep wake
+         * source cannot exist. The app-manager screen-off still works; the
+         * CPU stays awake until the hardware gains a wake line. */
+        LOG_W("CPU light sleep unavailable: no RTC wake source");
+        return ESP_OK;
+    }
     if (result != ESP_OK)
     {
         return result;
@@ -1095,6 +1112,7 @@ static esp_err_t _app_runtime_start_app_services(
         .resource_checksum = APP_RESOURCES_CHECKSUM,
         .image_resources = APP_RESOURCES_IMAGE_TABLE,
         .image_resource_count = APP_RESOURCES_IMAGE_COUNT,
+        .device_info = context->product->device_info,
         .screen_ops = {
             .suspend = context->screen->suspend,
             .resume_prepare = context->screen->resume_prepare,
@@ -1338,6 +1356,11 @@ static esp_err_t _app_runtime_start_app_services(
 static esp_err_t _app_runtime_start_connectivity(
     const app_product_config_t *product)
 {
+    if (!product->radio_enabled)
+    {
+        LOG_I("radio disabled: connectivity not started");
+        return ESP_OK;
+    }
     s_ownership.weather_attempted = true;
     esp_err_t result = weather_service_init(&product->weather);
     if (result != ESP_OK)
@@ -1412,8 +1435,41 @@ static esp_err_t _app_runtime_start_connectivity(
 static esp_err_t _app_runtime_start_device_link(
     const app_product_config_t *product)
 {
+    if (!product->radio_enabled)
+    {
+        /* Without a radio there is no BLE-gated peer-store recovery. Complete
+         * the durable factory-reset journal after the local reset domains
+         * have already converged, otherwise every boot would repeat the
+         * reset. */
+        if (s_factory_reset_pending)
+        {
+            const esp_err_t result =
+                factory_reset_service_complete_recovery();
+            if (result != ESP_OK)
+            {
+                return result;
+            }
+            s_factory_reset_pending = false;
+        }
+        LOG_I("radio disabled: Device Link not started");
+        return ESP_OK;
+    }
     device_link_service_config_t device_link = product->device_link;
 
+#if CONFIG_IDF_TARGET_ESP32P4
+    esp_err_t radio_result = p4_radio_runtime_init();
+    if (radio_result != ESP_OK)
+    {
+        if (!product->radio_optional)
+        {
+            LOG_E("hosted radio init failed: %s",
+                  esp_err_to_name(radio_result));
+            return radio_result;
+        }
+        LOG_W("hosted radio unavailable: %s",
+              esp_err_to_name(radio_result));
+    }
+#endif
     device_link.runtime_port = ble_nimble_port_get();
     device_link.startup_mode = s_factory_reset_pending ?
                                DEVICE_LINK_SERVICE_STARTUP_FACTORY_RESET_GATED :
@@ -1423,7 +1479,24 @@ static esp_err_t _app_runtime_start_device_link(
 
     if (result != ESP_OK)
     {
-        return result;
+        if (s_factory_reset_pending)
+        {
+            /* A factory reset whose BLE-gated peer-store recovery cannot run
+             * must stay fail-closed: keep the durable marker and fail this
+             * boot so the next boot retries the complete recovery. */
+            return result;
+        }
+        if (!product->radio_optional)
+        {
+            return result;
+        }
+        /* A board whose radio is explicitly optional (the ESP32-P4 bench
+         * build before its C6 CP firmware update) must still boot: Device
+         * Link is not a display prerequisite. */
+        (void)device_link_service_deinit(DEVICE_LINK_SERVICE_WAIT_FOREVER);
+        s_ownership.device_link_attempted = false;
+        LOG_W("Device Link unavailable: %s", esp_err_to_name(result));
+        return ESP_OK;
     }
     app_runtime_pm_set_device_link_participant(true);
     if (!s_factory_reset_pending)
@@ -1471,7 +1544,8 @@ static esp_err_t _app_runtime_start_deferred_wifi(void)
     return ESP_OK;
 }
 
-static esp_err_t _app_runtime_start_initial_app(void)
+static esp_err_t _app_runtime_start_initial_app(
+    const app_product_config_t *product)
 {
     esp_err_t result = ESP_OK;
     const int app_count = app_manager_builtin_discover();
@@ -1487,6 +1561,23 @@ static esp_err_t _app_runtime_start_initial_app(void)
     if (result != ESP_OK)
     {
         return result;
+    }
+    if (!product->radio_enabled && product->radio_optional &&
+            onboarding == ONBOARDING_SERVICE_PENDING)
+    {
+        /* Setup needs a working Wi-Fi adapter to reach its "later" path on
+         * some builds; a radio-less board must still reach Home. A future
+         * radio-enabled image can reset the persisted state when it enables
+         * the hosted stack. */
+        result = onboarding_service_defer();
+        if (result == ESP_OK)
+        {
+            onboarding = ONBOARDING_SERVICE_DEFERRED;
+        }
+        else
+        {
+            LOG_W("onboarding defer failed: %s", esp_err_to_name(result));
+        }
     }
     const app_manager_nav_request_t request =
     {
@@ -1585,7 +1676,7 @@ esp_err_t app_runtime_start(void)
         goto failed;
     }
 
-    result = _app_runtime_start_initial_app();
+    result = _app_runtime_start_initial_app(context.product);
     if (result != ESP_OK)
     {
         goto failed;

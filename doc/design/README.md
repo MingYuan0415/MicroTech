@@ -60,6 +60,7 @@ not claims that the production UI can render them.
 | Target | Class | Production use |
 | --- | --- | --- |
 | `panel_368x448_touch_60hz.json` | Current panel, touch, RGB565 | Supported renderer |
+| `panel_320x480_touch_30hz.json` | ESP32-P4 3.5-inch IPS, touch, RGB565 | Supported renderer |
 | `generic_constrained.json` | Unknown constrained touch target | Fallback fixture |
 | `panel_240x320_touch_30hz.json` | Small, low-refresh touch target | Validation fixture |
 | `panel_480x480_touch_60hz.json` | Larger, standard-refresh touch target | Validation fixture |
@@ -112,7 +113,8 @@ masked before that dimension check.
 
 - `app_ui.c` still has a fixed page shell (64 px title bar, 420 px sheet cap,
   fixed row heights). Multi-target profiles can describe a future target, but
-  the current implementation only claims `panel_368x448_touch_60hz`.
+  the current implementation claims `panel_368x448_touch_60hz` and
+  `panel_320x480_touch_30hz`.
 - `app_theme` exposes seven semantic font roles and one font asset. A profile
   whose type scale cannot be mapped to those roles reports
   `TYPOGRAPHY_UNSUPPORTED` in the resolved context.

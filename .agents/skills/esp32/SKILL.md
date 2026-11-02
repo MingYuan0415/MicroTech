@@ -1,21 +1,24 @@
 ---
 name: esp32
-description: Check MicroTech BSP hardware changes against the Waveshare ESP32-S3 Touch AMOLED 1.8 topology, pin/strapping constraints, buses, memory, power, and wake capabilities. Use for board facts and physical behavior, not generic ESP32-family advice.
+description: Check MicroTech BSP hardware changes against the supported Waveshare ESP32-S3 Touch AMOLED 1.8 and ESP32-P4-WIFI6-Touch-LCD-3.5 topologies, including pins, strapping, buses, memory, power, radio ownership, and wake capabilities. Use for board facts and physical behavior, not generic ESP32-family advice.
 ---
 
-# MicroTech ESP32-S3 Hardware
+# MicroTech ESP32 Hardware
 
-Apply this skill only to the ESP32-S3 board supported by MicroTech. Do not
-transfer pin rules from the original ESP32, WROOM, WROVER, or another
-Waveshare board.
+Apply this skill to the two boards supported by MicroTech. The ESP32-S3
+sections below are the original topology; the ESP32-P4 section at the end
+covers the second variant. Do not transfer pin rules between the boards or from
+the original ESP32, WROOM, WROVER, or another Waveshare board.
 
 ## Sources of Truth
 
 - Read `AGENTS.md` and `layers/bsp/README.md` first.
 - Read the concrete implementation under
-  `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/` before describing pins,
+  `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/` or
+  `layers/bsp/waveshare/esp32-p4-wifi6-touch-lcd-3.5/` before describing pins,
   buses, reset sequencing, or lifecycle behavior.
-- Read `sdkconfig.defaults` and the root `CMakeLists.txt` before describing
+- Read `sdkconfig.defaults`, `sdkconfig.defaults.esp32s3` /
+  `sdkconfig.defaults.esp32p4`, and the root `CMakeLists.txt` before describing
   flash, PSRAM, cache, DMA reserve, or CPU settings.
 - Use the official Waveshare [Resources and Documents](https://docs.waveshare.net/ESP32-S3-Touch-AMOLED-1.8/Resources-And-Documents)
   page as the discovery index for the board schematic, Espressif ESP32-S3
@@ -98,6 +101,50 @@ Waveshare board.
    Driver timing, DMA, power, sleep/wake, radio coexistence, and physical
    behavior need hardware evidence; report unexecuted checks as limitations,
    not as implicit authorization or a requirement to flash on every task.
+
+## ESP32-P4 Board (second variant)
+
+- Board: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5, ESP32-P4NRW32X (in-package
+  32 MB HEX PSRAM, 16 MB external NOR flash), 2 HP RISC-V cores.
+- The connected chip is ESP32-P4 rev v1.3 (pre-3.0 silicon). Keep
+  `CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y`, `CONFIG_ESP32P4_REV_MIN_100=y` and the
+  360 MHz CPU ceiling. Rev <3.0 and >=3.0 images are mutually exclusive, and a
+  rev >=3.0 image is rejected by this chip at flash time. `esp_audio_codec`
+  must stay below 2.6 for this revision; `main` pins the 2.5 line for P4.
+- Display: ST7796 320 x 480 RGB565 over 4-wire SPI: MOSI GPIO20, SCLK GPIO21,
+  CS GPIO23, DC GPIO26, RST GPIO27, backlight GPIO28. No TE. The BSP keeps the
+  panel hidden until the first `resume_commit`; the panel IO splits strips into
+  20-row DMA chunks with queue depth 2.
+- Touch: FT6336 (FT5x06 compatible) on I2C SCL GPIO8 / SDA GPIO7 at 400 kHz,
+  RST GPIO29, INT GPIO50.
+- Key input: HOME GPIO35 and POWER GPIO49, both active low. GPIO35 is a boot
+  strapping pin (GPIO35-38); keep its pull-up and do not add a large capacitor.
+- Power: AXP2101 on the shared I2C (address 0x34). Its IRQ is not routed to the
+  P4, so poll the status registers over I2C. Do not reprogram the default power
+  rails; the board's AXP defaults power the SoC. The PWR key also drives the
+  AXP PWRON input.
+- Audio: ES8311 on the shared I2C with MCLK GPIO13, SCLK GPIO12, DOUT GPIO9,
+  LRCK GPIO10 and DIN GPIO11. DOUT carries playback into the codec's DSDIN and
+  DIN carries the codec's ASDOUT capture; do not swap them. NS4150B PA enable is
+  GPIO53 (active high, held off until `bsp_audio_start()`). The capture PGA runs
+  at 36 dB.
+- Storage: microSD on SDMMC slot 0, 4-bit, CLK GPIO43, CMD GPIO44,
+  D0-D3 GPIO39-42. The slot's IO rail is supplied by the on-chip LDO4, which the
+  BSP acquires before mounting. There is no card-detect pin; mounting is
+  explicit and formatting is never automatic.
+- No IMU, no RTC chip, no TCA9554, no TE pin. The BSP does not register RTC or
+  IMU capabilities.
+- C6 coprocessor: SDIO CLK GPIO18, CMD GPIO19, D0-D3 GPIO14-17, reset GPIO54,
+  C6_IO2 strap GPIO6. The hosted stack owns these pins and the C6 reset; the
+  BSP must not drive them. C6 UART and IO9 are on header J6 (23/25/27, GND 29).
+- Power management: RTCIO is GPIO0-15; both keys are outside it and the P4 has
+  no GPIO light-sleep wake source. CPU light sleep cannot be woken by the keys,
+  so `board_get_wakeup_descriptor()` is empty and `app_runtime` skips
+  `system_pm_init`. Only the app-manager screen-off path is available.
+- The P4 radio is hosted: `CONFIG_ESP_HOSTED_HOST_FEAT_WIFI` and
+  `..._FEAT_BT` route `esp_wifi_*` and NimBLE HCI to the C6. Do not add native
+  `CONFIG_ESP_WIFI_*`/`BT_CTRL_*` controller settings or
+  `CONFIG_ESP_HOST_WIFI_ENABLED`.
 
 ## Display Boundary
 

@@ -387,6 +387,17 @@ esp_err_t sim_runtime_boot(void)
         .resource_checksum = APP_RESOURCES_CHECKSUM,
         .image_resources = APP_RESOURCES_IMAGE_TABLE,
         .image_resource_count = APP_RESOURCES_IMAGE_COUNT,
+#if SIM_BSP_H_RES == 320
+        .device_info = {
+            .panel = "320 x 480 IPS",
+            .platform = "ESP32-P4",
+        },
+#else
+        .device_info = {
+            .panel = "368 x 448 AMOLED",
+            .platform = "ESP32-S3",
+        },
+#endif
         .screen_ops = {
             .suspend = screen->suspend,
             .resume_prepare = screen->resume_prepare,

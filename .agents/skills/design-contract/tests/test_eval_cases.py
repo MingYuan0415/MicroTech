@@ -52,8 +52,8 @@ class EvalCaseTest(unittest.TestCase):
         matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
         self.assertEqual(set(matrix["styles"]), PROFILES)
         self.assertEqual(set(matrix["targets"]), TARGETS)
-        self.assertEqual(len(matrix["runs"]), 25)
-        self.assertEqual(len(matrix["styles"]) * len(matrix["targets"]), 25)
+        self.assertEqual(len(matrix["runs"]), 30)
+        self.assertEqual(len(matrix["styles"]) * len(matrix["targets"]), 30)
         self.assertEqual(
             {(run["style"], run["target"]) for run in matrix["runs"]},
             {(style, target)

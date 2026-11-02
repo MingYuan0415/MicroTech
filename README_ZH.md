@@ -2,7 +2,7 @@
 
 # MicroTech
 
-MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 的 ESP-IDF 固件工程，集成显示与触摸、RTC、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口、持久化存储以及待机/唤醒流程。
+MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 的 ESP-IDF 固件工程，集成显示与触摸、RTC、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口、持久化存储以及待机/唤醒流程。ESP32-P4 后端提供显示、触摸、按键输入、AXP2101 电源遥测、ES8311 音频和 SDMMC 存储；其 C6 hosted 无线路径另行跟踪。
 
 ## 工程结构
 
@@ -20,7 +20,7 @@ MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 的 ESP-IDF 固件工程
 
 ## 环境要求
 
-- ESP-IDF 6.1.x，目标芯片 ESP32-S3（16 MB Flash、Octal PSRAM）
+- ESP-IDF 6.1.x；目标芯片 ESP32-S3（16 MB Flash、Octal PSRAM）或 ESP32-P4（16 MB Flash、32 MB HEX PSRAM）
 - CMake 3.22+、Ninja 和支持 C11/Pthreads 的宿主编译器（宿主测试与 `sim/` 需要）
 - 宿主模拟器另需 `libsdl2-dev`、`libcurl4-openssl-dev`；**不要**安装发行版 `libfreetype-dev` 链接 sim（树内 FreeType 2.14.3）
 
@@ -33,12 +33,12 @@ git submodule update --init --recursive
 ## 构建与烧录
 
 ```sh
-idf.py set-target esp32s3
+idf.py set-target esp32s3   # P4 版型使用 esp32p4
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
-配置改动落在 `sdkconfig.defaults`（`idf.py save-defconfig`），不手改 `sdkconfig`。修改缓存、DMA 预留或资源后运行 `idf.py size`，并在真机检查显示、触摸、待机和唤醒。
+配置改动落在 `sdkconfig.defaults` 及其按 target 的伴随文件 `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`（`idf.py save-defconfig`），不手改 `sdkconfig`。修改缓存、DMA 预留或资源后运行 `idf.py size`，并在真机检查显示、触摸、待机和唤醒。
 
 ## 宿主测试
 

@@ -43,10 +43,14 @@ esp_err_t app_runtime_pm_set_benchmark_inhibited(bool inhibited);
  * @brief Build the system PM configuration from registered BSP operations.
  *
  * @param config receives the complete system PM configuration.
+ * @param system_pm_supported is true when CPU light sleep is required and an
+ *        empty wake-source set must fail startup; false when the board may
+ *        deliberately degrade to the app-manager screen-off path.
  *
  * @return ESP_OK on success, otherwise an ESP-IDF error.
  */
-esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config);
+esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config,
+        bool system_pm_supported);
 
 /**
  * @brief Return the input bridge used by the application manager.

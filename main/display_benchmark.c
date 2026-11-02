@@ -461,7 +461,15 @@ static bool _display_benchmark_config_valid(
 static const char *_display_benchmark_transport_name(
     bsp_display_transport_kind_t kind)
 {
-    return kind == BSP_DISPLAY_TRANSPORT_QSPI ? "qspi" : "unknown";
+    switch (kind)
+    {
+    case BSP_DISPLAY_TRANSPORT_QSPI:
+        return "qspi";
+    case BSP_DISPLAY_TRANSPORT_SPI:
+        return "spi";
+    default:
+        return "unknown";
+    }
 }
 
 static size_t _display_benchmark_minimum_dma_largest(void)

@@ -118,6 +118,18 @@ esp_err_t onboarding_service_reset(void)
     return ESP_OK;
 }
 
+esp_err_t onboarding_service_defer(void)
+{
+    g_host_onboarding_pending = false;
+    return ESP_OK;
+}
+
+esp_err_t onboarding_service_complete(void)
+{
+    g_host_onboarding_pending = false;
+    return ESP_OK;
+}
+
 esp_err_t onboarding_service_get_state(onboarding_service_state_t *state)
 {
     if (state == NULL)

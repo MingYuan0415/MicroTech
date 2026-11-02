@@ -87,6 +87,10 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         paths.extend(sorted(
             (self.root / "tests/display/profile_defaults").glob("*.defaults")
         ))
+        paths.extend([
+            self.root / "sdkconfig.defaults.esp32s3",
+            self.root / "sdkconfig.defaults.esp32p4",
+        ])
         failures = []
         for path in paths:
             text = path.read_text(encoding="utf-8")
@@ -98,7 +102,10 @@ class ConfigurationGovernanceTest(unittest.TestCase):
         self.assertEqual(failures, [], "\n".join(failures))
 
     def test_connectivity_defaults(self) -> None:
-        defaults = (self.root / "sdkconfig.defaults").read_text(encoding="utf-8")
+        defaults = "\n".join(
+            (self.root / name).read_text(encoding="utf-8")
+            for name in ("sdkconfig.defaults", "sdkconfig.defaults.esp32s3")
+        )
         assignments = dict(re.findall(
             r"^(CONFIG_[A-Z0-9_]+)=(.+)$", defaults, re.MULTILINE
         ))
@@ -163,6 +170,19 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             r"config CONNECTIVITY_MANAGER_TASK_STACK\s+"
             r"int[^\n]*\s+default 8192\b\s+range 4096 8192\b",
         )
+
+    def test_target_profile_board_symbols(self) -> None:
+        profiles = {
+            "sdkconfig.defaults.esp32s3":
+                "CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_8=y",
+            "sdkconfig.defaults.esp32p4":
+                "CONFIG_BOARD_TYPE_WAVESHARE_ESP32_P4_WIFI6_TOUCH_LCD_3_5=y",
+        }
+        for name, symbol in profiles.items():
+            text = (self.root / name).read_text(encoding="utf-8")
+            self.assertIn(symbol, text, f"{name} lacks its board symbol")
+            self.assertNotIn("CONFIG_IDF_TARGET=", text,
+                             f"{name} must not pin IDF_TARGET")
 
     def test_device_link_contract_source_is_authoritative(self) -> None:
         contract = self.root / "contracts/device_link"

@@ -104,6 +104,80 @@ if(MT_BOARD_ID STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
         target_compile_definitions(${_bt_component} PRIVATE
             MYNEWT_VAL_BLE_RESTART_PAIR=0)
     endif()
+elseif(MT_BOARD_ID STREQUAL "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
+    if(NOT ${MT_BOARD_KCONFIG_SYMBOL})
+        message(FATAL_ERROR
+            "The selected target and MicroTech board Kconfig do not match")
+    endif()
+    set(_project_task_affinity_enabled FALSE)
+    if(CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU0 OR
+            CONFIG_MAIN_PROJECT_TASK_AFFINITY_CPU1)
+        set(_project_task_affinity_enabled TRUE)
+    endif()
+    set(_lvgl_task_affinity_enabled FALSE)
+    if(CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU0 OR
+            CONFIG_APP_MANAGER_LVGL_WORKER_AFFINITY_CPU1)
+        set(_lvgl_task_affinity_enabled TRUE)
+    endif()
+    if((_project_task_affinity_enabled OR _lvgl_task_affinity_enabled) AND
+            (CONFIG_FREERTOS_UNICORE OR
+             NOT CONFIG_FREERTOS_NUMBER_OF_CORES EQUAL 2))
+        message(FATAL_ERROR
+            "Task-core isolation requires ESP32-P4 dual-core FreeRTOS")
+    endif()
+    if(_project_task_affinity_enabled AND _lvgl_task_affinity_enabled AND
+            CONFIG_MAIN_PROJECT_TASK_CORE_ID EQUAL
+            CONFIG_APP_MANAGER_LVGL_WORKER_CORE_ID)
+        message(FATAL_ERROR
+            "Project-owned tasks and the LVGL worker must use different cores")
+    endif()
+    if(NOT CONFIG_CACHE_L2_CACHE_256KB OR
+            NOT CONFIG_CACHE_L2_CACHE_LINE_128B)
+        message(FATAL_ERROR
+            "The ESP32-P4 LVGL profile requires 256K/128B L2 cache")
+    endif()
+    if(NOT CONFIG_LV_COLOR_FORMAT_RGB565)
+        message(FATAL_ERROR
+            "The Waveshare display pipeline requires LVGL RGB565")
+    endif()
+    if(CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL LESS 131072)
+        message(FATAL_ERROR
+            "Hosted SDIO, I2S, and LCD DMA staging require a 128 KiB internal reserve")
+    endif()
+    if(NOT CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY)
+        message(FATAL_ERROR
+            "The Waveshare ESP32-P4 profile requires external BSS in PSRAM")
+    endif()
+    if(NOT CONFIG_BT_CONTROLLER_DISABLED OR
+            NOT CONFIG_ESP_HOSTED_HOST_FEAT_BT)
+        message(FATAL_ERROR
+            "The ESP32-P4 BLE profile requires the hosted controller HCI")
+    endif()
+    if(NOT CONFIG_BT_NIMBLE_SECURITY_ENABLE OR
+            CONFIG_BT_NIMBLE_SM_LEGACY OR
+            NOT CONFIG_BT_NIMBLE_SM_SC OR
+            NOT CONFIG_BT_NIMBLE_SM_SC_ONLY EQUAL 1 OR
+            NOT CONFIG_BT_NIMBLE_NVS_PERSIST OR
+            NOT CONFIG_BT_NIMBLE_HS_PVCY OR
+            CONFIG_BT_NIMBLE_HOST_BASED_PRIVACY OR
+            CONFIG_BT_NIMBLE_ENC_ADV_DATA OR
+            NOT CONFIG_BT_NIMBLE_MAX_BONDS EQUAL 1 OR
+            NOT CONFIG_BT_NIMBLE_MAX_CONNECTIONS EQUAL 1)
+        message(FATAL_ERROR
+            "Device Link requires SC-only NimBLE security, controller privacy, the audited peer-store schema, one bond, and one connection")
+    endif()
+    if(NOT CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC OR
+            CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC OR
+            NOT CONFIG_MBEDTLS_DYNAMIC_BUFFER)
+        message(FATAL_ERROR
+            "The production TLS profile requires default allocation and dynamic buffers")
+    endif()
+    if(CONFIG_BT_NIMBLE_MAX_BONDS EQUAL 1)
+        idf_component_get_property(_bt_component bt COMPONENT_LIB)
+        target_compile_options(${_bt_component} PRIVATE -Wno-array-bounds)
+        target_compile_definitions(${_bt_component} PRIVATE
+            MYNEWT_VAL_BLE_RESTART_PAIR=0)
+    endif()
 else()
     message(FATAL_ERROR "The selected MicroTech board has no root build profile")
 endif()

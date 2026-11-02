@@ -4,3 +4,13 @@ dependencies:
     version: '>=5.0'
   espressif/esp_lvgl_adapter: '0.7.3'
   joltwallet/littlefs: '1.23.0'
+  espressif/esp_hosted:
+    version: '3.0.10'
+    rules:
+      - if: "target == esp32p4"
+  # The ESP32-P4 board carries rev v1.3 silicon; esp_audio_codec 2.6+ hard-fails
+  # that revision, so this target uses the 2.5 line that still supports it.
+  espressif/esp_audio_codec:
+    version: ">=2.5,<2.6"
+    rules:
+      - if: "target == esp32p4"

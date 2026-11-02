@@ -1,7 +1,14 @@
+idf_build_get_property(_mt_target IDF_TARGET)
+set(_mt_radio_requires)
+if(_mt_target STREQUAL "esp32p4")
+    list(APPEND _mt_radio_requires esp_hosted)
+endif()
+
 idf_component_register(
     SRCS "app_main.c" "app_product_config.c" "app_runtime.c" "app_runtime_pm.c"
          "app_runtime_control.c"
          "network_runtime.c"
+         "p4_radio_runtime.c"
          "display_benchmark.c"
          "fs_storage/fs_storage.c"
     INCLUDE_DIRS "."
@@ -39,6 +46,7 @@ idf_component_register(
         freertos
         heap
         lwip
+        ${_mt_radio_requires}
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

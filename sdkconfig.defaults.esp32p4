@@ -1,0 +1,47 @@
+# ESP32-P4 target profile for the Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 board.
+# The radio lives on the on-board ESP32-C6; the P4 is a hosted MCU host.
+CONFIG_BOARD_TYPE_WAVESHARE_ESP32_P4_WIFI6_TOUCH_LCD_3_5=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+# The connected board carries ESP32-P4 rev v1.3 (pre-3.0 silicon); rev <3 and
+# rev >=3 are mutually exclusive in ESP-IDF. Target rev v1.0 and use the 360 MHz
+# ceiling that IDF defines for this silicon.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y
+# The P4 bootloader exceeds the 24 KiB slot at partition-table offset 0x8000
+# with INFO logging; keep warnings and size optimization instead of moving the
+# whole flash layout.
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_SIZE=y
+# No RTC-capable key GPIO exists on this board, so automatic light sleep would
+# have no wake source. Keep the CPU awake and use the app-manager screen-off.
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=n
+# Hosted Wi-Fi/BT: the in-tree esp_wifi_remote routes esp_wifi_* to esp_hosted.
+CONFIG_ESP_WIFI_REMOTE_ENABLED=y
+CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED=y
+# Bench bring-up: the C6 CP firmware is not updated yet and an auto-init before
+# app_main blocks the UI on the dead hosted link. The radio stays disabled in
+# the product config until the C6 upgrade; once enabled, p4_radio_runtime calls
+# esp_hosted_init()/esp_hosted_connect_to_slave() explicitly before Device Link.
+CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n
+CONFIG_ESP_HOSTED_HOST_FEAT_WIFI=y
+CONFIG_ESP_HOSTED_HOST_FEAT_BT=y
+CONFIG_EH_HOST_PORT_DMA_PREFER_SPIRAM=y
+CONFIG_BT_CONTROLLER_DISABLED=y
+# C6 SDIO wiring: CLK=18, CMD=19, D0..D3=14..17, reset=54.
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=y
+CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH_4=y
+CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=40000
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK=18
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CMD=19
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0=14
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1=15
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=16
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=17
+CONFIG_ESP_HOSTED_HOST_RESET_GPIO=54

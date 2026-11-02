@@ -1,9 +1,15 @@
 # Emissive Color Language (AMOLED)
 
-The 368x448 SH8601A is an emissive panel: a `#000000` pixel is fully off. The
-whole UI therefore organizes color around "light is hierarchy" — contrast, power,
-and visual quality all come from sparse emission on a dark canvas rather than from
-lifted gray blocks.
+The 368x448 SH8601A on the ESP32-S3 board is an emissive panel: a `#000000`
+pixel is fully off. The whole UI therefore organizes color around "light is
+hierarchy" — contrast, power, and visual quality all come from sparse emission
+on a dark canvas rather than from lifted gray blocks.
+
+The ESP32-P4 320x480 IPS target uses the same semantic tokens and dark canvas
+for visual continuity, but it is a backlit non-emissive panel: black pixels do
+not switch off the backlight, and contrast/bloom behavior differs from the
+AMOLED target. Treat the token mapping as shared and judge power and bloom per
+target profile.
 
 ## Single Source
 

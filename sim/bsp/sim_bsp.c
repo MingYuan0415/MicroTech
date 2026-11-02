@@ -52,12 +52,20 @@ esp_err_t sim_bsp_init(void)
     s_display_port.panel_io = (void *)&s_panel_io_token;
     s_display_port.touch = &s_touch;
     s_display_port.touch_io = NULL;
+#if SIM_BSP_H_RES == 320
+    s_display_port.transport.kind = BSP_DISPLAY_TRANSPORT_SPI;
+    s_display_port.transport.clock_hz = 80000000U;
+    s_display_port.transport.max_transfer_lines = 20U;
+    s_display_port.transport.dma_max_full_lines = 20U;
+    s_display_port.transport.data_lines = 1U;
+#else
     s_display_port.transport.kind = BSP_DISPLAY_TRANSPORT_QSPI;
     s_display_port.transport.clock_hz = 40000000U;
     s_display_port.transport.max_transfer_lines = SIM_BSP_V_RES;
     s_display_port.transport.dma_max_full_lines = SIM_BSP_V_RES;
-    s_display_port.transport.transaction_queue_depth = 2U;
     s_display_port.transport.data_lines = 4U;
+#endif
+    s_display_port.transport.transaction_queue_depth = 2U;
     s_display_port.transport.bits_per_pixel = 16U;
     s_display_port.transport.psram_dma_direct = false;
     s_display_port.te.enabled = false;

@@ -226,9 +226,10 @@ Do not use `DOT` here: a truncated unit (`1...`) reads as a different value.
 
 ## One-Screen Fit vs Scroll
 
-Decide scrolling per page from a measured vertical budget, not habit. On the
-368 x 448 panel, derive the usable content viewport from the current page
-helper, header, safe area, and padding rather than copying an old pixel budget.
+Decide scrolling per page from a measured vertical budget, not habit. On either
+supported panel (368 x 448 S3 or 320 x 480 P4), derive the usable content
+viewport from the current page helper, header, safe area, and padding rather
+than copying an old pixel budget.
 
 ```text
 scroll_overflow = last_child_bottom + bottom_padding - viewport_bottom
@@ -286,10 +287,10 @@ overflow as a deliberate scroll.
 
 ## Reflow by Size Class
 
-MicroTech drives one fixed 368 x 448 panel, so most pages need no reflow. When a
-layout must serve more than one width (a second panel, a split view, or a
-future density), change the structure in named steps instead of scaling
-coordinates:
+MicroTech ships two fixed portrait panels (368 x 448 and 320 x 480), so most
+pages need no continuous reflow. When a layout must serve more than one width
+(a second panel, a split view, or a future density), change the structure in
+named steps instead of scaling coordinates:
 
 ```c
 lv_obj_set_flex_flow(cards, LV_FLEX_FLOW_ROW);
@@ -366,12 +367,12 @@ track so it tracks the plot rather than the viewport.
 
 ## Density and Units
 
-This board is a single 368 x 448 panel at fixed density, so raw pixels are the
-correct unit and `LV_DPX()` or `LV_HOR_RES`-based tiering are not needed. Do
-not copy the demos' density code in blindly. Introduce `LV_DPX()` (and a small
-size-class helper) only when a second density or panel width actually exists,
-and then use it for gaps, radii, and control sizes — never to proportionally
-scale a whole design. Content-driven sizing (`LV_SIZE_CONTENT`,
+Both supported panels use a single fixed density per target, so raw pixels are
+the correct unit and `LV_DPX()` or `LV_HOR_RES`-based tiering are not needed.
+Do not copy the demos' density code in blindly. Introduce `LV_DPX()` (and a
+small size-class helper) only when a target profile actually supplies a second
+density, and then use it for gaps, radii, and control sizes — never to
+proportionally scale a whole design. Content-driven sizing (`LV_SIZE_CONTENT`,
 `lv_obj_set_flex_grow()`, `LV_GRID_FR()`) carries the rest without a density
 factor.
 

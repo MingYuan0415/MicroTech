@@ -3,9 +3,12 @@
 # MicroTech
 
 MicroTech is an ESP-IDF firmware project for the Waveshare ESP32-S3 Touch AMOLED
-1.8. It integrates display and touch, RTC, and power management, and provides
+1.8 and, as a second board variant, the Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5.
+It integrates display and touch, RTC, and power management, and provides
 LVGL-based built-in applications, Wi-Fi services, a BLE extension interface,
-persistent storage, and standby/wake flows.
+persistent storage, and standby/wake flows. The ESP32-P4 backend provides
+display, touch, key input, AXP2101 power telemetry, ES8311 audio and SDMMC
+storage; its C6-hosted radio path is tracked separately.
 
 ## Repository layout
 
@@ -25,7 +28,8 @@ either directly.
 
 ## Requirements
 
-- ESP-IDF 6.1.x, target ESP32-S3 (16 MB flash, Octal PSRAM)
+- ESP-IDF 6.1.x; target ESP32-S3 (16 MB flash, Octal PSRAM) or ESP32-P4
+  (16 MB flash, 32 MB HEX PSRAM)
 - CMake 3.22+, Ninja, and a host compiler supporting C11/Pthreads (needed by the
   host tests and `sim/`)
 - The host simulator additionally needs `libsdl2-dev` and
@@ -41,15 +45,16 @@ git submodule update --init --recursive
 ## Build and flash
 
 ```sh
-idf.py set-target esp32s3
+idf.py set-target esp32s3   # or esp32p4 for the P4 board
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
-Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`);
-never edit `sdkconfig` by hand. Run `idf.py size` after changing cache, DMA
-reservation, or resources, and check display, touch, standby, and wake behavior
-on hardware.
+Configuration changes land in `sdkconfig.defaults` and its target-specific
+companions `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`
+(`idf.py save-defconfig`); never edit `sdkconfig` by hand. Run `idf.py size`
+after changing cache, DMA reservation, or resources, and check display, touch,
+standby, and wake behavior on hardware.
 
 ## Host tests
 

@@ -11,7 +11,8 @@
     "panel_240x320_touch_30hz",
     "panel_480x480_touch_60hz",
     "panel_128x64_mono_keypad",
-    "generic_constrained"
+    "generic_constrained",
+    "panel_320x480_touch_30hz"
   ],
   "archetypes": [
     "settings_list",
@@ -233,6 +234,52 @@
       "archetype": "form_dialog",
       "expect": "ok",
       "expect_codes": []
+    },
+    {
+      "id": "dark-320-settings",
+      "style": "dark_sparse",
+      "target": "panel_320x480_touch_30hz",
+      "archetype": "settings_list",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "neutral-320-form",
+      "style": "neutral",
+      "target": "panel_320x480_touch_30hz",
+      "archetype": "form_dialog",
+      "expect": "ok",
+      "expect_codes": []
+    },
+    {
+      "id": "paper-320-form",
+      "style": "paper_light",
+      "target": "panel_320x480_touch_30hz",
+      "archetype": "form_dialog",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "mono-320-dashboard",
+      "style": "mono_industrial",
+      "target": "panel_320x480_touch_30hz",
+      "archetype": "status_dashboard",
+      "expect": "warning",
+      "expect_codes": [
+        "TYPOGRAPHY_UNSUPPORTED"
+      ]
+    },
+    {
+      "id": "soft-320-settings",
+      "style": "soft_playful",
+      "target": "panel_320x480_touch_30hz",
+      "archetype": "settings_list",
+      "expect": "warning",
+      "expect_codes": [
+        "EFFECT_DOWNGRADED"
+      ]
     }
   ]
 }

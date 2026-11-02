@@ -29,6 +29,7 @@ set(MIDDLEWARE "${PROJECT_ROOT}/layers/middleware/components")
 add_executable(test_cross_layer
     test_cross_layer.c
     host/apps_integration_lvgl.c
+    host/app_manager_device_info_stub.c
     host/host_freertos.c
     host/host_services.c
     host/esp_timer_fake.c

@@ -10,6 +10,24 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Panel geometry is a compile-time choice: the framebuffer, SDL window, PNG
+# encoder and agent info are all sized at build time. The default keeps the
+# ESP32-S3 368x448 reference; the ESP32-P4 board uses -DSIM_PANEL=320x480.
+set(SIM_PANEL "368x448" CACHE STRING
+    "Simulated panel geometry as WIDTHxHEIGHT (e.g. 368x448 or 320x480)")
+string(REPLACE "x" ";" _sim_panel_parts "${SIM_PANEL}")
+list(LENGTH _sim_panel_parts _sim_panel_count)
+if(NOT _sim_panel_count EQUAL 2)
+    message(FATAL_ERROR "SIM_PANEL must be WIDTHxHEIGHT, got '${SIM_PANEL}'")
+endif()
+list(GET _sim_panel_parts 0 SIM_BSP_H_RES)
+list(GET _sim_panel_parts 1 SIM_BSP_V_RES)
+if(NOT SIM_BSP_H_RES MATCHES "^[0-9]+$" OR
+        NOT SIM_BSP_V_RES MATCHES "^[0-9]+$")
+    message(FATAL_ERROR
+        "SIM_PANEL width and height must be positive integers, got '${SIM_PANEL}'")
+endif()
+
 get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 if(NOT EXISTS "${MT_ROOT}/managed_components/lvgl__lvgl/lvgl.h")
@@ -320,6 +338,8 @@ target_include_directories(microtech_sim PRIVATE
 # is deliberately NOT defined (mailbox must drain on the LVGL worker timer).
 target_compile_definitions(microtech_sim PRIVATE
     APP_RESOURCES_ENABLED=1
+    SIM_BSP_H_RES=${SIM_BSP_H_RES}U
+    SIM_BSP_V_RES=${SIM_BSP_V_RES}U
     "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\""
     LV_KCONFIG_IGNORE)
 if(SIM_MUSIC_BACKEND STREQUAL "real")

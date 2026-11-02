@@ -50,6 +50,7 @@ typedef struct app_runtime_sleep_context
 static atomic_bool s_standby_admitted = false;
 static atomic_uint s_standby_request_users = 0U;
 static atomic_bool s_benchmark_inhibited = false;
+static bool s_system_pm_available;
 static app_runtime_sleep_context_t s_sleep_context;
 static const bsp_power_ops_t *s_bsp_power;
 static const bsp_input_ops_t *s_bsp_input;
@@ -58,6 +59,10 @@ static void *s_app_input_context;
 
 static bool _app_runtime_pm_is_standby_allowed(void)
 {
+    if (!s_system_pm_available)
+    {
+        return false;
+    }
     if (atomic_load_explicit(&s_benchmark_inhibited, memory_order_acquire))
     {
         return false;
@@ -140,6 +145,10 @@ static bool _app_runtime_pm_standby_request_begin(void)
 
 static esp_err_t _app_runtime_pm_request_standby(void)
 {
+    if (!s_system_pm_available)
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     esp_err_t result = ESP_ERR_INVALID_STATE;
     if (_app_runtime_pm_is_standby_allowed() &&
             _app_runtime_pm_standby_request_begin())
@@ -153,6 +162,10 @@ static esp_err_t _app_runtime_pm_request_standby(void)
 
 static esp_err_t _app_runtime_pm_cancel_standby(void)
 {
+    if (!s_system_pm_available)
+    {
+        return ESP_OK;
+    }
     return system_pm_cancel_standby();
 }
 
@@ -556,6 +569,7 @@ void app_runtime_pm_reset(void)
 {
     atomic_store_explicit(&s_benchmark_inhibited, false,
                           memory_order_release);
+    s_system_pm_available = false;
     memset(&s_sleep_context, 0, sizeof(s_sleep_context));
     s_bsp_power = NULL;
     s_bsp_input = NULL;
@@ -582,12 +596,22 @@ esp_err_t app_runtime_pm_set_benchmark_inhibited(bool inhibited)
 {
     atomic_store_explicit(&s_benchmark_inhibited, inhibited,
                           memory_order_release);
+    if (!s_system_pm_available)
+    {
+        return ESP_OK;
+    }
     return inhibited ? system_pm_cancel_standby() : ESP_OK;
 }
 
-esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
+esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config,
+        bool system_pm_supported)
 {
     esp_err_t result = ESP_ERR_INVALID_STATE;
+    s_system_pm_available = false;
+    if (config == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
     s_bsp_input = bsp_hal_get_input();
     if (s_bsp_input == NULL)
     {
@@ -623,7 +647,11 @@ esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
     }
     if (config->wake_source_count == 0)
     {
-        result = ESP_ERR_INVALID_STATE;
+        /* Some boards have no RTC-capable key GPIO and deliberately use the
+         * app-manager screen-off path. Other boards must fail closed: an empty
+         * wake-source set means the board descriptor or wiring regressed. */
+        result = system_pm_supported ? ESP_ERR_INVALID_STATE :
+                 ESP_ERR_NOT_SUPPORTED;
         return result;
     }
 
@@ -636,6 +664,7 @@ esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
     config->commit_guard = _app_runtime_pm_commit_guard;
     config->commit_callback = _app_runtime_pm_commit_callback;
     config->commit_context = NULL;
+    s_system_pm_available = true;
     return result;
 }
 
@@ -726,6 +755,7 @@ void app_runtime_pm_set_file_participant(bool enabled)
 
 void app_runtime_pm_detach_bsp(void)
 {
+    s_system_pm_available = false;
     s_bsp_input = NULL;
     s_sleep_context.input = NULL;
     s_app_input_callback = NULL;

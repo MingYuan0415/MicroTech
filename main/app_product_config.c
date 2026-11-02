@@ -105,6 +105,26 @@ static const app_product_config_t s_product_config =
         .task_priority = APP_PRODUCT_CHORE_TASK_PRIORITY,
         .warning_duration_ms = 500U,
     },
+#if CONFIG_IDF_TARGET_ESP32P4
+    .device_info = {
+        .panel = "320 x 480 IPS",
+        .platform = "ESP32-P4",
+    },
+    /* The ESP32-P4 board's C6 hosted link is not usable until its CP firmware
+     * is updated; keep the UI and local services online without the radio.
+     * The ESP32-S3 board keeps its native Wi-Fi/BLE controllers. */
+    .radio_enabled = false,
+    .radio_optional = true,
+    .system_pm_supported = false,
+#else
+    .device_info = {
+        .panel = "368 x 448 AMOLED",
+        .platform = "ESP32-S3",
+    },
+    .radio_enabled = true,
+    .radio_optional = false,
+    .system_pm_supported = true,
+#endif
     .connectivity = {
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,
         .wifi_task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,

@@ -1,0 +1,25 @@
+# ESP32-C6 coprocessor (ESP-Hosted CP) for the ESP32-P4 board.
+#
+# The host is the P4 with esp_hosted 3.0.10 over SDIO; this CP image must use
+# the same 3.0.10 wire version. Wi-Fi is always enabled; the BT controller is
+# handed to the P4 host (the P4 runs NimBLE and the Device Link).
+CONFIG_ESP_HOSTED=y
+CONFIG_ESP_HOSTED_CP=y
+CONFIG_ESP_HOSTED_CP_FOR_MCU=y
+CONFIG_ESP_HOSTED_CP_RPC_V2=y
+
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+
+CONFIG_ESP_HOSTED_CP_FEAT_WIFI=y
+CONFIG_ESP_HOSTED_CP_BT_ENABLED=y
+CONFIG_ESP_HOSTED_CP_FEAT_BT=y
+CONFIG_ESP_HOSTED_CP_AUTO_FEAT_INIT=y
+
+CONFIG_ESP_WIFI_NVS_ENABLED=y
+CONFIG_FREERTOS_HZ=1000
+
+# Dual OTA for a future hosted CP OTA; 4 MB covers the C6H8 while the factory
+# 8 MB image is backed up over UART before any write.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_eh_cp_ota_4m.csv"

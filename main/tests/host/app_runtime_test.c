@@ -771,9 +771,11 @@ esp_err_t weather_service_set_network_ready(bool ready,
     return ESP_OK;
 }
 
-esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config)
+esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config,
+        bool system_pm_supported)
 {
     assert(config != NULL);
+    (void)system_pm_supported;
     memset(config, 0, sizeof(*config));
     return _test_result(TEST_EVENT_PM_BUILD_CONFIG);
 }
@@ -1433,6 +1435,7 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_FACTORY_RESET_RECOVERY_PENDING,
         TEST_EVENT_FS_INIT,
         TEST_EVENT_EVENT_BUS_INIT,
+        TEST_EVENT_BLE_INIT,
         TEST_EVENT_BSP_INIT,
         TEST_EVENT_TIME_REGISTER_RTC,
         TEST_EVENT_TIME_INIT,
@@ -1449,7 +1452,6 @@ static void _test_fatal_start_failures(void)
         TEST_EVENT_SD_REGISTER,
         TEST_EVENT_CONNECTIVITY_SUBSCRIBE,
         TEST_EVENT_CONNECTIVITY_GET_STATUS,
-        TEST_EVENT_BLE_INIT,
         TEST_EVENT_APP_NAVIGATE,
         TEST_EVENT_DISPLAY_COMMIT,
         TEST_EVENT_SCREEN_COMMIT,

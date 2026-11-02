@@ -1,4 +1,4 @@
-/** @file Simulated board: 368x448 RGB565 framebuffer with an LCD panel
+/** @file Simulated board: compile-time RGB565 framebuffer with an LCD panel
  *  whose draw_bitmap is the single pixel write path (blit into the FB),
  *  plus display-port/touch/input/screen contracts from layers/bsp's
  *  bsp_hal.h (implemented without the real BSP sources).
@@ -14,8 +14,12 @@
 #include "esp_err.h"
 #include "esp_lcd_panel_ops.h"
 
-#define SIM_BSP_H_RES 368U
-#define SIM_BSP_V_RES 448U
+#ifndef SIM_BSP_H_RES
+    #define SIM_BSP_H_RES 368U
+#endif
+#ifndef SIM_BSP_V_RES
+    #define SIM_BSP_V_RES 448U
+#endif
 
 /** @brief Logical keys mirrored from the board contract. */
 typedef enum

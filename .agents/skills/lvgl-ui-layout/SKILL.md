@@ -61,12 +61,15 @@ fixing visible symptoms with additional coordinates.
    let fractional grid rows (`LV_GRID_FR`) with
    `LV_GRID_ALIGN_SPACE_BETWEEN` absorb the slack instead of guessed gaps.
 
-## Adapt Within a Fixed Panel
+## Adapt Across the Supported Panels
 
-MicroTech drives one 368 x 448 panel at a single density, so raw pixels plus
-`lv_pct()`/`LV_GRID_FR()` are the correct units; do not port the demos'
-`LV_DPX()`, `LV_HOR_RES`, or size-class tiering without a second density that
-needs them. When a layout must still survive a changed size:
+MicroTech drives two portrait panels: the ESP32-S3 368 x 448 AMOLED and the
+ESP32-P4 320 x 480 IPS. Each runs at a single density, so raw pixels plus
+`lv_pct()`/`LV_GRID_FR()` remain the base units; do not port the demos'
+`LV_DPX()`, `LV_HOR_RES`, or size-class tiering unless the target profile
+actually provides a different density. Derive the available content box from
+the current page and target profile, and keep geometry adaptive across both
+panels:
 
 - Let content-driven sizing carry the design (`LV_SIZE_CONTENT`,
   `lv_obj_set_flex_grow()`, fractional grid tracks), and cap a content-sized

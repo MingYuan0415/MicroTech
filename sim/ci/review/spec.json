@@ -1,8 +1,4 @@
 {
-  "viewport": {
-    "w": 368,
-    "h": 448
-  },
   "pages": [
     {
       "app": "settings",
@@ -753,8 +749,8 @@
             "固件"
           ],
           "single_line": [
-            "368 x 448",
-            "ESP32-S3"
+            "显示",
+            "平台"
           ],
           "allow_disabled": []
         }

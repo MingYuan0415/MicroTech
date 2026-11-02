@@ -1,6 +1,7 @@
 #ifndef __APP_PRODUCT_CONFIG_H__
 #define __APP_PRODUCT_CONFIG_H__
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "app_manager_types.h"
@@ -30,6 +31,13 @@ typedef struct app_product_config
     weather_service_config_t weather;  /**< Weather acquisition and cache policy. */
     music_service_config_t music;      /**< QQ Music account and playback policy. */
     chore_service_config_t chore;      /**< Background chore worker policy. */
+    app_manager_device_info_t device_info; /**< Settings hardware labels. */
+    /* A board whose radio transport is not usable (the ESP32-P4 board before
+     * its C6 CP firmware is updated) keeps the UI and local services running
+     * while Wi-Fi/BLE stay unavailable. */
+    bool radio_enabled;                /**< Whether radio services may start. */
+    bool radio_optional;               /**< Whether radio failure may degrade to local UI. */
+    bool system_pm_supported;          /**< Whether CPU light sleep is required. */
     connectivity_manager_config_t connectivity; /**< Wi-Fi policy workers. */
     device_link_service_config_t device_link; /**< Device Link BLE policy. */
     uint32_t system_pm_task_priority;  /**< System standby worker priority. */

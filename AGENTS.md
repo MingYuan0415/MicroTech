@@ -29,11 +29,19 @@ for humans and CI.
 
 ```sh
 git submodule update --init --recursive
-idf.py set-target esp32s3 && idf.py build
+idf.py set-target esp32s3 && idf.py build   # ESP32-S3 board
+idf.py set-target esp32p4  && idf.py build   # ESP32-P4 board
 idf.py size   # only when the change touches cache, DMA reservation, or resources
 ```
 
-Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`); never edit `sdkconfig` by hand. `REQUIRES`/`PRIV_REQUIRES` must not depend on `CONFIG_xxx`; after a change to source-file discovery run `idf.py reconfigure` instead of editing the generated Ninja/CMake state.
+One target is active at a time; `set-target` replaces the local `sdkconfig`.
+Target-specific configuration lands in `sdkconfig.defaults.esp32s3` /
+`sdkconfig.defaults.esp32p4`, shared values in `sdkconfig.defaults`
+(`idf.py save-defconfig`); never edit `sdkconfig` by hand. The local `sdkconfig`
+may hold private deployment values: back it up before switching targets.
+`REQUIRES`/`PRIV_REQUIRES` must not depend on `CONFIG_xxx`; after a change to
+source-file discovery run `idf.py reconfigure` instead of editing the generated
+Ninja/CMake state.
 
 ## Host Tests and Verification Tiers
 
