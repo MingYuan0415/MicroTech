@@ -3536,7 +3536,7 @@
             "QQ 音乐",
             "暂无播放",
             "从侧边栏选择歌单开始播放",
-            "暂无歌词"
+            "去歌单选择音乐"
           ],
           "single_line": [
             "QQ 音乐",
@@ -3634,6 +3634,31 @@
             "上一首",
             "播放",
             "下一首"
+          ],
+          "allow_disabled_types": [
+            "lv_button"
+          ]
+        },
+        {
+          "name": "service_unavailable",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "player_unavailable"
+            }
+          ],
+          "expect_visible": [
+            "音乐服务不可用",
+            "点击下方按钮重新检查",
+            "重新检查音乐服务",
+            "服务恢复后可继续播放"
+          ],
+          "single_line": [
+            "音乐服务不可用",
+            "点击下方按钮重新检查",
+            "重新检查音乐服务",
+            "服务恢复后可继续播放"
           ],
           "allow_disabled_types": [
             "lv_button"
@@ -3793,6 +3818,22 @@
         },
         {
           "name": "partial",
+          "expect_visible": [
+            "歌单",
+            "共 12 首 · 第 1 / 2 页",
+            "下一页"
+          ],
+          "expect_image": [
+            "dynamic"
+          ],
+          "single_line": [
+            "歌单"
+          ],
+          "expect_absent": [
+            "其余歌曲暂未由服务提供",
+            "显示更多"
+          ],
+          "fresh": true,
           "pre_seed": [
             {
               "cmd": "music",
@@ -3800,20 +3841,31 @@
               "name": "catalog_partial"
             }
           ],
+          "seed": [
+            {
+              "cmd": "step",
+              "times": 60
+            }
+          ]
+        },
+        {
+          "name": "long",
           "expect_visible": [
             "歌单",
-            "共 12 首",
-            "其余歌曲暂未由服务提供"
+            "共 137 首 · 第 1 / 14 页",
+            "下一页"
           ],
           "expect_image": [
             "dynamic"
           ],
           "single_line": [
             "歌单"
-          ]
-        },
-        {
-          "name": "long",
+          ],
+          "expect_absent": [
+            "显示更多",
+            "当前版本最多显示前 100 首"
+          ],
+          "fresh": true,
           "pre_seed": [
             {
               "cmd": "music",
@@ -3821,16 +3873,41 @@
               "name": "catalog_long"
             }
           ],
+          "seed": [
+            {
+              "cmd": "step",
+              "times": 60
+            }
+          ]
+        },
+        {
+          "name": "failed_retry",
           "expect_visible": [
             "歌单",
-            "共 137 首",
-            "加载更多"
-          ],
-          "expect_image": [
-            "dynamic"
+            "歌单加载失败",
+            "重新加载"
           ],
           "single_line": [
-            "歌单"
+            "歌单",
+            "歌单加载失败",
+            "重新加载"
+          ],
+          "allow_disabled_types": [
+            "lv_button"
+          ],
+          "fresh": true,
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "playlist_failed"
+            }
+          ],
+          "seed": [
+            {
+              "cmd": "step",
+              "times": 60
+            }
           ]
         }
       ]
@@ -3873,6 +3950,26 @@
           ],
           "single_line": [
             "播放列表"
+          ]
+        },
+        {
+          "name": "load_error",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "queue_failed"
+            }
+          ],
+          "expect_visible": [
+            "播放列表",
+            "队列加载失败",
+            "重新加载队列"
+          ],
+          "single_line": [
+            "播放列表",
+            "队列加载失败",
+            "重新加载队列"
           ]
         }
       ]
@@ -3937,6 +4034,48 @@
           ],
           "single_line": [
             "歌词"
+          ],
+          "allow_disabled_types": [
+            "lv_button"
+          ]
+        },
+        {
+          "name": "long_lyric",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "catalog_long_lyric"
+            }
+          ],
+          "expect_visible": [
+            "歌词",
+            "模拟曲目 01",
+            "当坊间最善舞的女儿死了这一句故意写得很长"
+          ],
+          "single_line": [
+            "歌词",
+            "模拟曲目 01"
+          ]
+        },
+        {
+          "name": "failed_retry",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "lyric_failed"
+            }
+          ],
+          "expect_visible": [
+            "歌词",
+            "歌词加载失败",
+            "重新加载歌词"
+          ],
+          "single_line": [
+            "歌词",
+            "歌词加载失败",
+            "重新加载歌词"
           ],
           "allow_disabled_types": [
             "lv_button"

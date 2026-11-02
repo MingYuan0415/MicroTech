@@ -488,6 +488,23 @@ esp_err_t music_service_set_time_ready(bool ready)
     return ESP_OK;
 }
 
+esp_err_t music_service_retry(void)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
+    if (s_music.status.state == MUSIC_SERVICE_STATE_ERROR)
+    {
+        s_music.status.state = s_music.status.logged_in ?
+                               MUSIC_SERVICE_STATE_READY :
+                               MUSIC_SERVICE_STATE_LOGGED_OUT;
+    }
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_STATUS, 0U,
+             s_music.status.failure);
+    return ESP_OK;
+}
+
 esp_err_t music_service_login_begin(music_login_type_t type)
 {
     if (type != MUSIC_LOGIN_TYPE_QQ && type != MUSIC_LOGIN_TYPE_WECHAT)
@@ -834,6 +851,16 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U,
              MUSIC_SERVICE_FAILURE_NONE);
     return ESP_OK;
+}
+
+esp_err_t music_service_play_playlist_snapshot(
+    const music_playlist_snapshot_t *playlist, uint16_t start_index)
+{
+    if (playlist == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return music_service_play_playlist(&playlist->playlist.ref, start_index);
 }
 
 esp_err_t music_service_queue_play(uint16_t index)

@@ -39,6 +39,10 @@ typedef struct sim_music_state
     uint16_t queue_index;
     bool queue_valid;
     bool play_valid;
+    bool player_unavailable;
+    bool playlist_failed;
+    bool queue_failed;
+    bool lyric_failed;
     char lyric_songmid[MUSIC_SERVICE_SONGMID_BYTES];
 } sim_music_state_t;
 
@@ -58,6 +62,10 @@ typedef struct sim_music_fixture
     uint16_t queue_index;
     bool queue_valid;
     bool play_valid;
+    bool player_unavailable;
+    bool playlist_failed;
+    bool queue_failed;
+    bool lyric_failed;
     char lyric_songmid[MUSIC_SERVICE_SONGMID_BYTES];
 } sim_music_fixture_t;
 
@@ -620,7 +628,7 @@ static esp_err_t _prepare_fixture(const char *name,
     }
     if (strcmp(name, "login_expired") == 0)
     {
-        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_AUTH_REQUIRED,
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_QR_EXPIRED,
                            MUSIC_SERVICE_FAILURE_AUTH);
         fixture->login_qr = _create_qr(MUSIC_LOGIN_TYPE_QQ);
         if (fixture->login_qr == NULL)
@@ -634,6 +642,45 @@ static esp_err_t _prepare_fixture(const char *name,
     {
         _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_ERROR,
                            MUSIC_SERVICE_FAILURE_API);
+        return ESP_OK;
+    }
+    if (strcmp(name, "player_unavailable") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_ERROR,
+                           MUSIC_SERVICE_FAILURE_API);
+        fixture->player_unavailable = true;
+        return ESP_OK;
+    }
+    if (strcmp(name, "playlist_failed") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_READY,
+                           MUSIC_SERVICE_FAILURE_NONE);
+        fixture->home = _create_home(SIM_MUSIC_CATALOG_COUNT);
+        fixture->playlist_failed = true;
+        return ESP_OK;
+    }
+    if (strcmp(name, "queue_failed") == 0)
+    {
+        _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_READY,
+                           MUSIC_SERVICE_FAILURE_NONE);
+        fixture->queue_failed = true;
+        return ESP_OK;
+    }
+    if (strcmp(name, "lyric_failed") == 0)
+    {
+        const esp_err_t result = _prepare_catalog(
+                                     name, MUSIC_SERVICE_FAILURE_NONE,
+                                     MUSIC_PLAYBACK_PLAYING,
+                                     SIM_MUSIC_CATALOG_COUNT,
+                                     SIM_MUSIC_CATALOG_COUNT, 42000U,
+                                     fixture);
+        if (result != ESP_OK)
+        {
+            return result;
+        }
+        (void)snprintf(fixture->player.songmid,
+                       sizeof(fixture->player.songmid), "%s", "failed-track");
+        fixture->lyric_failed = true;
         return ESP_OK;
     }
     return ESP_ERR_INVALID_ARG;
@@ -651,7 +698,11 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     _release_state_locked(&s_music, &old_home, &old_playlist, &old_lyric,
                           &old_qr, &old_image);
     s_music.fixture = fixture->name;
-    s_music.generation = SIM_MUSIC_FIXTURE_GENERATION;
+    s_music.generation = s_music.generation + 1U;
+    if (s_music.generation == 0U)
+    {
+        s_music.generation = 1U;
+    }
     memset(&s_music.status, 0, sizeof(s_music.status));
     s_music.status.generation = s_music.generation;
     s_music.status.state = fixture->state;
@@ -690,6 +741,24 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     }
 
     s_music.player = fixture->player;
+    s_music.player.generation = s_music.generation;
+    s_music.status.generation = s_music.generation;
+    if (fixture->home != NULL)
+    {
+        fixture->home->generation = s_music.generation;
+    }
+    if (fixture->playlist != NULL)
+    {
+        fixture->playlist->generation = s_music.generation;
+    }
+    if (fixture->lyric != NULL)
+    {
+        fixture->lyric->generation = s_music.generation;
+    }
+    s_music.player_unavailable = fixture->player_unavailable;
+    s_music.playlist_failed = fixture->playlist_failed;
+    s_music.queue_failed = fixture->queue_failed;
+    s_music.lyric_failed = fixture->lyric_failed;
     s_music.home = fixture->home;
     s_music.playlist = fixture->playlist;
     s_music.lyric = fixture->lyric;
@@ -905,6 +974,22 @@ esp_err_t music_service_set_time_ready(bool ready)
     return ESP_OK;
 }
 
+esp_err_t music_service_retry(void)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
+    if (s_music.status.state == MUSIC_SERVICE_STATE_ERROR)
+    {
+        s_music.status.state = s_music.status.logged_in ?
+                               MUSIC_SERVICE_STATE_READY :
+                               MUSIC_SERVICE_STATE_LOGGED_OUT;
+    }
+    _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_STATUS, 0U);
+    return ESP_OK;
+}
+
 esp_err_t music_service_login_begin(music_login_type_t type)
 {
     if (type != MUSIC_LOGIN_TYPE_WECHAT && type != MUSIC_LOGIN_TYPE_QQ)
@@ -972,6 +1057,7 @@ esp_err_t music_service_login_cancel(void)
     s_music.login_qr = NULL;
     if (s_music.status.state == MUSIC_SERVICE_STATE_QR_READY ||
             s_music.status.state == MUSIC_SERVICE_STATE_QR_SCANNED ||
+            s_music.status.state == MUSIC_SERVICE_STATE_QR_EXPIRED ||
             s_music.status.state == MUSIC_SERVICE_STATE_AUTHENTICATING ||
             s_music.status.state == MUSIC_SERVICE_STATE_AUTH_REQUIRED)
     {
@@ -1079,17 +1165,65 @@ esp_err_t music_service_playlist_acquire(const music_playlist_ref_t *ref,
     }
     *snapshot = NULL;
     (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.playlist_failed)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     music_playlist_snapshot_t *playlist = s_music.playlist;
     const bool direct = ref == NULL || ref->id == 0U;
-    const bool matches = direct ?
-                         playlist != NULL && offset == playlist->offset :
+    const bool matches = direct ? playlist != NULL :
                          music_service_playlist_cache_matches(playlist, ref,
                              offset, count);
     if (matches)
     {
-        playlist = music_snapshot_retain(playlist);
+        if (offset >= playlist->total)
+        {
+            (void)pthread_mutex_unlock(&s_music.lock);
+            return ESP_ERR_NOT_FOUND;
+        }
+        uint32_t remaining = playlist->total - offset;
+        uint16_t slice_count = count;
+        if (remaining < slice_count)
+        {
+            slice_count = (uint16_t)remaining;
+        }
+        if (offset == 0U && slice_count == playlist->count)
+        {
+            music_playlist_snapshot_t *retained =
+                music_snapshot_retain(playlist);
+            (void)pthread_mutex_unlock(&s_music.lock);
+            *snapshot = retained;
+            return retained != NULL ? ESP_OK : ESP_ERR_NO_MEM;
+        }
+        const size_t bytes = offsetof(music_playlist_snapshot_t, songs) +
+                             (size_t)slice_count * sizeof(music_song_t);
+        music_playlist_snapshot_t *slice =
+            music_snapshot_alloc(bytes, NULL);
+        if (slice == NULL)
+        {
+            (void)pthread_mutex_unlock(&s_music.lock);
+            return ESP_ERR_NO_MEM;
+        }
+        slice->generation = playlist->generation;
+        slice->playlist = playlist->playlist;
+        slice->total = playlist->total;
+        slice->offset = offset;
+        slice->count = slice_count;
+        for (uint16_t index = 0U; index < slice_count; ++index)
+        {
+            const uint32_t source_index = (uint32_t)offset + index;
+            if (source_index < playlist->count)
+            {
+                slice->songs[index] = playlist->songs[source_index];
+            }
+            else
+            {
+                _fill_song(&slice->songs[index], (uint16_t)source_index);
+            }
+        }
         (void)pthread_mutex_unlock(&s_music.lock);
-        *snapshot = playlist;
+        *snapshot = slice;
         return ESP_OK;
     }
     (void)pthread_mutex_unlock(&s_music.lock);
@@ -1110,6 +1244,11 @@ esp_err_t music_service_lyric_acquire(const char *songmid,
     }
     *snapshot = NULL;
     (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.lyric_failed)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     music_lyric_snapshot_t *lyric = NULL;
     if (s_music.lyric != NULL &&
             strcmp(s_music.lyric_songmid, songmid) == 0)
@@ -1244,6 +1383,11 @@ esp_err_t music_service_queue_acquire(const music_queue_snapshot_t **snapshot)
     }
     *snapshot = NULL;
     (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.queue_failed)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!s_music.queue_valid || s_music.queue_count == 0U)
     {
         (void)pthread_mutex_unlock(&s_music.lock);
@@ -1308,6 +1452,16 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_QUEUE, 0U);
     _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
     return ESP_OK;
+}
+
+esp_err_t music_service_play_playlist_snapshot(
+    const music_playlist_snapshot_t *playlist, uint16_t start_index)
+{
+    if (playlist == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return music_service_play_playlist(&playlist->playlist.ref, start_index);
 }
 
 esp_err_t music_service_queue_play(uint16_t index)
@@ -1541,6 +1695,12 @@ esp_err_t music_service_get_player_status(music_player_status_t *status)
         return ESP_ERR_INVALID_ARG;
     }
     (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.player_unavailable)
+    {
+        memset(status, 0, sizeof(*status));
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     *status = s_music.player;
     (void)pthread_mutex_unlock(&s_music.lock);
     return ESP_OK;

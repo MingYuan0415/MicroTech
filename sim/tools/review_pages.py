@@ -755,6 +755,15 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
             if state.get('hardware_only'):
                 hardware_only.append(key + '/' + state['name'])
                 continue
+            if state.get('fresh') and owns_sim and proc is not None:
+                _stop_sim(proc, runner)
+                proc = _launch_sim(args.build, args.port,
+                                   os.path.join(args.build, 'review_nvs'),
+                                   args.shots, sd_dir or '/tmp/mrsd')
+                runner = Runner('127.0.0.1', args.port, args.shots, None,
+                                args.update)
+                runner.connect()
+                runner.call('sim.sd', {'action': 'fixture'})
             checked += 1
             name = '%s__%s__%s' % (page['app'], page.get('page', 'root'),
                                    state['name'])

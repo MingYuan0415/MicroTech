@@ -1,0 +1,178 @@
+{
+  "name": "music-interaction-flow",
+  "steps": [
+    {
+      "cmd": "music",
+      "action": "fixture",
+      "name": "catalog_playing"
+    },
+    {
+      "cmd": "navigate",
+      "app": "music"
+    },
+    {
+      "cmd": "step",
+      "times": 20
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "touch",
+      "action": "down",
+      "x": 155,
+      "y": 412
+    },
+    {
+      "cmd": "step",
+      "times": 2
+    },
+    {
+      "cmd": "touch",
+      "action": "up",
+      "x": 155,
+      "y": 412
+    },
+    {
+      "cmd": "step",
+      "times": 10
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "媒体音量"
+      }
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "关闭"
+      }
+    },
+    {
+      "cmd": "screenshot",
+      "name": "music_volume_sheet.png"
+    },
+    {
+      "cmd": "touch",
+      "action": "down",
+      "x": 180,
+      "y": 400
+    },
+    {
+      "cmd": "step",
+      "times": 2
+    },
+    {
+      "cmd": "touch",
+      "action": "up",
+      "x": 180,
+      "y": 400
+    },
+    {
+      "cmd": "step",
+      "times": 10
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "navigate",
+      "app": "music",
+      "page": "queue"
+    },
+    {
+      "cmd": "step",
+      "times": 20
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "screenshot",
+      "name": "music_queue_before_remove.png"
+    },
+    {
+      "cmd": "touch",
+      "action": "down",
+      "x": 318,
+      "y": 145
+    },
+    {
+      "cmd": "step",
+      "times": 2
+    },
+    {
+      "cmd": "touch",
+      "action": "up",
+      "x": 318,
+      "y": 145
+    },
+    {
+      "cmd": "step",
+      "times": 10
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "移除后不会恢复，是否继续？"
+      }
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "取消"
+      }
+    },
+    {
+      "cmd": "screenshot",
+      "name": "music_queue_remove_sheet.png"
+    },
+    {
+      "cmd": "tap_text",
+      "text": "取消"
+    },
+    {
+      "cmd": "step",
+      "times": 10
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "模拟曲目 01"
+      }
+    },
+    {
+      "cmd": "tap_text",
+      "text": "模拟曲目 01"
+    },
+    {
+      "cmd": "step",
+      "times": 10
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "正在播放这首歌曲"
+      }
+    }
+  ]
+}
