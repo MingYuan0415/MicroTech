@@ -99,7 +99,7 @@ static const app_product_config_t s_product_config =
     .music = {
         .api_task_priority = APP_PRODUCT_MUSIC_TASK_PRIORITY,
         .audio_task_priority = APP_PRODUCT_MUSIC_AUDIO_PRIORITY,
-        .default_quality = MUSIC_QUALITY_HIGH,
+        .default_quality = MUSIC_QUALITY_STANDARD,
     },
     .chore = {
         .task_priority = APP_PRODUCT_CHORE_TASK_PRIORITY,

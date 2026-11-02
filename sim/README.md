@@ -235,9 +235,10 @@ state; `music login qq`, `music refresh`, `music play_pause`, and the other
 for a phone scan; pass an explicit path to override it.
 The real backend is for a non-CI
 session: `--ci` deliberately makes every unregistered URL offline. The
-`sim/tools/music_flow.py` driver performs the QR wait, opens the first real
-playlist, starts a track, and checks that the player position advances; run it
-as `python3 sim/tools/music_flow.py --port 5002`. For the deterministic fake
+`sim/tools/music_flow.py` driver performs the QR wait, verifies the account
+profile and sidebar identity, opens the first real playlist, starts a track,
+and checks pause/resume, next/previous, queue, and lyrics pages; run it as
+`python3 sim/tools/music_flow.py --port 5002`. For the deterministic fake
 backend, `sim/ci/scenarios/music_login_flow.json` walks logout → start-page
 check → login method → QQ QR → scanned → login success → sidebar without a
 phone. The device

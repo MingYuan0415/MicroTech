@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Drive the simulator real-music backend from QR login to playback.
+"""Drive the simulator real-music backend through login and user flows.
 
-Start a real-backend simulator first (for example `python3 sim/dev.py`), then run:
+The flow checks the account profile, sidebar identity, playlist load, playback,
+pause/resume, next/previous, queue, and lyrics pages. Start a real-backend
+simulator first (for example `python3 sim/dev.py`), then run:
 
     python3 sim/tools/music_flow.py --port 5002
 
@@ -18,8 +20,9 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 from simctl import rpc  # noqa: E402
 
-MUSIC_SERVICE_STATE_READY = 7
+MUSIC_SERVICE_STATE_READY = 8
 MUSIC_PLAYBACK_PLAYING = 2
+MUSIC_PLAYBACK_PAUSED = 3
 MUSIC_SERVICE_STATE_WAITING_NETWORK = 1
 MUSIC_SERVICE_STATE_WAITING_TIME = 2
 
@@ -47,11 +50,21 @@ class SimClient:
     def tree(self):
         return self.call("sim.tree").get("tree", {})
 
+    def _step(self, ms):
+        try:
+            self.call("sim.step", {"ms": ms})
+        except RuntimeError as exc:
+            # A free-running dev session advances on its own; only CI sessions
+            # accept explicit frame steps.
+            if "not in --ci mode" not in str(exc):
+                raise
+
     def touch(self, x, y):
         self.call("sim.touch", {"action": "down", "x": x, "y": y})
-        self.call("sim.step", {"ms": 33})
+        self._step(33)
         self.call("sim.touch", {"action": "up", "x": x, "y": y})
-        self.call("sim.step", {"ms": 330})
+        self._step(330)
+        time.sleep(0.8)
 
 
 def _walk(node):
@@ -113,6 +126,19 @@ def _wait_for_tree_text(client, text, timeout):
     raise RuntimeError("timed out waiting for %r" % text)
 
 
+def _open_sidebar(client):
+    for _ in range(3):
+        client.touch(42, 25)
+        client.wait_idle()
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            tree = client.tree()
+            if _tree_has_text(tree, "个性电台"):
+                return tree
+            time.sleep(0.3)
+    raise RuntimeError("sidebar did not open")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=5002)
@@ -156,12 +182,23 @@ def main():
                 args.login_timeout, "QQ login")
             print("login ready: user=%s" % status.get("user_name"))
 
+        client.call("sim.music", {"action": "refresh"})
+        status = _wait_for_status(
+            client,
+            lambda s: s.get("logged_in") and s.get("user_name") and
+            s.get("user_avatar"),
+            30.0, "account profile")
+        print("profile: user=%s avatar=%s" %
+              (status.get("user_name"), status.get("user_avatar")))
+
         client.call("sim.navigate", {"app": "music"})
         client.wait_idle()
         print("player:", client.screenshot("music_flow_home"))
-        client.touch(42, 25)
-        client.wait_idle()
-        tree = _wait_for_tree_text(client, "个性电台", 20.0)
+        tree = _open_sidebar(client)
+        for expected in (status.get("user_name"), "每日推荐", "喜欢", "自建歌单"):
+            if not _tree_has_text(tree, expected):
+                raise RuntimeError("sidebar missing %r" % expected)
+        print("sidebar:", client.screenshot("music_flow_sidebar"))
         daily = _find_text_node(tree, "每日推荐")
         if daily is None:
             raise RuntimeError("no daily recommendation shortcut")
@@ -183,8 +220,39 @@ def main():
         print("player:", json.dumps(player, ensure_ascii=False))
         print("player screenshot:", client.screenshot("music_flow_player"))
 
+        first_title = player.get("title")
+        client.call("sim.music", {"action": "play_pause"})
+        paused = _wait_for_status(
+            client, lambda s: s.get("player_state") == MUSIC_PLAYBACK_PAUSED,
+            10.0, "pause")
+        print("pause: position=%s" % paused.get("position_ms"))
+        client.call("sim.music", {"action": "play_pause"})
+        _wait_for_status(
+            client, lambda s: s.get("player_state") == MUSIC_PLAYBACK_PLAYING,
+            20.0, "resume")
+
+        client.call("sim.music", {"action": "next"})
+        next_status = _wait_for_status(
+            client,
+            lambda s: s.get("title") and s.get("title") != first_title and
+            s.get("player_state") == MUSIC_PLAYBACK_PLAYING,
+            90.0, "next track")
+        print("next: %s" % next_status.get("title"))
+        client.call("sim.music", {"action": "prev"})
+        _wait_for_status(
+            client,
+            lambda s: s.get("title") == first_title and
+            s.get("player_state") == MUSIC_PLAYBACK_PLAYING,
+            90.0, "previous track")
+
+        client.call("sim.navigate", {"app": "music", "page": "queue"})
+        client.wait_idle()
+        _wait_for_tree_text(client, "播放列表", 20.0)
+        print("queue:", client.screenshot("music_flow_queue"))
+
         client.call("sim.navigate", {"app": "music", "page": "lyrics"})
         client.wait_idle()
+        _wait_for_tree_text(client, "歌词", 20.0)
         print("lyrics:", client.screenshot("music_flow_lyrics"))
         print("PASS")
         return 0
