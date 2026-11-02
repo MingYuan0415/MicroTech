@@ -362,8 +362,13 @@ void host_music_reset(void)
     s_music.status.logged_in = true;
     s_music.status.audio_available = true;
     s_music.status.login_type = MUSIC_LOGIN_TYPE_QQ;
+    (void)snprintf(s_music.status.user_id, sizeof(s_music.status.user_id),
+                   "%s", "123456789");
     (void)snprintf(s_music.status.user_name,
                    sizeof(s_music.status.user_name), "测试用户");
+    (void)snprintf(s_music.status.user_avatar,
+                   sizeof(s_music.status.user_avatar), "%s",
+                   "https://q.qlogo.cn/headimg_dl?dst_uin=123456789&spec=140");
     s_music.player.generation = HOST_MUSIC_GENERATION;
     s_music.player.state = MUSIC_PLAYBACK_IDLE;
     s_music.player.failure = MUSIC_SERVICE_FAILURE_NONE;
@@ -615,7 +620,9 @@ esp_err_t music_service_logout(void)
     s_music.status.qr_available = false;
     s_music.status.state = MUSIC_SERVICE_STATE_LOGGED_OUT;
     s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
+    s_music.status.user_id[0] = '\0';
     s_music.status.user_name[0] = '\0';
+    s_music.status.user_avatar[0] = '\0';
     s_music.status.qr_status[0] = '\0';
     memset(&s_music.player, 0, sizeof(s_music.player));
     s_music.player.state = MUSIC_PLAYBACK_IDLE;

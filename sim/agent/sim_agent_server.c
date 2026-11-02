@@ -1613,8 +1613,11 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                         (double)status.login_type);
                 cJSON_AddStringToObject(result, "qr_status",
                                         status.qr_status);
+                cJSON_AddStringToObject(result, "user_id", status.user_id);
                 cJSON_AddStringToObject(result, "user_name",
                                         status.user_name);
+                cJSON_AddStringToObject(result, "user_avatar",
+                                        status.user_avatar);
                 cJSON_AddNumberToObject(result, "player_state",
                                         (double)player.state);
                 cJSON_AddNumberToObject(result, "player_failure",

@@ -3690,7 +3690,7 @@
           ],
           "expect_visible": [
             "QQ 音乐",
-            "Hi, 模拟用户",
+            "模拟用户",
             "个性电台",
             "每日推荐",
             "喜欢",
@@ -3700,7 +3700,29 @@
           ],
           "single_line": [
             "QQ 音乐",
-            "Hi, 模拟用户"
+            "模拟用户"
+          ]
+        },
+        {
+          "name": "logged_in_long_account",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "catalog_long_account"
+            }
+          ],
+          "expect_visible": [
+            "QQ 音乐",
+            "这是一个很长很长的模拟昵称用于布局检查",
+            "个性电台",
+            "每日推荐",
+            "喜欢",
+            "自建歌单",
+            "退出登录"
+          ],
+          "single_line": [
+            "QQ 音乐"
           ]
         },
         {
@@ -3738,7 +3760,7 @@
           ],
           "expect_visible": [
             "QQ 音乐",
-            "Hi, 模拟用户",
+            "模拟用户",
             "自建歌单",
             "我的现场"
           ],
@@ -3748,7 +3770,7 @@
           ],
           "single_line": [
             "QQ 音乐",
-            "Hi, 模拟用户"
+            "模拟用户"
           ]
         },
         {

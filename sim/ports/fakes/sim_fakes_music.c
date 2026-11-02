@@ -73,6 +73,8 @@ typedef struct sim_music_fixture
     bool queue_failed;
     bool lyric_failed;
     char lyric_songmid[MUSIC_SERVICE_SONGMID_BYTES];
+    char user_id[MUSIC_SERVICE_USER_ID_BYTES];
+    char user_name[MUSIC_SERVICE_CREATOR_BYTES];
 } sim_music_fixture_t;
 
 static sim_music_state_t s_music =
@@ -90,6 +92,7 @@ static sim_music_state_t s_music =
         .logged_in = false,
         .audio_available = true,
         .login_type = MUSIC_LOGIN_TYPE_QQ,
+        .user_id = "",
         .user_name = "",
     },
     .player =
@@ -528,6 +531,21 @@ static esp_err_t _prepare_fixture(const char *name,
                                 SIM_MUSIC_CATALOG_COUNT,
                                 SIM_MUSIC_CATALOG_COUNT, 42000U, fixture);
     }
+    if (strcmp(name, "catalog_long_account") == 0)
+    {
+        const esp_err_t result = _prepare_catalog(
+                                     name, MUSIC_SERVICE_FAILURE_NONE,
+                                     MUSIC_PLAYBACK_PLAYING,
+                                     SIM_MUSIC_CATALOG_COUNT,
+                                     SIM_MUSIC_CATALOG_COUNT, 42000U, fixture);
+        if (result == ESP_OK)
+        {
+            (void)snprintf(fixture->user_name,
+                           sizeof(fixture->user_name), "%s",
+                           "这是一个很长很长的模拟昵称用于布局检查");
+        }
+        return result;
+    }
     if (strcmp(name, "catalog_paused") == 0)
     {
         return _prepare_catalog(name, MUSIC_SERVICE_FAILURE_NONE,
@@ -763,8 +781,17 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     }
     if (status->logged_in)
     {
+        const char *user_id = fixture->user_id[0] != '\0' ?
+                              fixture->user_id : "123456789";
+        const char *user_name = fixture->user_name[0] != '\0' ?
+                                fixture->user_name : "模拟用户";
+        (void)snprintf(status->user_id, sizeof(status->user_id), "%s",
+                       user_id);
         (void)snprintf(status->user_name, sizeof(status->user_name), "%s",
-                       "模拟用户");
+                       user_name);
+        (void)snprintf(status->user_avatar, sizeof(status->user_avatar),
+                       "https://q.qlogo.cn/headimg_dl?dst_uin=%s&spec=140",
+                       user_id);
     }
 
     s_music.player = fixture->player;
@@ -919,8 +946,13 @@ esp_err_t host_music_service_login_confirm(void)
     s_music.status.logged_in = true;
     s_music.status.qr_available = false;
     s_music.status.qr_status[0] = '\0';
+    (void)snprintf(s_music.status.user_id, sizeof(s_music.status.user_id),
+                   "%s", "123456789");
     (void)snprintf(s_music.status.user_name,
                    sizeof(s_music.status.user_name), "模拟用户");
+    (void)snprintf(s_music.status.user_avatar,
+                   sizeof(s_music.status.user_avatar), "%s",
+                   "https://q.qlogo.cn/headimg_dl?dst_uin=123456789&spec=140");
     if (home != NULL)
     {
         s_music.home = home;
@@ -1122,6 +1154,7 @@ esp_err_t music_service_logout(void)
     s_music.status.qr_available = false;
     s_music.status.state = MUSIC_SERVICE_STATE_LOGGED_OUT;
     s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
+    s_music.status.user_id[0] = '\0';
     s_music.status.user_name[0] = '\0';
     s_music.status.user_avatar[0] = '\0';
     s_music.status.qr_status[0] = '\0';

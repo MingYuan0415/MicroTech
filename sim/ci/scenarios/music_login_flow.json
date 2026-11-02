@@ -95,7 +95,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "Hi, 模拟用户"
+    "text": "模拟用户"
    }
   }
  ]
