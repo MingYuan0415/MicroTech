@@ -194,7 +194,8 @@ if(SIM_MUSIC_BACKEND STREQUAL "real")
         "${MIDDLEWARE}/music_service/src/music_api.c"
         "${MIDDLEWARE}/music_service/src/music_auth.c"
         "${MIDDLEWARE}/music_service/src/music_catalog.c"
-        "${MIDDLEWARE}/music_service/src/music_login_protocol.c")
+        "${MIDDLEWARE}/music_service/src/music_login_protocol.c"
+        "${MIDDLEWARE}/music_service/src/music_profile.c")
 endif()
 
 # apps + fakes must land in the executable as sources (or whole-archive):
