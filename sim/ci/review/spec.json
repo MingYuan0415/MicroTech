@@ -4011,6 +4011,26 @@
             "队列加载失败",
             "重新加载队列"
           ]
+        },
+        {
+          "name": "long",
+          "fresh": true,
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "catalog_long"
+            }
+          ],
+          "expect_visible": [
+            "播放列表",
+            "共 137 首 · 第 1 / 137 首",
+            "模拟曲目 01",
+            "模拟曲目 20"
+          ],
+          "single_line": [
+            "播放列表"
+          ]
         }
       ]
     },

@@ -1,0 +1,105 @@
+{
+ "name": "music-playlist-cross-page-flow",
+ "steps": [
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "catalog_long"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "喜欢"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "模拟曲目 10"
+  },
+  {
+   "cmd": "step",
+   "times": 30
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 10"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "10 / 137 · 高品质"
+   }
+  },
+  {
+   "cmd": "music",
+   "action": "next"
+  },
+  {
+   "cmd": "step",
+   "times": 30
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟曲目 11"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "11 / 137 · 高品质"
+   }
+  }
+ ]
+}

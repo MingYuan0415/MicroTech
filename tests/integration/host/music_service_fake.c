@@ -179,6 +179,10 @@ static music_queue_snapshot_t *_create_queue(void)
         return NULL;
     }
     queue->generation = HOST_MUSIC_GENERATION;
+    queue->ref.id = 1001U;
+    queue->ref.kind = MUSIC_PLAYLIST_KIND_RECOMMENDED;
+    queue->total = HOST_MUSIC_SONG_COUNT;
+    queue->offset = 0U;
     queue->count = HOST_MUSIC_SONG_COUNT;
     for (uint16_t index = 0U; index < HOST_MUSIC_SONG_COUNT; ++index)
     {
@@ -726,6 +730,35 @@ esp_err_t music_service_queue_acquire(const music_queue_snapshot_t **snapshot)
     if (leased == NULL)
     {
         return ESP_ERR_NOT_FOUND;
+    }
+    *snapshot = leased;
+    return ESP_OK;
+}
+
+esp_err_t music_service_queue_view_acquire(uint16_t offset, uint16_t count,
+        const music_queue_snapshot_t **snapshot)
+{
+    if (snapshot == NULL || count == 0U || count > MUSIC_SERVICE_MAX_SONGS)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *snapshot = NULL;
+    esp_err_t result = ESP_OK;
+    if (_check_acquire(HOST_MUSIC_RESOURCE_QUEUE, &result) != ESP_OK)
+    {
+        return result;
+    }
+    (void)pthread_mutex_lock(&s_music.lock);
+    const music_queue_snapshot_t *payload = s_music.payloads.queue;
+    const bool matches = payload != NULL && offset == payload->offset;
+    const music_queue_snapshot_t *leased = matches ?
+                                           _acquire_payload(
+                                                   HOST_MUSIC_RESOURCE_QUEUE,
+                                                   payload) : NULL;
+    (void)pthread_mutex_unlock(&s_music.lock);
+    if (leased == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
     }
     *snapshot = leased;
     return ESP_OK;

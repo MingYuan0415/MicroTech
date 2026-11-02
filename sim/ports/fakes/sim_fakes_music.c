@@ -36,6 +36,8 @@ typedef struct sim_music_state
     music_playlist_ref_t play_ref;
     music_song_t queue[MUSIC_SERVICE_MAX_SONGS];
     uint16_t queue_count;
+    uint16_t queue_total;
+    uint16_t queue_offset;
     uint16_t queue_index;
     bool queue_valid;
     bool play_valid;
@@ -60,6 +62,8 @@ typedef struct sim_music_fixture
     music_playlist_ref_t play_ref;
     music_song_t queue[MUSIC_SERVICE_MAX_SONGS];
     uint16_t queue_count;
+    uint16_t queue_total;
+    uint16_t queue_offset;
     uint16_t queue_index;
     bool queue_valid;
     bool play_valid;
@@ -417,8 +421,11 @@ static void _copy_queue(sim_music_fixture_t *fixture,
     {
         return;
     }
+    fixture->queue_total = playlist->total != 0U ? (uint16_t)playlist->total :
+                           playlist->count;
+    fixture->queue_offset = playlist->offset;
     fixture->queue_count = playlist->count;
-    fixture->queue_index = start_index;
+    fixture->queue_index = (uint16_t)(playlist->offset + start_index);
     fixture->queue_valid = true;
     fixture->play_ref = playlist->playlist.ref;
     memcpy(fixture->queue, playlist->songs,
@@ -434,11 +441,16 @@ static void _set_player_from_queue(sim_music_fixture_t *fixture,
                                    music_service_failure_t failure)
 {
     if (!fixture->queue_valid ||
-            fixture->queue_index >= fixture->queue_count)
+            fixture->queue_index >= fixture->queue_total ||
+            fixture->queue_index < fixture->queue_offset ||
+            fixture->queue_index - fixture->queue_offset >=
+            fixture->queue_count)
     {
         return;
     }
-    const music_song_t *song = &fixture->queue[fixture->queue_index];
+    const uint16_t local = (uint16_t)(fixture->queue_index -
+                                      fixture->queue_offset);
+    const music_song_t *song = &fixture->queue[local];
     music_player_status_t *player = &fixture->player;
     player->generation = SIM_MUSIC_FIXTURE_GENERATION;
     player->state = state;
@@ -446,7 +458,7 @@ static void _set_player_from_queue(sim_music_fixture_t *fixture,
     player->mode = MUSIC_PLAY_MODE_REPEAT_ALL;
     player->quality = MUSIC_QUALITY_HIGH;
     player->queue_index = fixture->queue_index;
-    player->queue_count = fixture->queue_count;
+    player->queue_count = fixture->queue_total;
     player->position_ms = position_ms < song->duration_ms ?
                           position_ms : song->duration_ms;
     player->duration_ms = song->duration_ms;
@@ -783,6 +795,8 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     s_music.play_ref = fixture->play_ref;
     memcpy(s_music.queue, fixture->queue, sizeof(s_music.queue));
     s_music.queue_count = fixture->queue_count;
+    s_music.queue_total = fixture->queue_total;
+    s_music.queue_offset = fixture->queue_offset;
     s_music.queue_index = fixture->queue_index;
     s_music.queue_valid = fixture->queue_valid;
     s_music.play_valid = fixture->play_valid;
@@ -950,6 +964,8 @@ esp_err_t music_service_deinit(void)
     memset(&s_music.player, 0, sizeof(s_music.player));
     memset(&s_music.queue, 0, sizeof(s_music.queue));
     s_music.queue_count = 0U;
+    s_music.queue_total = 0U;
+    s_music.queue_offset = 0U;
     s_music.queue_index = 0U;
     s_music.queue_valid = false;
     s_music.play_valid = false;
@@ -1115,6 +1131,8 @@ esp_err_t music_service_logout(void)
     s_music.player.quality = MUSIC_QUALITY_HIGH;
     memset(&s_music.queue, 0, sizeof(s_music.queue));
     s_music.queue_count = 0U;
+    s_music.queue_total = 0U;
+    s_music.queue_offset = 0U;
     s_music.queue_index = 0U;
     s_music.queue_valid = false;
     s_music.play_valid = false;
@@ -1410,13 +1428,72 @@ void music_service_image_release(const music_image_t *image)
     music_snapshot_release((void *)image);
 }
 
+static void _sim_queue_fill_window_locked(uint16_t index)
+{
+    if (s_music.queue_total == 0U || index >= s_music.queue_total)
+    {
+        s_music.queue_count = 0U;
+        s_music.queue_offset = 0U;
+        return;
+    }
+    const uint16_t window = 30U;
+    uint16_t start = (uint16_t)((index / 10U) * 10U);
+    if ((uint32_t)start + window > s_music.queue_total)
+    {
+        start = s_music.queue_total > window ?
+                (uint16_t)(s_music.queue_total - window) : 0U;
+    }
+    uint16_t count = (uint16_t)(s_music.queue_total - start);
+    if (count > window)
+    {
+        count = window;
+    }
+    s_music.queue_offset = start;
+    s_music.queue_count = count;
+    for (uint16_t offset = 0U; offset < count; ++offset)
+    {
+        const uint32_t source = (uint32_t)start + offset;
+        if (s_music.playlist != NULL && source < s_music.playlist->count)
+        {
+            s_music.queue[offset] = s_music.playlist->songs[source];
+        }
+        else
+        {
+            _fill_song(&s_music.queue[offset], (uint16_t)source);
+        }
+    }
+}
+
+static const music_song_t *_sim_queue_song_locked(uint16_t index)
+{
+    if (index >= s_music.queue_total)
+    {
+        return NULL;
+    }
+    if (index < s_music.queue_offset ||
+            index - s_music.queue_offset >= s_music.queue_count)
+    {
+        _sim_queue_fill_window_locked(index);
+    }
+    if (index < s_music.queue_offset ||
+            index - s_music.queue_offset >= s_music.queue_count)
+    {
+        return NULL;
+    }
+    return &s_music.queue[index - s_music.queue_offset];
+}
+
 static void _select_queue_song_locked(uint16_t index)
 {
+    const music_song_t *song = _sim_queue_song_locked(index);
+    if (song == NULL)
+    {
+        return;
+    }
     s_music.queue_index = index;
     s_music.play_valid = true;
-    const music_song_t *song = &s_music.queue[index];
     s_music.player.queue_index = index;
-    s_music.player.queue_count = s_music.queue_count;
+    s_music.player.queue_count = s_music.queue_total;
     s_music.player.position_ms = 0U;
     s_music.player.duration_ms = song->duration_ms;
     s_music.player.buffered_ms = song->duration_ms;
@@ -1444,7 +1521,7 @@ esp_err_t music_service_queue_acquire(const music_queue_snapshot_t **snapshot)
     if (s_music.queue_failed)
     {
         (void)pthread_mutex_unlock(&s_music.lock);
-        return ESP_ERR_INVALID_STATE;
+        return ESP_ERR_INVALID_RESPONSE;
     }
     if (!s_music.queue_valid || s_music.queue_count == 0U)
     {
@@ -1461,11 +1538,73 @@ esp_err_t music_service_queue_acquire(const music_queue_snapshot_t **snapshot)
         return ESP_ERR_NO_MEM;
     }
     queue->generation = s_music.generation;
+    queue->ref = s_music.play_ref;
+    queue->total = s_music.queue_total;
+    queue->offset = s_music.queue_offset;
     queue->count = s_music.queue_count;
     memcpy(queue->songs, s_music.queue,
            (size_t)s_music.queue_count * sizeof(s_music.queue[0]));
     (void)pthread_mutex_unlock(&s_music.lock);
     *snapshot = queue;
+    return ESP_OK;
+}
+
+esp_err_t music_service_queue_view_acquire(uint16_t offset, uint16_t count,
+        const music_queue_snapshot_t **snapshot)
+{
+    if (snapshot == NULL || count == 0U || count > MUSIC_SERVICE_MAX_SONGS)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *snapshot = NULL;
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.queue_failed)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (!s_music.queue_valid || s_music.queue_total == 0U)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (offset >= s_music.queue_total)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    uint16_t actual = count;
+    if ((uint32_t)offset + actual > s_music.queue_total)
+    {
+        actual = (uint16_t)(s_music.queue_total - offset);
+    }
+    const size_t bytes = offsetof(music_queue_snapshot_t, songs) +
+                         (size_t)actual * sizeof(music_song_t);
+    music_queue_snapshot_t *view = music_snapshot_alloc(bytes, NULL);
+    if (view == NULL)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_NO_MEM;
+    }
+    view->generation = s_music.generation;
+    view->ref = s_music.play_ref;
+    view->total = s_music.queue_total;
+    view->offset = offset;
+    view->count = actual;
+    for (uint16_t index = 0U; index < actual; ++index)
+    {
+        const uint32_t source = (uint32_t)offset + index;
+        if (s_music.playlist != NULL && source < s_music.playlist->count)
+        {
+            view->songs[index] = s_music.playlist->songs[source];
+        }
+        else
+        {
+            _fill_song(&view->songs[index], (uint16_t)source);
+        }
+    }
+    (void)pthread_mutex_unlock(&s_music.lock);
+    *snapshot = view;
     return ESP_OK;
 }
 
@@ -1486,14 +1625,17 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
     const music_playlist_t *metadata =
         _find_home_playlist(s_music.home, ref);
     const bool matches = ref == NULL || metadata != NULL;
-    if (!matches || start_index >= s_music.playlist->count)
+    const uint16_t total = metadata != NULL ?
+                           (uint16_t)metadata->track_count :
+                           (uint16_t)s_music.playlist->total;
+    if (!matches || total == 0U || start_index >= total)
     {
         (void)pthread_mutex_unlock(&s_music.lock);
         return ESP_ERR_INVALID_ARG;
     }
-    memcpy(s_music.queue, s_music.playlist->songs,
-           (size_t)s_music.playlist->count * sizeof(s_music.queue[0]));
-    s_music.queue_count = s_music.playlist->count;
+    s_music.queue_total = total;
+    s_music.queue_offset = 0U;
+    s_music.queue_count = 0U;
     s_music.play_ref = ref != NULL ? *ref : s_music.playlist->playlist.ref;
     s_music.queue_valid = true;
     _set_generation_locked();
@@ -1512,17 +1654,37 @@ esp_err_t music_service_play_playlist(const music_playlist_ref_t *ref,
 esp_err_t music_service_play_playlist_snapshot(
     const music_playlist_snapshot_t *playlist, uint16_t start_index)
 {
-    if (playlist == NULL)
+    if (playlist == NULL || playlist->count == 0U ||
+            start_index >= playlist->count)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    return music_service_play_playlist(&playlist->playlist.ref, start_index);
+    const uint16_t absolute = (uint16_t)(playlist->offset + start_index);
+    const uint16_t total = playlist->total != 0U ?
+                           (uint16_t)playlist->total :
+                           (uint16_t)(playlist->offset + playlist->count);
+    (void)pthread_mutex_lock(&s_music.lock);
+    s_music.queue_total = total;
+    s_music.queue_offset = 0U;
+    s_music.queue_count = 0U;
+    s_music.play_ref = playlist->playlist.ref;
+    s_music.queue_valid = true;
+    _set_generation_locked();
+    _select_queue_song_locked(absolute);
+    s_music.player.state = MUSIC_PLAYBACK_PLAYING;
+    s_music.player.failure = MUSIC_SERVICE_FAILURE_NONE;
+    s_music.player.play_generation = s_music.generation;
+    s_music.player.generation = s_music.generation;
+    (void)pthread_mutex_unlock(&s_music.lock);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_QUEUE, 0U);
+    _publish(MUSIC_SERVICE_MSG_SUB_TYPE_PLAYER, 0U);
+    return ESP_OK;
 }
 
 esp_err_t music_service_queue_play(uint16_t index)
 {
     (void)pthread_mutex_lock(&s_music.lock);
-    if (!s_music.queue_valid || index >= s_music.queue_count)
+    if (!s_music.queue_valid || index >= s_music.queue_total)
     {
         (void)pthread_mutex_unlock(&s_music.lock);
         return ESP_ERR_INVALID_ARG;
@@ -1541,28 +1703,24 @@ esp_err_t music_service_queue_play(uint16_t index)
 esp_err_t music_service_queue_remove(uint16_t index)
 {
     (void)pthread_mutex_lock(&s_music.lock);
-    if (!s_music.queue_valid || index >= s_music.queue_count)
+    if (!s_music.queue_valid || index >= s_music.queue_total)
     {
         (void)pthread_mutex_unlock(&s_music.lock);
         return ESP_ERR_INVALID_ARG;
     }
     const uint16_t old_index = s_music.queue_index;
-    const uint16_t old_count = s_music.queue_count;
+    const uint16_t old_count = s_music.queue_total;
     const bool playing = s_music.player.state == MUSIC_PLAYBACK_PLAYING ||
                          s_music.player.state == MUSIC_PLAYBACK_BUFFERING;
-    if (index + 1U < old_count)
-    {
-        memmove(&s_music.queue[index], &s_music.queue[index + 1U],
-                (size_t)(old_count - index - 1U) *
-                sizeof(s_music.queue[0]));
-    }
-    s_music.queue_count = (uint16_t)(old_count - 1U);
     uint16_t new_index = old_index;
-    if (s_music.queue_count == 0U)
+    if (old_count == 1U)
     {
         new_index = 0U;
         s_music.queue_valid = false;
         s_music.play_valid = false;
+        s_music.queue_total = 0U;
+        s_music.queue_count = 0U;
+        s_music.queue_offset = 0U;
         memset(&s_music.player, 0, sizeof(s_music.player));
         s_music.player.state = MUSIC_PLAYBACK_IDLE;
         s_music.player.mode = MUSIC_PLAY_MODE_SEQUENTIAL;
@@ -1576,9 +1734,13 @@ esp_err_t music_service_queue_remove(uint16_t index)
         }
         else if (index == old_index)
         {
-            new_index = old_index < s_music.queue_count ? old_index :
-                        (uint16_t)(s_music.queue_count - 1U);
+            new_index = old_index < old_count - 1U ? old_index :
+                        (uint16_t)(old_count - 2U);
         }
+        s_music.queue_total = (uint16_t)(old_count - 1U);
+        s_music.queue_offset = 0U;
+        s_music.queue_count = 0U;
+        _sim_queue_fill_window_locked(new_index);
         s_music.queue_index = new_index;
         if (index == old_index && playing)
         {
@@ -1589,7 +1751,7 @@ esp_err_t music_service_queue_remove(uint16_t index)
         else
         {
             s_music.player.queue_index = new_index;
-            s_music.player.queue_count = s_music.queue_count;
+            s_music.player.queue_count = s_music.queue_total;
         }
     }
     _set_generation_locked();
@@ -1624,7 +1786,7 @@ static esp_err_t _step_queue(bool forward)
 {
     (void)pthread_mutex_lock(&s_music.lock);
     if (!s_music.queue_valid || !s_music.play_valid ||
-            s_music.queue_count == 0U ||
+            s_music.queue_total == 0U ||
             s_music.player.state == MUSIC_PLAYBACK_IDLE ||
             s_music.player.state == MUSIC_PLAYBACK_ERROR)
     {
@@ -1642,19 +1804,19 @@ static esp_err_t _step_queue(bool forward)
     }
     else if (s_music.player.mode == MUSIC_PLAY_MODE_REPEAT_ALL)
     {
-        next = forward ? (uint16_t)((next + 1U) % s_music.queue_count) :
-               (uint16_t)((next + s_music.queue_count - 1U) %
-                          s_music.queue_count);
+        next = forward ? (uint16_t)((next + 1U) % s_music.queue_total) :
+               (uint16_t)((next + s_music.queue_total - 1U) %
+                          s_music.queue_total);
     }
     else if (s_music.player.mode == MUSIC_PLAY_MODE_SHUFFLE)
     {
-        next = forward ? (uint16_t)((next + 1U) % s_music.queue_count) :
-               (uint16_t)((next + s_music.queue_count - 1U) %
-                          s_music.queue_count);
+        next = forward ? (uint16_t)((next + 1U) % s_music.queue_total) :
+               (uint16_t)((next + s_music.queue_total - 1U) %
+                          s_music.queue_total);
     }
     else if (forward)
     {
-        if ((uint32_t)next + 1U >= s_music.queue_count)
+        if ((uint32_t)next + 1U >= s_music.queue_total)
         {
             (void)pthread_mutex_unlock(&s_music.lock);
             return ESP_ERR_INVALID_STATE;
@@ -1721,6 +1883,8 @@ esp_err_t music_service_stop(void)
     s_music.player.quality = MUSIC_QUALITY_HIGH;
     memset(&s_music.queue, 0, sizeof(s_music.queue));
     s_music.queue_count = 0U;
+    s_music.queue_total = 0U;
+    s_music.queue_offset = 0U;
     s_music.queue_index = 0U;
     s_music.queue_valid = false;
     s_music.play_valid = false;
