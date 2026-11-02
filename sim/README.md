@@ -445,7 +445,10 @@ FAIL** (generate with `run_ci.sh --update`, then commit after manual review).
 lint, and UI baseline comparison. A state can use `expect_absent` to assert that
 an erroneous success prompt or a stale directory row is absent; recording states
 combine the final state and target path list of `sim.sd svc` to validate that a
-same-path replaced file is still in the index.
+same-path replaced file is still in the index. A state with an intentionally
+infinite widget animation (for example a buffering spinner) can set
+`"animated": true`; the harness samples two fixed frames instead of waiting for
+`lv_anim_count_running()` to reach zero.
 
 **tree_assert baseline convention**: the scenario text assertions represent the
 current firmware UI snapshot. During GUI adjustment a `run_ci.sh` FAIL is a

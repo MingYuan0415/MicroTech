@@ -12,7 +12,7 @@
     },
     {
       "cmd": "step",
-      "times": 20
+      "times": 40
     },
     {
       "cmd": "wait_idle"
@@ -20,7 +20,7 @@
     {
       "cmd": "touch",
       "action": "down",
-      "x": 155,
+      "x": 184,
       "y": 412
     },
     {
@@ -30,7 +30,7 @@
     {
       "cmd": "touch",
       "action": "up",
-      "x": 155,
+      "x": 184,
       "y": 412
     },
     {

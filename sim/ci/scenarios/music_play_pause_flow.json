@@ -1,0 +1,64 @@
+{
+  "name": "music-play-pause-flow",
+  "steps": [
+    {
+      "cmd": "music",
+      "action": "fixture",
+      "name": "catalog_playing"
+    },
+    {
+      "cmd": "navigate",
+      "app": "music"
+    },
+    {
+      "cmd": "step",
+      "times": 40
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "正在播放"
+      }
+    },
+    {
+      "cmd": "music",
+      "action": "play_pause"
+    },
+    {
+      "cmd": "step",
+      "times": 20
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "已暂停"
+      }
+    },
+    {
+      "cmd": "music",
+      "action": "play_pause"
+    },
+    {
+      "cmd": "step",
+      "times": 20
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "正在播放"
+      }
+    }
+  ]
+}

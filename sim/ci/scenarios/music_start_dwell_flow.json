@@ -1,0 +1,46 @@
+{
+  "name": "music-start-dwell-flow",
+  "steps": [
+    {
+      "cmd": "music",
+      "action": "fixture",
+      "name": "catalog_playing"
+    },
+    {
+      "cmd": "navigate",
+      "app": "music"
+    },
+    {
+      "cmd": "step",
+      "times": 12
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "正在启动音乐服务…"
+      }
+    },
+    {
+      "cmd": "screenshot",
+      "name": "music_start_dwell.png"
+    },
+    {
+      "cmd": "step",
+      "times": 30
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "模拟曲目 01"
+      }
+    }
+  ]
+}

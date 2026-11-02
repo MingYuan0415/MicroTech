@@ -1345,6 +1345,36 @@ void music_service_lyric_release(const music_lyric_snapshot_t *snapshot)
     music_snapshot_release((void *)snapshot);
 }
 
+bool music_service_lyric_failed(const char *songmid)
+{
+    if (songmid == NULL || songmid[0] == '\0')
+    {
+        return false;
+    }
+    (void)pthread_mutex_lock(&s_music.lock);
+    const bool failed = s_music.lyric_failed &&
+                        strcmp(s_music.player.songmid, songmid) == 0;
+    (void)pthread_mutex_unlock(&s_music.lock);
+    return failed;
+}
+
+void music_service_lyric_retry(const char *songmid)
+{
+    if (songmid == NULL || songmid[0] == '\0')
+    {
+        return;
+    }
+    (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.lyric_failed &&
+            strcmp(s_music.player.songmid, songmid) == 0)
+    {
+        s_music.lyric_failed = false;
+        (void)snprintf(s_music.lyric_songmid, sizeof(s_music.lyric_songmid),
+                       "%s", songmid);
+    }
+    (void)pthread_mutex_unlock(&s_music.lock);
+}
+
 static music_image_t *_create_cover(const char *url, uint16_t width,
                                     uint16_t height, uint32_t token)
 {

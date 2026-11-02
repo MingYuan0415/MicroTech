@@ -803,6 +803,17 @@ void music_service_lyric_release(const music_lyric_snapshot_t *snapshot)
     _release_payload(HOST_MUSIC_RESOURCE_LYRIC, snapshot);
 }
 
+bool music_service_lyric_failed(const char *songmid)
+{
+    (void)songmid;
+    return false;
+}
+
+void music_service_lyric_retry(const char *songmid)
+{
+    (void)songmid;
+}
+
 esp_err_t music_service_image_acquire(const char *url, uint16_t width,
                                       uint16_t height, uint32_t token,
                                       const music_image_t **image)

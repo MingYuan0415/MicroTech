@@ -279,7 +279,7 @@ def _scroll_owner(tree, vw, vh):
     return best[2], best[3], best[4]
 
 
-def _capture_full_page(runner, name, vw, vh):
+def _capture_full_page(runner, name, vw, vh, wait_idle=True):
     """Screenshot the whole scrollable page, stitching past-the-fold rows.
 
     Each stripe is pasted at `offset + box.y`, so the content band always lands
@@ -288,20 +288,26 @@ def _capture_full_page(runner, name, vw, vh):
     screenshot.
     """
     from PIL import Image
+
+    def _shot(shot_name):
+        return runner.call('sim.screenshot',
+                           {'name': shot_name,
+                            'wait_idle': wait_idle})['path']
+
     tree = runner.call('sim.tree')['tree']
     for node in _walk_on_screen(tree):
         flags = node.get('flags') or {}
         box = node.get('coords') or {}
         if (flags.get('floating') and flags.get('clickable') and
                 box.get('w', 0) >= vw and box.get('h', 0) >= vh):
-            return runner.call('sim.screenshot', {'name': name + '.png'})['path'], 'modal surface: single frame'
+            return _shot(name + '.png'), 'modal surface: single frame'
     owner = _scroll_owner(tree, vw, vh)
     if owner is None:
-        return runner.call('sim.screenshot', {'name': name + '.png'})['path'], None
+        return _shot(name + '.png'), None
     box, _offset, below = owner
 
     def _plain():
-        return runner.call('sim.screenshot', {'name': name + '.png'})['path'], None
+        return _shot(name + '.png'), None
 
     if below <= MIN_REACHABLE_TRAVEL and _offset <= 0:
         # Content fits, or its whole tail is within LVGL's scroll limit and so
@@ -323,8 +329,7 @@ def _capture_full_page(runner, name, vw, vh):
     stripes = []
     y_off = 0
     for index in range(40):
-        stripes.append((y_off, runner.call(
-            'sim.screenshot', {'name': '%s__%02d.png' % (name, index)})['path']))
+        stripes.append((y_off, _shot('%s__%02d.png' % (name, index))))
         if remaining <= 0:
             break
         # Over-drag on purpose: lv_obj_scroll_by_bounded clamps to the real
@@ -789,7 +794,12 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                     for seed in state.get('seed', []):
                         runner._step(seed)
                     runner.call('sim.step', {'ms': 33 * 30})
-                    _wait_idle(runner)
+                    if state.get('animated'):
+                        # Infinite widget animation never reports idle; sample a
+                        # stable pair of frames instead of waiting for it.
+                        runner.call('sim.step', {'ms': 33 * 2})
+                    else:
+                        _wait_idle(runner)
                     tree = runner.call('sim.tree')['tree']
                     if not want:
                         break
@@ -797,7 +807,8 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                                       for l in _visible_labels(tree))
                     if all(w in have for w in want):
                         break
-                path, folded = _capture_full_page(runner, name, vw, vh)
+                path, folded = _capture_full_page(runner, name, vw, vh,
+                                                  not state.get('animated'))
                 for viol in _lint(tree, page, state, vw, vh):
                     failures.append('%s: %s' % (name, viol))
                 if folded is not None:

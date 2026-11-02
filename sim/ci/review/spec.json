@@ -3598,6 +3598,7 @@
         },
         {
           "name": "buffering",
+          "animated": true,
           "pre_seed": [
             {
               "cmd": "music",

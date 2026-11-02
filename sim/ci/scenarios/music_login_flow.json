@@ -12,7 +12,7 @@
   },
   {
    "cmd": "step",
-   "times": 30
+   "times": 40
   },
   {
    "cmd": "wait_idle"

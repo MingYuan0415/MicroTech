@@ -2714,6 +2714,12 @@ static void _test_music_page_screen_lifecycles(void)
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MUSIC, NULL) ==
            ESP_OK);
+    /* The music start gate keeps its first frame for one second before it
+     * routes. Advance the host LVGL clock twice so the timer callback runs. */
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
     assert(_wait_for_page_active(APP_MANAGER_ID_MUSIC, "player"));
     _exercise_music_page_screen_lifecycle(
         "player", "测试曲目 1", -1, false);

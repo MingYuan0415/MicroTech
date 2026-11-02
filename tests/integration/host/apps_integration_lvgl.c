@@ -1062,6 +1062,11 @@ lv_obj_t *lv_arc_create(lv_obj_t *parent)
     return _host_lv_allocate_object(HOST_LV_OBJECT_ARC, parent);
 }
 
+lv_obj_t *lv_spinner_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_ARC, parent);
+}
+
 lv_obj_t *lv_line_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_LINE, parent);

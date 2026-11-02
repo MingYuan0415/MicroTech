@@ -146,3 +146,10 @@ CONFIG_FATFS_LFN_HEAP=y
 # CONFIG_FATFS_LFN_NONE is not set
 # CONFIG_FATFS_LFN_STACK is not set
 CONFIG_FATFS_MAX_LFN=255
+
+# The login path performs HTTPS, QR image decode and credential exchange;
+# measured peak use was 10,672 B, so 16 KiB leaves about 35% headroom.
+CONFIG_MUSIC_SERVICE_LOGIN_TASK_STACK_SIZE=16384
+# The API worker peaked at 8,180 B in the same run; 12 KiB keeps about 33%
+# headroom for catalog/playback JSON and future service growth.
+CONFIG_MUSIC_SERVICE_API_TASK_STACK_SIZE=12288

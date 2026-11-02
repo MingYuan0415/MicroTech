@@ -917,6 +917,7 @@ HOST_LV_NOOP_2(lv_style_set_text_color, lv_style_t *, lv_color_t)
 HOST_LV_NOOP_2(lv_style_set_text_font, lv_style_t *, const lv_font_t *)
 HOST_LV_NOOP_2(lv_style_set_text_line_space, lv_style_t *, int32_t)
 lv_obj_t *lv_arc_create(lv_obj_t *parent);
+lv_obj_t *lv_spinner_create(lv_obj_t *parent);
 lv_obj_t *lv_line_create(lv_obj_t *parent);
 lv_obj_t *lv_roller_create(lv_obj_t *parent);
 /** @brief Return the fake object's index among its parent's children. */
