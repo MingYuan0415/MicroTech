@@ -95,7 +95,7 @@ static esp_err_t _cc_set_wifi(bool enabled)
     {
         return connectivity_manager_request_wifi_disable(&operation);
     }
-    return connectivity_manager_request_wifi_enable(&operation);
+    return connectivity_manager_request_wifi_power_on(&operation);
 }
 
 static esp_err_t _cc_get_bluetooth(app_manager_radio_state_t *state)

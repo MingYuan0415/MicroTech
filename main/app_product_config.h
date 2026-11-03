@@ -32,9 +32,10 @@ typedef struct app_product_config
     music_service_config_t music;      /**< QQ Music account and playback policy. */
     chore_service_config_t chore;      /**< Background chore worker policy. */
     app_manager_device_info_t device_info; /**< Settings hardware labels. */
-    /* A board whose radio transport is not usable (the ESP32-P4 board before
-     * its C6 CP firmware is updated) keeps the UI and local services running
-     * while Wi-Fi/BLE stay unavailable. */
+    /* A board whose radio transport is not usable keeps the UI and local
+     * services running while Wi-Fi/BLE stay unavailable. The ESP32-S3 board
+     * treats a radio failure as fatal; the ESP32-P4 board's hosted link to
+     * its C6 is optional so a dead co-processor still reaches Home. */
     bool radio_enabled;                /**< Whether radio services may start. */
     bool radio_optional;               /**< Whether radio failure may degrade to local UI. */
     bool system_pm_supported;          /**< Whether CPU light sleep is required. */

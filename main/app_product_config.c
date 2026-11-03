@@ -15,6 +15,10 @@
 #define APP_PRODUCT_MUSIC_AUDIO_PRIORITY      5U
 #define APP_PRODUCT_CHORE_TASK_PRIORITY        4U
 
+/* A user-opened Wi-Fi switch with no saved network keeps the radio available
+ * for this long; without a completed connection it turns itself off again. */
+#define APP_PRODUCT_WIFI_NO_PROFILE_WINDOW_MS  (5U * 60U * 1000U)
+
 /* Recent-tasks keeps at most one pinned home task plus three business tasks
  * so the fixed three-slot PSRAM preview cache bounds retained thumbnails. */
 #define APP_PRODUCT_MAX_RESIDENT_APPS          4U
@@ -110,10 +114,11 @@ static const app_product_config_t s_product_config =
         .panel = "320 x 480 IPS",
         .platform = "ESP32-P4",
     },
-    /* The ESP32-P4 board's C6 hosted link is not usable until its CP firmware
-     * is updated; keep the UI and local services online without the radio.
+    /* The ESP32-P4 board reaches Wi-Fi and BLE through the on-board ESP32-C6
+     * over the hosted SDIO link. A link that cannot be brought up must not
+     * take the display and local services down, so the radio stays optional.
      * The ESP32-S3 board keeps its native Wi-Fi/BLE controllers. */
-    .radio_enabled = false,
+    .radio_enabled = true,
     .radio_optional = true,
     .system_pm_supported = false,
 #else
@@ -128,6 +133,7 @@ static const app_product_config_t s_product_config =
     .connectivity = {
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,
         .wifi_task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,
+        .no_profile_radio_window_ms = APP_PRODUCT_WIFI_NO_PROFILE_WINDOW_MS,
     },
     .device_link = {
         .runtime_port = NULL,

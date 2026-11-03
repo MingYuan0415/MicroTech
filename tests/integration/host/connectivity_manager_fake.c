@@ -282,6 +282,14 @@ esp_err_t connectivity_manager_request_wifi_disable(
                HOST_CONNECTIVITY_OPERATION_DISCONNECT, out_operation_id);
 }
 
+esp_err_t connectivity_manager_request_wifi_power_on(
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    return _host_connectivity_admit_operation(
+               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_POWER_ON,
+               HOST_CONNECTIVITY_OPERATION_CONNECT, out_operation_id);
+}
+
 esp_err_t connectivity_manager_request_wifi_enable(
     connectivity_manager_operation_id_t *out_operation_id)
 {

@@ -2,7 +2,7 @@
 
 # MicroTech
 
-MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 的 ESP-IDF 固件工程，集成显示与触摸、RTC、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口、持久化存储以及待机/唤醒流程。ESP32-P4 后端提供显示、触摸、按键输入、AXP2101 电源遥测、ES8311 音频和 SDMMC 存储；其 C6 hosted 无线路径另行跟踪。
+MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 的 ESP-IDF 固件工程，集成显示与触摸、RTC、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口、持久化存储以及待机/唤醒流程。ESP32-P4 后端提供显示、触摸、按键输入、AXP2101 电源遥测、ES8311 音频和 SDMMC 存储；其 Wi-Fi 与 BLE 经板载 ESP32-C6 的 ESP-Hosted SDIO 链路工作，协处理器固件见 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md)。
 
 ## 工程结构
 
@@ -38,6 +38,8 @@ idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
+P4 版型还需烧录 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md) 中的 ESP32-C6 协处理器镜像，否则 P4 主机无法使用 Wi-Fi 与 BLE。
+
 配置改动落在 `sdkconfig.defaults` 及其按 target 的伴随文件 `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`（`idf.py save-defconfig`），不手改 `sdkconfig`。修改缓存、DMA 预留或资源后运行 `idf.py size`，并在真机检查显示、触摸、待机和唤醒。
 
 ## 宿主测试
@@ -52,6 +54,7 @@ python3 tests/run_python_tests.py contracts
 
 ## 功能
 
+- **无线**：S3 版型使用芯片自带的 Wi-Fi/BLE 控制器；P4 版型作为 ESP-Hosted 主机经 SDIO slot 1 工作（hosted 版本以 `main/idf_component.yml` 的 pin 为准），`esp_wifi_*` 控制路径走 `esp_wifi_remote`，NimBLE 经 `esp_hosted_bt_host_stack` 的 hosted HCI 通道访问 C6 的 BT controller。C6 镜像位于 `firmware/c6-cp/` 独立工程。hosted 链路启动失败时 P4 保留显示与本地服务，降级为离线 UI。
 - **天气**：menuconfig `MicroTech product integration` 中设置 `Weather server base URL` 与 `Weather device token`（不含 `Bearer ` 前缀）；任一为空时天气页显示“服务未配置”。获取、缓存、定位与会话刷新由后台 `weather_service` 负责，细节见 [`layers/middleware/README_ZH.md`](layers/middleware/README_ZH.md)。构建图片资源（SVG 栅格化与 RGB565A8 转换）前安装依赖：`python -m pip install -r requirements-weather-assets.txt`；图片源文件是 `layers/apps/*/assets/*.svg`（唯一入库形态，构建期栅格化），字体在 `layers/app_manager/app_theme/assets/`，由 main 聚合打包进 `res` 分区。
 - **Device Link**：BLE 契约以 [`contracts/device_link`](contracts/device_link/) 的 `device-link/v1` freeze candidate 为规范源；协议语义由该子模块校验，实现边界见对应 middleware README。
 - **恢复出厂**：持久化 reset marker 后重启，启动阶段幂等清除 Wi-Fi、引导状态、显示/待机偏好、水平仪校准、内部 `/data` 及 BLE bond/CCCD；全部收敛后才清除 marker 并恢复广告。外置 SD 卡及录音不受影响。

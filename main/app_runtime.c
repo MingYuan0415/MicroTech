@@ -43,6 +43,8 @@
     #include "esp_system.h"
 #endif
 
+#include "esp_heap_caps.h"
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1490,9 +1492,9 @@ static esp_err_t _app_runtime_start_device_link(
         {
             return result;
         }
-        /* A board whose radio is explicitly optional (the ESP32-P4 bench
-         * build before its C6 CP firmware update) must still boot: Device
-         * Link is not a display prerequisite. */
+        /* A board whose radio is explicitly optional (the ESP32-P4 board
+         * when its hosted C6 link cannot be brought up) must still boot:
+         * Device Link is not a display prerequisite. */
         (void)device_link_service_deinit(DEVICE_LINK_SERVICE_WAIT_FOREVER);
         s_ownership.device_link_attempted = false;
         LOG_W("Device Link unavailable: %s", esp_err_to_name(result));
@@ -1565,10 +1567,9 @@ static esp_err_t _app_runtime_start_initial_app(
     if (!product->radio_enabled && product->radio_optional &&
             onboarding == ONBOARDING_SERVICE_PENDING)
     {
-        /* Setup needs a working Wi-Fi adapter to reach its "later" path on
-         * some builds; a radio-less board must still reach Home. A future
-         * radio-enabled image can reset the persisted state when it enables
-         * the hosted stack. */
+        /* A build that ships without a radio must still reach Home. The
+         * persisted DEFERRED is left for the user to reopen through
+         * Settings -> Setup once a radio-enabled build runs. */
         result = onboarding_service_defer();
         if (result == ESP_OK)
         {
@@ -1700,6 +1701,14 @@ esp_err_t app_runtime_start(void)
     /* The display and startup commit are complete; now it is safe to spend
      * internal DMA-capable memory on the Wi-Fi driver. */
     (void)_app_runtime_start_deferred_wifi();
+
+#if CONFIG_IDF_TARGET_ESP32P4
+    /* The hosted link, the NimBLE host and the SDIO queues all draw from
+     * internal RAM; one boot-time line keeps the remaining headroom visible. */
+    LOG_I("startup heap: internal=%u psram=%u",
+          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+          (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#endif
 
     atomic_store(&s_runtime_state, APP_RUNTIME_READY);
     app_runtime_pm_open_admission();

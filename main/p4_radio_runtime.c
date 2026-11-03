@@ -60,6 +60,9 @@ esp_err_t p4_radio_runtime_init(void)
     }
 
     s_ready = true;
+    /* esp_hosted's init event already prints the host/coprocessor version
+     * match; a second synchronous RPC here would only add up to its 5 s
+     * timeout to the boot path. */
     LOG_I("hosted SDIO transport ready");
     return ESP_OK;
 }

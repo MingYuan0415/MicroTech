@@ -11,6 +11,12 @@ limits, scan target matching, association and DHCP timeouts, stale epochs,
 suspend/resume, credential zeroing, control timeout recovery, UI callback
 identity, and manager lifecycle cleanup.
 
+It also covers the power-only switch: no-profile `power_on` arms the configured
+idle window, a foreground scan refreshes it, the worker turns the radio off by
+itself and reports `radio_idle_timeout`, suspend/resume restarts the window
+instead of expiring it, a saved network keeps the connection past the window,
+and a scan requested while the switch is off powers the radio only transiently.
+
 The saved-network list is covered separately: SSID upsert without duplicates,
 refusing a save when every slot is held, targeted connect and targeted removal,
 removal of the active entry versus an inactive one, list survival across a full

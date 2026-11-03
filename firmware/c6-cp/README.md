@@ -28,36 +28,44 @@ idf.py build
 ```
 
 The image is `build/microtech_c6_cp.bin` plus the C6 bootloader and partition
-table. The C6 factory 8 MB flash must be dumped before the first write; see
-below.
+table. The write covers `0x0`-`0x400000`; the upper 4 MB of the 8 MB flash is
+left untouched. A unit that still carries the factory CP image is not
+recoverable once written, so dump it first when that matters:
 
-## Flash (after the 3.3 V USB-UART arrives)
+```sh
+esptool.py --chip esp32c6 -p /dev/ttyUSB0 read_flash 0 0x800000 c6-factory.bin
+```
 
-1. Back up the factory C6 flash, 8 MB:
+## Flash over UART
 
-   ```sh
-   esptool.py --chip esp32c6 -p /dev/ttyUSB0 read_flash 0 0x800000 c6-factory.bin
-   ```
-
-2. Wire the USB-UART to J6:
+1. Wire the USB-UART to J6:
    - adapter TX -> pin 23 (`C6_U0RXD`)
    - adapter RX -> pin 25 (`C6_U0TXD`)
    - adapter GND -> pin 29 (GND)
-3. Hold `C6_IO9` (J6 pin 27) low at power-up; keep the P4 in BOOT mode.
-4. `idf.py -p /dev/ttyUSB0 flash`, then release `C6_IO9`, reset the board and
-   restore the P4 firmware.
-5. On the P4 side, set `radio_enabled = true` in the product config. The
-   `p4_radio_runtime` layer now performs the explicit hosted initialization;
-   reset the persisted onboarding state if Setup must be rerun.
+2. Hold `C6_IO9` (J6 pin 27) low at power-up; keep the P4 in BOOT mode.
+3. `idf.py -p /dev/ttyUSB0 flash`, then release `C6_IO9` and reset the board.
+4. On the P4 side the product config already sets `radio_enabled = true` for
+   this board, and `p4_radio_runtime` performs the explicit hosted
+   initialization. The image that previously ran with the radio disabled had
+   deferred onboarding, so the first boot after the upgrade lands on Home:
+   reopen provisioning from Settings -> Setup, or perform a factory reset when
+   a first-run Setup flow is required.
+5. Confirm the running CP in the P4 boot log: `esp_hosted` prints the SDIO
+   handshake and `esp-hosted fw versions: host=... coprocessor=... (match)`;
+   `p4_radio_runtime` logs only `hosted SDIO transport ready`. The C6 reset is
+   visible in the `eh_sdio` / `eh_host_port_reset` lines.
 
-The factory CP is expected to be an esp_hosted 1.x image without the hosted
-CP OTA RPC (added in 2.6.0), so the UART path above is the supported upgrade;
-do not rely on P4-side CP OTA before reading the CP version.
+The factory CP on a new board is an esp_hosted 1.x image without the hosted CP
+OTA RPC (added in 2.6.0). This image is 3.0.10 and does expose that RPC, but the
+P4 side has no CP update entry point yet, so UART remains the supported
+upgrade path.
 
 ## Notes
 
 - `CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN` on the P4 host stays
-  disabled while the radio is disabled; the CP image itself does not depend on
-  that setting.
+  disabled: `p4_radio_runtime` initializes the transport explicitly before
+  Device Link, and the CP image does not depend on that setting.
+- The hosted bring-up resets the C6 before the first frame; expect about 1.5 s
+  of additional startup while the co-processor boots.
 - The 4 MB partition table is compatible with the 8 MB C6H8; the unused upper
   flash is left for a future larger layout.

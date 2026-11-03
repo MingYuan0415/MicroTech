@@ -994,6 +994,209 @@ static bool _test_missing_profile_terminals(void)
     return true;
 }
 
+static bool _test_power_on_without_profile(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    connectivity_manager_config_t config = s_manager_config;
+    config.no_profile_radio_window_ms = 300U;
+    CHECK(connectivity_manager_init(&config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    const unsigned stops_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_STOP);
+    connectivity_manager_operation_id_t power = 0U;
+    CHECK(connectivity_manager_request_wifi_power_on(&power) == ESP_OK);
+    CHECK(_wait_terminal(power, ESP_OK, false));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.wifi_enabled);
+    CHECK(!status.manual_hold);
+    CHECK(!status.radio_idle_timeout);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IDLE);
+    CHECK(!status.saved_profile);
+
+    /* A foreground scan is allowed when the switch is on, and it refreshes
+     * the idle window instead of letting it expire mid-interaction. */
+    connectivity_manager_operation_id_t scan = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_scan(false, ESP_OK, NULL));
+    CHECK(_wait_terminal(scan, ESP_OK, true));
+    CHECK(_wait_status_operation(0U, false));
+
+    /* The worker polls every second; advancing past that wake-up lets the
+     * policy check expire the window and stop the radio by itself. */
+    host_freertos_advance_ticks(1200U);
+    CHECK(_wait_wifi_enabled(false));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.manual_hold);
+    CHECK(status.radio_idle_timeout);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IDLE);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_STOP) > stops_before);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
+static bool _test_power_on_with_profile(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    connectivity_manager_config_t config = s_manager_config;
+    config.no_profile_radio_window_ms = 300U;
+    CHECK(connectivity_manager_init(&config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    const connectivity_manager_credentials_t credentials =
+    {
+        .ssid = "Power On AP",
+        .ssid_length = sizeof("Power On AP") - 1U,
+        .password = "password1",
+        .password_length = sizeof("password1") - 1U,
+        .security = CONNECTIVITY_MANAGER_SECURITY_PERSONAL,
+    };
+    connectivity_manager_operation_id_t saved = 0U;
+    CHECK(connectivity_manager_request_save_profile(
+              &credentials, &saved) == ESP_OK);
+    CHECK(_wait_terminal(saved, ESP_OK, false));
+    _set_scan_record("Power On AP", WIFI_SERVICE_SECURITY_PERSONAL);
+
+    connectivity_manager_operation_id_t power = 0U;
+    CHECK(connectivity_manager_request_wifi_power_on(&power) == ESP_OK);
+    CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_CONNECTING, NULL));
+    CHECK(_complete_connection(UINT32_C(0x0100000a)));
+    CHECK(_wait_terminal(power, ESP_OK, false));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.wifi_enabled);
+    CHECK(!status.manual_hold);
+    CHECK(status.state == CONNECTIVITY_MANAGER_STATE_IP_READY);
+
+    /* With a saved network the idle window does not apply: a completed
+     * connection must survive an advance well past the configured window. */
+    host_freertos_advance_ticks(1200U);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IP_READY, NULL));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.wifi_enabled);
+    CHECK(!status.radio_idle_timeout);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
+static bool _test_idle_window_activity_refresh(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    connectivity_manager_config_t config = s_manager_config;
+    config.no_profile_radio_window_ms = 2000U;
+    CHECK(connectivity_manager_init(&config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t power = 0U;
+    CHECK(connectivity_manager_request_wifi_power_on(&power) == ESP_OK);
+    CHECK(_wait_terminal(power, ESP_OK, false));
+    host_freertos_advance_ticks(1000U);
+    CHECK(_wait_wifi_enabled(true));
+
+    connectivity_manager_operation_id_t scan = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_scan(false, ESP_OK, NULL));
+    CHECK(_wait_terminal(scan, ESP_OK, true));
+    CHECK(_wait_status_operation(0U, false));
+
+    /* 1000 ms more is past the original window but inside the refreshed one. */
+    host_freertos_advance_ticks(1000U);
+    CHECK(_wait_wifi_enabled(true));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(!status.radio_idle_timeout);
+
+    host_freertos_advance_ticks(1500U);
+    CHECK(_wait_wifi_enabled(false));
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.radio_idle_timeout);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
+static bool _test_idle_window_suspend_resume(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    connectivity_manager_config_t config = s_manager_config;
+    config.no_profile_radio_window_ms = 300U;
+    CHECK(connectivity_manager_init(&config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+
+    connectivity_manager_operation_id_t power = 0U;
+    CHECK(connectivity_manager_request_wifi_power_on(&power) == ESP_OK);
+    CHECK(_wait_terminal(power, ESP_OK, false));
+    CHECK(connectivity_manager_suspend(TEST_TIMEOUT_MS) == ESP_OK);
+    /* Standby must not count against the window: the radio is already off
+     * while suspended, and the wake gives a fresh full window. */
+    host_freertos_advance_ticks(1200U);
+    CHECK(connectivity_manager_resume(TEST_TIMEOUT_MS) == ESP_OK);
+    CHECK(_wait_wifi_enabled(true));
+    host_freertos_advance_ticks(1200U);
+    CHECK(_wait_wifi_enabled(false));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(connectivity_manager_get_status(&status) == ESP_OK);
+    CHECK(status.radio_idle_timeout);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
+static bool _test_scan_with_policy_off_stops_radio(void)
+{
+    host_nv_storage_reset();
+    host_wifi_port_reset();
+    _terminal_observer_reset();
+    CHECK(connectivity_manager_init(&s_manager_config) == ESP_OK);
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, NULL));
+    const unsigned stops_before =
+        host_wifi_port_call_count(HOST_WIFI_PORT_STOP);
+
+    /* BLE provisioning scans before any profile exists; the manager must be
+     * allowed to power the radio transiently and stop it again afterwards. */
+    connectivity_manager_operation_id_t scan = 0U;
+    CHECK(connectivity_manager_request_scan(&scan) == ESP_OK);
+    CHECK(_wait_scan(true, ESP_OK, NULL));
+    CHECK(_submit_event(WIFI_SERVICE_PORT_EVENT_SCAN_DONE,
+                        WIFI_SERVICE_FAILURE_NONE, 0U) == ESP_OK);
+    CHECK(_wait_scan(false, ESP_OK, NULL));
+    CHECK(_wait_terminal(scan, ESP_OK, true));
+    connectivity_manager_status_snapshot_t status;
+    CHECK(_wait_status(CONNECTIVITY_MANAGER_STATE_IDLE, &status));
+    CHECK(!status.wifi_enabled);
+    CHECK(status.manual_hold);
+    CHECK(!status.radio_idle_timeout);
+    CHECK(host_wifi_port_call_count(HOST_WIFI_PORT_STOP) > stops_before);
+    CHECK(connectivity_manager_deinit(
+              CONNECTIVITY_MANAGER_WAIT_FOREVER) == ESP_OK);
+    CHECK(host_wifi_port_is_clean_snapshot());
+    return true;
+}
+
 static bool _test_hex_psk_recovery(void)
 {
     static const char hex_psk[] =
@@ -3395,6 +3598,11 @@ static bool _run_pipeline(void)
     CHECK(_test_cancel_failure_terminal());
     CHECK(_test_save_profile_does_not_connect());
     CHECK(_test_missing_profile_terminals());
+    CHECK(_test_power_on_without_profile());
+    CHECK(_test_power_on_with_profile());
+    CHECK(_test_idle_window_activity_refresh());
+    CHECK(_test_idle_window_suspend_resume());
+    CHECK(_test_scan_with_policy_off_stops_radio());
     CHECK(_test_profile_read_failure_classification());
     CHECK(_test_hex_psk_recovery());
     CHECK(_test_manager_deinit_terminal());

@@ -24,15 +24,27 @@ CONFIG_ESP_WIFI_REMOTE_ENABLED=y
 CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
 CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
 CONFIG_ESP_HOSTED=y
-# Bench bring-up: the C6 CP firmware is not updated yet and an auto-init before
-# app_main blocks the UI on the dead hosted link. The radio stays disabled in
-# the product config until the C6 upgrade; once enabled, p4_radio_runtime calls
-# esp_hosted_init()/esp_hosted_connect_to_slave() explicitly before Device Link.
+# p4_radio_runtime brings the transport up explicitly before Device Link, so
+# hosted runs no init ahead of app_main; that keeps the C6 reset and the SDIO
+# handshake inside the runtime's ordered startup and rollback.
 CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n
 CONFIG_ESP_HOSTED_HOST_FEAT_WIFI=y
 CONFIG_ESP_HOSTED_HOST_FEAT_BT=y
 CONFIG_EH_HOST_PORT_DMA_PREFER_SPIRAM=y
+# The C6 owns the BT controller; the P4 runs only the NimBLE host, whose HCI
+# transport is bound to esp_hosted by the esp_hosted_bt_host_stack adapter.
 CONFIG_BT_CONTROLLER_DISABLED=y
+# The P4 host's TinyCrypt uECC ECDH produces a shared secret that does not
+# match the peer's during LE Secure Connections pairing; NimBLE's mbedTLS
+# override (PSA ECDH) is correct on this target and shares the TLS crypto
+# already linked into the image. Revisit this workaround after an IDF upgrade
+# once the TinyCrypt ECDH result is fixed.
+CONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=y
+# The connected board is P4 rev <3, which has no ECDSA peripheral. IDF still
+# enables the PSA hardware ECDSA verifier by default, so every TLS signature
+# verification logs an error and falls back to software. Select the software
+# path directly; revisit if a rev3 board is used.
+# CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY is not set
 # C6 SDIO wiring: CLK=18, CMD=19, D0..D3=14..17, reset=54.
 CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
 CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=y

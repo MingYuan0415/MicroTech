@@ -58,7 +58,7 @@ dependencies:
       type: service
     version: 0.5.3
   espressif/esp_audio_codec:
-    component_hash: a5b9275af74247e3ce536d16a7080e4d77207a185b63e1bea368eb4d57176c2b
+    component_hash: 16e2880dbdd5a72264051f750f33a6e5a38fd25621c83e3a32a85a152d2d2643
     dependencies:
     - name: idf
       require: private
@@ -66,7 +66,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.6.2
+    version: 2.5.0
   espressif/esp_codec_dev:
     component_hash: 4779f31a3ba3f9b38aee1afe6ccb9ba8f6108dc3a6e77d39d7d714e9a215371b
     dependencies:
@@ -77,18 +77,31 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.6.2
-  espressif/esp_io_expander:
-    component_hash: 7b7f91270172e46ca4597e3874f48d8412e280e8c295559f5922ec38656e3e5f
+  espressif/esp_hosted:
+    component_hash: c88052665d8df3c7185cb5e34327d77674599006bbbbe4bfdb43c44f9a2a73a3
     dependencies:
     - name: idf
       require: private
-      version: '>=4.4.2'
+      version: '>=5.5'
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.2.1
-  espressif/esp_lcd_sh8601:
-    component_hash: 18245cd23204eefb67f61b362405f78364fa13b13cdedda5f7546d89701c506b
+    targets:
+    - esp32
+    - esp32c2
+    - esp32s2
+    - esp32s3
+    - esp32c3
+    - esp32c5
+    - esp32c6
+    - esp32c61
+    - esp32h2
+    - esp32h4
+    - esp32h21
+    - esp32p4
+    version: 3.0.10
+  espressif/esp_lcd_st7796:
+    component_hash: cf252db91cd7b0928b0e03916047d1b90fde8502f9ed00328aa22587d37246a1
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
@@ -96,11 +109,17 @@ dependencies:
       version: 0.*
     - name: idf
       require: private
-      version: '>=5.3'
+      version: '>=5.2'
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.0.1~1
+    targets:
+    - esp32
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32c3
+    version: 1.5.0
   espressif/esp_lcd_touch:
     component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
     dependencies:
@@ -397,8 +416,8 @@ direct_dependencies:
 - espressif/cjson
 - espressif/esp_audio_codec
 - espressif/esp_codec_dev
-- espressif/esp_io_expander
-- espressif/esp_lcd_sh8601
+- espressif/esp_hosted
+- espressif/esp_lcd_st7796
 - espressif/esp_lcd_touch_ft5x06
 - espressif/esp_lvgl_adapter
 - espressif/esp_new_jpeg
@@ -410,6 +429,6 @@ direct_dependencies:
 - nv_storage
 - sd_storage_service
 - wifi_service
-manifest_hash: 01bd419b1600867af360ba1357ab04b9b9df012686f6c71dbdb88575f06d587f
-target: esp32s3
+manifest_hash: f5f73fe823b9c91d65895c64e9f25a82c9a0aad946fee2f4d2b980a165b3ae70
+target: esp32p4
 version: 3.0.0

@@ -1150,6 +1150,14 @@ esp_err_t connectivity_manager_request_wifi_disable(
     return ESP_OK;
 }
 
+esp_err_t connectivity_manager_request_wifi_power_on(
+    connectivity_manager_operation_id_t *out_operation_id)
+{
+    assert(out_operation_id != NULL);
+    *out_operation_id = 1U;
+    return ESP_OK;
+}
+
 esp_err_t connectivity_manager_request_wifi_enable(
     connectivity_manager_operation_id_t *out_operation_id)
 {

@@ -8,7 +8,8 @@ It integrates display and touch, RTC, and power management, and provides
 LVGL-based built-in applications, Wi-Fi services, a BLE extension interface,
 persistent storage, and standby/wake flows. The ESP32-P4 backend provides
 display, touch, key input, AXP2101 power telemetry, ES8311 audio and SDMMC
-storage; its C6-hosted radio path is tracked separately.
+storage; its Wi-Fi and BLE run through the on-board ESP32-C6 over ESP-Hosted
+SDIO, with the co-processor firmware in [`firmware/c6-cp/`](firmware/c6-cp/README.md).
 
 ## Repository layout
 
@@ -50,6 +51,10 @@ idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
+The ESP32-P4 board also needs the ESP32-C6 co-processor image from
+[`firmware/c6-cp/`](firmware/c6-cp/README.md); the P4 host cannot reach Wi-Fi or
+BLE without it.
+
 Configuration changes land in `sdkconfig.defaults` and its target-specific
 companions `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`
 (`idf.py save-defconfig`); never edit `sdkconfig` by hand. Run `idf.py size`
@@ -70,6 +75,14 @@ python3 tests/run_python_tests.py contracts
 
 ## Features
 
+- **Radio**: the ESP32-S3 board uses its native Wi-Fi and BLE controllers. The
+  ESP32-P4 board runs as an ESP-Hosted host over SDIO slot 1 (the hosted version
+  is pinned in `main/idf_component.yml`): the
+  `esp_wifi_*` control path goes through `esp_wifi_remote`, and NimBLE reaches
+  the C6 BT controller through the hosted HCI byte pipe via
+  `esp_hosted_bt_host_stack`. The C6 image is a separate project under
+  `firmware/c6-cp/`. If the hosted link cannot be brought up at boot, the P4
+  keeps the display and local services and degrades to the offline UI.
 - **Weather**: set `Weather server base URL` and `Weather device token` (without
   the `Bearer ` prefix) under menuconfig `MicroTech product integration`. When
   either is empty, the weather page shows `"服务未配置"` (service not
