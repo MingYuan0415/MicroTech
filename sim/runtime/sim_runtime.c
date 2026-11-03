@@ -44,6 +44,7 @@
 
 static const uint16_t s_font_sizes[] = APP_THEME_FONT_SIZES;
 
+#if SIM_STANDBY_SUPPORTED
 static esp_err_t _standby_request(void)
 {
     return ESP_OK;
@@ -53,6 +54,16 @@ static esp_err_t _standby_cancel(void)
 {
     return ESP_OK;
 }
+
+static const app_manager_standby_ops_t s_standby_ops =
+{
+    .request_standby = _standby_request,
+    .cancel_standby = _standby_cancel,
+    .is_standby_allowed = NULL,
+};
+#else
+static const app_manager_standby_ops_t s_standby_ops = {0};
+#endif
 
 static char s_cc_time[8];
 static char s_cc_date[32];
@@ -411,11 +422,8 @@ esp_err_t sim_runtime_boot(void)
             .register_handler = _input_register,
             .unregister_handler = _input_unregister,
         },
-        .standby_ops = {
-            .request_standby = _standby_request,
-            .cancel_standby = _standby_cancel,
-            .is_standby_allowed = NULL,
-        },
+        .standby_ops = s_standby_ops,
+        .standby_supported = SIM_STANDBY_SUPPORTED,
         .control_center_ops = {
             .get_wifi = _cc_get_wifi,
             .set_wifi = _cc_set_wifi,
@@ -560,12 +568,15 @@ esp_err_t sim_runtime_boot(void)
                 esp_err_to_name(result));
         return result;
     }
-    result = app_manager_pm_set_standby_delay_ms(-1);
-    if (result != ESP_OK)
+    if (app_manager_pm_is_standby_supported())
     {
-        fprintf(stderr, "sim boot: pm standby disable failed %s\n",
-                esp_err_to_name(result));
-        return result;
+        result = app_manager_pm_set_standby_delay_ms(-1);
+        if (result != ESP_OK)
+        {
+            fprintf(stderr, "sim boot: pm standby disable failed %s\n",
+                    esp_err_to_name(result));
+            return result;
+        }
     }
 
     printf("sim runtime up: builtin apps=%d\n", discovered);

@@ -4,12 +4,14 @@
 
 MicroTech is an ESP-IDF firmware project for the Waveshare ESP32-S3 Touch AMOLED
 1.8 and, as a second board variant, the Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5.
-It integrates display and touch, RTC, and power management, and provides
-LVGL-based built-in applications, Wi-Fi services, a BLE extension interface,
-persistent storage, and standby/wake flows. The ESP32-P4 backend provides
-display, touch, key input, AXP2101 power telemetry, ES8311 audio and SDMMC
-storage; its Wi-Fi and BLE run through the on-board ESP32-C6 over ESP-Hosted
-SDIO, with the co-processor firmware in [`firmware/c6-cp/`](firmware/c6-cp/README.md).
+It integrates display and touch, power management, LVGL-based built-in
+applications, Wi-Fi services, a BLE extension interface, and persistent
+storage. The ESP32-S3 variant also provides RTC and CPU standby/wake; the
+ESP32-P4 backend provides display, touch, key input, AXP2101 power telemetry,
+ES8311 audio and SDMMC storage, with screen-off only (no CPU light sleep or
+RTC-capable GPIO wake source). Its Wi-Fi and BLE run through the on-board
+ESP32-C6 over ESP-Hosted SDIO, with the co-processor firmware in
+[`firmware/c6-cp/`](firmware/c6-cp/README.md).
 
 ## Repository layout
 
@@ -59,7 +61,7 @@ Configuration changes land in `sdkconfig.defaults` and its target-specific
 companions `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`
 (`idf.py save-defconfig`); never edit `sdkconfig` by hand. Run `idf.py size`
 after changing cache, DMA reservation, or resources, and check display, touch,
-standby, and wake behavior on hardware.
+screen-off, and (on ESP32-S3) standby/wake behavior on hardware.
 
 ## Host tests
 

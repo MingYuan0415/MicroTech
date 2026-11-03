@@ -45,8 +45,10 @@ them.
 
 The default panel is 368x448 (ESP32-S3). For the ESP32-P4 board build a second
 directory with `-DSIM_PANEL=320x480`; the framebuffer, SDL window, PNG encoder
-and agent geometry follow the selected compile-time size. The golden regression
-under `sim/ci/golden/` remains the 368x448 baseline.
+and agent geometry follow the selected compile-time size. The P4 build defaults
+`SIM_STANDBY_SUPPORTED=OFF` (screen-off only); the S3 build defaults it to
+`ON`. The golden regression under `sim/ci/golden/` remains the 368x448
+baseline.
 
 ```sh
 cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480

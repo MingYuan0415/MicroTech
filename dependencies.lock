@@ -429,6 +429,6 @@ direct_dependencies:
 - nv_storage
 - sd_storage_service
 - wifi_service
-manifest_hash: f5f73fe823b9c91d65895c64e9f25a82c9a0aad946fee2f4d2b980a165b3ae70
+manifest_hash: f5bf84d457f8999472e86a90d76cc074d7c2398a02356f9f695ea2c3a3fa2720
 target: esp32p4
 version: 3.0.0

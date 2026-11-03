@@ -1104,6 +1104,11 @@ static esp_err_t _app_runtime_start_app_services(
     const app_runtime_start_context_t *context)
 {
     static const uint16_t font_sizes[] = APP_THEME_FONT_SIZES;
+    app_manager_standby_ops_t standby_ops = {0};
+    if (context->product->system_pm_supported)
+    {
+        standby_ops = app_runtime_pm_get_standby_ops();
+    }
     const app_manager_config_t app_config =
     {
         .disp_port = context->display,
@@ -1125,7 +1130,8 @@ static esp_err_t _app_runtime_start_app_services(
             .set_brightness_temp = context->screen->set_brightness_temp,
         },
         .input_ops = app_runtime_pm_get_input_ops(),
-        .standby_ops = app_runtime_pm_get_standby_ops(),
+        .standby_ops = standby_ops,
+        .standby_supported = context->product->system_pm_supported,
         .control_center_ops = app_runtime_control_get_ops(),
         .max_resident_apps = context->product->app_max_resident_apps,
         .resident_policy = context->product->app_resident_policy,

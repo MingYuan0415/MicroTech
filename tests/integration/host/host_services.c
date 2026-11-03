@@ -32,6 +32,7 @@ EVENT_BUS_DEFINE_ID(WEATHER_SERVICE_MSG);
 static uint8_t s_brightness = 192;
 static int32_t s_screen_timeout_ms = 30000;
 static int32_t s_standby_timeout_ms = 5000;
+static bool s_standby_supported = true;
 static atomic_bool s_power_available;
 static power_service_snapshot_t s_power_snapshot;
 static bool s_power_snapshot_valid;
@@ -87,6 +88,7 @@ void host_runtime_reset(void)
     s_brightness = 192;
     s_screen_timeout_ms = 30000;
     s_standby_timeout_ms = 5000;
+    s_standby_supported = true;
     atomic_store(&s_power_available, true);
     s_power_snapshot_valid = false;
     atomic_store(&s_time_available, true);
@@ -1033,7 +1035,17 @@ esp_err_t app_manager_pm_request_screen_off(void)
 
 esp_err_t app_manager_pm_request_standby(void)
 {
-    return ESP_OK;
+    return s_standby_supported ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+}
+
+bool app_manager_pm_is_standby_supported(void)
+{
+    return s_standby_supported;
+}
+
+void host_pm_set_standby_supported(bool supported)
+{
+    s_standby_supported = supported;
 }
 
 int32_t app_manager_pm_get_timeout_ms(void)
@@ -1055,17 +1067,25 @@ esp_err_t app_manager_pm_set_timeout_ms_async(int32_t timeout_ms)
 
 int32_t app_manager_pm_get_standby_delay_ms(void)
 {
-    return s_standby_timeout_ms;
+    return s_standby_supported ? s_standby_timeout_ms : -1;
 }
 
 esp_err_t app_manager_pm_set_standby_delay_ms(int32_t timeout_ms)
 {
+    if (!s_standby_supported)
+    {
+        return timeout_ms == -1 ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+    }
     s_standby_timeout_ms = timeout_ms;
     return ESP_OK;
 }
 
 esp_err_t app_manager_pm_set_standby_delay_ms_async(int32_t timeout_ms)
 {
+    if (!s_standby_supported)
+    {
+        return timeout_ms == -1 ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+    }
     s_standby_timeout_ms = timeout_ms;
     return ESP_OK;
 }

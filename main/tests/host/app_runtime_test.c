@@ -788,11 +788,28 @@ app_manager_input_ops_t app_runtime_pm_get_input_ops(void)
     };
 }
 
+static esp_err_t _test_standby_request(void)
+{
+    return ESP_OK;
+}
+
+static esp_err_t _test_standby_cancel(void)
+{
+    return ESP_OK;
+}
+
+static bool _test_standby_allowed(void)
+{
+    return true;
+}
+
 app_manager_standby_ops_t app_runtime_pm_get_standby_ops(void)
 {
     return (app_manager_standby_ops_t)
     {
-        0
+        .request_standby = _test_standby_request,
+        .cancel_standby = _test_standby_cancel,
+        .is_standby_allowed = _test_standby_allowed,
     };
 }
 
@@ -892,6 +909,9 @@ esp_err_t app_manager_init(const struct app_manager_config *config)
     assert(app_config->image_resources == NULL);
     assert(app_config->image_resource_count == 0U);
     assert(app_config->image_resource_count == 0U);
+    assert(app_config->standby_supported);
+    assert(app_config->standby_ops.request_standby != NULL);
+    assert(app_config->standby_ops.cancel_standby != NULL);
     return _test_result(TEST_EVENT_APP_MANAGER_INIT);
 }
 

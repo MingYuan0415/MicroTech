@@ -37,6 +37,7 @@ LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 
 默认面板为 368x448（ESP32-S3）。ESP32-P4 版型请用 `-DSIM_PANEL=320x480` 另建
 构建目录；framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期尺寸。
+P4 构建默认 `SIM_STANDBY_SUPPORTED=OFF`（仅熄屏），S3 构建默认 `ON`。
 `sim/ci/golden/` 的 golden 回归仍以 368x448 为基线。
 
 ```sh

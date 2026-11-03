@@ -4340,6 +4340,57 @@ static void _test_control_center_volume_row_hidden(void)
     assert(app_manager_control_center_set_enabled(false) == ESP_OK);
 }
 
+static void _test_standby_capability_ui(void)
+{
+    /* Screen-off-only product: no standby section in Settings. */
+    host_pm_set_standby_supported(false);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    _click_action("显示与电源");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "display"));
+    assert(_ui_has_text("自动熄屏"));
+    assert(!_ui_has_text("熄屏后待机"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+
+    /* A standby-capable product still exposes the full section. */
+    host_pm_set_standby_supported(true);
+    _click_action("显示与电源");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "display"));
+    assert(_ui_has_text("熄屏后待机"));
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    /* Control center: only screen-off exists without standby capability. */
+    host_pm_set_standby_supported(false);
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("熄屏"));
+    assert(!_ui_has_text("待机"));
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+
+    host_pm_set_standby_supported(true);
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("熄屏"));
+    assert(_ui_has_text("待机"));
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+
 /* The settings sound page is the user-facing volume control: a drag previews
  * through set_volume and only the release persists. */
 static void _test_settings_sound_page_volume(void)
@@ -4435,6 +4486,7 @@ int main(void)
     _test_control_center_band_and_entering_toggle();
     _test_control_center_volume_row();
     _test_control_center_volume_row_hidden();
+    _test_standby_capability_ui();
     _test_settings_sound_page_volume();
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);

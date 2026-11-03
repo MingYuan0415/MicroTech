@@ -33,6 +33,8 @@ typedef struct host_lv_system_object_snapshot
 
 /** @brief Reset all host service and LVGL fixtures. */
 void host_runtime_reset(void);
+/** @brief Select whether the fake product supports CPU standby. */
+void host_pm_set_standby_supported(bool supported);
 /**
  * @brief Toggle all optional non-Wi-Fi service fakes.
  * @param available selects normal snapshots or unavailable responses.

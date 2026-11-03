@@ -28,6 +28,16 @@ if(NOT SIM_BSP_H_RES MATCHES "^[0-9]+$" OR
         "SIM_PANEL width and height must be positive integers, got '${SIM_PANEL}'")
 endif()
 
+if(NOT DEFINED SIM_STANDBY_SUPPORTED)
+    if(SIM_BSP_H_RES EQUAL 320)
+        set(SIM_STANDBY_SUPPORTED OFF CACHE BOOL
+            "Simulate a product with CPU standby support" FORCE)
+    else()
+        set(SIM_STANDBY_SUPPORTED ON CACHE BOOL
+            "Simulate a product with CPU standby support" FORCE)
+    endif()
+endif()
+
 get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 if(NOT EXISTS "${MT_ROOT}/managed_components/lvgl__lvgl/lvgl.h")
@@ -340,6 +350,7 @@ target_compile_definitions(microtech_sim PRIVATE
     APP_RESOURCES_ENABLED=1
     SIM_BSP_H_RES=${SIM_BSP_H_RES}U
     SIM_BSP_V_RES=${SIM_BSP_V_RES}U
+    SIM_STANDBY_SUPPORTED=$<BOOL:${SIM_STANDBY_SUPPORTED}>
     "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\""
     LV_KCONFIG_IGNORE)
 if(SIM_MUSIC_BACKEND STREQUAL "real")

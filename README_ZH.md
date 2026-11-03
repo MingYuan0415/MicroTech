@@ -2,7 +2,7 @@
 
 # MicroTech
 
-MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 的 ESP-IDF 固件工程，集成显示与触摸、RTC、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口、持久化存储以及待机/唤醒流程。ESP32-P4 后端提供显示、触摸、按键输入、AXP2101 电源遥测、ES8311 音频和 SDMMC 存储；其 Wi-Fi 与 BLE 经板载 ESP32-C6 的 ESP-Hosted SDIO 链路工作，协处理器固件见 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md)。
+MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 的 ESP-IDF 固件工程，集成显示与触摸、电源管理，提供基于 LVGL 的内置应用、Wi-Fi 服务、BLE 扩展接口和持久化存储。ESP32-S3 版型另提供 RTC 与 CPU 待机/唤醒；ESP32-P4 后端提供显示、触摸、按键输入、AXP2101 电源遥测、ES8311 音频和 SDMMC 存储，仅支持熄屏（无 CPU light sleep，且无 RTC 可唤醒 GPIO）。其 Wi-Fi 与 BLE 经板载 ESP32-C6 的 ESP-Hosted SDIO 链路工作，协处理器固件见 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md)。
 
 ## 工程结构
 
@@ -40,7 +40,7 @@ idf.py -p <PORT> flash monitor
 
 P4 版型还需烧录 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md) 中的 ESP32-C6 协处理器镜像，否则 P4 主机无法使用 Wi-Fi 与 BLE。
 
-配置改动落在 `sdkconfig.defaults` 及其按 target 的伴随文件 `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`（`idf.py save-defconfig`），不手改 `sdkconfig`。修改缓存、DMA 预留或资源后运行 `idf.py size`，并在真机检查显示、触摸、待机和唤醒。
+配置改动落在 `sdkconfig.defaults` 及其按 target 的伴随文件 `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32p4`（`idf.py save-defconfig`），不手改 `sdkconfig`。修改缓存、DMA 预留或资源后运行 `idf.py size`，并在真机检查显示、触摸、熄屏，以及（仅 ESP32-S3）待机和唤醒。
 
 ## 宿主测试
 

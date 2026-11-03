@@ -110,6 +110,46 @@ target_compile_definitions(app_runtime_test PRIVATE
 )
 add_main_host_test(app_runtime_test app_runtime_test)
 
+add_executable(app_product_config_p4_test
+    app_product_config_p4_test.c
+    ../../app_product_config.c
+)
+
+target_include_directories(app_product_config_p4_test PRIVATE
+    fakes
+    ../..
+    ../../../layers/app_manager/app_core/include
+    ../../../layers/app_manager/app_theme/include
+    ../../../layers/apps/common/include
+    ../../../layers/bsp/include
+    ../../../layers/middleware/components/chore_service/include
+    ../../../layers/middleware/components/device_link_service/include
+    ../../../layers/middleware/components/factory_reset_service/include
+    ../../../layers/middleware/components/ble_runtime/include
+    ../../../layers/middleware/components/audio_service/include
+    ../../../layers/middleware/components/connectivity_manager/include
+    ../../../layers/middleware/components/event_bus/include
+    ../../../layers/middleware/components/mt_log/include
+    ../../../layers/middleware/components/nv_storage/include
+    ../../../layers/middleware/components/power_service/include
+    ../../../layers/middleware/components/imu_service/include
+    ../../../layers/middleware/components/sd_storage_service/include
+    ../../../layers/middleware/components/system_pm/include
+    ../../../layers/middleware/components/time_service/include
+    ../../../layers/middleware/components/timer_service/include
+    ../../../layers/middleware/components/recorder_service/include
+    ../../../layers/middleware/components/file_service/include
+    ../../../layers/middleware/components/onboarding_service/include
+    ../../../layers/middleware/components/weather_service/include
+    ../../../layers/middleware/components/music_service/include
+)
+
+configure_main_host_target(app_product_config_p4_test)
+target_compile_definitions(app_product_config_p4_test PRIVATE
+    CONFIG_IDF_TARGET_ESP32P4=1
+)
+add_main_host_test(app_product_config_p4_test app_product_config_p4_test)
+
 add_executable(app_runtime_pm_test
     app_runtime_pm_test.c
     ../../app_runtime_pm.c
