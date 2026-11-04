@@ -75,5 +75,6 @@ amber warning role and document the mapping when a profile declares it. The old
 ## Verification
 
 A palette-level change must pass `theme_contrast_test` (host) +
-`sim/ci/run_ci.sh` + `sim/tools/review_pages.py` (regenerate the baseline together
-with the palette).
+`sim/ci/run_ci.sh` and generate/read the current GUI snapshots with
+`sim/tools/review_pages.py`; snapshots are review artifacts, not a stored
+palette baseline.

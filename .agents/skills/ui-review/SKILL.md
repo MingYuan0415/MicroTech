@@ -16,7 +16,7 @@ A full review protocol is not the same as the full repository page set.
 
 | Change | Automated coverage | Human inspection and interactions |
 | --- | --- | --- |
-| Copy only | Lint and baseline check for touched pages | Read touched states; no unrelated gesture set |
+| Copy only | Lint and snapshot capture for touched pages | Read touched states; no unrelated gesture set |
 | Visible behavior/state fix | Affected pages and relevant scenarios | Inspect states the fix touches and replay involved interactions |
 | New page, new state, local re-layout/restyle | Full protocol for that page; add/update relevant spec entries | Relevant reachable states, gestures, entry and return paths |
 | Shared widget/helper | Its actual consumers; full spec if scope cannot be bounded reliably | Representative consumers and changed interactions |
@@ -36,10 +36,10 @@ Do not assume every service call change necessarily changes the interface.
    expectations to `sim/ci/review/spec.json` where practical. Record states the
    simulator cannot reproduce as hardware-only limitations; do not invent
    evidence or demand screenshots for impossible combinations.
-2. **Geometry and visuals.** Run the affected-page lint/baseline check. Read
-   screenshots for composition, color, icons and wrong-state visuals; use tree
-   coordinates and rendered lines for exact fit. Inspect long external input,
-   signs/units and Chinese prose where they affect the page.
+2. **Geometry and visuals.** Run the affected-page lint and snapshot capture.
+   Read snapshots for composition, color, icons and wrong-state visuals; use
+   tree coordinates and rendered lines for exact fit. Inspect long external
+   input, signs/units and Chinese prose where they affect the page.
 3. **Input.** Exercise changed taps and drags from labels, icons and gaps.
    Ordinary taps dragged off must not activate; scroll owners must move in
    both directions, pinned content must remain pinned, and toggles must persist
@@ -54,9 +54,9 @@ Do not assume every service call change necessarily changes the interface.
 
 - **Automatic:** rendered-line completeness, some WRAP-height and ancestor
   clipping, observable `...` truncation, control reachability through scroll
-  travel, unexpected disabled controls, unknown image IDs, and masked baseline
-  differences. Consult `sim/tools/review_pages.py` for exact implementation;
-  these checks are not a general proof of all horizontal/vertical clipping.
+  travel, unexpected disabled controls, unknown image IDs, and snapshot
+  capture. Consult `sim/tools/review_pages.py` for exact implementation; these
+  checks are not a general proof of all horizontal/vertical clipping.
 - **Spec-dependent:** `single_line` and `balanced_prose` match explicit text
   selectors; `expect_visible`, `expect_absent`, and `expect_image` cover only
   their listed expectations. Deliberate summary ellipses use `allow_truncation`.
@@ -84,18 +84,18 @@ python3 tools/agent/mt.py sim --scenario smoke_pages
 ```
 
 `mt.py ui` builds the current simulator, runs the affected-page check on an
-isolated port, and prints state/failure counts plus the screenshot directory.
-Select the product under review with `SIM_PRODUCT` (the S3 reference is the
-default for the 368x448 geometry; the P4 geometry selects `p4_reference`). A
-page owned by an App that the selected product does not compile is not part of
-that product's review scope; do not report its absence as a UI defect. Do
-not open every screenshot: the full spec currently has 34 pages and 82 states.
-Read only failing or changed states, and prefer tree coordinates/rendered lines
-over images when checking fit. Raw commands remain available:
+isolated port, and prints state/snapshot/failure counts plus the snapshot
+directory. It follows the product selected by the current root build; use a
+separate `-DSIM_PRODUCT=<product-id>` build directory when reviewing another
+product. A page owned by an App that the selected product does not compile is
+not part of that product's review scope; do not report its absence as a UI
+defect. Do not open every snapshot: the full spec currently has 34 pages and 82
+states. Read only failing or changed states, and prefer tree coordinates/rendered
+lines over images when checking fit. Raw commands remain available:
 
 ```sh
 cmake --build build/sim -- --quiet
-python3 sim/tools/review_pages.py --check --pages settings/wifi,settings/bluetooth
+python3 sim/tools/review_pages.py --pages settings/wifi,settings/bluetooth
 sim/ci/run_ci.sh --scenario smoke_pages
 ```
 
@@ -107,13 +107,11 @@ this mode has no per-page process isolation and never stops the external sim.
 `--keep-sim` retains the final owned instance and its temporary data for probing;
 end it explicitly when finished. Detailed operation lives in `sim/README.md`.
 
-A lint failure requires understanding the violated contract; a baseline diff
-requires judging whether pixels changed intentionally. Inspect new captures
-before `--update`, update only affected pages, then run `--check`. Do not raise
-tolerance, broaden masks, or remove assertions to hide an unintended change.
-Masks cover genuinely volatile pixels; lint and explicit assertions still need
-to prove their relevant geometry/text. `no_golden` is for surfaces without a
-useful stable pixel baseline, not a shortcut around review.
+A lint failure requires understanding the violated contract. Snapshots are
+review evidence, not a pass/fail baseline: inspect the captures for the changed
+states and judge composition, color, icons, and wrong-state visuals yourself.
+Do not treat a green lint run or a generated file as visual approval. Snapshots
+are not committed; keep them local or attach them to the review artifact.
 
 Report selected pages/states and scenarios, important gestures, artifact/session
 identity, failures, and unexecuted checks. A green harness plus a single default

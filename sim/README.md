@@ -50,10 +50,11 @@ SDL window, PNG encoder and agent geometry follow that compile-time panel; the
 product's board also determines `SIM_STANDBY_SUPPORTED`. If the profile is not
 available, the target in `build/config/sdkconfig.h` selects the default product.
 Use `-DSIM_PRODUCT=<product-id>` to select another product explicitly; its board
-manifest still owns the panel dimensions. The golden regression under
-`sim/ci/golden/` remains the 368x448 S3 baseline; `sim/ci/run_ci.sh` defaults
-`SIM_PRODUCT=s3_reference` for its fixtures, and setting `SIM_PRODUCT` overrides
-that baseline.
+manifest still owns the panel dimensions. The structural scenario suite keeps
+its S3 368x448 fixture because its scenario coordinates are S3-specific;
+`sim/ci/run_ci.sh` defaults `SIM_PRODUCT=s3_reference`, and setting
+`SIM_PRODUCT` overrides that fixture. Page-review snapshots produced by
+`mt.py ui` follow the current product.
 
 ```sh
 cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PRODUCT=p4_reference
@@ -91,7 +92,7 @@ gets an isolated port and `build/sim/instances/<port>/` state. Set
 `SIM_AGENT_PORT=N` to request a fixed port, or pass `--port N` to `simctl.py`
 when driving an automatically allocated session. When there is no graphical
 display environment, starting automatically falls back to headless residency.
-For CI regression and golden samples, use `sh sim/ci/run_ci.sh [--update] [--scenario NAME]... [--log-dir DIR]`.
+For CI regression and review snapshots, use `sh sim/ci/run_ci.sh [--scenario NAME]... [--log-dir DIR]`.
 Development sessions allocate distinct ports and per-instance state; CI runs
 allocate per-invocation ports and private NVS/SD/data/screenshot directories.
 Concurrent CI invocations serialize only their shared CMake/Ninja build. Page
@@ -183,9 +184,9 @@ non-`--ci` mode (the networked session of `python3 sim/dev.py`, or a bare
 Weather freshness uses the host's real clock
 (`weather_service_port_now_seconds` → `time(NULL)`), while `sim.set_time` only
 affects the app clock: therefore the fixed fixture timestamps in CI are judged
-expired, and the weather golden under `sim/ci/golden/ui/` only guarantees layout
-regression and does not represent the live state; hardware syncs time via SNTP
-and has no such difference.
+expired, and weather screenshots only capture the current review layout and do
+not represent the live state; hardware syncs time via SNTP and has no such
+difference.
 
 ## Real Sources Compiled into sim
 
@@ -456,42 +457,39 @@ while paused. A CI session stays resident until `sim.exit` or a signal.
 sim/ci/run_ci.sh                    # port preflight + check_lv_conf + build + staged parity + all scenarios
 sim/ci/run_ci.sh --scenario smoke_pages
                                     # one scenario; repeat --scenario for more
-sim/ci/run_ci.sh build/sim --update # regenerate PNG goldens (commit after manual review)
+sim/ci/run_ci.sh build/sim          # build a custom simulator directory
 ```
 
-`--log-dir DIR` keeps per-scenario simulator logs and `run_scenarios.py` JSON
-reports under `DIR` (default `build/agent/sim/<timestamp>-<pid>`). The build step uses
-Ninja's quiet mode, so progress lines are omitted while diagnostics remain.
-`mt.py sim` wraps the same entry point and prints only scenario failures plus the
-log directory.
+`--log-dir DIR` keeps per-scenario simulator logs, JSON reports, and review
+snapshots under `DIR` (default `build/agent/sim/<timestamp>-<pid>`). The build
+step uses Ninja's quiet mode, so progress lines are omitted while diagnostics
+remain. `mt.py sim` wraps the same entry point and prints only scenario failures
+plus the log directory.
 
-**The scenario PNG auxiliary gate is currently suspended**: the firmware GUI is
-still being adjusted, and the scenario baseline directory
-`sim/ci/golden/scenarios/` is not yet committed; page review baselines use
-`sim/ci/golden/ui/`. By default only tree assertions run; with an explicit
-`SIM_PNG_GOLDEN=1` the comparison really happens, and **a missing baseline is a
-FAIL** (generate with `run_ci.sh --update`, then commit after manual review).
-`review_pages.py --check` independently owns the page state matrix, geometry
-lint, and UI baseline comparison. A state can use `expect_absent` to assert that
-an erroneous success prompt or a stale directory row is absent; recording states
-combine the final state and target path list of `sim.sd svc` to validate that a
-same-path replaced file is still in the index. A state with an intentionally
-infinite widget animation (for example a buffering spinner) can set
-`"animated": true`; the harness samples two fixed frames instead of waiting for
+**Scenario screenshots are review artifacts**: screenshots are copied under
+`$LOG_DIR/snapshots_<scenario>/`; only tree and behavior assertions can fail a
+scenario. `review_pages.py` independently owns the page state matrix, geometry
+lint, and full-page snapshot capture; it never compares PNGs against a stored
+baseline. A state can use `expect_absent` to assert that an erroneous success
+prompt or a stale directory row is absent; recording states combine the final
+state and target path list of `sim.sd svc` to validate that a same-path replaced
+file is still in the index. A state with an intentionally infinite widget
+animation (for example a buffering spinner) can set `"animated": true`; the
+harness samples two fixed frames instead of waiting for
 `lv_anim_count_running()` to reach zero.
 
-**tree_assert baseline convention**: the scenario text assertions represent the
-current firmware UI snapshot. During GUI adjustment a `run_ci.sh` FAIL is a
-regression signal — update the scenario assertions in the same commit for
-intentional changes; an unexpected change means the gate is working.
+**tree_assert convention**: the scenario text assertions represent the current
+firmware UI snapshot. During GUI adjustment a `run_ci.sh` FAIL is a regression
+signal — update the scenario assertions in the same commit for intentional
+changes; an unexpected change means the gate is working.
 
-**Full-page baseline (`review_pages.py`)**: when a page's scroll container
+**Full-page snapshot (`review_pages.py`)**: when a page's scroll container
 reaches the bottom of the viewport (content is clipped by the screen's lower
 edge), the harness drags in segments to capture strips (a `sim.touch` drag plus
 the `scroll.top`/`bottom` ground truth from `sim.tree`) and stitches them into a
 `368 x (448 + reachable scroll amount)` full-page image: these examples use the
-368x448 S3 baseline; a P4 build uses 320x480 and the same stitched-geometry
-rules. The baseline size is the page's real height (for example `368x674` for
+368x448 S3 panel; a P4 build uses 320x480 and the same stitched-geometry rules.
+The snapshot size is the page's real height (for example `368x674` for
 `settings/about`), and the first 448 rows are byte-identical to a single-frame
 screenshot in the same state (the page chrome is preserved). A page whose scroll
 container lies entirely within the viewport (such as the `recorder/files` list),
@@ -499,7 +497,7 @@ or whose tail does not exceed the LVGL drag threshold (`MIN_REACHABLE_TRAVEL`),
 is output as a single `368x448` frame.
 Content below the fold (`flags.visible` false) participates in the checks as
 well: lint uses `_walk_on_screen` (skipping only `flags.hidden` subtrees), and
-`single_line`, `expect_visible`, `expect_image`, and the baselines all cover
+`single_line`, `expect_visible`, `expect_image`, and the snapshots all cover
 rows below the fold.
 
 Label display rules read the rendering structure from `sim.tree` directly
@@ -524,8 +522,8 @@ state.
 Pages do not share a session: when `review_pages.py` launches sim itself, each
 page uses an independent process (independent NVS and SD directories) and
 rebuilds the folder fixture after starting. Otherwise a page that ends with a
-`faulted`/`unmounted` medium would be inherited by the next page, and the pixel
-baseline would no longer describe its own page — this pollution once manifested
+`faulted`/`unmounted` medium would be inherited by the next page, and the
+snapshot would no longer describe its own page — this pollution once manifested
 as `recorder/files/detail` consistently gaining an extra "storage card or audio
 unavailable". The cost is one cold start per page; when driving an external sim
 with `--no-launch` a single session is kept and this isolation is not applied.
@@ -613,5 +611,5 @@ python3 sim/tools/run_scenarios.py sim/ci/scenarios/all_apps.json
 
 `apps/` entry; `bsp/` simulated board; `runtime/` assembly; `ports/` shims and
 service ports; `agent/` TCP bridge; `ci/` checks and scenarios; `cmake/`
-resource pipeline and link scripts; `golden/` PNG baselines; `tools/`
-simctl/MCP; `stubs/` platform stubs and the CONFIG mirror.
+resource pipeline and link scripts; `tools/` simctl/MCP; `stubs/` platform
+stubs and the CONFIG mirror.

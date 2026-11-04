@@ -698,7 +698,7 @@ MENU = """
 
  无头驱动：sim/tools/simctl.py（网络/息屏：set-wifi、pm）
  真实音乐：默认已启用；fake：SIM_MUSIC_BACKEND=fake python3 sim/dev.py
- CI 回归与金样：sh sim/ci/run_ci.sh [--update]
+ CI 回归与审查快照：sh sim/ci/run_ci.sh
 """
 
 

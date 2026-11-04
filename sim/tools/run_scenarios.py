@@ -30,16 +30,14 @@ Saves flybirds_over.png, flybirds_restart_zero.png, and
 flybirds_second_over_zero.png; takes no parameters.
 
 Usage:
-  python3 sim/tools/run_scenarios.py sim/ci/scenarios/*.json [--golden DIR]
-      [--update] [--report out.json] [--host H] [--port P]
+  python3 sim/tools/run_scenarios.py sim/ci/scenarios/*.json
+      [--report out.json] [--host H] [--port P]
 """
 import argparse
 import glob
-import hashlib
 import json
 import os
 import socket
-import subprocess
 import sys
 import time  # noqa: E401
 
@@ -104,9 +102,9 @@ def _text_targets(node, text, ancestors=(), blocked=False):
 
 
 class Runner:
-    def __init__(self, host, port, out_dir, golden, update):
+    def __init__(self, host, port, out_dir):
         self.host, self.port = host, port
-        self.out_dir, self.golden, self.update = out_dir, golden, update
+        self.out_dir = out_dir
         self.sock = None
 
     def connect(self):
@@ -449,25 +447,9 @@ class Runner:
         elif cmd == 'pause':
             self.call('sim.pause', {'enabled': bool(step['enabled'])})
         elif cmd == 'screenshot':
-            path = self.call('sim.screenshot', {'name': step['name'],
-                                                'wait_idle': step.get(
-                                                    'wait_idle', False)})['path']
-            if self.golden:
-                golden_file = os.path.join(self.golden, step['name'])
-                digest = hashlib.sha256(open(path, 'rb').read()).hexdigest()
-                if self.update:
-                    import shutil
-                    os.makedirs(self.golden, exist_ok=True)
-                    shutil.copyfile(path, golden_file)
-                elif not os.path.exists(golden_file):
-                    # 显式开启 PNG 门禁（SIM_PNG_GOLDEN=1）时，缺基线是错误，
-                    # 否则门禁会永远空过。默认（未传 --golden）不受影响。
-                    raise AssertionError(
-                        'golden %s missing; run with --update to generate'
-                        % step['name'])
-                else:
-                    gd = hashlib.sha256(open(golden_file, 'rb').read()).hexdigest()
-                    assert gd == digest, 'png mismatch %s != %s' % (gd[:12], digest[:12])
+            self.call('sim.screenshot', {'name': step['name'],
+                                         'wait_idle': step.get(
+                                             'wait_idle', False)})
         elif cmd == 'expect_error':
             reply = rpc(self.sock, step['method'], step.get('params'))
             assert not reply.get('ok'), 'request unexpectedly succeeded: %s' % reply
@@ -500,8 +482,6 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=5002)
     ap.add_argument('--out-dir', default='build/sim/shots')
-    ap.add_argument('--golden', default=None)
-    ap.add_argument('--update', action='store_true')
     ap.add_argument('--report', default=None)
     args = ap.parse_args()
 
@@ -509,7 +489,7 @@ def main():
     for pattern in args.scenarios:
         files.extend(sorted(glob.glob(pattern)) or [pattern])
 
-    r = Runner(args.host, args.port, args.out_dir, args.golden, args.update)
+    r = Runner(args.host, args.port, args.out_dir)
     r.connect()
     report = {}
     failed = False

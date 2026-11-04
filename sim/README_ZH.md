@@ -41,9 +41,9 @@ framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期面
 同时决定 `SIM_STANDBY_SUPPORTED`。若 profile 不存在，则根据
 `build/config/sdkconfig.h` 中的目标选择默认产品。可用
 `-DSIM_PRODUCT=<product-id>` 显式选择其他产品；分辨率仍由该产品的板卡清单决定。
-`sim/ci/golden/` 的 golden 回归仍以 368x448 的 S3 为基线；
-`sim/ci/run_ci.sh` 默认使用 `SIM_PRODUCT=s3_reference`，可通过环境变量
-`SIM_PRODUCT` 覆盖该基线。
+结构化场景套件保留 S3 368x448 fixture，因为场景触摸坐标是 S3 专用的；
+`sim/ci/run_ci.sh` 默认 `SIM_PRODUCT=s3_reference`，可通过环境变量
+`SIM_PRODUCT` 覆盖；`mt.py ui` 生成的页面审查快照跟随当前产品。
 
 ```sh
 cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PRODUCT=p4_reference
@@ -75,7 +75,7 @@ python3 sim/dev.py
 `build/sim/...`）；如果端口已被占用，后续启动会自动分配独立端口，并使用
 `build/sim/instances/<port>/` 下的状态。可用 `SIM_AGENT_PORT=N` 请求固定端口；驱动自动分配的会话时，
 将该端口传给 `simctl.py` 的 `--port N`。无图形显示环境时启动自动转无头驻留。
-CI 回归与金样使用 `sh sim/ci/run_ci.sh [--update] [--scenario NAME]... [--log-dir DIR]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
+CI 回归与审查快照使用 `sh sim/ci/run_ci.sh [--scenario NAME]... [--log-dir DIR]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
 独立端口及 NVS/SD/数据/截图目录。并发 CI 只在共享 CMake/Ninja 构建阶段串行。页面审查默认分配独立端口和运行目录；
 仅在使用 `--no-launch` 有意连接现有会话，或需要固定端点时才显式传入 `--port`。联网会话使用宿主机真实 HTTP/HTTPS；
 离线无头会话使用 CI 时钟，不会发起天气请求。
@@ -142,7 +142,7 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
 
 天气时效走宿主真实时钟（`weather_service_port_now_seconds` → `time(NULL)`），而
 `sim.set_time` 只作用于 app 时钟：因此 CI 里固定的 fixtures 时间戳会被判为过期，
-`sim/ci/golden/ui/` 的天气金标只保证布局回归、不代表实时态；真机由 SNTP 校时，无此差异。
+天气截图只记录当前审查布局、不代表实时态；真机由 SNTP 校时，无此差异。
 
 ## 编译进 sim 的真实源码
 
@@ -353,35 +353,33 @@ touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停
 sim/ci/run_ci.sh                    # 端口预检 + check_lv_conf + 构建 + staged parity + 全部场景
 sim/ci/run_ci.sh --scenario smoke_pages
                                     # 只跑一条场景；可重复传 --scenario
-sim/ci/run_ci.sh build/sim --update # 重新生成 PNG 金样（人工 review 后入库）
+sim/ci/run_ci.sh build/sim          # 构建自定义模拟器目录
 ```
 
-`--log-dir DIR` 把每条场景的模拟器日志与 `run_scenarios.py` JSON 报告保存在
-`DIR`（默认 `build/agent/sim/<timestamp>-<pid>`）。构建使用 Ninja 静默模式，只省略进度行，
+`--log-dir DIR` 把每条场景的模拟器日志、JSON 报告和审查快照保存在 `DIR`
+（默认 `build/agent/sim/<timestamp>-<pid>`）。构建使用 Ninja 静默模式，只省略进度行，
 诊断信息仍会保留。`mt.py sim` 封装同一入口，只打印失败场景与日志目录。
 
-**场景 PNG 辅门禁当前挂起**：固件 GUI 仍在调整，场景基线目录
-`sim/ci/golden/scenarios/` 尚未入库，页面 review 基线使用 `sim/ci/golden/ui/`。
-默认只跑树断言；显式 `SIM_PNG_GOLDEN=1` 时会真正比对，**缺基线即 FAIL**（生成用
-`run_ci.sh --update`，人工 review 后入库）。
-`review_pages.py --check` 独立负责页面状态矩阵、几何 lint 和 UI 基线比对。
-状态可用 `expect_absent` 断言错误成功提示或旧目录行不存在；录音状态结合
-`sim.sd svc` 的终态和目标路径列表校验同路径替换文件仍在索引中。
+**场景截图是审查产物**：截图复制到 `$LOG_DIR/snapshots_<scenario>/`；
+只有树和行为断言会令场景失败。`review_pages.py` 独立负责页面状态矩阵、几何 lint
+和全页快照生成，不进行 PNG 基线比较。状态可用 `expect_absent` 断言错误成功提示或
+旧目录行不存在；录音状态结合 `sim.sd svc` 的终态和目标路径列表校验同路径替换文件
+仍在索引中。
 
-**tree_assert 基线约定**：场景文本断言代表当前固件 UI 快照。GUI 调整期
+**tree_assert 约定**：场景文本断言代表当前固件 UI 快照。GUI 调整期
 `run_ci.sh` FAIL 是回归信号——有意改动在同一提交里更新场景断言；意外改动即
 门禁生效。
 
-**全页基线（`review_pages.py`）**：页面滚动容器到达视口底部（内容被屏幕下沿裁掉）
+**全页快照（`review_pages.py`）**：页面滚动容器到达视口底部（内容被屏幕下沿裁掉）
 时，harness 分段拖动取条带（`sim.touch` 拖动 + `sim.tree` 的 `scroll.top`/`bottom`
 真值），拼接为 `368 x (448 + 可达滚动量)` 的全页图；以下示例使用 368x448 S3
-基线，P4 构建使用 320x480 并遵循相同的拼接几何规则。基线尺寸即页面真实高度
+面板，P4 构建使用 320x480 并遵循相同的拼接几何规则。快照尺寸即页面真实高度
 （如 `settings/about` 为 `368x674`），前 448 行与同状态的单帧截图逐字节一致
 （页面 chrome 保留）。滚动容器整体落在视口内（如 `recorder/files` 的列表），或
 尾部不超过 LVGL 拖动阈值（`MIN_REACHABLE_TRAVEL`）的页面，输出单帧 `368x448`。
 折叠线以下（`flags.visible` 为 false）的内容同样参与检查：lint 走
 `_walk_on_screen`（只跳过 `flags.hidden` 子树），`single_line`、`expect_visible`、
-`expect_image` 和基线都覆盖折叠线以下的行。
+`expect_image` 和快照都覆盖折叠线以下的行。
 
 label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines`），不看原始
 字符串：`single_line` 要求 `len(lines) == 1`；WRAP 文本所需行高超过 `content_h + 2`
@@ -397,7 +395,7 @@ label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines
 
 页面之间不共享会话：`review_pages.py` 自己拉起 sim 时每个页面用独立进程（独立
 NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`unmounted` 介质结尾
-的页面会被下一个页面继承，像素基线不再描述它自己的页面——这个污染曾表现为
+的页面会被下一个页面继承，快照不再描述它自己的页面——这个污染曾表现为
 `recorder/files/detail` 稳定多出「存储卡或音频不可用」。代价是每页一次冷启动；
 `--no-launch` 驱动外部 sim 时保持单会话，不做此隔离。SD 背景目录使用较短的
 `/tmp` 路径，因为 `sd_storage_service` 的挂载路径缓冲仅 64 字节；截图与 NVS 仍位于
@@ -419,7 +417,7 @@ NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`
 `flybirds.json` 的 `flybirds_restart_regression` 动作只通过实时树和触摸闭环得 1 分，随后验证重开 HUD 为 0、第二次零分结算与最高分 1；不设置种子或生产作弊入口。HUD/结算数值限定所属可见容器，隐藏祖先下的数字不参与断言。评分最多推进 360 个 33 ms 帧，每次结算最多等待 120 帧；RPC 错误、提前死亡或超时直接失败。场内触点避开系统左缘返回手势区，短 tap 不额外快进一秒；结算截图等待卡片淡入完成。
 
 确定性依赖数据冻结：场景首步 `set_time/set_power/set_imu/set_wifi`，UI 稳定判据
-为帧哈希连续两步不变 + `lv_anim_count_running()==0`。PNG 辅门禁默认关闭。
+为帧哈希连续两步不变 + `lv_anim_count_running()==0`。PNG 快照只保存、不参与基线比较。
 
 TSan（WSL2 必须 `setarch -R`，同 app_core/tests/host/README.md）：
 
@@ -455,5 +453,5 @@ python3 sim/tools/run_scenarios.py sim/ci/scenarios/all_apps.json
 ## 目录
 
 `apps/` 入口；`bsp/` 模拟板；`runtime/` 装配；`ports/` shim 与服务 port；
-`agent/` TCP 桥；`ci/` 检查与场景；`cmake/` 资源管线与链接脚本；`golden/` PNG
-基线；`tools/` simctl/MCP；`stubs/` 平台桩与 CONFIG 镜像。
+`agent/` TCP 桥；`ci/` 检查与场景；`cmake/` 资源管线与链接脚本；`tools/`
+simctl/MCP；`stubs/` 平台桩与 CONFIG 镜像。

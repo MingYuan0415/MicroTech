@@ -998,15 +998,18 @@ def _ui_summary(rc: int, seconds: float, report: Path,
         except (OSError, json.JSONDecodeError):
             data = {}
         checked = int(data.get("checked", 0))
+        snapshots = int(data.get("snapshots", 0))
         failures = data.get("failures") or []
         if rc == 0 and not failures:
             return [
-                f"[PASS] ui {checked} states (visual={data.get('visual_checked', 0)}, "
+                f"[PASS] ui {checked} states (snapshots={snapshots}, "
                 f"{seconds:.1f}s)",
                 f"shots: {_rel(shots)}",
             ]
-        lines = [f"[FAIL] ui {checked} states, {len(failures)} failures "
-                 f"({seconds:.1f}s)"]
+        lines = [
+            f"[FAIL] ui {checked} states, {snapshots} snapshots, "
+            f"{len(failures)} failures ({seconds:.1f}s)"
+        ]
         lines.extend(f"  - {failure}" for failure in failures[:10])
         if len(failures) > 10:
             lines.append(f"  ... {len(failures) - 10} more failures in report")
@@ -1163,10 +1166,6 @@ def _cmd_ui(args: argparse.Namespace) -> int:
     ]
     if args.pages:
         cmd.extend(["--pages", args.pages])
-    if args.update:
-        cmd.append("--update")
-    else:
-        cmd.append("--check")
     rc, seconds, _ = _run(cmd, log, args.timeout)
     return _finish(
         _ui_summary(rc, seconds, report, shots, log),
@@ -1287,7 +1286,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     ui = sub.add_parser("ui", help="run page review")
     ui.add_argument("--pages", default=None)
-    ui.add_argument("--update", action="store_true")
     ui.add_argument("--no-build", action="store_true")
     _add_common(ui)
     ui.set_defaults(func=_cmd_ui, timeout=1200)

@@ -491,7 +491,7 @@ int main(int argc, char **argv)
     host_audio_set_available(true);
     if (opt.ci)
     {
-        /* Deterministic SD capacity so CI/review goldens do not depend on the
+        /* Deterministic SD capacity so CI/review snapshots do not depend on the
          * free space of the host filesystem backing --sd-dir. */
         host_sd_set_report_capacity(true, 8ULL * 1024 * 1024 * 1024,
                                     6ULL * 1024 * 1024 * 1024);

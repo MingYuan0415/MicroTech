@@ -164,12 +164,13 @@ class OutputContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "report.json"
             report.write_text(
-                '{"checked": 4, "visual_checked": 2, "failures": []}',
+                '{"checked": 4, "snapshots": 2, "failures": []}',
                 encoding="utf-8",
             )
             lines = mt._ui_summary(0, 0.1, report, Path(tmp) / "shots",
                                    Path(tmp) / "ui.log")
             self.assertTrue(lines[0].startswith("[PASS] ui 4 states"))
+            self.assertIn("snapshots=2", lines[0])
 
     def test_run_timeout_returns_124_and_keeps_partial_log(self):
         with tempfile.TemporaryDirectory() as tmp:

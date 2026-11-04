@@ -2,10 +2,11 @@
 """Adversarial UI review harness for the MicroTech LVGL simulator.
 
 Drives the sim agent through a per-page state matrix, dumps the widget tree,
-runs geometry/state lint, and compares a masked PNG against a golden baseline.
-This is the gate the `ui-review` skill describes: it catches wrapped text,
-off-screen/unreachable controls, washed-out disabled states, and fallback icons
-that structure-only assertions and single happy-path screenshots miss.
+runs geometry/state lint, and captures full-page PNG snapshots for the current
+GUI review. It catches wrapped text, off-screen/unreachable controls, washed-out
+disabled states, and fallback icons that structure-only assertions and single
+happy-path screenshots miss. Snapshots are review artifacts, not versioned
+baselines.
 
 Capture is page-wide, not viewport-wide: a page taller than the viewport is
 stitched from scroll stripes, so nothing below the fold is exempt. The lint
@@ -14,7 +15,6 @@ is LVGL's on-clip test and reads false for content inside a scroll container.
 
 Spec schema (JSON):
   {
-    "viewport": {"w": 368, "h": 448},          # optional; else read from tree
     "pages": [
       {"app": "settings", "page": "wifi",
        "states": [
@@ -28,19 +28,19 @@ Spec schema (JSON):
           "allow_disabled": ["忘记网络"],
           "allow_disabled_types": ["lv_switch"],   # unlabeled intentional
           "expect_image":   [],
-          "masks": [[x, y, w, h], ...],                  # volatile regions
           "hardware_only": false}
        ]}
     ]
   }
 
 Usage:
-  python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json [--check]
-      [--update] [--pages settings/wifi,...] [--golden DIR] [--shots DIR]
+  python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json
+      [--pages settings/wifi,...] [--shots DIR]
       [--build build/sim] [--port 0|N] [--no-launch] [--keep-sim]
       [--report out.json]
 
-Exit non-zero on any lint violation or baseline mismatch.
+Exit non-zero on any lint or driver failure. Snapshots are always written to
+the selected shots directory and are never compared with a stored baseline.
 """
 import argparse
 import fcntl
@@ -359,7 +359,7 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
         if first > reached:
             # A stripe that advanced more than the box height would leave the
             # rows between them unpainted, and that hole would be baked into the
-            # baseline as black.
+            # snapshot as black.
             raise RuntimeError('full-page capture left %d canvas rows unpainted'
                                % (first - reached))
         top = max(first, reached)
@@ -604,30 +604,6 @@ def _lint(tree, page, state, vw, vh):
     return v
 
 
-def _png_size(path):
-    from PIL import Image
-    with Image.open(path) as image:
-        return image.size
-
-
-def _masked_diff(a, b, masks, tol=24):
-    from PIL import Image, ImageChops, ImageDraw
-    ia = Image.open(a).convert('RGB')
-    ib = Image.open(b).convert('RGB')
-    if ia.size != ib.size:
-        return 1.0
-    diff = ImageChops.difference(ia, ib).convert('L').point(
-        lambda p: 255 if p > tol else 0)
-    if masks:
-        keep = Image.new('L', ia.size, 0)
-        d = ImageDraw.Draw(keep)
-        for (x, y, w, h) in masks:
-            d.rectangle([x, y, x + w - 1, y + h - 1], fill=255)
-        diff = Image.composite(Image.new('L', ia.size, 0), diff, keep)
-    hist = diff.histogram()
-    return sum(hist[1:]) / float(ia.size[0] * ia.size[1])
-
-
 def _session_ownership(no_launch, port_busy, port):
     """Decide how this run gets a sim agent, or fail instead of attaching.
 
@@ -654,25 +630,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--spec', default='sim/ci/review/spec.json')
     ap.add_argument('--build', default='build/sim')
-    ap.add_argument('--golden', default='sim/ci/golden/ui')
     ap.add_argument('--shots', default=None)
     ap.add_argument('--port', type=int, default=0,
                     help='agent port; 0 allocates an isolated loopback port')
     ap.add_argument('--pages', default=None, help='app/page,app/page filter')
-    ap.add_argument('--update', action='store_true',
-                    help='write/refresh baselines instead of comparing')
-    ap.add_argument('--check', action='store_true',
-                    help='compare only (default), failing on missing or '
-                         'differing baselines')
     ap.add_argument('--no-launch', action='store_true')
     ap.add_argument('--keep-sim', action='store_true',
                     help='leave the sim running after the review for interactive '
                          'probing instead of sending sim.exit')
     ap.add_argument('--report', default=None)
-    ap.add_argument('--max-diff', type=float, default=0.005)
     args = ap.parse_args()
-    if args.check and args.update:
-        ap.error('--check and --update are mutually exclusive')
     if args.port == 0:
         if args.no_launch:
             ap.error('--no-launch requires an explicit --port')
@@ -702,7 +669,7 @@ def main():
         proc = _launch_sim(args.build, args.port,
                            os.path.join(args.shots, 'review_nvs'), args.shots,
                            sd_dir)
-    runner = Runner('127.0.0.1', args.port, args.shots, None, args.update)
+    runner = Runner('127.0.0.1', args.port, args.shots)
     try:
         _run_spec(runner, spec, args, proc, owns_sim, sd_dir)
     finally:
@@ -716,15 +683,20 @@ def main():
 
 
 def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
-    vw = (spec.get('viewport') or {}).get('w', 368)
-    vh = (spec.get('viewport') or {}).get('h', 448)
     runner.connect()
-    os.makedirs(args.golden, exist_ok=True)
+    ping = runner.call('sim.ping')
+    try:
+        vw = int(ping['width'])
+        vh = int(ping['height'])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError('sim.ping did not report a valid viewport') from error
+    if vw <= 0 or vh <= 0:
+        raise RuntimeError('invalid simulator viewport %dx%d' % (vw, vh))
+    os.makedirs(args.shots, exist_ok=True)
 
     failures = []
     checked = 0
-    visual_checked = 0
-    geometry_only = []
+    snapshots = 0
     hardware_only = []
     page_index = 0
     for page in spec['pages']:
@@ -732,9 +704,9 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
         # One sim process per page. States seed the medium, run recordings and
         # leave services in whatever mode they were testing; a state that ends
         # faulted or unmounted would otherwise be inherited by the next page,
-        # whose capture then carries the previous page's state and whose pixel
-        # baseline silently stops describing its own page. This mirrors the
-        # per-scenario process model in sim/ci/run_ci.sh.
+        # whose capture then carries the previous page's state and no longer
+        # describes its own page. This mirrors the per-scenario process model
+        # in sim/ci/run_ci.sh.
         #
         # The external --no-launch path keeps a single session: that mode
         # exists to drive a sim the operator already controls.
@@ -743,8 +715,7 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
             proc = _launch_sim(args.build, args.port,
                                os.path.join(args.build, 'review_nvs'),
                                args.shots, sd_dir or '/tmp/mrsd')
-            runner = Runner('127.0.0.1', args.port, args.shots, None,
-                            args.update)
+            runner = Runner('127.0.0.1', args.port, args.shots)
             runner.connect()
         if owns_sim:
             # A fresh process starts with an empty card. States whose seeds
@@ -765,8 +736,7 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                 proc = _launch_sim(args.build, args.port,
                                    os.path.join(args.build, 'review_nvs'),
                                    args.shots, sd_dir or '/tmp/mrsd')
-                runner = Runner('127.0.0.1', args.port, args.shots, None,
-                                args.update)
+                runner = Runner('127.0.0.1', args.port, args.shots)
                 runner.connect()
                 runner.call('sim.sd', {'action': 'fixture'})
             checked += 1
@@ -807,51 +777,31 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                                       for l in _visible_labels(tree))
                     if all(w in have for w in want):
                         break
-                path, folded = _capture_full_page(runner, name, vw, vh,
-                                                  not state.get('animated'))
+                _path, folded = _capture_full_page(runner, name, vw, vh,
+                                                   not state.get('animated'))
+                snapshots += 1
                 for viol in _lint(tree, page, state, vw, vh):
                     failures.append('%s: %s' % (name, viol))
                 if folded is not None:
                     print('  %s: %s' % (name, folded))
-                if state.get('no_golden'):
-                    geometry_only.append(name)
-                    continue
-                golden = os.path.join(args.golden, name + '.png')
-                if args.update:
-                    shutil.copyfile(path, golden)
-                elif os.path.exists(golden):
-                    visual_checked += 1
-                    capture_size, golden_size = _png_size(path), _png_size(golden)
-                    if capture_size != golden_size:
-                        # A full-page baseline changes height with the page, so
-                        # say so instead of reporting it as a pixel diff.
-                        failures.append(
-                            '%s: baseline %sx%s != capture %sx%s (run --update)'
-                            % (name, capture_size[0], capture_size[1],
-                               golden_size[0], golden_size[1]))
-                    else:
-                        frac = _masked_diff(path, golden,
-                                            state.get('masks', []))
-                        if frac > args.max_diff:
-                            failures.append('%s: baseline diff %.3f%% > %.3f%%'
-                                            % (name, frac * 100,
-                                               args.max_diff * 100))
-                else:
-                    failures.append('%s: no baseline (run --update)' % name)
             except Exception as exc:  # noqa: BLE001
                 failures.append('%s: driver error: %s' % (name, exc))
 
-    print('ui-review: %d states checked, %d failures'
-          % (checked, len(failures)))
-    print('  visual=%d geometry-only=%d hardware-only=%d'
-          % (visual_checked, len(geometry_only), len(hardware_only)))
+    print('ui-review: %d states checked, %d snapshots, %d failures'
+          % (checked, snapshots, len(failures)))
+    print('  hardware-only=%d' % len(hardware_only))
     for f in failures:
         print('   -', f)
     if args.report:
         with open(args.report, 'w') as fh:
-            json.dump({'checked': checked, 'visual_checked': visual_checked,
-                       'geometry_only': geometry_only, 'hardware_only': hardware_only,
-                       'failures': failures}, fh, indent=1)
+            json.dump({
+                'checked': checked,
+                'snapshots': snapshots,
+                'hardware_only': hardware_only,
+                'failures': failures,
+                'shots': os.path.abspath(args.shots),
+                'viewport': {'w': vw, 'h': vh},
+            }, fh, indent=1)
     sys.exit(1 if failures else 0)
 
 

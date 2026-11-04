@@ -20,7 +20,8 @@ apps_local.cmake
 /output/imagegen/
 node_modules/
 
-# LVGL 宿主模拟器临时 PNG；受审查的基线存放在 sim/ci/golden/。
+# LVGL 宿主模拟器快照是本地审查产物，不作为版本基线。
+/sim/ci/golden/
 /sim/golden/
 # 模拟器 Python / 直接在仓库根运行二进制时的产物
 __pycache__/

@@ -267,16 +267,6 @@ class ReviewPagesTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             review._capture_full_page(runner, 'page', 368, VH)
 
-    def test_baselines_of_different_heights_never_compare_equal(self):
-        with tempfile.TemporaryDirectory() as workdir:
-            tall = os.path.join(workdir, 'tall.png')
-            short = os.path.join(workdir, 'short.png')
-            Image.new('RGB', (368, VH + 226), (1, 2, 3)).save(tall)
-            Image.new('RGB', (368, VH), (1, 2, 3)).save(short)
-            self.assertEqual(review._png_size(tall), (368, VH + 226))
-            self.assertEqual(review._png_size(short), (368, VH))
-            self.assertEqual(review._masked_diff(tall, short, []), 1.0)
-
     def test_scroller_inside_the_viewport_is_not_stitched(self):
         """Content clipped by its own box is not screen-clipped: leave it."""
         tree = {'type': 'lv_obj',

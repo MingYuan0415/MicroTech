@@ -830,7 +830,7 @@ esp_err_t host_sd_write_wav(const char *name, uint32_t seconds)
         (void)remove(path);
         return ESP_FAIL;
     }
-    /* One fixed stamp keeps the seeded library order and the goldens stable
+    /* One fixed stamp keeps the seeded library order and the snapshots stable
      * across hosts; the recorder sorts by this value. */
     const struct timespec stamps[2] =
     {

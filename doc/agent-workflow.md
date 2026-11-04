@@ -117,10 +117,10 @@ formatting review must use the raw patch.
 runs one scenario; omit it for all scenarios. The default build is quiet, but
 compiler errors still appear.
 
-`ui` builds the simulator, then runs `sim/tools/review_pages.py --check` with an
-isolated port and report. It prints state/failure counts and the screenshot
-directory, not the page matrix. Read only failing or changed screenshots; page
-and state selection follows the `ui-review` skill.
+`ui` builds the simulator, then runs `sim/tools/review_pages.py` with an
+isolated port and report. It prints state/snapshot/failure counts and the
+snapshot directory, not the page matrix. Read only failing or changed
+snapshots; page and state selection follows the `ui-review` skill.
 
 ## Environment Checks
 

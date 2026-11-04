@@ -13,8 +13,8 @@ against the current project style.
 - `design-contract` resolves the `(profile, target)` pair.
 - `doc/design/README.md` and the selected profile/target describe the intended
   visual language and capability budget.
-- `ui-review` owns simulator capture, page/state selection, gestures and golden
-  baselines.
+- `ui-review` owns simulator capture, page/state selection, gestures and
+  current review snapshots.
 - `lvgl-ui-layout` owns geometry, text wrapping, clipping and scroll ownership.
 - `style_audit.py` checks the mechanical parts visible in `sim.tree`.
 - `references/inspiration.md` records provenance and scope.

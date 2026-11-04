@@ -526,8 +526,7 @@
             "已挂载",
             "存储管理"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -578,8 +577,7 @@
             "",
             "",
             ""
-          ],
-          "no_golden": true
+          ]
         },
         {
           "name": "unmounted",
@@ -612,8 +610,7 @@
           "allow_disabled": [
             "",
             ""
-          ],
-          "no_golden": true
+          ]
         },
         {
           "name": "faulted",
@@ -655,8 +652,7 @@
             "",
             "",
             ""
-          ],
-          "no_golden": true
+          ]
         },
         {
           "name": "format_confirm",
@@ -689,8 +685,7 @@
             "",
             "",
             ""
-          ],
-          "no_golden": true
+          ]
         },
         {
           "name": "format_cancel",
@@ -731,8 +726,7 @@
             "",
             "",
             ""
-          ],
-          "no_golden": true
+          ]
         }
       ]
     },
@@ -781,8 +775,7 @@
             "四则运算",
             "查看月历"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "control_center",
@@ -871,8 +864,7 @@
             "天气"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "populated",
@@ -1343,8 +1335,7 @@
             "1 / 5 / 10 / 25 分钟",
             "未开始"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -1481,8 +1472,7 @@
             "0:02",
             "0:03"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "long_filename",
@@ -1523,8 +1513,7 @@
           "single_line": [
             "0:02"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "detail",
@@ -1639,8 +1628,7 @@
             "已选 1 个",
             "删除 1"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "delete_confirm",
@@ -1704,8 +1692,7 @@
             "取消"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "batch_confirm",
@@ -1779,8 +1766,7 @@
           "single_line": [
             "删除 2 个录音？此操作无法撤销。"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "batch_completed",
@@ -1884,8 +1870,7 @@
           "single_line": [
             "已删除 2 个录音"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "external_revision",
@@ -1981,8 +1966,7 @@
             "播放中"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "stale_delete_failed",
@@ -2078,8 +2062,7 @@
             "删除录音"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "delete_completed",
@@ -2167,8 +2150,7 @@
             "删除失败"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -2208,8 +2190,7 @@
             "上一批",
             "下一批"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "long_names",
@@ -2232,8 +2213,7 @@
             "上一批",
             "下一批"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "next_batch",
@@ -2259,8 +2239,7 @@
             "上一批",
             "下一批"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "empty_directory",
@@ -2284,8 +2263,7 @@
           "single_line": [
             "当前目录详情"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "unmounted",
@@ -2319,8 +2297,7 @@
             "刷新",
             "上级"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "failed_navigation",
@@ -2365,8 +2342,7 @@
           "single_line": [
             "当前目录详情"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "recording_browse",
@@ -2403,8 +2379,7 @@
           "single_line": [
             "当前目录详情"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -2450,8 +2425,7 @@
             "取消"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "confirmation_cancel",
@@ -2486,8 +2460,7 @@
             "空目录"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "busy_delete",
@@ -2530,8 +2503,7 @@
             "正在使用"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "full_path",
@@ -2575,8 +2547,7 @@
             "审查目录/多层路径/完整中文路径换行显示的子目录/另一个完整中文名称用于验证路径不截断的目录"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -2663,8 +2634,7 @@
             "暂停"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "stopped",
@@ -2700,8 +2670,7 @@
           "single_line": [
             "已保存"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -3311,8 +3280,7 @@
             "网络设置"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -3334,8 +3302,7 @@
             "最高 0",
             "得分"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "paused",
@@ -3395,8 +3362,7 @@
             "音效：开",
             "返回主页"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         },
         {
           "name": "game_over",
@@ -3458,8 +3424,7 @@
             "再来一局",
             "返回"
           ],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },
@@ -3474,8 +3439,7 @@
             "诊断"
           ],
           "single_line": [],
-          "allow_disabled": [],
-          "no_golden": true
+          "allow_disabled": []
         }
       ]
     },

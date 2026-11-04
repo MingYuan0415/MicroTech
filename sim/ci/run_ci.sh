@@ -1,23 +1,17 @@
 #!/bin/sh
 # Simulator CI entry: build + config drift + staged parity + per-scenario
 # deterministic sessions (each scenario gets a fresh sim process and a
-# fresh NVS directory). Scenario fixtures and PNG goldens use the S3 368x448
+# fresh NVS directory). Scenario fixtures use the S3 368x448 structural
 # baseline; set SIM_PRODUCT in the environment to run another product.
-# Usage: sim/ci/run_ci.sh [build-dir] [--update] [--scenario NAME]...
-#        [--log-dir DIR]
+# Usage: sim/ci/run_ci.sh [build-dir] [--scenario NAME]... [--log-dir DIR]
 set -e
 
 BUILD="build/sim"
-UPDATE=""
 SCENARIOS=""
 LOG_DIR=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --update)
-            UPDATE="--update"
-            shift
-            ;;
         --scenario)
             [ $# -ge 2 ] || { echo "ERROR: --scenario needs a name"; exit 2; }
             SCENARIOS="$SCENARIOS $2"
@@ -103,15 +97,6 @@ else
     echo "note: staging parity skipped for simulator=${SIM_PRODUCT_CACHE:-unknown} device=${DEVICE_PRODUCT:-unknown}"
 fi
 
-# PNG aux gate: off unless SIM_PNG_GOLDEN=1 or --update. Scenario goldens live
-# under the tracked CI directory; page-review goldens use sim/ci/golden/ui.
-GOLDEN_ARG=""
-if [ "$UPDATE" = "--update" ] || [ "${SIM_PNG_GOLDEN:-}" = "1" ]; then
-    GOLDEN_ARG="--golden $ROOT/sim/ci/golden/scenarios"
-else
-    echo "note: PNG aux gate off (set SIM_PNG_GOLDEN=1 to enable; tree asserts are the primary gate)"
-fi
-
 run_scenario() {
     scenario="$1"
     name="$(basename "$scenario" .json)"
@@ -154,21 +139,12 @@ PY
     flock -u 7
     flock -u 8
     runner_args="--port $PORT --out-dir $shots --report $report"
-    if [ "$UPDATE" = "--update" ]; then
-        if ! python3 "$ROOT/sim/tools/run_scenarios.py" "$scenario" \
-            $runner_args $GOLDEN_ARG --update; then
-            cp -r "$shots" "$LOG_DIR/shots_$name" 2>/dev/null || true
-            echo "ERROR: scenario $name failed (logs: $LOG_DIR)"
-            exit 1
-        fi
-    else
-        if ! python3 "$ROOT/sim/tools/run_scenarios.py" "$scenario" \
-            $runner_args $GOLDEN_ARG; then
-            cp -r "$shots" "$LOG_DIR/shots_$name" 2>/dev/null || true
-            echo "ERROR: scenario $name failed (logs: $LOG_DIR)"
-            exit 1
-        fi
+    if ! python3 "$ROOT/sim/tools/run_scenarios.py" "$scenario" $runner_args; then
+        cp -r "$shots" "$LOG_DIR/snapshots_$name" 2>/dev/null || true
+        echo "ERROR: scenario $name failed (logs: $LOG_DIR)"
+        exit 1
     fi
+    cp -r "$shots" "$LOG_DIR/snapshots_$name" 2>/dev/null || true
     kill -9 "$SIM_PID" 2>/dev/null || true
     SIM_PID=""
 }

@@ -139,7 +139,7 @@ class FlybirdsRPC:
 
 class FlybirdsRestartRegressionTest(unittest.TestCase):
     def _run(self, surface):
-        runner = scenarios.Runner('127.0.0.1', 5002, '.', None, False)
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
         with patch.object(scenarios, 'rpc', side_effect=surface.rpc):
             runner._step({'cmd': 'flybirds_restart_regression'})
 
