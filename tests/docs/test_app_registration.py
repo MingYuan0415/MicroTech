@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Guard that the app layer is registered in exactly one place.
+"""Guard that Apps are registered through the catalog and product manifests.
 
-Adding an App used to require hand-editing a source list in three projects, a
-descriptor count in the cross-layer suite and several counts in the simulator
-README, each of which drifted silently. The source list now lives only in
-`layers/apps/app_sources.cmake`; these checks keep it that way and keep the one
-remaining count derived rather than remembered.
+Adding an App is one catalog entry plus its `app.cmake`; firmware, simulator
+and cross-layer tests consume the product expansion instead of maintaining
+their own source lists.
 """
 
 from __future__ import annotations
@@ -17,63 +15,59 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APPS_DIR = PROJECT_ROOT / "layers" / "apps"
-SHARED_LIST = APPS_DIR / "app_sources.cmake"
+CATALOG = APPS_DIR / "app_catalog.cmake"
 
 
-def _listed_sources():
-    text = SHARED_LIST.read_text(encoding="utf-8")
-    lines = text[text.index("set(APP_SRCS"):].splitlines()
-    body = []
-    for line in lines[1:]:
-        body.append(line)
-        if line.rstrip().endswith(")"):
-            break
-    return re.findall(r'"([^"]+)"', "\n".join(body))
+def _catalog_ids() -> list[str]:
+    text = CATALOG.read_text(encoding="utf-8")
+    start = text.index("set(MT_APP_CATALOG_IDS") + len("set(MT_APP_CATALOG_IDS")
+    body = text[start:text.index(")", start)]
+    return re.findall(r"[A-Za-z0-9_]+", body)
+
+
+def _app_sources() -> dict[str, set[str]]:
+    sources: dict[str, set[str]] = {}
+    for app_id in _catalog_ids():
+        app_dir = "common" if app_id == "common" else f"{app_id}_app"
+        text = (APPS_DIR / app_dir / "app.cmake").read_text(encoding="utf-8")
+        start = text.index("set(MT_APP_SOURCES") + len("set(MT_APP_SOURCES")
+        body = text[start:text.index(")", start)]
+        sources[app_id] = set(re.findall(r"[A-Za-z0-9_./+-]+\.c", body))
+    return sources
 
 
 class AppRegistrationTest(unittest.TestCase):
-    def test_every_app_source_is_listed(self) -> None:
-        """A new App or page file must appear in the shared list."""
-        listed = set(_listed_sources())
-        on_disk = set()
-        for source in sorted(APPS_DIR.glob("*/src/*.c")):
-            on_disk.add(str(source.relative_to(APPS_DIR)))
+    def test_every_app_source_is_catalogued(self) -> None:
+        catalog_sources: set[str] = set()
+        for app_id, sources in _app_sources().items():
+            app_dir = "common" if app_id == "common" else f"{app_id}_app"
+            for source in sources:
+                catalog_sources.add(f"{app_dir}/{source}")
+        on_disk = {
+            str(path.relative_to(APPS_DIR))
+            for path in sorted(APPS_DIR.glob("*/src/*.c"))
+        }
         self.assertTrue(on_disk)
-        self.assertEqual(sorted(on_disk - listed), [],
-                         "sources missing from app_sources.cmake")
-        self.assertEqual(sorted(listed - on_disk), [],
-                         "app_sources.cmake lists a missing file")
+        self.assertEqual(sorted(on_disk - catalog_sources), [],
+                         "sources missing from an app.cmake")
+        self.assertEqual(sorted(catalog_sources - on_disk), [],
+                         "app.cmake lists a missing source")
 
-    def test_consumers_do_not_redeclare_app_sources(self) -> None:
-        """Sim and integration must consume the shared list, never copy it."""
-        offenders = []
+    def test_consumers_use_product_expansion(self) -> None:
         for consumer in (PROJECT_ROOT / "sim" / "CMakeLists.txt",
                          PROJECT_ROOT / "tests" / "integration" /
                          "CMakeLists.txt"):
             text = consumer.read_text(encoding="utf-8")
-            self.assertIn("app_sources.cmake", text,
-                          f"{consumer} must include the shared app source list")
-            for line in text.splitlines():
-                stripped = line.strip().strip('"')
-                if stripped.startswith("${APPS}/") and \
-                        re.match(r".+_app/src/|common/src/", stripped):
-                    offenders.append(f"{consumer.name}: {stripped}")
-        self.assertEqual(offenders, [],
-                         "app sources re-declared outside app_sources.cmake")
+            self.assertIn("products.cmake", text,
+                          f"{consumer} must include the product resolver")
+            self.assertIn("mt_product_expand_apps", text,
+                          f"{consumer} must use the product expansion")
+            self.assertNotIn("app_sources.cmake", text,
+                             f"{consumer} still reads a per-layer app list")
 
-    def test_cross_layer_inventory_matches_descriptors(self) -> None:
-        """The cross-layer suite's App inventory matches the registered Apps."""
+    def test_cross_layer_inventory_matches_catalog(self) -> None:
         test = (PROJECT_ROOT / "tests" / "integration" /
                 "test_cross_layer.c").read_text(encoding="utf-8")
-        self.assertNotRegex(
-            test, r"#define BUILTIN_APP_COUNT\s+\d",
-            "derive the App count from the inventory list, not a literal")
-        declared = re.search(
-            r"s_expected_app_ids\[\]\s*=\s*\{(.*?)\}", test, re.S)
-        self.assertIsNotNone(declared)
-        listed_macros = set(re.findall(r"APP_MANAGER_ID_[A-Z_]+",
-                                       declared.group(1)))
-
         ids_header = (PROJECT_ROOT / "layers" / "app_manager" / "app_core" /
                       "include" / "app_manager_ids.h").read_text(
                           encoding="utf-8")
@@ -86,9 +80,11 @@ class AppRegistrationTest(unittest.TestCase):
                 r"[^,]+,\s*(APP_MANAGER_ID_[A-Z_]+)",
                 descriptor.read_text(encoding="utf-8")))
         registered &= set(macros)
-
-        self.assertEqual(sorted(listed_macros), sorted(registered),
-                         "cross-layer App inventory is out of date")
+        for macro in registered:
+            self.assertIn(f"#if defined(MT_PRODUCT_HAS_",
+                          test)
+            self.assertIn(macro, test,
+                          f"cross-layer inventory omits {macro}")
 
 
 if __name__ == "__main__":

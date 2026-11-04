@@ -63,13 +63,15 @@ fixing visible symptoms with additional coordinates.
 
 ## Adapt Across the Supported Panels
 
-MicroTech drives two portrait panels: the ESP32-S3 368 x 448 AMOLED and the
-ESP32-P4 320 x 480 IPS. Each runs at a single density, so raw pixels plus
-`lv_pct()`/`LV_GRID_FR()` remain the base units; do not port the demos'
-`LV_DPX()`, `LV_HOR_RES`, or size-class tiering unless the target profile
-actually provides a different density. Derive the available content box from
-the current page and target profile, and keep geometry adaptive across both
-panels:
+Resolve the target profile from `doc/design/targets/` and the selected
+product/board manifest; do not hardcode a panel size in a page or in this
+skill. The current products include the ESP32-S3 368 x 448 AMOLED and the
+ESP32-P4 320 x 480 IPS, but a new board is a new target profile, not a reason
+to fork a page. Read the resolved density before choosing raw pixels versus
+`lv_pct()`/`LV_GRID_FR()`; do not port the demos' `LV_DPX()`, `LV_HOR_RES`, or
+size-class tiering unless the target profile actually provides a different
+density. Derive the available content box from the current page and target
+profile, and keep geometry adaptive across targets:
 
 - Let content-driven sizing carry the design (`LV_SIZE_CONTENT`,
   `lv_obj_set_flex_grow()`, fractional grid tracks), and cap a content-sized

@@ -13,6 +13,7 @@ MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waves
 | `layers/middleware/` | 日志、事件、存储、网络、时间及系统电源服务 |
 | `layers/app_manager/` | 应用注册、生命周期、UI mailbox、主题和显示电源适配 |
 | `layers/apps/` | Home、Menu、Settings、Setup 等内置 LVGL 应用 |
+| `products/` | 产品清单：绑定板卡、设计 target 与所选 App 集合 |
 | `sim/` | 独立 CMake 宿主 LVGL 模拟器（不接入根 IDF 构建） |
 | `tests/` | 跨层宿主测试与真机显示基准工具 |
 
@@ -37,6 +38,8 @@ idf.py set-target esp32s3   # P4 版型使用 esp32p4
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
+
+target 自动选择其唯一已注册板卡及该板卡的默认产品（`s3_reference` 或 `p4_reference`）。如需其他组合，用 `-DMT_BOARD=<board-id>` 或 `-DMT_PRODUCT=<product-id>` 选择；详见 [`products/`](products/) 与 [`layers/bsp/README.md`](layers/bsp/README.md)。
 
 P4 版型还需烧录 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md) 中的 ESP32-C6 协处理器镜像，否则 P4 主机无法使用 Wi-Fi 与 BLE。
 

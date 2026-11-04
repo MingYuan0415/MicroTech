@@ -1,7 +1,6 @@
 idf_build_get_property(_mt_target IDF_TARGET)
-set(_mt_radio_requires)
-if(_mt_target STREQUAL "esp32p4")
-    list(APPEND _mt_radio_requires esp_hosted)
+if(EXISTS "${CMAKE_BINARY_DIR}/mt_product_expansion.cmake")
+    include("${CMAKE_BINARY_DIR}/mt_product_expansion.cmake")
 endif()
 
 idf_component_register(
@@ -11,7 +10,7 @@ idf_component_register(
          "p4_radio_runtime.c"
          "display_benchmark.c"
          "fs_storage/fs_storage.c"
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES
         apps
         bsp
@@ -46,11 +45,14 @@ idf_component_register(
         freertos
         heap
         lwip
-        ${_mt_radio_requires}
+        ${MT_PRODUCT_FIRMWARE_REQUIRES}
 )
 
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_BINARY_DIR}")
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    EXPECTED_CONTRACT_COMMIT="ec245e4e1bbf85ef73b003132679227d6ef4591b")
+    MT_PRODUCT_NAME="${MT_PRODUCT_ID}")
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    "SHELL:-include ${MT_PRODUCT_HEADER}")
 
 include("${CMAKE_CURRENT_LIST_DIR}/display_benchmark_profile.cmake")
 if(CONFIG_MAIN_DISPLAY_BENCHMARK)

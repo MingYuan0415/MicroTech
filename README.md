@@ -22,6 +22,7 @@ ESP32-C6 over ESP-Hosted SDIO, with the co-processor firmware in
 | `layers/middleware/` | Logging, event, storage, network, time, and system power services |
 | `layers/app_manager/` | App registration, lifecycle, UI mailbox, theme, and display power adaptation |
 | `layers/apps/` | Built-in LVGL applications such as Home, Menu, Settings, and Setup |
+| `products/` | Product manifests that bind a board, design target and selected App set |
 | `sim/` | Standalone CMake host LVGL simulator (not part of the root IDF build) |
 | `tests/` | Cross-layer host tests and the on-device display benchmark tool |
 
@@ -52,6 +53,11 @@ idf.py set-target esp32s3   # or esp32p4 for the P4 board
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
+
+The target selects its only registered board and that board's default product
+(`s3_reference` or `p4_reference`). Pass `-DMT_BOARD=<board-id>` or
+`-DMT_PRODUCT=<product-id>` to select another registered composition; see
+[`products/`](products/) and [`layers/bsp/README.md`](layers/bsp/README.md).
 
 The ESP32-P4 board also needs the ESP32-C6 co-processor image from
 [`firmware/c6-cp/`](firmware/c6-cp/README.md); the P4 host cannot reach Wi-Fi or

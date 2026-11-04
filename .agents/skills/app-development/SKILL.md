@@ -36,7 +36,9 @@ capacities in the owning headers instead of copying them from this skill.
 5. Implement MOUNT/UNMOUNT first, then required RESUME/PAUSE, START/STOP, and
    NEWINTENT behavior. Preserve the first cleanup error and failed handle.
 6. Bind the immutable definition through an App-owned static route; export an
-   App descriptor only for a new App and add sources to `APP_SRCS` explicitly.
+   App descriptor only for a new App. Register the App in `app_catalog.cmake`
+   and declare its sources, includes, services and required capabilities in
+   that App's `app.cmake`. The active product manifest selects the App set.
    When the App owns icons, author SVG sources, register them in
    `resource_manifest.cmake` plus `app_image_ids.h`, and run
    `idf.py reconfigure` (see references/asset-authoring.md).
@@ -63,7 +65,7 @@ capacities in the owning headers instead of copying them from this skill.
   when unmounted it retains data for MOUNT/RESUME. It must not block.
 - Prefer one file per substantial page with a narrow `<app>_internal.h` for
   routes and shared helpers; do not split a cohesive small page just for shape.
-  Register every source explicitly in `app_sources.cmake`.
+  Register every source explicitly in the App's `app.cmake`.
 - Create UI only below the Page Screen in MOUNT; destroy it and clear every
   LVGL pointer in UNMOUNT.
 - Start foreground resources in RESUME, stop them in PAUSE; support a
@@ -79,6 +81,27 @@ capacities in the owning headers instead of copying them from this skill.
   callbacks run on the PSRAM-stacked `lvgl` worker, so never commit NVS or
   write/erase internal flash there: queue the one-shot storage work on
   `chore_service` or the owning service worker (see the `esp32` skill).
+
+## Optional Apps and Entry Closure
+
+Apps are not all compiled into every product. A product manifest
+(`products/<product>/product.cmake`) selects a subset of `app_catalog.cmake`;
+required Apps are Home, Menu and Settings. When adding or reviewing an optional
+App:
+
+- Declare `MT_APP_REQUIRED FALSE` in its `app.cmake` and list every required
+  board capability in `MT_APP_CAPABILITIES`; a product that lacks the
+  capability must not select the App.
+- Check every entry that navigates to the App with
+  `app_manager_builtin_has_app()` before creating a clickable control. Never
+  leave a Home card, Settings row or storage shortcut that navigates to an App
+  absent from the build.
+- If the App owns persisted state, add its reset hook to `app.cmake`; the
+  shared factory-reset path is generated from the selected App set.
+- A hidden App (`APP_MANAGER_APP_FLAG_HIDDEN`) can still be optional; the flag
+  only removes it from the launcher, not from the build.
+- Cover both the selected and unselected composition in host tests. A minimal
+  product fixture (`products/minimal`) must build Home, Menu and Settings only.
 
 ## Prohibited Patterns
 

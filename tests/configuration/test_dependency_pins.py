@@ -28,7 +28,10 @@ class DependencyPinTest(unittest.TestCase):
         self.lock = yaml.safe_load(
             (self.root / "dependencies.lock").read_text(encoding="utf-8")
         ) or {}
-        self.target = self._sdkconfig_target()
+        # One lock describes the last resolved target, not every target at
+        # once. Judge conditional manifests against the lock's own target so a
+        # deliberate per-target build does not make the check stale.
+        self.target = str(self.lock.get("target") or self._sdkconfig_target())
 
     def _sdkconfig_target(self) -> str:
         path = self.root / "sdkconfig"

@@ -2,7 +2,7 @@
 
 #include "sdkconfig.h"
 
-#if CONFIG_IDF_TARGET_ESP32P4
+#if MT_PRODUCT_HOSTED_RADIO
 
 #include <errno.h>
 
@@ -102,4 +102,4 @@ bool p4_radio_runtime_is_ready(void)
     return false;
 }
 
-#endif /* CONFIG_IDF_TARGET_ESP32P4 */
+#endif /* MT_PRODUCT_HOSTED_RADIO */

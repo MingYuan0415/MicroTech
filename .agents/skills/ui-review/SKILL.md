@@ -84,7 +84,11 @@ python3 tools/agent/mt.py sim --scenario smoke_pages
 ```
 
 `mt.py ui` builds the current simulator, runs the affected-page check on an
-isolated port, and prints state/failure counts plus the screenshot directory. Do
+isolated port, and prints state/failure counts plus the screenshot directory.
+Select the product under review with `SIM_PRODUCT` (the S3 reference is the
+default for the 368x448 geometry; the P4 geometry selects `p4_reference`). A
+page owned by an App that the selected product does not compile is not part of
+that product's review scope; do not report its absence as a UI defect. Do
 not open every screenshot: the full spec currently has 34 pages and 82 states.
 Read only failing or changed states, and prefer tree coordinates/rendered lines
 over images when checking fit. Raw commands remain available:

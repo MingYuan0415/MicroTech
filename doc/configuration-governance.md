@@ -12,9 +12,16 @@ only what they already enforce.
 | --- | --- | --- |
 | Static resource budget, compile-time switches | Kconfig | each component's `Kconfig` / `Kconfig.projbuild` |
 | Runtime policy (sample rate, time zone, SNTP, PCM format, mount paths, weather endpoints, etc.) | Caller | root `app_product_config_t` and its sub-configuration structs |
-| Board facts (resolution, bus frequency, DMA geometry, pins, calibration) | Board backend | `layers/bsp/waveshare/.../board_display_profile.h` and the `board.cmake` manifest |
-| Protocol constants and semantics | Contract submodule | `contracts/device_link` (`protocol.yaml`, `vectors/golden.json`) |
+| Board identity and implemented hardware capabilities | Board backend | `layers/bsp/waveshare/.../board.cmake` and `board_display_profile.h` |
+| Product App composition and product-only policy | Product manifest | `products/<product>/product.cmake` |
+| App sources, include dirs, services, capabilities and reset hooks | App manifest | `layers/apps/<app>/app.cmake`, listed by `app_catalog.cmake` |
+| Protocol constants and semantics | Contract submodule | `contracts/device_link` (`protocol.yaml`, `vectors/golden.json`); the submodule pointer is the only code pin |
+| Contract schema metadata | Middleware component | `layers/middleware/components/device_link/device-link-contract.lock` |
 | External dependency versions | Manifest + lock | each `idf_component.yml` and the root `dependencies.lock` |
+
+A product may add non-BSP service capabilities (for example the hosted radio),
+but it cannot declare a peripheral capability the selected board backend has
+not implemented. The App catalog is explicit; recursive globs are forbidden.
 
 The LVGL and board profile gates in the root `CMakeLists.txt` (cache, allocator,
 RGB565, NimBLE SC-only, TLS, PSRAM external BSS, and so on) are build
@@ -46,6 +53,12 @@ sources (`main/`, `layers/`, excluding `tests/`, `managed_components/`,
 7. The key connectivity, cache, and task-core baseline in `sdkconfig.defaults` is
    fixed; a change requires updating the expected mapping in
    `test_connectivity_defaults` in the same change.
+8. Product, App catalog and board contracts are checked by
+   `test_product_catalog.py`: every App source is catalogued, every product
+   selects known Apps and a known board, required Apps are selected, App
+   capabilities are available on the product, board document registries are
+   present and well formed, and each product design target matches the board
+   display profile.
 
 Configuration changes land in `sdkconfig.defaults` (`idf.py save-defconfig`);
 never edit `sdkconfig` by hand.
@@ -67,6 +80,13 @@ governance):
 
 After changing a version in `idf_component.yml`, re-resolve and update
 `dependencies.lock`; never edit the lock by hand.
+
+There is one `dependencies.lock`, and it describes the target resolved by the
+last Component Manager run. It is not a combined release manifest for both
+targets. `tests/configuration/test_dependency_pins.py` judges conditional
+manifest entries against the lock's own `target`, so a deliberate S3 or P4
+build does not make the lock look stale. Build and verify each target
+separately from a clean build directory.
 
 ## 4. Check Entry Point
 

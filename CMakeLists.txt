@@ -2,8 +2,29 @@ cmake_minimum_required(VERSION 3.22)
 if(NOT IDF_TARGET)
     set(IDF_TARGET "esp32s3")
 endif()
+set(MT_BOARD "" CACHE STRING
+    "MicroTech board id; empty selects the target's only registered board")
+set(MT_PRODUCT "" CACHE STRING
+    "MicroTech product id; empty selects the board's default product")
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/layers/bsp/boards.cmake)
-mt_resolve_board("${IDF_TARGET}")
+mt_resolve_board("${IDF_TARGET}" "${MT_BOARD}")
+include(${CMAKE_CURRENT_SOURCE_DIR}/products/products.cmake)
+set(_mt_requested_product "${MT_PRODUCT}")
+if(_mt_requested_product STREQUAL "")
+    set(_mt_requested_product "${MT_BOARD_DEFAULT_PRODUCT}")
+endif()
+mt_resolve_product("${MT_BOARD_ID}" "${_mt_requested_product}")
+mt_validate_product_capabilities(
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+mt_product_expand_apps()
+set(MT_SELECTED_PRODUCT "${MT_PRODUCT_ID}")
+set(MT_PRODUCT_HEADER "${CMAKE_BINARY_DIR}/mt_product_profile.h")
+mt_product_write_header("${MT_PRODUCT_HEADER}")
+mt_product_write_cmake("${CMAKE_BINARY_DIR}/mt_product_expansion.cmake")
+message(STATUS
+    "MicroTech board=${MT_BOARD_ID} product=${MT_SELECTED_PRODUCT} "
+    "apps=${MT_PRODUCT_SELECTED_APP_IDS}")
 
 set(EXTRA_COMPONENT_DIRS
     layers/bsp

@@ -20,17 +20,47 @@ the original ESP32, WROOM, WROVER, or another Waveshare board.
 - Read `sdkconfig.defaults`, `sdkconfig.defaults.esp32s3` /
   `sdkconfig.defaults.esp32p4`, and the root `CMakeLists.txt` before describing
   flash, PSRAM, cache, DMA reserve, or CPU settings.
-- Use the official Waveshare [Resources and Documents](https://docs.waveshare.net/ESP32-S3-Touch-AMOLED-1.8/Resources-And-Documents)
-  page as the discovery index for the board schematic, Espressif ESP32-S3
-  datasheet and TRM, and the linked SH8601A, FT3168, QMI8658C, PCF85063A,
-  AXP2101, and ES8311 documents. Select only the document relevant to the
-  subsystem under review and verify its model and revision.
+- Use the official Waveshare [S3 Resources and Documents](https://docs.waveshare.net/ESP32-S3-Touch-AMOLED-1.8/Resources-And-Documents)
+  and [P4 Resources and Documents](https://docs.waveshare.com/ESP32-P4-WIFI6-Touch-LCD-3.5/Resources-And-Documents)
+  pages as the discovery indexes for each board schematic and the linked
+  Espressif datasheet/TRM and peripheral documents. Select only the document
+  relevant to the subsystem under review and verify its model and revision.
+- Read the board's `docs/documents.yaml` registry before citing a document.
+  It records the official URL, revision, retrieval date, scope and
+  redistribution state. PDFs are `link-only` by default; a legally obtained
+  local copy belongs under `docs-local/` (ignored by Git) and is a cache, not a
+  new source of authority. If a downloaded file drives a design decision,
+  record its SHA-256 and revision in `documents.yaml`.
 - Check the board schematic for electrical or pin-repurpose work, and the
-  current ESP-IDF ESP32-S3 capability headers for SoC limits. Treat local PDF
-  copies as caches and compare them with the current official link when a
-  decision depends on document revision; do not depend on machine-specific
-  paths or infer facts from another ESP32 or peripheral variant.
+  current ESP-IDF capability headers for SoC limits. Do not depend on
+  machine-specific paths or infer facts from another ESP32 or peripheral
+  variant.
 - Keep ESP-IDF, `managed_components/`, and `layers/bsp/XPowersLib/` read-only.
+
+## Adding or Reviewing a Board Variant
+
+1. Read the nearest `AGENTS.md`, `layers/bsp/boards.cmake`, the existing board
+   manifests and the product manifests. A board owns only implemented hardware
+   facts; a product owns App composition and runtime policy.
+2. Create `waveshare/<vendor-board>/board.cmake` with `MT_BOARD_ID`,
+   `MT_BOARD_TARGET`, `MT_BOARD_KCONFIG_SYMBOL`, `MT_BOARD_VENDOR`,
+   `MT_BOARD_NAME`, `MT_BOARD_DISPLAY_PROFILE`, `MT_BOARD_DEFAULT_PRODUCT`,
+   `MT_BOARD_DOCUMENTS`, `MT_BOARD_HAL_CAPABILITIES`, `MT_BOARD_SOURCES` and
+   the requires lists. Register it in `boards.cmake` only when its target is
+   unambiguous; a second board on the same SoC must be selected explicitly
+   with `MT_BOARD`.
+3. Add the matching `docs/documents.yaml`, a `docs/README.md` /
+   `README_ZH.md` pair, and a product manifest under `products/`. The product
+   must not declare a capability that the board backend has not implemented.
+4. Keep pin, bus, address, reset and power-rail facts in the board backend and
+   its README; cite the document registry instead of copying a datasheet.
+5. Validate with `python3 tests/run_python_tests.py configuration` plus the
+   BSP host suite; record any unexecuted hardware check as a limitation.
+
+Camera support is an example of the rule: the P4 board may physically carry a
+camera, but no camera BSP capability, HAL operation table, service or App may
+be claimed until that chain exists. Do not add a capability bit to make an App
+selectable without the implementation behind it.
 
 ## Fixed Board Identity
 

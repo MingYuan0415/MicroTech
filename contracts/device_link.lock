@@ -1,8 +1,0 @@
-lock_format=2
-contract_commit=da42efbabeb8aa69af0383273213c11cf2af1dd8
-profile=device-link/v1
-schema_format=fixed-binary/1
-schema_digest=465bdc3dd09cb8b053a63d778d3e80d2f06fe3957a5e466f564fedc24353e5ed
-release_state=freeze_candidate
-release_tag=none
-pin_state=working_tree_candidate

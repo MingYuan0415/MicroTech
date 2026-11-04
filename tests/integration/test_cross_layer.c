@@ -44,26 +44,47 @@ EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
 extern const app_manager_app_desc_t _app_manager_apps_start[];
 extern const app_manager_app_desc_t _app_manager_apps_end[];
 
-/* Product App inventory: one entry per registered descriptor. The expected
- * count is derived from this list, and the list itself is checked against the
- * linked `.app_manager_apps` section, so adding an App is one entry here rather
- * than a numeric edit in two places. */
+/* Product App inventory: one entry per App selected by the product manifest.
+ * The generated header defines MT_PRODUCT_HAS_<APP>_APP for every selection;
+ * the list is checked against the linked `.app_manager_apps` section. */
 static const char *const s_expected_app_ids[] =
 {
     APP_MANAGER_ID_HOME,
     APP_MANAGER_ID_MENU,
     APP_MANAGER_ID_SETTINGS,
+#if defined(MT_PRODUCT_HAS_SETUP_APP)
     APP_MANAGER_ID_SETUP,
+#endif
+#if defined(MT_PRODUCT_HAS_WEATHER_APP)
     APP_MANAGER_ID_WEATHER,
+#endif
+#if defined(MT_PRODUCT_HAS_CLOCK_APP)
     APP_MANAGER_ID_CLOCK,
+#endif
+#if defined(MT_PRODUCT_HAS_CALENDAR_APP)
     APP_MANAGER_ID_CALENDAR,
+#endif
+#if defined(MT_PRODUCT_HAS_CALCULATOR_APP)
     APP_MANAGER_ID_CALCULATOR,
+#endif
+#if defined(MT_PRODUCT_HAS_RECORDER_APP)
     APP_MANAGER_ID_RECORDER,
+#endif
+#if defined(MT_PRODUCT_HAS_FILES_APP)
     APP_MANAGER_ID_FILES,
+#endif
+#if defined(MT_PRODUCT_HAS_LEVEL_APP)
     APP_MANAGER_ID_LEVEL,
+#endif
+#if defined(MT_PRODUCT_HAS_FLYBIRDS_APP)
     APP_MANAGER_ID_FLYBIRDS,
+#endif
+#if defined(MT_PRODUCT_HAS_MUSIC_APP)
     APP_MANAGER_ID_MUSIC,
+#endif
+#if defined(MT_PRODUCT_HAS_DIAGNOSTICS_APP)
     APP_MANAGER_ID_DIAGNOSTICS,
+#endif
 };
 
 #define BUILTIN_APP_COUNT \

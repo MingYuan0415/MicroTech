@@ -45,14 +45,17 @@ them.
 
 The default panel is 368x448 (ESP32-S3). For the ESP32-P4 board build a second
 directory with `-DSIM_PANEL=320x480`; the framebuffer, SDL window, PNG encoder
-and agent geometry follow the selected compile-time size. The P4 build defaults
-`SIM_STANDBY_SUPPORTED=OFF` (screen-off only); the S3 build defaults it to
-`ON`. The golden regression under `sim/ci/golden/` remains the 368x448
-baseline.
+and agent geometry follow the selected compile-time size. The P4 geometry
+selects `p4_reference` and the S3 geometry selects `s3_reference`; a different
+product can be selected explicitly with `-DSIM_PRODUCT=<product-id>`. The P4
+product defaults `SIM_STANDBY_SUPPORTED=OFF` (screen-off only); the S3 product
+defaults it to `ON`. The golden regression under `sim/ci/golden/` remains the
+368x448 baseline.
 
 ```sh
 cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480
 cmake --build build/sim-p4
+cmake -S sim -B build/sim-minimal -G Ninja -DSIM_PRODUCT=minimal
 ```
 
 ## Daily Development (Recommended Entry)
@@ -177,12 +180,12 @@ and has no such difference.
   (`app_manager_persistence.c` is not compiled, so factory reset does not clear
   persisted keys); `HOST_TEST` is not defined, and the mailbox drains on the
   LVGL worker's `lv_timer` (as on hardware).
-- apps: the built-in Apps and shared UI sources (the manifest is
-  `layers/apps/app_sources.cmake`, shared by sim and the cross-layer suite
-  rather than copied) are all compiled as executable sources, together with
-  `sim/cmake/app_builtin_apps.ld` (`-Wl,-T`) to preserve the
-  `.app_manager_apps` link section (the registry discovers all built-in Apps;
-  `apps_persistence.c` is used only by `main/app_runtime.c` and is not compiled
+- apps: the built-in Apps and shared UI sources selected by the product
+  manifest (`products/<product>/product.cmake`, expanded by the same resolver
+  as firmware and the cross-layer suite) are compiled as executable sources,
+  together with `sim/cmake/app_builtin_apps.ld` (`-Wl,-T`) to preserve the
+  `.app_manager_apps` link section (the registry discovers exactly the selected
+  Apps; `apps_persistence.c` is used only by `main/app_runtime.c` and is not compiled
   by sim).
 - middleware: mt_log, event_bus, nv_storage (file backend `sim_nvs`),
   timer_service, power/imu/weather/time/chore/onboarding/factory_reset/

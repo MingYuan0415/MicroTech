@@ -10,6 +10,26 @@ set_property(CACHE MAIN_HOST_SANITIZER PROPERTY STRINGS
     none address thread)
 find_program(MAIN_HOST_SETARCH setarch)
 
+get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+include("${MT_ROOT}/layers/bsp/boards.cmake")
+include("${MT_ROOT}/products/products.cmake")
+set(_requested_product "s3_reference")
+mt_resolve_product("waveshare_esp32_s3_touch_amoled_1_8" "${_requested_product}")
+mt_validate_product_capabilities(
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+mt_product_expand_apps()
+set(MAIN_S3_PRODUCT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/mt_product_s3_reference.h")
+mt_product_write_header("${MAIN_S3_PRODUCT_HEADER}")
+set(_requested_product "p4_reference")
+mt_resolve_product("waveshare_esp32_p4_wifi6_touch_lcd_3_5" "${_requested_product}")
+mt_validate_product_capabilities(
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+mt_product_expand_apps()
+set(MAIN_P4_PRODUCT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/mt_product_p4_reference.h")
+mt_product_write_header("${MAIN_P4_PRODUCT_HEADER}")
+
 function(configure_main_host_target target)
     target_compile_features(${target} PRIVATE c_std_11)
     target_include_directories(${target} PRIVATE
@@ -105,17 +125,14 @@ target_include_directories(app_runtime_test PRIVATE
 )
 
 configure_main_host_target(app_runtime_test)
+target_compile_options(app_runtime_test PRIVATE
+    "SHELL:-include ${MAIN_S3_PRODUCT_HEADER}")
 target_compile_definitions(app_runtime_test PRIVATE
     CONFIG_MAIN_DISPLAY_BENCHMARK=1
 )
 add_main_host_test(app_runtime_test app_runtime_test)
 
-add_executable(app_product_config_p4_test
-    app_product_config_p4_test.c
-    ../../app_product_config.c
-)
-
-target_include_directories(app_product_config_p4_test PRIVATE
+set(MAIN_PRODUCT_TEST_INCLUDE_DIRS
     fakes
     ../..
     ../../../layers/app_manager/app_core/include
@@ -144,11 +161,30 @@ target_include_directories(app_product_config_p4_test PRIVATE
     ../../../layers/middleware/components/music_service/include
 )
 
+add_executable(app_product_config_p4_test
+    app_product_config_p4_test.c
+    ../../app_product_config.c
+)
+target_include_directories(app_product_config_p4_test PRIVATE
+    ${MAIN_PRODUCT_TEST_INCLUDE_DIRS})
 configure_main_host_target(app_product_config_p4_test)
+target_compile_options(app_product_config_p4_test PRIVATE
+    "SHELL:-include ${MAIN_P4_PRODUCT_HEADER}")
 target_compile_definitions(app_product_config_p4_test PRIVATE
     CONFIG_IDF_TARGET_ESP32P4=1
 )
 add_main_host_test(app_product_config_p4_test app_product_config_p4_test)
+
+add_executable(app_product_config_s3_test
+    app_product_config_s3_test.c
+    ../../app_product_config.c
+)
+target_include_directories(app_product_config_s3_test PRIVATE
+    ${MAIN_PRODUCT_TEST_INCLUDE_DIRS})
+configure_main_host_target(app_product_config_s3_test)
+target_compile_options(app_product_config_s3_test PRIVATE
+    "SHELL:-include ${MAIN_S3_PRODUCT_HEADER}")
+add_main_host_test(app_product_config_s3_test app_product_config_s3_test)
 
 add_executable(app_runtime_pm_test
     app_runtime_pm_test.c

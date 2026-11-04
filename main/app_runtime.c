@@ -439,27 +439,17 @@ static esp_err_t _app_runtime_stop_display_benchmark(void)
 
 static bool _app_runtime_required_apps_present(void)
 {
-    static const char *const required_ids[] =
-    {
-        APP_MANAGER_ID_HOME,
-        APP_MANAGER_ID_MENU,
-        APP_MANAGER_ID_SETTINGS,
-        APP_MANAGER_ID_SETUP,
-        APP_MANAGER_ID_WEATHER,
-        APP_MANAGER_ID_CLOCK,
-        APP_MANAGER_ID_RECORDER,
-        APP_MANAGER_ID_FILES,
-        APP_MANAGER_ID_LEVEL,
-        APP_MANAGER_ID_DIAGNOSTICS,
-    };
-    bool found[sizeof(required_ids) / sizeof(required_ids[0])] = {false};
+    bool found[sizeof(s_mt_product_required_app_ids) /
+               sizeof(s_mt_product_required_app_ids[0])] = {false};
     bool all_found = true;
     const app_manager_app_desc_t *app = app_manager_builtin_list_open();
     while (app != NULL)
     {
-        for (size_t i = 0; i < sizeof(required_ids) / sizeof(required_ids[0]); ++i)
+        for (size_t i = 0;
+                i < sizeof(found) / sizeof(found[0]); ++i)
         {
-            if (app->id != NULL && strcmp(app->id, required_ids[i]) == 0)
+            if (app->id != NULL &&
+                    strcmp(app->id, s_mt_product_required_app_ids[i]) == 0)
             {
                 found[i] = app->root_page_id != NULL;
             }
@@ -635,7 +625,7 @@ static esp_err_t _app_runtime_stop_active_services(void)
         s_ownership.power_attempted = false;
         app_runtime_pm_clear_power();
     }
-#if CONFIG_IDF_TARGET_ESP32P4
+#if MT_PRODUCT_HOSTED_RADIO
     result = p4_radio_runtime_deinit();
     if (result != ESP_OK)
     {
@@ -1464,7 +1454,7 @@ static esp_err_t _app_runtime_start_device_link(
     }
     device_link_service_config_t device_link = product->device_link;
 
-#if CONFIG_IDF_TARGET_ESP32P4
+#if MT_PRODUCT_HOSTED_RADIO
     esp_err_t radio_result = p4_radio_runtime_init();
     if (radio_result != ESP_OK)
     {
@@ -1570,12 +1560,14 @@ static esp_err_t _app_runtime_start_initial_app(
     {
         return result;
     }
-    if (!product->radio_enabled && product->radio_optional &&
-            onboarding == ONBOARDING_SERVICE_PENDING)
+    const bool setup_available =
+        app_manager_builtin_has_app(APP_MANAGER_ID_SETUP);
+    if (onboarding == ONBOARDING_SERVICE_PENDING &&
+            (!product->radio_enabled || !setup_available))
     {
-        /* A build that ships without a radio must still reach Home. The
-         * persisted DEFERRED is left for the user to reopen through
-         * Settings -> Setup once a radio-enabled build runs. */
+        /* A build that ships without a radio or without the Setup App must
+         * still reach Home. The persisted DEFERRED is left for the user to
+         * reopen through Settings -> Setup once a suitable build runs. */
         result = onboarding_service_defer();
         if (result == ESP_OK)
         {
@@ -1589,8 +1581,8 @@ static esp_err_t _app_runtime_start_initial_app(
     const app_manager_nav_request_t request =
     {
         .operation = APP_MANAGER_NAV_OP_RUN,
-        .app_id = onboarding == ONBOARDING_SERVICE_PENDING ?
-        APP_MANAGER_ID_SETUP : APP_MANAGER_ID_HOME,
+        .app_id = onboarding == ONBOARDING_SERVICE_PENDING &&
+        setup_available ? APP_MANAGER_ID_SETUP : APP_MANAGER_ID_HOME,
         .transition = {
             .effect = APP_MANAGER_TRANSITION_NONE,
         },
@@ -1708,7 +1700,7 @@ esp_err_t app_runtime_start(void)
      * internal DMA-capable memory on the Wi-Fi driver. */
     (void)_app_runtime_start_deferred_wifi();
 
-#if CONFIG_IDF_TARGET_ESP32P4
+#if MT_PRODUCT_HOSTED_RADIO
     /* The hosted link, the NimBLE host and the SDIO queues all draw from
      * internal RAM; one boot-time line keeps the remaining headroom visible. */
     LOG_I("startup heap: internal=%u psram=%u",

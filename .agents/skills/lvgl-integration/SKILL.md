@@ -14,8 +14,11 @@ copy them here.
 - `dependencies.lock` for the active adapter and LVGL versions.
 - `layers/app_manager/app_core/src/app_manager_lvgl_adapter.c` for display
   registration, custom draw submission, diagnostics, and lifecycle ownership.
-- `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/board_display.c` for panel
-  bus, touch path, and power sequencing.
+- `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/board_display.c` for the S3
+  panel bus, touch path, TE policy and power sequencing.
+- `layers/bsp/waveshare/esp32-p4-wifi6-touch-lcd-3.5/board_display.c` for the
+  P4 ST7796 SPI path, 20-row DMA chunks and display resume sequencing. Read the
+  board selected by `MT_BOARD`, not a hardcoded board name.
 - `layers/bsp/README.md` and `tests/display/README.md` for the production
   baseline (clocks, buffer rows, DMA chunks, queue depth, TE/direct-DMA) and
   benchmark acceptance gates.

@@ -1,14 +1,15 @@
 ---
 name: codesize
-description: MicroTech ESP32-S3 firmware code size analysis from the ESP-IDF linker map, ELF, build archives, and saved build snapshots. Use when identifying large libraries, objects, or symbols, comparing firmware builds for size regressions, checking Flash or internal RAM growth, or producing code size optimization guidance for this project.
+description: MicroTech ESP32-S3/ESP32-P4 firmware code size analysis from the ESP-IDF linker map, ELF, build archives, and saved build snapshots. Use when identifying large libraries, objects, or symbols, comparing firmware builds for size regressions, checking Flash or internal RAM growth, or producing code size optimization guidance for this project.
 ---
 
 # MicroTech Firmware Code Size
 
-This skill analyzes the MicroTech ESP32-S3 application built with ESP-IDF. It
-reports image storage, internal RAM, PSRAM, and RTC memory from the linker map,
-attributes bytes to libraries, objects, and input sections, and compares two
-builds through normalized map JSON.
+This skill analyzes a MicroTech firmware build for either the ESP32-S3 (Xtensa)
+or ESP32-P4 (RISC-V) target. It reports image storage, internal RAM, PSRAM, and
+RTC memory from the linker map, attributes bytes to libraries, objects, and
+input sections, and compares two builds through normalized map JSON. Read the
+active target from `build/project_description.json`; do not assume Xtensa.
 
 ## Inputs
 
@@ -17,7 +18,8 @@ builds through normalized map JSON.
 - Application binary: `build/microtech.bin`
 - Build metadata: `build/project_description.json`
 - Application archives: `build/esp-idf/**/*.a`
-- Toolchain size command: `xtensa-esp32s3-elf-size`, located through
+- Toolchain size command: the `*-size` matching the build target
+  (`xtensa-esp32s3-elf-size` or `riscv32-esp-elf-size`), located through
   `build/project_description.json` (`monitor_toolprefix`) or `~/.espressif/tools`
 - Saved comparison input: any build directory or map file produced by this
   project

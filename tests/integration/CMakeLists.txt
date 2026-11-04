@@ -12,18 +12,30 @@ get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(APP_CORE "${PROJECT_ROOT}/layers/app_manager/app_core")
 set(APP_THEME "${PROJECT_ROOT}/layers/app_manager/app_theme")
 set(APPS "${PROJECT_ROOT}/layers/apps")
-# The app layer's single source list; do not re-declare app sources here.
-include("${APPS}/app_sources.cmake")
-set(INTEGRATION_APP_SOURCES "")
-foreach(_app_src IN LISTS APP_SRCS)
-    list(APPEND INTEGRATION_APP_SOURCES "${APPS}/${_app_src}")
+set(MT_PRODUCT "s3_reference" CACHE STRING
+    "MicroTech product fixture used by the cross-layer suite")
+include("${PROJECT_ROOT}/layers/bsp/boards.cmake")
+include("${PROJECT_ROOT}/products/products.cmake")
+set(_requested_product "${MT_PRODUCT}")
+mt_resolve_product("waveshare_esp32_s3_touch_amoled_1_8" "${_requested_product}")
+mt_product_expand_apps()
+set(INTEGRATION_APP_SOURCES ${MT_PRODUCT_APP_SOURCES})
+set(INTEGRATION_APP_INCLUDE_DIRS ${MT_PRODUCT_APP_INCLUDE_DIRS})
+# The cross-layer test keeps compile-time references to optional App internals
+# for its full-product scenarios. Keep header directories visible even when a
+# minimal product does not compile that App; the selected sources still decide
+# what is linked.
+foreach(_app_id IN LISTS MT_APP_CATALOG_IDS)
+    mt_app_dir_name("${_app_id}" _app_dir)
+    if(EXISTS "${APPS}/${_app_dir}/src")
+        list(APPEND INTEGRATION_APP_INCLUDE_DIRS "${APPS}/${_app_dir}/src")
+    endif()
 endforeach()
-unset(_app_src)
-set(INTEGRATION_APP_INCLUDE_DIRS "")
-foreach(_app_include IN LISTS APP_SRC_INCLUDE_DIRS)
-    list(APPEND INTEGRATION_APP_INCLUDE_DIRS "${APPS}/${_app_include}")
-endforeach()
-unset(_app_include)
+unset(_app_id)
+unset(_app_dir)
+set(INTEGRATION_PRODUCT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/mt_product_profile.h")
+mt_product_write_header("${INTEGRATION_PRODUCT_HEADER}")
 set(MIDDLEWARE "${PROJECT_ROOT}/layers/middleware/components")
 
 add_executable(test_cross_layer
@@ -57,6 +69,10 @@ add_executable(test_cross_layer
     "${MIDDLEWARE}/device_link_service/src/device_link_confirmation.c"
     ${INTEGRATION_APP_SOURCES}
     "${MIDDLEWARE}/timer_service/src/timer_service.c"
+)
+
+target_compile_definitions(test_cross_layer PRIVATE
+    MT_PRODUCT_ID="${MT_PRODUCT_ID}"
 )
 
 add_executable(test_presentation
@@ -119,6 +135,7 @@ target_include_directories(test_presentation PRIVATE
 )
 target_compile_options(test_cross_layer PRIVATE
     -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"
+    "SHELL:-include ${INTEGRATION_PRODUCT_HEADER}"
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG)
 target_compile_options(test_presentation PRIVATE
     -include "${PROJECT_ROOT}/tests/host/sdkconfig.h"

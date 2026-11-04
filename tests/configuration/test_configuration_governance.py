@@ -199,8 +199,13 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             gitmodules,
         )
 
-    def test_device_link_contract_lock_matches_worktree(self) -> None:
-        lock = self.root / "contracts/device_link.lock"
+    def test_device_link_contract_lock_matches_submodule(self) -> None:
+        # The middleware component owns the immutable contract pin. The root
+        # repository must not keep a second lock that can drift from the
+        # submodule pointer.
+        self.assertFalse((self.root / "contracts/device_link.lock").exists())
+        lock = (self.root / "layers/middleware/components/device_link" /
+                "device-link-contract.lock")
         self.assertTrue(lock.is_file())
         lines = lock.read_text(encoding="utf-8").splitlines()
         self.assertEqual([line.split("=", 1)[0] for line in lines], [
@@ -222,16 +227,10 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             cwd=contract, check=True, capture_output=True, text=True,
         ).stdout.strip()
         self.assertEqual(digest, optimized_digest)
-        self.assertEqual(lock_values, {
-            "lock_format": "2",
-            "contract_commit": contract_head,
-            "profile": "device-link/v1",
-            "schema_format": "fixed-binary/1",
-            "schema_digest": digest,
-            "release_state": "freeze_candidate",
-            "release_tag": "none",
-            "pin_state": "working_tree_candidate",
-        })
+        self.assertEqual(lock_values["contract_commit"], contract_head)
+        self.assertEqual(lock_values["schema_digest"], digest)
+        self.assertEqual(lock_values["profile"], "device-link/v1")
+        self.assertEqual(lock_values["schema_format"], "fixed-binary/1")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,6 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APPS_DIR = PROJECT_ROOT / "layers" / "apps"
-SHARED_APP_SOURCES = APPS_DIR / "app_sources.cmake"
 APP_CORE_SRC = PROJECT_ROOT / "layers" / "app_manager" / "app_core" / "src"
 
 # Which draw sites each icon record appears in. Sizes come from the code below.

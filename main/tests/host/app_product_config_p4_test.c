@@ -7,6 +7,9 @@ int main(void)
 {
     const app_product_config_t *config = app_product_config_get();
     assert(config != NULL);
+    assert(strcmp(MT_PRODUCT_NAME, "p4_reference") == 0);
+    assert(MT_PRODUCT_SYSTEM_PM_SUPPORTED == 0);
+    assert(MT_PRODUCT_HOSTED_RADIO == 1);
     assert(config->system_pm_supported == false);
     assert(config->radio_enabled == true);
     assert(config->radio_optional == true);

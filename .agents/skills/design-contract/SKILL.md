@@ -21,8 +21,11 @@ A page is always resolved against `(style profile, target profile)`.
 
 - `doc/design/README.md` explains the contract and current implementation limits.
 - `doc/design/profiles/*.json` are style profiles.
-- `doc/design/targets/*.json` are target capability profiles.
-- `doc/design/active.json` selects the current project pair.
+- `doc/design/targets/*.json` are target capability profiles. A product
+  manifest (`products/<product>/product.cmake`) binds its
+  `MT_PRODUCT_DESIGN_TARGET` to one of them; the board manifest owns the
+  physical display facts, not the design budget.
+- `doc/design/active.json` selects the current project pair for review only.
 - `scripts/design_profile.py` is the only supported resolver and validator.
 - `references/inspiration.md` records provenance and scope.
 

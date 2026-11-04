@@ -53,6 +53,14 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_MUSIC_AUDIO_PRIORITY),
 _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_CHORE_TASK_PRIORITY),
                "invalid product chore task priority");
 
+#if !defined(MT_PRODUCT_RADIO_ENABLED) || \
+    !defined(MT_PRODUCT_RADIO_OPTIONAL) || \
+    !defined(MT_PRODUCT_SYSTEM_PM_SUPPORTED) || \
+    !defined(MT_PRODUCT_DEVICE_PANEL) || \
+    !defined(MT_PRODUCT_DEVICE_PLATFORM)
+    #error "The selected MicroTech product must provide generated policy macros"
+#endif
+
 static const app_product_config_t s_product_config =
 {
     .audio = {
@@ -109,27 +117,13 @@ static const app_product_config_t s_product_config =
         .task_priority = APP_PRODUCT_CHORE_TASK_PRIORITY,
         .warning_duration_ms = 500U,
     },
-#if CONFIG_IDF_TARGET_ESP32P4
     .device_info = {
-        .panel = "320 x 480 IPS",
-        .platform = "ESP32-P4",
+        .panel = MT_PRODUCT_DEVICE_PANEL,
+        .platform = MT_PRODUCT_DEVICE_PLATFORM,
     },
-    /* The ESP32-P4 board reaches Wi-Fi and BLE through the on-board ESP32-C6
-     * over the hosted SDIO link. A link that cannot be brought up must not
-     * take the display and local services down, so the radio stays optional.
-     * The ESP32-S3 board keeps its native Wi-Fi/BLE controllers. */
-    .radio_enabled = true,
-    .radio_optional = true,
-    .system_pm_supported = false,
-#else
-    .device_info = {
-        .panel = "368 x 448 AMOLED",
-        .platform = "ESP32-S3",
-    },
-    .radio_enabled = true,
-    .radio_optional = false,
-    .system_pm_supported = true,
-#endif
+    .radio_enabled = MT_PRODUCT_RADIO_ENABLED,
+    .radio_optional = MT_PRODUCT_RADIO_OPTIONAL,
+    .system_pm_supported = MT_PRODUCT_SYSTEM_PM_SUPPORTED,
     .connectivity = {
         .task_priority = APP_PRODUCT_CONNECTIVITY_TASK_PRIORITY,
         .wifi_task_priority = APP_PRODUCT_WIFI_TASK_PRIORITY,

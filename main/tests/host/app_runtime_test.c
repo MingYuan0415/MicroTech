@@ -946,6 +946,25 @@ const app_manager_app_desc_t *app_manager_builtin_list_open(void)
     return s_test.required_apps_present ? &s_required_apps[0] : NULL;
 }
 
+bool app_manager_builtin_has_app(const char *app_id)
+{
+    if (!s_test.required_apps_present || app_id == NULL)
+    {
+        return false;
+    }
+    for (size_t index = 0U;
+            index < sizeof(s_required_apps) / sizeof(s_required_apps[0]);
+            ++index)
+    {
+        if (s_required_apps[index].id != NULL &&
+                strcmp(s_required_apps[index].id, app_id) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 const app_manager_app_desc_t *app_manager_builtin_list_get_next(
     const app_manager_app_desc_t *previous)
 {

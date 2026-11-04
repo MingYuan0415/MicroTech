@@ -39,6 +39,24 @@ if(NOT DEFINED SIM_STANDBY_SUPPORTED)
 endif()
 
 get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+if(SIM_BSP_H_RES EQUAL 320)
+    set(_sim_default_board "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
+    set(_sim_default_product "p4_reference")
+else()
+    set(_sim_default_board "waveshare_esp32_s3_touch_amoled_1_8")
+    set(_sim_default_product "s3_reference")
+endif()
+set(SIM_PRODUCT "${_sim_default_product}" CACHE STRING
+    "MicroTech product manifest used by the simulator")
+set(_sim_requested_product "${SIM_PRODUCT}")
+include("${MT_ROOT}/layers/bsp/boards.cmake")
+include("${MT_ROOT}/products/products.cmake")
+mt_resolve_product("${_sim_default_board}" "${_sim_requested_product}")
+mt_validate_product_capabilities(
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+mt_product_expand_apps()
+set(SIM_PRODUCT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/mt_product_profile.h")
+mt_product_write_header("${SIM_PRODUCT_HEADER}")
 
 if(NOT EXISTS "${MT_ROOT}/managed_components/lvgl__lvgl/lvgl.h")
     message(FATAL_ERROR
@@ -230,16 +248,15 @@ endif()
 # with only the .ld fragment, GNU ld drops unreferenced objects and the
 # .app_manager_apps section stays empty (app_manager_builtin.c gate).
 #
-# The app layer's own files come from its single source list; this file must not
-# re-declare them. `apps_persistence.c` is firmware-only (it serves
-# main/app_runtime.c), so the sim skips it.
-include("${APPS}/app_sources.cmake")
+# The App inventory is expanded from the product selection, matching firmware
+# and integration. `apps_persistence.c` is firmware-only (it serves
+# main/app_runtime.c), so the simulator skips it.
 set(SIM_APP_SOURCES "")
-foreach(_app_src IN LISTS APP_SRCS)
-    if(_app_src STREQUAL "common/src/apps_persistence.c")
+foreach(_app_src IN LISTS MT_PRODUCT_APP_SOURCES)
+    if(_app_src STREQUAL "${APPS}/common/src/apps_persistence.c")
         continue()
     endif()
-    list(APPEND SIM_APP_SOURCES "${APPS}/${_app_src}")
+    list(APPEND SIM_APP_SOURCES "${_app_src}")
 endforeach()
 unset(_app_src)
 list(APPEND SIM_APP_SOURCES
@@ -251,12 +268,20 @@ list(APPEND SIM_APP_SOURCES
     "ports/sim_network_runtime.c"
     "${MIDDLEWARE}/recorder_service/src/recorder_service.c")
 
-# app-private headers, derived from the shared source list.
-set(SIM_APP_INCLUDE_DIRS "")
-foreach(_app_include IN LISTS APP_SRC_INCLUDE_DIRS)
-    list(APPEND SIM_APP_INCLUDE_DIRS "${APPS}/${_app_include}")
+# App-private headers, expanded from the same product selection.
+set(SIM_APP_INCLUDE_DIRS ${MT_PRODUCT_APP_INCLUDE_DIRS})
+# Some simulator-only glue includes App-private headers for optional products
+# (for example the agent's music page ids). Headers are harmless when the App
+# source is not compiled; keep every catalog App's header directory visible so
+# a minimal product can still build the simulator harness.
+foreach(_app_id IN LISTS MT_APP_CATALOG_IDS)
+    mt_app_dir_name("${_app_id}" _app_dir)
+    if(EXISTS "${APPS}/${_app_dir}/src")
+        list(APPEND SIM_APP_INCLUDE_DIRS "${APPS}/${_app_dir}/src")
+    endif()
 endforeach()
-unset(_app_include)
+unset(_app_id)
+unset(_app_dir)
 
 set(SIM_PORT_SOURCES
     "apps/main_sim.c"
@@ -351,6 +376,7 @@ target_compile_definitions(microtech_sim PRIVATE
     SIM_BSP_H_RES=${SIM_BSP_H_RES}U
     SIM_BSP_V_RES=${SIM_BSP_V_RES}U
     SIM_STANDBY_SUPPORTED=$<BOOL:${SIM_STANDBY_SUPPORTED}>
+    MT_PRODUCT_ID="${MT_PRODUCT_ID}"
     "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\""
     LV_KCONFIG_IGNORE)
 if(SIM_MUSIC_BACKEND STREQUAL "real")
@@ -358,7 +384,8 @@ if(SIM_MUSIC_BACKEND STREQUAL "real")
 endif()
 target_compile_options(microtech_sim PRIVATE
     -Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros -UNDEBUG
-    "-include;${SIM_SDKCONFIG_GENERATED}")
+    "-include;${SIM_SDKCONFIG_GENERATED}"
+    "SHELL:-include ${SIM_PRODUCT_HEADER}")
 
 # Keep the built-in app registry section alive (INSERT fragment script).
 target_link_options(microtech_sim PRIVATE

@@ -8,24 +8,17 @@ import xml.etree.ElementTree as ET
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APPS_DIR = PROJECT_ROOT / "layers" / "apps"
-SHARED_APP_SOURCES = APPS_DIR / "app_sources.cmake"
+APP_CATALOG = APPS_DIR / "app_catalog.cmake"
 
 
 def _app_dir_names():
-    """App directories, derived from the layer's single source list.
-
-    The list used to be hand-maintained here and had already lost `weather_app`,
-    which carries its icon under a different semantic token.
-    """
-    text = SHARED_APP_SOURCES.read_text(encoding="utf-8")
-    lines = text[text.index("set(APP_SRCS"):].splitlines()
-    dirs = set()
-    for line in lines[1:]:
-        source = line.strip().strip('"')
-        if source and source != ")":
-            dirs.add(source.split("/")[0])
-        if line.rstrip().endswith(")"):
-            break
+    """App directories, derived from the explicit App catalog."""
+    text = APP_CATALOG.read_text(encoding="utf-8")
+    start = text.index("set(MT_APP_CATALOG_IDS") + len("set(MT_APP_CATALOG_IDS")
+    body = text[start:text.index(")", start)]
+    ids = re.findall(r"[A-Za-z0-9_]+", body)
+    dirs = {"common" if app_id == "common" else f"{app_id}_app"
+            for app_id in ids}
     dirs.discard("common")
     return sorted(dirs)
 

@@ -37,12 +37,15 @@ LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 
 默认面板为 368x448（ESP32-S3）。ESP32-P4 版型请用 `-DSIM_PANEL=320x480` 另建
 构建目录；framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期尺寸。
-P4 构建默认 `SIM_STANDBY_SUPPORTED=OFF`（仅熄屏），S3 构建默认 `ON`。
+P4 几何默认选择 `p4_reference`，S3 几何默认选择 `s3_reference`；其他产品可用
+`-DSIM_PRODUCT=<product-id>` 显式选择。P4 产品默认
+`SIM_STANDBY_SUPPORTED=OFF`（仅熄屏），S3 产品默认 `ON`。
 `sim/ci/golden/` 的 golden 回归仍以 368x448 为基线。
 
 ```sh
 cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480
 cmake --build build/sim-p4
+cmake -S sim -B build/sim-minimal -G Ninja -DSIM_PRODUCT=minimal
 ```
 
 ## 日常开发（推荐入口）
@@ -134,11 +137,7 @@ Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001�
 - app_manager：app_core 全部运行时 `.c` + app_theme（`app_manager_persistence.c`
   未编，工厂重置不清理持久化按键）；`HOST_TEST` 不定义，mailbox 在
   LVGL worker 的 `lv_timer` 上排空（与真机一致）。
-- apps：内置 App 与共享 UI 源（清单见 `layers/apps/app_sources.cmake`，sim 与
-  交叉层套件共用同一份，不各自复制）全部作为可执行文件的源文件编译，
-  配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住
-  `.app_manager_apps` 链接段（注册表发现全部内置 App；`apps_persistence.c` 只被
-  `main/app_runtime.c` 使用，sim 不编）。
+- apps：由产品清单（`products/<product>/product.cmake`，与固件和交叉层套件共用同一解析器）选中的内置 App 与共享 UI 源作为可执行文件源编译，配合 `sim/cmake/app_builtin_apps.ld`（`-Wl,-T`）保住 `.app_manager_apps` 链接段（注册表只发现被选中的 App；`apps_persistence.c` 只被 `main/app_runtime.c` 使用，sim 不编）。
 - middleware：mt_log、event_bus、nv_storage（文件后端 `sim_nvs`）、timer_service、
   power/imu/weather/time/chore/onboarding/factory_reset/connectivity/wifi/recorder、
   `sd_storage_service` 和 `file_service` 业务真源。audio、SD 板级 adapter 与
