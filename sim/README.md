@@ -43,7 +43,8 @@ The LVGL options (DEMOS/EXAMPLES/THORVG=OFF, `LV_BUILD_CONF_PATH`) are already
 fixed inside `sim/CMakeLists.txt`, so the command line does not need to repeat
 them.
 
-The default panel is 368x448 (ESP32-S3). For the ESP32-P4 board build a second
+`SIM_PANEL` accepts exactly the two registered board geometries: `368x448`
+(ESP32-S3) or `320x480` (ESP32-P4). For the ESP32-P4 board build a second
 directory with `-DSIM_PANEL=320x480`; the framebuffer, SDL window, PNG encoder
 and agent geometry follow the selected compile-time size. The P4 geometry
 selects `p4_reference` and the S3 geometry selects `s3_reference`; a different
@@ -281,6 +282,7 @@ checksum using the same algorithm as `spiffs_assets_gen.py`). Cross-check
 consistency with the device:
 
 ```sh
+# Only when the simulator and device build select the same product.
 diff -rq build/sim/sim_res_fs build/esp-idf/main/app_res_fs   # byte-identical
 python3 sim/cmake/gen_res_meta.py \
     --assets-dir build/sim/sim_res_fs --output /tmp/meta.h \

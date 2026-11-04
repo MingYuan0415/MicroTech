@@ -3411,6 +3411,11 @@ esp_err_t display_benchmark_start(const display_benchmark_config_t *config)
     {
         return ESP_ERR_INVALID_ARG;
     }
+    if (config->ble_mode == DISPLAY_BENCHMARK_BLE_CONNECTED &&
+            !app_manager_builtin_has_app(APP_MANAGER_ID_SETUP))
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if (s_supervisor_task != NULL || s_supervisor_stopped != NULL ||
             s_wifi_subscription != EVENT_BUS_SUB_HANDLE_INVALID ||
             s_load_audio_leased || s_stress_context != NULL)

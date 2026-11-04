@@ -13,18 +13,20 @@ find_program(MAIN_HOST_SETARCH setarch)
 get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 include("${MT_ROOT}/layers/bsp/boards.cmake")
 include("${MT_ROOT}/products/products.cmake")
+mt_resolve_board("esp32s3" "waveshare_esp32_s3_touch_amoled_1_8")
 set(_requested_product "s3_reference")
 mt_resolve_product("waveshare_esp32_s3_touch_amoled_1_8" "${_requested_product}")
 mt_validate_product_capabilities(
-    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_SERVICE_CAPABILITIES}")
 mt_product_expand_apps()
 set(MAIN_S3_PRODUCT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/mt_product_s3_reference.h")
 mt_product_write_header("${MAIN_S3_PRODUCT_HEADER}")
+mt_resolve_board("esp32p4" "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
 set(_requested_product "p4_reference")
 mt_resolve_product("waveshare_esp32_p4_wifi6_touch_lcd_3_5" "${_requested_product}")
 mt_validate_product_capabilities(
-    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_SERVICE_CAPABILITIES}")
 mt_product_expand_apps()
 set(MAIN_P4_PRODUCT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/mt_product_p4_reference.h")

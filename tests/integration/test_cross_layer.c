@@ -39,6 +39,12 @@
 #define LIFECYCLE_OBSERVATION_CAPACITY 4096U
 #define LIFECYCLE_ID_BYTES 32U
 
+#if defined(MT_FULL_PRODUCT_TEST)
+    #define MT_TEST_MAYBE_UNUSED
+#else
+    #define MT_TEST_MAYBE_UNUSED __attribute__((unused))
+#endif
+
 EVENT_BUS_DEFINE_ID(CROSS_LAYER_TEST_MSG);
 
 extern const app_manager_app_desc_t _app_manager_apps_start[];
@@ -89,6 +95,20 @@ static const char *const s_expected_app_ids[] =
 
 #define BUILTIN_APP_COUNT \
     (sizeof(s_expected_app_ids) / sizeof(s_expected_app_ids[0]))
+
+#if defined(MT_PRODUCT_HAS_SETUP_APP) && \
+    defined(MT_PRODUCT_HAS_WEATHER_APP) && \
+    defined(MT_PRODUCT_HAS_CLOCK_APP) && \
+    defined(MT_PRODUCT_HAS_CALENDAR_APP) && \
+    defined(MT_PRODUCT_HAS_CALCULATOR_APP) && \
+    defined(MT_PRODUCT_HAS_RECORDER_APP) && \
+    defined(MT_PRODUCT_HAS_FILES_APP) && \
+    defined(MT_PRODUCT_HAS_LEVEL_APP) && \
+    defined(MT_PRODUCT_HAS_FLYBIRDS_APP) && \
+    defined(MT_PRODUCT_HAS_MUSIC_APP) && \
+    defined(MT_PRODUCT_HAS_DIAGNOSTICS_APP)
+    #define MT_FULL_PRODUCT_TEST 1
+#endif
 
 static atomic_uint s_noop_count;
 static atomic_uint s_fifo_completion_count;
@@ -1493,7 +1513,7 @@ static void _initialize_stack(void)
     app_manager_lifecycle_host_set_observer(_lifecycle_observer);
 }
 
-static void _test_real_app_navigation(void)
+static void MT_TEST_MAYBE_UNUSED _test_real_app_navigation(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
@@ -2066,7 +2086,7 @@ static esp_err_t _publish_status_and_exit_setup_on_ui(void *arg)
     return app_manager_navigate_async(&request, NULL, NULL);
 }
 
-static void _test_latest_wifi_backpressure_and_reopen(void)
+static void MT_TEST_MAYBE_UNUSED _test_latest_wifi_backpressure_and_reopen(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     connectivity_manager_status_snapshot_t status =
@@ -2215,7 +2235,7 @@ static void _test_latest_wifi_backpressure_and_reopen(void)
     _assert_event_slot_headroom(3);
 }
 
-static void _test_optional_services_unavailable(void)
+static void MT_TEST_MAYBE_UNUSED _test_optional_services_unavailable(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     host_optional_services_set_available(false);
@@ -2322,7 +2342,7 @@ static void _test_optional_services_unavailable(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
-static void _assert_real_page_start_contract(void)
+static void MT_TEST_MAYBE_UNUSED _assert_real_page_start_contract(void)
 {
     static const struct
     {
@@ -2462,7 +2482,7 @@ static void _exercise_real_page_screen_lifecycle(
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == pauses_before + 1U);
 }
 
-static void _test_weather_page_screen_lifecycles(void)
+static void MT_TEST_MAYBE_UNUSED _test_weather_page_screen_lifecycles(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     assert(host_weather_snapshot_lease_count() == 0U);
@@ -2508,7 +2528,7 @@ static void _test_weather_page_screen_lifecycles(void)
     assert(host_weather_snapshot_lease_count() == 0U);
 }
 
-static void _test_other_real_app_screen_lifecycles(void)
+static void MT_TEST_MAYBE_UNUSED _test_other_real_app_screen_lifecycles(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     assert(app_manager_get_running_apps() == 1U);
@@ -2728,7 +2748,7 @@ static void _exercise_music_page_screen_lifecycle(
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == pauses_before + 1U);
 }
 
-static void _test_music_page_screen_lifecycles(void)
+static void MT_TEST_MAYBE_UNUSED _test_music_page_screen_lifecycles(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     host_music_seed_success();
@@ -2924,7 +2944,7 @@ static esp_err_t _flybirds_progress_on_ui(void *arg)
     return ESP_OK;
 }
 
-static void _test_flybirds_failed_pause_keeps_ticking(void)
+static void MT_TEST_MAYBE_UNUSED _test_flybirds_failed_pause_keeps_ticking(void)
 {
     assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
     assert(app_manager_get_running_apps() == 1U);
@@ -3212,7 +3232,7 @@ static void _test_home_screen_lifecycle(void)
                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER) == pauses_before + 1U);
 }
 
-static void _test_setup_screen_lifecycle(void)
+static void MT_TEST_MAYBE_UNUSED _test_setup_screen_lifecycle(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETUP, NULL) ==
            ESP_OK);
@@ -3340,7 +3360,7 @@ static void _test_setup_screen_lifecycle(void)
     _assert_event_slot_headroom(3);
 }
 
-static void _test_system_edge_back_gesture(void)
+static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
@@ -3706,7 +3726,7 @@ static void _wait_for_text_gone(const char *text)
     assert(!_ui_has_text(text));
 }
 
-static void _test_system_task_switcher(void)
+static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
@@ -4090,7 +4110,7 @@ static esp_err_t _cc_probe_delete_on_ui(void *arg)
     return ESP_OK;
 }
 
-static void _test_control_center_band_and_entering_toggle(void)
+static void MT_TEST_MAYBE_UNUSED _test_control_center_band_and_entering_toggle(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
            ESP_OK);
@@ -4487,6 +4507,7 @@ int main(void)
 {
     _initialize_stack();
     _test_host_audio_lease_contract();
+#if defined(MT_FULL_PRODUCT_TEST)
     _test_real_app_navigation();
     _test_weather_page_screen_lifecycles();
     _test_home_resume_before_first_draw();
@@ -4509,6 +4530,21 @@ int main(void)
     _test_control_center_volume_row_hidden();
     _test_standby_capability_ui();
     _test_settings_sound_page_volume();
+#else
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    _test_home_resume_before_first_draw();
+    _test_latest_power_backpressure();
+    _test_screen_pause_finishes_transition();
+    _test_fifo_navigation_finishes_snapshot_transition();
+    _test_home_screen_lifecycle();
+    _test_pull_refresh_hold();
+    _test_control_center_volume_row();
+    _test_control_center_volume_row_hidden();
+    _test_standby_capability_ui();
+    _test_settings_sound_page_volume();
+#endif
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
     assert(app_manager_navigation_deinit() == ESP_OK);

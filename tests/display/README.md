@@ -55,7 +55,9 @@ the gate is enabled but `DISPLAY_BENCHMARK_PROFILE_DIR` is not passed, CMake
 rejects the build outright.
 
 - `STRESS`: runs production transitions plus the Audio/TCP/BLE/App load
-  selected by the profile.
+  selected by the profile. A BLE-connected system-route profile requires the
+  Setup App; products that do not select Setup report `ESP_ERR_NOT_SUPPORTED`
+  at start instead of failing inside the run.
 - `CHARACTERIZATION`: runs fade, push-left, push-right, cover-left, and
   reveal-right each display-only and each with the specified load window.
 

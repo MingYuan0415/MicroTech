@@ -227,10 +227,14 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             cwd=contract, check=True, capture_output=True, text=True,
         ).stdout.strip()
         self.assertEqual(digest, optimized_digest)
+        self.assertEqual(lock_values["lock_format"], "2")
         self.assertEqual(lock_values["contract_commit"], contract_head)
         self.assertEqual(lock_values["schema_digest"], digest)
         self.assertEqual(lock_values["profile"], "device-link/v1")
         self.assertEqual(lock_values["schema_format"], "fixed-binary/1")
+        self.assertEqual(lock_values["release_state"], "freeze_candidate")
+        self.assertEqual(lock_values["release_tag"], "none")
+        self.assertEqual(lock_values["pin_state"], "working_tree_candidate")
 
 
 if __name__ == "__main__":

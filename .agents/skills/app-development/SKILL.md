@@ -96,8 +96,9 @@ App:
   `app_manager_builtin_has_app()` before creating a clickable control. Never
   leave a Home card, Settings row or storage shortcut that navigates to an App
   absent from the build.
-- If the App owns persisted state, add its reset hook to `app.cmake`; the
-  shared factory-reset path is generated from the selected App set.
+- If the App owns persisted state, add its reset hook to `app.cmake` and make
+  its persistence header visible to `apps_persistence.c`; the shared
+  factory-reset path invokes the selected hooks generated from the product.
 - A hidden App (`APP_MANAGER_APP_FLAG_HIDDEN`) can still be optional; the flag
   only removes it from the launcher, not from the build.
 - Cover both the selected and unselected composition in host tests. A minimal

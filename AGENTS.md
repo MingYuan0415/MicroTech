@@ -4,6 +4,7 @@
 
 - `main/`: entry point, runtime, storage and network assembly. Resources are aggregated from the `layers/apps/*/assets/` and `layers/app_manager/app_theme/assets/` manifests and packaged into the `res` partition.
 - `layers/`: `bsp`, `middleware`, `app_manager`, `apps` — four independent Git submodules. Changes inside a layer are committed and pushed in the submodule; the parent repository updates the pointer in the same commit.
+- `products/`: board/product/design-target composition manifests, see [`products/README.md`](products/README.md). Product selection is explicit through `MT_PRODUCT`; board selection is explicit through `MT_BOARD`.
 - `sim/`: standalone host LVGL simulator, see [`sim/README.md`](sim/README.md). Agents bind `127.0.0.1:5002` only (5001 is reserved for the on-device baseline).
 - `tests/`: `connectivity` and `integration` are cross-layer host tests; `display` is the on-device benchmark tool. `managed_components/` is read-only.
 - `tools/agent/`: agent-facing command wrapper; see [`doc/agent-workflow.md`](doc/agent-workflow.md).
@@ -29,8 +30,9 @@ for humans and CI.
 
 ```sh
 git submodule update --init --recursive
-idf.py set-target esp32s3 && idf.py build   # ESP32-S3 board
-idf.py set-target esp32p4  && idf.py build   # ESP32-P4 board
+idf.py set-target esp32s3 && idf.py build   # ESP32-S3 board, default product
+idf.py set-target esp32p4  && idf.py build   # ESP32-P4 board, default product
+idf.py -DMT_PRODUCT=<product-id> build       # explicit product after setting target
 idf.py size   # only when the change touches cache, DMA reservation, or resources
 ```
 

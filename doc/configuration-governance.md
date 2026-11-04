@@ -12,16 +12,17 @@ only what they already enforce.
 | --- | --- | --- |
 | Static resource budget, compile-time switches | Kconfig | each component's `Kconfig` / `Kconfig.projbuild` |
 | Runtime policy (sample rate, time zone, SNTP, PCM format, mount paths, weather endpoints, etc.) | Caller | root `app_product_config_t` and its sub-configuration structs |
-| Board identity and implemented hardware capabilities | Board backend | `layers/bsp/waveshare/.../board.cmake` and `board_display_profile.h` |
-| Product App composition and product-only policy | Product manifest | `products/<product>/product.cmake` |
+| Board identity, physical panel/platform, system-PM, hosted-radio and radio-availability facts | Board backend | `layers/bsp/waveshare/.../board.cmake` and `board_display_profile.h` |
+| Product App composition, service capabilities and product-only policy | Product manifest | `products/<product>/product.cmake`; panel/platform/PM/hosted-radio fields are inherited from the board |
 | App sources, include dirs, services, capabilities and reset hooks | App manifest | `layers/apps/<app>/app.cmake`, listed by `app_catalog.cmake` |
 | Protocol constants and semantics | Contract submodule | `contracts/device_link` (`protocol.yaml`, `vectors/golden.json`); the submodule pointer is the only code pin |
 | Contract schema metadata | Middleware component | `layers/middleware/components/device_link/device-link-contract.lock` |
 | External dependency versions | Manifest + lock | each `idf_component.yml` and the root `dependencies.lock` |
 
-A product may add non-BSP service capabilities (for example the hosted radio),
-but it cannot declare a peripheral capability the selected board backend has
-not implemented. The App catalog is explicit; recursive globs are forbidden.
+A product may add non-BSP service capabilities (for example radio), but the
+selected board must declare `MT_BOARD_RADIO_SUPPORTED` for radio and it cannot
+declare a peripheral capability the board backend has not implemented. The App
+catalog is explicit; recursive globs are forbidden.
 
 The LVGL and board profile gates in the root `CMakeLists.txt` (cache, allocator,
 RGB565, NimBLE SC-only, TLS, PSRAM external BSS, and so on) are build

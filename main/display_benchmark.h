@@ -65,8 +65,10 @@ typedef struct display_benchmark_config
  * Pending stop cleanup prevents a new start; retry stop before starting again.
  *
  * @param config Campaign configuration copied by this call.
- * @return ESP_OK when armed, ESP_ERR_INVALID_STATE while running or cleanup is pending,
- *         or the original setup error (even if its cleanup also fails).
+ * @return ESP_OK when armed, ESP_ERR_NOT_SUPPORTED when the profile needs the
+ *         Setup App but that App is not built, ESP_ERR_INVALID_STATE while
+ *         running or cleanup is pending, or the original setup error (even if
+ *         its cleanup also fails).
  */
 esp_err_t display_benchmark_start(const display_benchmark_config_t *config);
 

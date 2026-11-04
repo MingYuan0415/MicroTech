@@ -7,6 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,47 +15,44 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # encoder and agent info are all sized at build time. The default keeps the
 # ESP32-S3 368x448 reference; the ESP32-P4 board uses -DSIM_PANEL=320x480.
 set(SIM_PANEL "368x448" CACHE STRING
-    "Simulated panel geometry as WIDTHxHEIGHT (e.g. 368x448 or 320x480)")
-string(REPLACE "x" ";" _sim_panel_parts "${SIM_PANEL}")
-list(LENGTH _sim_panel_parts _sim_panel_count)
-if(NOT _sim_panel_count EQUAL 2)
-    message(FATAL_ERROR "SIM_PANEL must be WIDTHxHEIGHT, got '${SIM_PANEL}'")
-endif()
-list(GET _sim_panel_parts 0 SIM_BSP_H_RES)
-list(GET _sim_panel_parts 1 SIM_BSP_V_RES)
-if(NOT SIM_BSP_H_RES MATCHES "^[0-9]+$" OR
-        NOT SIM_BSP_V_RES MATCHES "^[0-9]+$")
-    message(FATAL_ERROR
-        "SIM_PANEL width and height must be positive integers, got '${SIM_PANEL}'")
-endif()
-
-if(NOT DEFINED SIM_STANDBY_SUPPORTED)
-    if(SIM_BSP_H_RES EQUAL 320)
-        set(SIM_STANDBY_SUPPORTED OFF CACHE BOOL
-            "Simulate a product with CPU standby support" FORCE)
-    else()
-        set(SIM_STANDBY_SUPPORTED ON CACHE BOOL
-            "Simulate a product with CPU standby support" FORCE)
-    endif()
-endif()
-
-get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-if(SIM_BSP_H_RES EQUAL 320)
+    "Simulated panel geometry; must match a supported board profile")
+if(SIM_PANEL STREQUAL "368x448")
+    set(SIM_BSP_H_RES 368)
+    set(SIM_BSP_V_RES 448)
+    set(_sim_target "esp32s3")
+    set(_sim_default_board "waveshare_esp32_s3_touch_amoled_1_8")
+    set(_sim_default_product "s3_reference")
+elseif(SIM_PANEL STREQUAL "320x480")
+    set(SIM_BSP_H_RES 320)
+    set(SIM_BSP_V_RES 480)
+    set(_sim_target "esp32p4")
     set(_sim_default_board "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
     set(_sim_default_product "p4_reference")
 else()
-    set(_sim_default_board "waveshare_esp32_s3_touch_amoled_1_8")
-    set(_sim_default_product "s3_reference")
+    message(FATAL_ERROR
+        "SIM_PANEL must be a supported board geometry: 368x448 or 320x480")
 endif()
+
+get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(SIM_PRODUCT "${_sim_default_product}" CACHE STRING
     "MicroTech product manifest used by the simulator")
 set(_sim_requested_product "${SIM_PRODUCT}")
 include("${MT_ROOT}/layers/bsp/boards.cmake")
 include("${MT_ROOT}/products/products.cmake")
+mt_resolve_board("${_sim_target}" "${_sim_default_board}")
 mt_resolve_product("${_sim_default_board}" "${_sim_requested_product}")
 mt_validate_product_capabilities(
-    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_SERVICE_CAPABILITIES}")
 mt_product_expand_apps()
+if(NOT DEFINED SIM_STANDBY_SUPPORTED)
+    if(MT_PRODUCT_SYSTEM_PM_SUPPORTED)
+        set(SIM_STANDBY_SUPPORTED ON CACHE BOOL
+            "Simulate a product with CPU standby support" FORCE)
+    else()
+        set(SIM_STANDBY_SUPPORTED OFF CACHE BOOL
+            "Simulate a product with CPU standby support" FORCE)
+    endif()
+endif()
 set(SIM_PRODUCT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/mt_product_profile.h")
 mt_product_write_header("${SIM_PRODUCT_HEADER}")
 
@@ -372,6 +370,7 @@ target_include_directories(microtech_sim PRIVATE
 # Production-config mirror is force-injected exactly like IDF does; HOST_TEST
 # is deliberately NOT defined (mailbox must drain on the LVGL worker timer).
 target_compile_definitions(microtech_sim PRIVATE
+    _GNU_SOURCE
     APP_RESOURCES_ENABLED=1
     SIM_BSP_H_RES=${SIM_BSP_H_RES}U
     SIM_BSP_V_RES=${SIM_BSP_V_RES}U

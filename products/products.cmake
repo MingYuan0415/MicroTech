@@ -1,8 +1,9 @@
 # MicroTech product composition resolver.
 #
 # A product selects a board, a design target and an explicit subset of the App
-# catalog. It may declare non-BSP service capabilities (for example a hosted
-# radio), but it cannot invent a BSP peripheral capability.
+# catalog. It may declare non-BSP service capabilities (for example radio), but
+# physical board facts and BSP peripheral capabilities remain in the board
+# manifest.
 
 include_guard(GLOBAL)
 include("${CMAKE_CURRENT_LIST_DIR}/../layers/apps/app_catalog.cmake")
@@ -27,7 +28,10 @@ endfunction()
 function(mt_resolve_product board_id requested_product)
     set(product_id "${requested_product}")
     if(product_id STREQUAL "")
-        if(board_id STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
+        if(DEFINED MT_BOARD_DEFAULT_PRODUCT AND
+                NOT MT_BOARD_DEFAULT_PRODUCT STREQUAL "")
+            set(product_id "${MT_BOARD_DEFAULT_PRODUCT}")
+        elseif(board_id STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
             set(product_id "s3_reference")
         elseif(board_id STREQUAL "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
             set(product_id "p4_reference")
@@ -38,10 +42,18 @@ function(mt_resolve_product board_id requested_product)
     endif()
 
     _mt_product_manifest_path("${product_id}" manifest)
+    foreach(board_field MT_BOARD_DEVICE_PANEL MT_BOARD_DEVICE_PLATFORM
+            MT_BOARD_SYSTEM_PM_SUPPORTED MT_BOARD_HOSTED_RADIO
+            MT_BOARD_RADIO_SUPPORTED)
+        if(NOT DEFINED ${board_field} OR "${${board_field}}" STREQUAL "")
+            message(FATAL_ERROR
+                "mt_resolve_product() requires a resolved board with ${board_field}")
+        endif()
+    endforeach()
     unset(MT_PRODUCT_ID)
     unset(MT_PRODUCT_BOARD)
     unset(MT_PRODUCT_DESIGN_TARGET)
-    unset(MT_PRODUCT_HAL_CAPABILITIES)
+    unset(MT_PRODUCT_SERVICE_CAPABILITIES)
     unset(MT_PRODUCT_RADIO_ENABLED)
     unset(MT_PRODUCT_RADIO_OPTIONAL)
     unset(MT_PRODUCT_SYSTEM_PM_SUPPORTED)
@@ -53,10 +65,23 @@ function(mt_resolve_product board_id requested_product)
     unset(MT_PRODUCT_REQUIRED_APPS)
     include("${manifest}")
 
+    # Physical board facts are owned by the board manifest. The generated
+    # product profile mirrors them for C consumers, but products never set
+    # these fields themselves.
+    set(MT_PRODUCT_DEVICE_PANEL "${MT_BOARD_DEVICE_PANEL}")
+    set(MT_PRODUCT_DEVICE_PLATFORM "${MT_BOARD_DEVICE_PLATFORM}")
+    set(MT_PRODUCT_SYSTEM_PM_SUPPORTED "${MT_BOARD_SYSTEM_PM_SUPPORTED}")
+    set(MT_PRODUCT_HOSTED_RADIO "${MT_BOARD_HOSTED_RADIO}")
+
+    if(NOT DEFINED MT_PRODUCT_SERVICE_CAPABILITIES)
+        message(FATAL_ERROR "${manifest} lacks MT_PRODUCT_SERVICE_CAPABILITIES")
+    endif()
+    if(NOT product_id MATCHES "^[A-Za-z0-9_]+$")
+        message(FATAL_ERROR
+            "Product id '${product_id}' must contain only letters, digits and underscores")
+    endif()
     foreach(field MT_PRODUCT_ID MT_PRODUCT_BOARD MT_PRODUCT_DESIGN_TARGET
             MT_PRODUCT_RADIO_ENABLED MT_PRODUCT_RADIO_OPTIONAL
-            MT_PRODUCT_SYSTEM_PM_SUPPORTED MT_PRODUCT_HOSTED_RADIO
-            MT_PRODUCT_DEVICE_PANEL MT_PRODUCT_DEVICE_PLATFORM
             MT_PRODUCT_APPS MT_PRODUCT_REQUIRED_APPS)
         if(NOT DEFINED ${field} OR "${${field}}" STREQUAL "")
             message(FATAL_ERROR "${manifest} lacks ${field}")
@@ -93,12 +118,11 @@ function(mt_resolve_product board_id requested_product)
         endif()
     endforeach()
 
-    set(${requested_product} "${MT_PRODUCT_ID}" PARENT_SCOPE)
     set(MT_PRODUCT_ID "${MT_PRODUCT_ID}" PARENT_SCOPE)
     set(MT_PRODUCT_BOARD "${MT_PRODUCT_BOARD}" PARENT_SCOPE)
     set(MT_PRODUCT_DESIGN_TARGET "${MT_PRODUCT_DESIGN_TARGET}" PARENT_SCOPE)
-    set(MT_PRODUCT_HAL_CAPABILITIES
-        "${MT_PRODUCT_HAL_CAPABILITIES}" PARENT_SCOPE)
+    set(MT_PRODUCT_SERVICE_CAPABILITIES
+        "${MT_PRODUCT_SERVICE_CAPABILITIES}" PARENT_SCOPE)
     set(MT_PRODUCT_RADIO_ENABLED "${MT_PRODUCT_RADIO_ENABLED}" PARENT_SCOPE)
     set(MT_PRODUCT_RADIO_OPTIONAL "${MT_PRODUCT_RADIO_OPTIONAL}" PARENT_SCOPE)
     set(MT_PRODUCT_SYSTEM_PM_SUPPORTED
@@ -115,25 +139,36 @@ function(mt_resolve_product board_id requested_product)
     set_property(GLOBAL PROPERTY MT_PRODUCT_RESOLVED TRUE)
 endfunction()
 
-function(mt_validate_product_capabilities board_capabilities product_capabilities)
-    set(known "${board_capabilities};${product_capabilities}")
+function(mt_validate_product_capabilities board_capabilities service_capabilities)
+    foreach(capability IN LISTS service_capabilities)
+        if(NOT capability STREQUAL "radio")
+            message(FATAL_ERROR
+                "Product ${MT_PRODUCT_ID} declares unsupported service capability '${capability}'")
+        endif()
+    endforeach()
+    if(NOT MT_PRODUCT_RADIO_ENABLED AND "radio" IN_LIST service_capabilities)
+        message(FATAL_ERROR
+            "Product ${MT_PRODUCT_ID} declares the radio service while radio is disabled")
+    endif()
+
+    set(_mt_board_capabilities "${board_capabilities}")
     if(NOT board_capabilities)
         # Host consumers resolve a product without entering the IDF component
-        # build. Read the product's board manifest here so capability validation
-        # does not depend on caller-local variables.
+        # build. Resolve the board from the product's board id here.
         get_filename_component(_mt_products_parent
             "${CMAKE_CURRENT_FUNCTION_LIST_DIR}" DIRECTORY)
         include("${_mt_products_parent}/layers/bsp/boards.cmake")
-        if(MT_PRODUCT_BOARD STREQUAL "waveshare_esp32_s3_touch_amoled_1_8")
-            mt_resolve_board("esp32s3" "${MT_PRODUCT_BOARD}")
-        elseif(MT_PRODUCT_BOARD STREQUAL "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
-            mt_resolve_board("esp32p4" "${MT_PRODUCT_BOARD}")
-        else()
-            message(FATAL_ERROR
-                "Product ${MT_PRODUCT_ID} has unknown board ${MT_PRODUCT_BOARD}")
-        endif()
-        set(known "${MT_BOARD_HAL_CAPABILITIES};${product_capabilities}")
+        _mt_board_manifest("" "${MT_PRODUCT_BOARD}" _mt_board_manifest
+            _mt_board_target _mt_board_id)
+        mt_resolve_board("${_mt_board_target}" "${MT_PRODUCT_BOARD}")
+        set(_mt_board_capabilities "${MT_BOARD_HAL_CAPABILITIES}")
     endif()
+    if("radio" IN_LIST service_capabilities AND NOT MT_BOARD_RADIO_SUPPORTED)
+        message(FATAL_ERROR
+            "Product ${MT_PRODUCT_ID} declares the radio service but board ${MT_BOARD_ID} has no radio")
+    endif()
+    set(known "${_mt_board_capabilities};${service_capabilities}")
+
     foreach(app_id IN LISTS MT_PRODUCT_APPS)
         mt_app_read("${app_id}" selected_id)
         foreach(capability IN LISTS MT_APP_CAPABILITIES)
@@ -155,7 +190,6 @@ function(mt_product_expand_apps)
         MT_PRODUCT_APP_SOURCES
         MT_PRODUCT_APP_INCLUDE_DIRS
         MT_PRODUCT_APP_REQUIRES
-        MT_PRODUCT_APP_CAPABILITIES
         MT_PRODUCT_APP_RESOURCE_MANIFESTS
         MT_PRODUCT_APP_RESET_HOOKS
         MT_PRODUCT_SELECTED_APP_IDS)
@@ -163,7 +197,6 @@ function(mt_product_expand_apps)
             MT_PRODUCT_APP_SOURCES
             MT_PRODUCT_APP_INCLUDE_DIRS
             MT_PRODUCT_APP_REQUIRES
-            MT_PRODUCT_APP_CAPABILITIES
             MT_PRODUCT_APP_RESOURCE_MANIFESTS
             MT_PRODUCT_APP_RESET_HOOKS
             MT_PRODUCT_SELECTED_APP_IDS)
@@ -212,6 +245,21 @@ function(mt_product_write_header output_file)
         string(APPEND required_checks
             "    \"${app_id}\",\n")
     endforeach()
+    set(reset_macro_entries "")
+    set(reset_count 0)
+    foreach(reset_hook IN LISTS MT_PRODUCT_APP_RESET_HOOKS)
+        if(NOT reset_hook STREQUAL "")
+            math(EXPR reset_count "${reset_count} + 1")
+            string(APPEND reset_macro_entries "    X(${reset_hook}) \\\n")
+        endif()
+    endforeach()
+    if(reset_count GREATER 0)
+        set(reset_block
+            "#define MT_PRODUCT_APP_RESET_HOOK_COUNT ${reset_count}\n#define MT_PRODUCT_RESET_HOOKS(X) \\\n${reset_macro_entries}\n")
+    else()
+        set(reset_block
+            "#define MT_PRODUCT_APP_RESET_HOOK_COUNT 0\n#define MT_PRODUCT_RESET_HOOKS(X)\n")
+    endif()
     string(TOLOWER "${MT_PRODUCT_ID}" id_upper_seed)
     string(TOUPPER "${id_upper_seed}" product_upper)
     foreach(_mt_bool IN ITEMS
@@ -226,6 +274,6 @@ function(mt_product_write_header output_file)
         endif()
     endforeach()
     set(content
-        "#ifndef MT_PRODUCT_PROFILE_GENERATED_H\n#define MT_PRODUCT_PROFILE_GENERATED_H\n\n#define MT_PRODUCT_NAME \"${MT_PRODUCT_ID}\"\n#define MT_PRODUCT_ID_${product_upper} 1\n#define MT_PRODUCT_RADIO_ENABLED ${MT_PRODUCT_RADIO_ENABLED_C}\n#define MT_PRODUCT_RADIO_OPTIONAL ${MT_PRODUCT_RADIO_OPTIONAL_C}\n#define MT_PRODUCT_SYSTEM_PM_SUPPORTED ${MT_PRODUCT_SYSTEM_PM_SUPPORTED_C}\n#define MT_PRODUCT_HOSTED_RADIO ${MT_PRODUCT_HOSTED_RADIO_C}\n#define MT_PRODUCT_DEVICE_PANEL \"${MT_PRODUCT_DEVICE_PANEL}\"\n#define MT_PRODUCT_DEVICE_PLATFORM \"${MT_PRODUCT_DEVICE_PLATFORM}\"\n${app_definitions}\nstatic const char *const s_mt_product_app_ids[] =\n{\n${app_checks}};\n\nstatic const char *const s_mt_product_required_app_ids[] =\n{\n${required_checks}};\n\n#endif /* MT_PRODUCT_PROFILE_GENERATED_H */\n")
+        "#ifndef MT_PRODUCT_PROFILE_GENERATED_H\n#define MT_PRODUCT_PROFILE_GENERATED_H\n\n#define MT_PRODUCT_NAME \"${MT_PRODUCT_ID}\"\n#define MT_PRODUCT_ID_${product_upper} 1\n#define MT_PRODUCT_RADIO_ENABLED ${MT_PRODUCT_RADIO_ENABLED_C}\n#define MT_PRODUCT_RADIO_OPTIONAL ${MT_PRODUCT_RADIO_OPTIONAL_C}\n#define MT_PRODUCT_SYSTEM_PM_SUPPORTED ${MT_PRODUCT_SYSTEM_PM_SUPPORTED_C}\n#define MT_PRODUCT_HOSTED_RADIO ${MT_PRODUCT_HOSTED_RADIO_C}\n#define MT_PRODUCT_DEVICE_PANEL \"${MT_PRODUCT_DEVICE_PANEL}\"\n#define MT_PRODUCT_DEVICE_PLATFORM \"${MT_PRODUCT_DEVICE_PLATFORM}\"\n#define MT_PRODUCT_DESIGN_TARGET \"${MT_PRODUCT_DESIGN_TARGET}\"\n${app_definitions}\n${reset_block}\nstatic const char *const s_mt_product_app_ids[] =\n{\n${app_checks}};\n\nstatic const char *const s_mt_product_required_app_ids[] =\n{\n${required_checks}};\n\n#endif /* MT_PRODUCT_PROFILE_GENERATED_H */\n")
     file(WRITE "${output_file}" "${content}")
 endfunction()

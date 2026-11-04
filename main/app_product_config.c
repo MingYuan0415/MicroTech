@@ -56,6 +56,7 @@ _Static_assert(APP_PRODUCT_PRIORITY_VALID(APP_PRODUCT_CHORE_TASK_PRIORITY),
 #if !defined(MT_PRODUCT_RADIO_ENABLED) || \
     !defined(MT_PRODUCT_RADIO_OPTIONAL) || \
     !defined(MT_PRODUCT_SYSTEM_PM_SUPPORTED) || \
+    !defined(MT_PRODUCT_HOSTED_RADIO) || \
     !defined(MT_PRODUCT_DEVICE_PANEL) || \
     !defined(MT_PRODUCT_DEVICE_PLATFORM)
     #error "The selected MicroTech product must provide generated policy macros"

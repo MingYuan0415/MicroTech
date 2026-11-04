@@ -35,8 +35,9 @@ cmake --build build/sim
 LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 `sim/CMakeLists.txt` 内固化，命令行无需重复传。
 
-默认面板为 368x448（ESP32-S3）。ESP32-P4 版型请用 `-DSIM_PANEL=320x480` 另建
-构建目录；framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期尺寸。
+`SIM_PANEL` 只接受两个已注册板卡的几何：`368x448`（ESP32-S3）或 `320x480`
+（ESP32-P4）。ESP32-P4 版型请用 `-DSIM_PANEL=320x480` 另建构建目录；
+framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期尺寸。
 P4 几何默认选择 `p4_reference`，S3 几何默认选择 `s3_reference`；其他产品可用
 `-DSIM_PRODUCT=<product-id>` 显式选择。P4 产品默认
 `SIM_STANDBY_SUPPORTED=OFF`（仅熄屏），S3 产品默认 `ON`。
@@ -214,6 +215,7 @@ QQ 二维码 → 已扫码 → 登录成功 → 侧边栏，全程不需要手�
 mmap 校验和）。与设备一致性核对：
 
 ```sh
+# 仅在模拟器与设备构建选择同一产品时执行。
 diff -rq build/sim/sim_res_fs build/esp-idf/main/app_res_fs   # 字节一致
 python3 sim/cmake/gen_res_meta.py \
     --assets-dir build/sim/sim_res_fs --output /tmp/meta.h \

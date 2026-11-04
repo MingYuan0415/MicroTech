@@ -37,9 +37,11 @@ def _app_manifest(app_id: str) -> dict[str, object]:
     path = APPS / app_dir / "app.cmake"
     text = path.read_text(encoding="utf-8")
     result: dict[str, object] = {"dir": app_dir, "path": path}
-    for field in ("MT_APP_ID", "MT_APP_RESET_HOOK"):
+    for field in ("MT_APP_ID",):
         match = re.search(rf"set\({field}\s+([^\s)]+)\)", text)
         result[field] = match.group(1) if match else ""
+    match = re.search(r'set\(MT_APP_RESET_HOOK\s+"?([^"\s)]*)"?\)', text)
+    result["MT_APP_RESET_HOOK"] = match.group(1) if match else ""
     for field in ("MT_APP_SOURCES", "MT_APP_INCLUDE_DIRS",
                   "MT_APP_PRIVATE_REQUIRES", "MT_APP_CAPABILITIES"):
         result[field] = _cmake_list(text, f"set({field}")
@@ -50,6 +52,11 @@ def _app_manifest(app_id: str) -> dict[str, object]:
     return result
 
 
+def _cmake_bool(text: str, field: str) -> bool:
+    match = re.search(rf"set\({field}\s+(ON|OFF|TRUE|FALSE)\)", text)
+    return bool(match and match.group(1) in {"ON", "TRUE"})
+
+
 def _product(path: Path) -> dict[str, object]:
     text = path.read_text(encoding="utf-8")
     result: dict[str, object] = {"path": path}
@@ -57,9 +64,11 @@ def _product(path: Path) -> dict[str, object]:
                   "MT_PRODUCT_DESIGN_TARGET"):
         match = re.search(rf'set\({field}\s+"([^"]+)"\)', text)
         result[field] = match.group(1) if match else ""
-    for field in ("MT_PRODUCT_HAL_CAPABILITIES", "MT_PRODUCT_APPS",
+    for field in ("MT_PRODUCT_SERVICE_CAPABILITIES", "MT_PRODUCT_APPS",
                   "MT_PRODUCT_REQUIRED_APPS"):
         result[field] = _cmake_list(text, f"set({field}")
+    for field in ("MT_PRODUCT_RADIO_ENABLED", "MT_PRODUCT_RADIO_OPTIONAL"):
+        result[field] = _cmake_bool(text, field)
     return result
 
 
@@ -70,8 +79,19 @@ def _boards() -> dict[str, dict[str, object]]:
         board_id = re.search(r'set\(MT_BOARD_ID\s+"([^"]+)"\)', text).group(1)
         boards[board_id] = {
             "path": path,
+            "target": re.search(r'set\(MT_BOARD_TARGET\s+"([^"]+)"\)',
+                                text).group(1),
             "name": re.search(r'set\(MT_BOARD_NAME\s+"([^"]+)"\)',
                               text).group(1),
+            "device_panel": re.search(
+                r'set\(MT_BOARD_DEVICE_PANEL\s+"([^"]+)"\)', text).group(1),
+            "device_platform": re.search(
+                r'set\(MT_BOARD_DEVICE_PLATFORM\s+"([^"]+)"\)', text).group(1),
+            "system_pm_supported": _cmake_bool(
+                text, "MT_BOARD_SYSTEM_PM_SUPPORTED"),
+            "hosted_radio": _cmake_bool(text, "MT_BOARD_HOSTED_RADIO"),
+            "radio_supported": _cmake_bool(
+                text, "MT_BOARD_RADIO_SUPPORTED"),
             "default_product": re.search(
                 r'set\(MT_BOARD_DEFAULT_PRODUCT\s+"([^"]+)"\)', text).group(1),
             "documents": re.search(
@@ -121,6 +141,7 @@ class ProductCatalogTest(unittest.TestCase):
     def test_products_reference_known_apps_boards_and_targets(self) -> None:
         for product_id, product in self.products.items():
             with self.subTest(product=product_id):
+                self.assertEqual(product["path"].parent.name, product_id)
                 self.assertIn(product["MT_PRODUCT_BOARD"], self.boards)
                 self.assertTrue((DESIGN_TARGETS /
                                  f"{product['MT_PRODUCT_DESIGN_TARGET']}.json")
@@ -133,14 +154,51 @@ class ProductCatalogTest(unittest.TestCase):
                     self.assertIn(required, apps)
                 for app_id in apps:
                     manifest = _app_manifest(app_id)
-                    if manifest["MT_APP_REQUIRED"]:
-                        self.assertIn(app_id, apps)
+                    if app_id != "common" and manifest["MT_APP_REQUIRED"]:
+                        self.assertIn(app_id,
+                                      product["MT_PRODUCT_REQUIRED_APPS"])
+
+    def test_reset_hooks_exist_in_app_sources(self) -> None:
+        for app_id in self.catalog:
+            manifest = _app_manifest(app_id)
+            hook = manifest["MT_APP_RESET_HOOK"]
+            if not hook:
+                continue
+            with self.subTest(app=app_id):
+                sources = "\n".join(
+                    path.read_text(encoding="utf-8")
+                    for path in sorted((APPS / manifest["dir"] / "src").glob("*.c")))
+                self.assertIn(hook, sources, f"{app_id}: missing reset hook")
+
+    def test_hidden_manifest_matches_descriptor_flags(self) -> None:
+        for app_id in self.catalog:
+            if app_id == "common":
+                continue
+            with self.subTest(app=app_id):
+                manifest = _app_manifest(app_id)
+                source = (APPS / manifest["dir"] / "src" /
+                          f"{app_id}_app.c").read_text(encoding="utf-8")
+                match = re.search(
+                    r"APP_MANAGER_APP_EXPORT(?:_META)?\([\s\S]*?\);", source)
+                self.assertIsNotNone(match, f"{app_id}: missing App descriptor")
+                self.assertEqual(
+                    "APP_MANAGER_APP_FLAG_HIDDEN" in match.group(0),
+                    manifest["MT_APP_HIDDEN"],
+                    f"{app_id}: manifest hidden flag drifts from descriptor")
 
     def test_app_capabilities_are_available_on_each_product(self) -> None:
         for product_id, product in self.products.items():
             board = self.boards[product["MT_PRODUCT_BOARD"]]
-            available = set(board["capabilities"]) | set(
-                product["MT_PRODUCT_HAL_CAPABILITIES"])
+            services = set(product["MT_PRODUCT_SERVICE_CAPABILITIES"])
+            self.assertLessEqual(services, {"radio"},
+                                 f"{product_id} declares unknown services")
+            if not product["MT_PRODUCT_RADIO_ENABLED"]:
+                self.assertNotIn("radio", services)
+            if "radio" in services:
+                self.assertTrue(
+                    board["radio_supported"],
+                    f"{product_id} declares radio without board support")
+            available = set(board["capabilities"]) | services
             for app_id in product["MT_PRODUCT_APPS"]:
                 manifest = _app_manifest(app_id)
                 missing = set(manifest["MT_APP_CAPABILITIES"]) - available
@@ -148,10 +206,27 @@ class ProductCatalogTest(unittest.TestCase):
                     missing, set(),
                     f"{product_id} selects {app_id} without {sorted(missing)}")
 
+    def test_product_manifests_do_not_declare_board_facts(self) -> None:
+        board_facts = (
+            "MT_PRODUCT_DEVICE_PANEL",
+            "MT_PRODUCT_DEVICE_PLATFORM",
+            "MT_PRODUCT_SYSTEM_PM_SUPPORTED",
+            "MT_PRODUCT_HOSTED_RADIO",
+        )
+        for product_id, product in self.products.items():
+            text = product["path"].read_text(encoding="utf-8")
+            with self.subTest(product=product_id):
+                for field in board_facts:
+                    self.assertNotIn(f"set({field}", text,
+                                     f"{product_id} duplicates board fact {field}")
+
     def test_board_defaults_and_document_registries_exist(self) -> None:
         for board_id, board in self.boards.items():
             with self.subTest(board=board_id):
                 self.assertIn(board["default_product"], self.products)
+                self.assertEqual(
+                    self.products[board["default_product"]]["MT_PRODUCT_BOARD"],
+                    board_id)
                 documents = board["path"].parent / board["documents"]
                 self.assertTrue(documents.is_file(), documents)
                 data = yaml.safe_load(documents.read_text(encoding="utf-8"))
@@ -216,9 +291,13 @@ class ProductCatalogTest(unittest.TestCase):
 
     def test_product_and_app_ids_have_no_duplicates(self) -> None:
         self.assertEqual(len(self.catalog), len(set(self.catalog)))
-        self.assertEqual(len(self.products), len(set(self.products)))
-        for product in self.products.values():
-            self.assertTrue(product["MT_PRODUCT_ID"])
+        product_files = sorted(PRODUCTS.glob("*/product.cmake"))
+        parsed = [_product(path) for path in product_files]
+        ids = [product["MT_PRODUCT_ID"] for product in parsed]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(ids))
+        self.products = {product["MT_PRODUCT_ID"]: product
+                         for product in parsed}
 
     def test_design_targets_match_board_display_profiles(self) -> None:
         for product_id, product in self.products.items():

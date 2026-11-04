@@ -45,6 +45,21 @@ ctest --test-dir /tmp/mt-cross-normal --output-on-failure
 
 ```
 
+The default fixture is the S3 reference product. To exercise the P4 product
+composition, pass its matching target, board and product explicitly:
+
+```sh
+cmake -S tests/integration -B /tmp/mt-cross-p4 -G Ninja \
+    -DMT_TARGET=esp32p4 \
+    -DMT_BOARD=waveshare_esp32_p4_wifi6_touch_lcd_3_5 \
+    -DMT_PRODUCT=p4_reference
+cmake --build /tmp/mt-cross-p4 -j2
+ctest --test-dir /tmp/mt-cross-p4 --output-on-failure
+```
+
+Use `-DMT_PRODUCT=minimal` with the default S3 target and board for the
+minimal product fixture.
+
 `CROSS_LAYER_SANITIZER=address` or `thread` is an additional profile for
 memory-ownership or concurrency changes. Select the profile matching the risk
 and use a separate build directory; both profiles are not required by default.

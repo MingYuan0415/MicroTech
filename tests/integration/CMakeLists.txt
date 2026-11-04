@@ -12,12 +12,19 @@ get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(APP_CORE "${PROJECT_ROOT}/layers/app_manager/app_core")
 set(APP_THEME "${PROJECT_ROOT}/layers/app_manager/app_theme")
 set(APPS "${PROJECT_ROOT}/layers/apps")
+set(MT_BOARD "waveshare_esp32_s3_touch_amoled_1_8" CACHE STRING
+    "MicroTech board fixture used by the cross-layer suite")
+set(MT_TARGET "esp32s3" CACHE STRING
+    "IDF target matching the cross-layer board fixture")
 set(MT_PRODUCT "s3_reference" CACHE STRING
     "MicroTech product fixture used by the cross-layer suite")
 include("${PROJECT_ROOT}/layers/bsp/boards.cmake")
 include("${PROJECT_ROOT}/products/products.cmake")
+mt_resolve_board("${MT_TARGET}" "${MT_BOARD}")
 set(_requested_product "${MT_PRODUCT}")
-mt_resolve_product("waveshare_esp32_s3_touch_amoled_1_8" "${_requested_product}")
+mt_resolve_product("${MT_BOARD}" "${_requested_product}")
+mt_validate_product_capabilities(
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_SERVICE_CAPABILITIES}")
 mt_product_expand_apps()
 set(INTEGRATION_APP_SOURCES ${MT_PRODUCT_APP_SOURCES})
 set(INTEGRATION_APP_INCLUDE_DIRS ${MT_PRODUCT_APP_INCLUDE_DIRS})

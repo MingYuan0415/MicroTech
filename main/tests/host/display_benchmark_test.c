@@ -193,6 +193,7 @@ static atomic_uint s_navigation_count;
 static atomic_uint s_presentation_wait_count;
 static atomic_int s_presentation_wait_result;
 static atomic_uint s_activity_count;
+static bool s_setup_app_available = true;
 static atomic_bool s_saw_fade;
 static atomic_bool s_saw_push_left;
 static atomic_bool s_saw_push_right;
@@ -1259,6 +1260,12 @@ esp_err_t app_manager_pm_notify_user_activity(void)
     return ESP_OK;
 }
 
+bool app_manager_builtin_has_app(const char *app_id)
+{
+    return s_setup_app_available && app_id != NULL &&
+           strcmp(app_id, APP_MANAGER_ID_SETUP) == 0;
+}
+
 esp_err_t app_manager_navigate(const app_manager_nav_request_t *request,
                                uint32_t timeout_ms)
 {
@@ -1991,6 +1998,15 @@ static void _test_presentation_wait_failure_cleans_up(void)
 }
 
 #if TEST_C_EXT_STRESS
+static void _test_c_ext_stress_requires_setup_app(void)
+{
+    _reset();
+    s_setup_app_available = false;
+    assert((display_benchmark_start)(&s_c_ext_stress_config) ==
+           ESP_ERR_NOT_SUPPORTED);
+    s_setup_app_available = true;
+}
+
 static void _c_ext_stress_start(echo_server_t *server)
 {
     _echo_server_start(server, false, false, 0U);
@@ -2501,6 +2517,7 @@ int main(void)
     _test_task_create_failure_releases_subscription();
     _test_presentation_wait_failure_cleans_up();
 #if TEST_C_EXT_STRESS
+    _test_c_ext_stress_requires_setup_app();
     _test_c_ext_stress_runs_and_restores_state();
     _test_c_ext_stress_ble_wait_timeout_cleans_up();
     _test_c_ext_stress_ble_flap_detected();

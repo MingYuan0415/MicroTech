@@ -89,9 +89,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [ -d "$ROOT/build/esp-idf/main/app_res_fs" ]; then
+SIM_PRODUCT_CACHE="$(sed -n 's/^SIM_PRODUCT:STRING=//p' "$BUILD/CMakeCache.txt" 2>/dev/null || true)"
+DEVICE_PRODUCT="$(sed -n 's/^#define MT_PRODUCT_NAME "\([^"]*\)"/\1/p' "$ROOT/build/mt_product_profile.h" 2>/dev/null | head -n 1)"
+if [ -d "$ROOT/build/esp-idf/main/app_res_fs" ] &&
+        [ -n "$DEVICE_PRODUCT" ] &&
+        [ "$SIM_PRODUCT_CACHE" = "$DEVICE_PRODUCT" ]; then
     diff -rq "$BUILD/sim_res_fs" "$ROOT/build/esp-idf/main/app_res_fs" \
         || { echo "ERROR: staged resources differ from device staging"; exit 1; }
+else
+    echo "note: staging parity skipped for simulator=${SIM_PRODUCT_CACHE:-unknown} device=${DEVICE_PRODUCT:-unknown}"
 fi
 
 # PNG aux gate: off unless SIM_PNG_GOLDEN=1 or --update. Scenario goldens live

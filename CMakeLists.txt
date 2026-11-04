@@ -16,7 +16,7 @@ if(_mt_requested_product STREQUAL "")
 endif()
 mt_resolve_product("${MT_BOARD_ID}" "${_mt_requested_product}")
 mt_validate_product_capabilities(
-    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_HAL_CAPABILITIES}")
+    "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_SERVICE_CAPABILITIES}")
 mt_product_expand_apps()
 set(MT_SELECTED_PRODUCT "${MT_PRODUCT_ID}")
 set(MT_PRODUCT_HEADER "${CMAKE_BINARY_DIR}/mt_product_profile.h")

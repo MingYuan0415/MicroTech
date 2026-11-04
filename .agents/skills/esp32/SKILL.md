@@ -44,13 +44,16 @@ the original ESP32, WROOM, WROVER, or another Waveshare board.
    facts; a product owns App composition and runtime policy.
 2. Create `waveshare/<vendor-board>/board.cmake` with `MT_BOARD_ID`,
    `MT_BOARD_TARGET`, `MT_BOARD_KCONFIG_SYMBOL`, `MT_BOARD_VENDOR`,
-   `MT_BOARD_NAME`, `MT_BOARD_DISPLAY_PROFILE`, `MT_BOARD_DEFAULT_PRODUCT`,
-   `MT_BOARD_DOCUMENTS`, `MT_BOARD_HAL_CAPABILITIES`, `MT_BOARD_SOURCES` and
-   the requires lists. Register it in `boards.cmake` only when its target is
-   unambiguous; a second board on the same SoC must be selected explicitly
-   with `MT_BOARD`.
-3. Add the matching `docs/documents.yaml`, a `docs/README.md` /
-   `README_ZH.md` pair, and a product manifest under `products/`. The product
+   `MT_BOARD_NAME`, `MT_BOARD_DEVICE_PANEL`, `MT_BOARD_DEVICE_PLATFORM`,
+   `MT_BOARD_SYSTEM_PM_SUPPORTED`, `MT_BOARD_HOSTED_RADIO`,
+   `MT_BOARD_RADIO_SUPPORTED`, `MT_BOARD_DISPLAY_PROFILE`,
+   `MT_BOARD_DEFAULT_PRODUCT`, `MT_BOARD_DOCUMENTS`,
+   `MT_BOARD_HAL_CAPABILITIES`, `MT_BOARD_SOURCES` and the requires lists.
+   Register it in `boards.cmake` only when its target is unambiguous; a second
+   board on the same SoC must be selected explicitly with `MT_BOARD`.
+3. Add the matching `docs/documents.yaml` and a product manifest under
+   `products/`; update the shared `layers/bsp/docs/README` pair only when the
+   registry format changes. The product
    must not declare a capability that the board backend has not implemented.
 4. Keep pin, bus, address, reset and power-rail facts in the board backend and
    its README; cite the document registry instead of copying a datasheet.
