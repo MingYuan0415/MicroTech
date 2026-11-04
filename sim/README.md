@@ -43,21 +43,33 @@ The LVGL options (DEMOS/EXAMPLES/THORVG=OFF, `LV_BUILD_CONF_PATH`) are already
 fixed inside `sim/CMakeLists.txt`, so the command line does not need to repeat
 them.
 
-`SIM_PANEL` accepts exactly the two registered board geometries: `368x448`
-(ESP32-S3) or `320x480` (ESP32-P4). For the ESP32-P4 board build a second
-directory with `-DSIM_PANEL=320x480`; the framebuffer, SDL window, PNG encoder
-and agent geometry follow the selected compile-time size. The P4 geometry
-selects `p4_reference` and the S3 geometry selects `s3_reference`; a different
-product can be selected explicitly with `-DSIM_PRODUCT=<product-id>`. The P4
-product defaults `SIM_STANDBY_SUPPORTED=OFF` (screen-off only); the S3 product
-defaults it to `ON`. The golden regression under `sim/ci/golden/` remains the
-368x448 baseline.
+The simulator takes its product and panel geometry from the current root
+`idf.py build`: `build/mt_product_profile.h` supplies `MT_PRODUCT_NAME` and the
+product's board manifest supplies `MT_PRODUCT_DEVICE_PANEL`. The framebuffer,
+SDL window, PNG encoder and agent geometry follow that compile-time panel; the
+product's board also determines `SIM_STANDBY_SUPPORTED`. If the profile is not
+available, the target in `build/config/sdkconfig.h` selects the default product.
+Use `-DSIM_PRODUCT=<product-id>` to select another product explicitly; its board
+manifest still owns the panel dimensions. The golden regression under
+`sim/ci/golden/` remains the 368x448 S3 baseline; `sim/ci/run_ci.sh` defaults
+`SIM_PRODUCT=s3_reference` for its fixtures, and setting `SIM_PRODUCT` overrides
+that baseline.
 
 ```sh
-cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480
+cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PRODUCT=p4_reference
 cmake --build build/sim-p4
 cmake -S sim -B build/sim-minimal -G Ninja -DSIM_PRODUCT=minimal
 ```
+
+The mandatory build gate covers every supported configuration in one command:
+
+```sh
+python3 tools/agent/mt.py build sim
+```
+
+It builds the canonical products under `build/sim-gate/`: `s3_reference` with
+fake and real music, `p4_reference` and `minimal` with fake music; any
+configuration failure fails the command.
 
 ## Daily Development (Recommended Entry)
 

@@ -35,19 +35,30 @@ cmake --build build/sim
 LVGL 选项（DEMOS/EXAMPLES/THORVG=OFF、`LV_BUILD_CONF_PATH`）已在
 `sim/CMakeLists.txt` 内固化，命令行无需重复传。
 
-`SIM_PANEL` 只接受两个已注册板卡的几何：`368x448`（ESP32-S3）或 `320x480`
-（ESP32-P4）。ESP32-P4 版型请用 `-DSIM_PANEL=320x480` 另建构建目录；
-framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期尺寸。
-P4 几何默认选择 `p4_reference`，S3 几何默认选择 `s3_reference`；其他产品可用
-`-DSIM_PRODUCT=<product-id>` 显式选择。P4 产品默认
-`SIM_STANDBY_SUPPORTED=OFF`（仅熄屏），S3 产品默认 `ON`。
-`sim/ci/golden/` 的 golden 回归仍以 368x448 为基线。
+模拟器从当前根工程的 `idf.py build` 产物读取版型：`build/mt_product_profile.h`
+提供 `MT_PRODUCT_NAME`，产品对应的板卡清单提供 `MT_PRODUCT_DEVICE_PANEL`。
+framebuffer、SDL 窗口、PNG 编码器和 agent 几何均跟随该编译期面板；产品的板卡
+同时决定 `SIM_STANDBY_SUPPORTED`。若 profile 不存在，则根据
+`build/config/sdkconfig.h` 中的目标选择默认产品。可用
+`-DSIM_PRODUCT=<product-id>` 显式选择其他产品；分辨率仍由该产品的板卡清单决定。
+`sim/ci/golden/` 的 golden 回归仍以 368x448 的 S3 为基线；
+`sim/ci/run_ci.sh` 默认使用 `SIM_PRODUCT=s3_reference`，可通过环境变量
+`SIM_PRODUCT` 覆盖该基线。
 
 ```sh
-cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PANEL=320x480
+cmake -S sim -B build/sim-p4 -G Ninja -DSIM_PRODUCT=p4_reference
 cmake --build build/sim-p4
 cmake -S sim -B build/sim-minimal -G Ninja -DSIM_PRODUCT=minimal
 ```
+
+强制构建门禁用一条命令覆盖全部受支持配置：
+
+```sh
+python3 tools/agent/mt.py build sim
+```
+
+该命令在 `build/sim-gate/` 下构建规范产品：`s3_reference`（fake 与真实音乐）、
+`p4_reference`（fake 音乐）和 `minimal`（fake 音乐）；任一配置失败即返回失败。
 
 ## 日常开发（推荐入口）
 

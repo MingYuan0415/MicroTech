@@ -8,6 +8,7 @@ printed to the agent is bounded, while the log path always remains available.
 Usage:
     python3 tools/agent/mt.py list
     python3 tools/agent/mt.py build apps
+    python3 tools/agent/mt.py build sim
     python3 tools/agent/mt.py test apps
     python3 tools/agent/mt.py py configuration resources docs
     python3 tools/agent/mt.py fmt --check
@@ -64,6 +65,22 @@ class Suite:
     source: Path
     sanitizer_var: str | None
     tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SimBuild:
+    name: str
+    directory: str
+    product: str
+    music_backend: str
+
+
+SIM_BUILDS = (
+    SimBuild("s3-fake", "build/sim-gate/s3-fake", "s3_reference", "fake"),
+    SimBuild("s3-real", "build/sim-gate/s3-real", "s3_reference", "real"),
+    SimBuild("p4-fake", "build/sim-gate/p4-fake", "p4_reference", "fake"),
+    SimBuild("minimal-fake", "build/sim-gate/minimal-fake", "minimal", "fake"),
+)
 
 
 class UsageError(RuntimeError):
@@ -463,37 +480,100 @@ def _build_host(suite: Suite, profile: str, clean: bool,
     )
 
 
-def _build_sim(clean: bool, timeout: int) -> tuple[int, list[str], Path, float]:
+def _require_sim_env() -> None:
     if not os.environ.get("IDF_PATH"):
         raise UsageError("IDF_PATH is unset; source the ESP-IDF export script first")
     if not (ROOT / "build/config/sdkconfig.h").is_file():
         raise UsageError(
             "build/config/sdkconfig.h is missing; run `idf.py build` once"
         )
-    build = ROOT / "build/sim"
+
+
+def _device_product() -> str:
+    profile = ROOT / "build" / "mt_product_profile.h"
+    try:
+        with profile.open(encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                prefix = '#define MT_PRODUCT_NAME "'
+                if line.startswith(prefix):
+                    return line[len(prefix):].split('"', 1)[0]
+    except OSError:
+        pass
+    return ""
+
+
+def _build_sim_configuration(spec: SimBuild | None, clean: bool, timeout: int,
+                             log: Path, append: bool) -> tuple[int, float]:
+    build = ROOT / (spec.directory if spec is not None else "build/sim")
     if clean:
         shutil.rmtree(build, ignore_errors=True)
-    log = _new_log("build-sim")
     with _exclusive_lock(build / ".sim-ci-build.lock"):
-        rc, seconds, _ = _run(
-            ["cmake", "-S", str(ROOT / "sim"), "-B", str(build), "-G", "Ninja"],
-            log,
-            timeout,
-        )
+        configure = ["cmake", "-S", str(ROOT / "sim"), "-B", str(build), "-G",
+                     "Ninja"]
+        if spec is not None:
+            configure.extend([
+                f"-DSIM_PRODUCT={spec.product}",
+                f"-DSIM_MUSIC_BACKEND={spec.music_backend}",
+            ])
+        else:
+            product = _device_product()
+            if product:
+                configure.append(f"-DSIM_PRODUCT={product}")
+        rc, seconds, _ = _run(configure, log, timeout, append=append)
         if rc != 0:
-            return rc, _build_summary("sim", rc, seconds, log), log, seconds
+            return rc, seconds
         rc, build_seconds, _ = _run(
             ["cmake", "--build", str(build), "--", "--quiet"],
             log,
             timeout,
             append=True,
         )
-    return (
-        rc,
-        _build_summary("sim", rc, seconds + build_seconds, log),
-        log,
-        seconds + build_seconds,
+    return rc, seconds + build_seconds
+
+
+def _build_sim(clean: bool, timeout: int) -> tuple[int, list[str], Path, float]:
+    _require_sim_env()
+    log = _new_log("build-sim")
+    rc, seconds = _build_sim_configuration(
+        None, clean, timeout, log, append=False
     )
+    return rc, _build_summary("sim", rc, seconds, log), log, seconds
+
+
+def _build_sim_gate(clean: bool, timeout: int) -> tuple[int, list[str], Path, float]:
+    _require_sim_env()
+    log = _new_log("build-sim-gate")
+    started = time.monotonic()
+    failed: SimBuild | None = None
+    gate_root = ROOT / "build" / "sim-gate"
+    with _exclusive_lock(ROOT / "build" / ".sim-gate.lock"):
+        if clean:
+            shutil.rmtree(gate_root, ignore_errors=True)
+        for index, spec in enumerate(SIM_BUILDS):
+            rc, _ = _build_sim_configuration(
+                spec, False, timeout, log, append=index != 0
+            )
+            if rc != 0:
+                failed = spec
+                break
+    seconds = time.monotonic() - started
+    if failed is None:
+        lines = [
+            f"[PASS] build sim gate ({len(SIM_BUILDS)} configurations, "
+            f"{seconds:.1f}s)"
+        ]
+        lines.extend(f"  {spec.name}: {spec.directory}" for spec in SIM_BUILDS)
+        warnings = _warning_lines(_read_body(log))
+        if warnings:
+            lines.append(f"  {len(warnings)} warning(s); see log")
+        return 0, lines, log, seconds
+    lines = [
+        f"[FAIL] build sim gate {failed.name} rc={rc} ({seconds:.1f}s)",
+        f"  config: product={failed.product} music={failed.music_backend}",
+    ]
+    blocks = _diagnostic_blocks(_read_body(log))
+    lines.extend(blocks if blocks else _tail(_read_body(log)))
+    return rc, lines, log, seconds
 
 
 def _build_idf(clean: bool, timeout: int) -> tuple[int, list[str], Path, float]:
@@ -953,7 +1033,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
     if args.target == "idf":
         rc, lines, log, _ = _build_idf(args.clean, args.timeout)
     elif args.target == "sim":
-        rc, lines, log, _ = _build_sim(args.clean, args.timeout)
+        rc, lines, log, _ = _build_sim_gate(args.clean, args.timeout)
     else:
         suite = SUITES.get(args.target)
         if suite is None:
@@ -1026,6 +1106,11 @@ def _cmd_sim(args: argparse.Namespace) -> int:
         )
     started = time.monotonic()
     _prune_run_dirs("*-sim", 10)
+    rc, gate_lines, gate_log, _ = _build_sim_gate(False, args.timeout)
+    if rc != 0:
+        return _finish(
+            gate_lines, gate_log, "sim gate", "", rc, started, args.full
+        )
     log = _new_log("sim")
     log_dir = LOG_ROOT / f"{_timestamp()}-sim"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -1035,9 +1120,12 @@ def _cmd_sim(args: argparse.Namespace) -> int:
     for scenario in args.scenario:
         cmd.extend(["--scenario", scenario])
     rc, seconds, _ = _run(cmd, log, args.timeout)
+    lines = _sim_summary(rc, seconds, log, log_dir)
+    if rc == 0:
+        lines.insert(0, gate_lines[0])
     return _finish(
-        _sim_summary(rc, seconds, log, log_dir),
-        log, "sim", ",".join(args.scenario) or "all", rc, started, args.full,
+        lines, log, "sim", ",".join(args.scenario) or "all", rc, started,
+        args.full,
     )
 
 
@@ -1050,9 +1138,15 @@ def _cmd_ui(args: argparse.Namespace) -> int:
     _prune_run_dirs("*-ui-shots", 5)
     if args.no_build and not (ROOT / "build/sim/microtech_sim").is_file():
         raise UsageError(
-            "build/sim/microtech_sim is missing; run `mt.py build sim`"
+            "build/sim/microtech_sim is missing; run `mt.py ui` without "
+            "--no-build first"
         )
     if not args.no_build:
+        rc, gate_lines, gate_log, _ = _build_sim_gate(False, args.timeout)
+        if rc != 0:
+            return _finish(
+                gate_lines, gate_log, "ui gate", "", rc, started, args.full
+            )
         rc, lines, build_log, _ = _build_sim(False, args.timeout)
         if rc != 0:
             return _finish(
@@ -1153,7 +1247,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list", help="list host suites").set_defaults(func=_cmd_list)
 
-    build = sub.add_parser("build", help="build a host suite, idf, or sim")
+    build = sub.add_parser(
+        "build", help="build a host suite, idf, or all simulator configurations"
+    )
     build.add_argument("target")
     build.add_argument("--profile", default="none",
                        choices=("none", "address", "thread"))

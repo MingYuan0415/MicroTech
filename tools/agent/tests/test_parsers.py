@@ -8,6 +8,7 @@ import time
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve()
 sys.path.insert(0, str(HERE.parents[1]))
@@ -76,6 +77,29 @@ class BuildParserTest(unittest.TestCase):
         lines = mt._cap_lines(self._summary(long_line, 1))
         self.assertLess(max(len(line) for line in lines), 5000)
         self.assertIn("see log", "\n".join(lines))
+
+
+class SimBuildGateTest(unittest.TestCase):
+    def test_failure_stops_after_the_failing_configuration(self):
+        calls = []
+
+        def fake_build(spec, clean, timeout, log, append):
+            calls.append(spec.name)
+            return (0 if len(calls) == 1 else 1), 0.0
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "gate.log"
+            with mock.patch.object(mt, "ROOT", root), \
+                    mock.patch.object(mt, "_require_sim_env", lambda: None), \
+                    mock.patch.object(mt, "_new_log", lambda _: log), \
+                    mock.patch.object(mt, "_build_sim_configuration",
+                                      fake_build):
+                rc, lines, _, _ = mt._build_sim_gate(False, 1)
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, ["s3-fake", "s3-real"])
+        self.assertIn("s3-real", lines[0])
 
 
 class TestResultTest(unittest.TestCase):

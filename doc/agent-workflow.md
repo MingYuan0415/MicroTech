@@ -2,8 +2,9 @@
 
 `tools/agent/mt.py` is the command-line entry point for agent-facing build,
 test, formatting, Git, simulator, and page-review output. It is a presentation
-layer: the wrapped command decides pass or fail, and the wrapper never adds a
-build or test gate.
+layer: the wrapped command decides pass or fail. `mt.py build sim` is the
+simulator build gate and succeeds only when every supported simulator
+configuration builds.
 
 ## Why
 
@@ -17,6 +18,7 @@ disk and prints a bounded summary with a log path.
 ```sh
 python3 tools/agent/mt.py list
 python3 tools/agent/mt.py build apps
+python3 tools/agent/mt.py build sim
 python3 tools/agent/mt.py test apps
 python3 tools/agent/mt.py test integration
 python3 tools/agent/mt.py test weather-service --profile address
@@ -30,9 +32,13 @@ python3 tools/agent/mt.py sim --scenario agent_contract
 python3 tools/agent/mt.py ui --pages settings/wifi
 ```
 
-`build` accepts a suite alias, `idf`, or `sim`. `test` builds first, then runs
-CTest. `--profile none|address|thread` selects the sanitizer profile supported
-by that suite; each profile uses a separate build directory.
+`build` accepts a suite alias, `idf`, or `sim`. `build sim` is the mandatory
+simulator build gate: it configures the canonical products (`s3_reference` with
+fake and real music, `p4_reference` and `minimal` with fake music); each
+configuration's panel geometry comes from its product's board manifest. `test`
+builds first, then runs CTest. `--profile none|address|thread` selects the
+sanitizer profile supported by that suite; each profile uses a separate build
+directory.
 
 ## Suites
 
@@ -48,11 +54,13 @@ Hardware-only work (`tests/display`) is intentionally not a wrapper suite.
 
 Python groups are selected separately with `mt.py py`; `design-skills` covers
 the design-contract, aesthetic-review and motion-interaction helper tests,
-while `skill-tools` covers the LVGL layout audit helper. These groups are
-opt-in test entry points, not build gates.
+while `skill-tools` covers the LVGL layout audit helper. `sim-build` runs the
+simulator build gate and is included in `all`; the remaining groups are test
+entry points only.
 
-Build directories live under `build/agent/host/<alias>/<profile>`. `build/sim`
-and the root `build/` directory are reused, so incremental artifacts survive
+Build directories live under `build/agent/host/<alias>/<profile>`. The simulator
+gate uses `build/sim-gate/<configuration>`; `build/sim` and `build/sim-real`
+remain the development and page-review builds. Incremental artifacts survive
 across agent turns. `MT_BUILD_ROOT` overrides the host build root.
 
 ## Output Contract

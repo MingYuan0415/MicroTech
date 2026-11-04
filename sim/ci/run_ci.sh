@@ -1,7 +1,8 @@
 #!/bin/sh
 # Simulator CI entry: build + config drift + staged parity + per-scenario
 # deterministic sessions (each scenario gets a fresh sim process and a
-# fresh NVS directory).
+# fresh NVS directory). Scenario fixtures and PNG goldens use the S3 368x448
+# baseline; set SIM_PRODUCT in the environment to run another product.
 # Usage: sim/ci/run_ci.sh [build-dir] [--update] [--scenario NAME]...
 #        [--log-dir DIR]
 set -e
@@ -71,9 +72,12 @@ if [ -n "$SCENARIOS" ]; then
 fi
 
 # Serialize only CMake/Ninja mutations; scenario processes use private data and ports.
+DEVICE_PRODUCT="$(sed -n 's/^#define MT_PRODUCT_NAME "\([^"]*\)"/\1/p' "$ROOT/build/mt_product_profile.h" 2>/dev/null | head -n 1)"
+SIM_PRODUCT="${SIM_PRODUCT:-s3_reference}"
 exec 9>"$BUILD/.sim-ci-build.lock"
 flock 9
-cmake -S "$ROOT/sim" -B "$BUILD" -G Ninja >/dev/null
+cmake -S "$ROOT/sim" -B "$BUILD" -G Ninja \
+    -DSIM_PRODUCT="$SIM_PRODUCT" >/dev/null
 if ! cmake --build "$BUILD" -- --quiet; then
     echo "ERROR: simulator build failed (logs: $LOG_DIR)"
     exit 1
@@ -90,7 +94,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 SIM_PRODUCT_CACHE="$(sed -n 's/^SIM_PRODUCT:STRING=//p' "$BUILD/CMakeCache.txt" 2>/dev/null || true)"
-DEVICE_PRODUCT="$(sed -n 's/^#define MT_PRODUCT_NAME "\([^"]*\)"/\1/p' "$ROOT/build/mt_product_profile.h" 2>/dev/null | head -n 1)"
 if [ -d "$ROOT/build/esp-idf/main/app_res_fs" ] &&
         [ -n "$DEVICE_PRODUCT" ] &&
         [ "$SIM_PRODUCT_CACHE" = "$DEVICE_PRODUCT" ]; then

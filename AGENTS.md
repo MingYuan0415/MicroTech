@@ -13,7 +13,7 @@
 
 - Change only code directly related to the task; analysis tasks are read-only; do not change code outside the plan, but report the problems you find. Conclusions come from code, tests, or documentation — never from guesses.
 - **Minimal verification**: follow L0–L3 in "Host Tests and Verification Tiers" and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, display benchmarks, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
-- **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened.
+- **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened. The simulator build gate below is the sole exception because it enforces the required host-build contract.
 - Flash or erase only when the user explicitly asks.
 
 ## Agent Tooling
@@ -23,8 +23,8 @@ Agent-facing build, test, formatting, Git, simulator, and page-review commands g
 bounded `[PASS]`/`[FAIL]` summary and keeps the complete log under `.cache/agent/logs/`; read
 that log only when the summary is insufficient. Use `--full` for sanitizer reports,
 formatting/whitespace review, security review, and final acceptance evidence. The wrapper is a
-presentation layer: it does not add build or test gates, and the raw commands below remain valid
-for humans and CI.
+presentation layer: it does not weaken or replace the underlying command result, and the raw
+commands below remain valid for humans and CI.
 
 ## Build
 
@@ -44,6 +44,19 @@ may hold private deployment values: back it up before switching targets.
 `REQUIRES`/`PRIV_REQUIRES` must not depend on `CONFIG_xxx`; after a change to
 source-file discovery run `idf.py reconfigure` instead of editing the generated
 Ninja/CMake state.
+
+## Simulator Build Gate
+
+Every change must leave the host simulator buildable. The mandatory gate is:
+
+```sh
+python3 tools/agent/mt.py build sim
+```
+
+It configures and builds the canonical products under `build/sim-gate/`:
+`s3_reference` with fake and real music, `p4_reference` with fake music, and
+`minimal` with fake music. Panel geometry is derived from each product's board
+manifest. A failure in any configuration fails the gate.
 
 ## Host Tests and Verification Tiers
 
@@ -77,7 +90,7 @@ cmake -S <suite path> -B /tmp/mt-<name> -G Ninja && cmake --build /tmp/mt-<name>
 - L0 per edit batch: run `python3 tools/agent/mt.py fmt` over the changed files (idempotent) plus `python3 tools/agent/mt.py build <suite>` for the affected project.
 - L1 per task: run `python3 tools/agent/mt.py test <suite>` once for each affected host suite.
 - L2 before a UI change is done: `python3 tools/agent/mt.py sim` ×1 and `python3 tools/agent/mt.py ui --pages <affected>` ×1; the final review scope follows the tiers in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
-- L3 commit/acceptance: `python3 tools/agent/mt.py fmt --check`, `python3 tools/agent/mt.py git diff --check`, and the affected host suites; `--full` when reviewing formatting or sanitizer evidence.
+- L3 commit/acceptance: `python3 tools/agent/mt.py fmt --check`, `python3 tools/agent/mt.py git diff --check`, `python3 tools/agent/mt.py build sim`, and the affected host suites; `--full` when reviewing formatting or sanitizer evidence.
 
 Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run. When a gate fails, read the summary first, then `python3 tools/agent/mt.py log --last --grep 'error:|FAILED'`; do not rerun only to see output.
 

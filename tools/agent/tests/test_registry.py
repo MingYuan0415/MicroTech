@@ -49,6 +49,24 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("apps", result.stdout)
         self.assertIn("weather", result.stdout)
 
+    def test_simulator_build_gate_covers_supported_configurations(self):
+        configurations = {
+            (spec.product, spec.music_backend) for spec in mt.SIM_BUILDS
+        }
+        self.assertEqual(
+            configurations,
+            {
+                ("s3_reference", "fake"),
+                ("s3_reference", "real"),
+                ("p4_reference", "fake"),
+                ("minimal", "fake"),
+            },
+        )
+        directories = [spec.directory for spec in mt.SIM_BUILDS]
+        self.assertEqual(len(directories), len(set(directories)))
+        self.assertTrue(all(directory.startswith("build/sim-gate/")
+                            for directory in directories))
+
 
 if __name__ == "__main__":
     unittest.main()

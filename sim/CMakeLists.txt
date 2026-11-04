@@ -12,39 +12,81 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Panel geometry is a compile-time choice: the framebuffer, SDL window, PNG
-# encoder and agent info are all sized at build time. The default keeps the
-# ESP32-S3 368x448 reference; the ESP32-P4 board uses -DSIM_PANEL=320x480.
-set(SIM_PANEL "368x448" CACHE STRING
-    "Simulated panel geometry; must match a supported board profile")
-if(SIM_PANEL STREQUAL "368x448")
-    set(SIM_BSP_H_RES 368)
-    set(SIM_BSP_V_RES 448)
-    set(_sim_target "esp32s3")
-    set(_sim_default_board "waveshare_esp32_s3_touch_amoled_1_8")
-    set(_sim_default_product "s3_reference")
-elseif(SIM_PANEL STREQUAL "320x480")
-    set(SIM_BSP_H_RES 320)
-    set(SIM_BSP_V_RES 480)
-    set(_sim_target "esp32p4")
-    set(_sim_default_board "waveshare_esp32_p4_wifi6_touch_lcd_3_5")
-    set(_sim_default_product "p4_reference")
-else()
+# encoder and agent info are all sized at build time. The selected product's
+# board owns the panel geometry; select the product with -DSIM_PRODUCT, or let
+# the default follow the product from the most recent root idf.py build.
+get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+
+set(_sim_device_profile "${MT_ROOT}/build/mt_product_profile.h")
+set(_sim_default_product "")
+if(EXISTS "${_sim_device_profile}")
+    file(STRINGS "${_sim_device_profile}" _sim_product_lines
+         REGEX "^#define MT_PRODUCT_NAME ")
+    if(_sim_product_lines)
+        list(GET _sim_product_lines 0 _sim_product_line)
+        string(REGEX REPLACE
+            "^#define MT_PRODUCT_NAME \"([^\"]+)\".*$" "\\1"
+            _sim_default_product "${_sim_product_line}")
+    endif()
+endif()
+if(NOT _sim_default_product)
+    set(_sim_target "")
+    set(_sim_device_config "${MT_ROOT}/build/config/sdkconfig.h")
+    if(EXISTS "${_sim_device_config}")
+        file(STRINGS "${_sim_device_config}" _sim_target_lines
+             REGEX "^#define CONFIG_IDF_TARGET ")
+        if(_sim_target_lines)
+            list(GET _sim_target_lines 0 _sim_target_line)
+            string(REGEX REPLACE
+                "^#define CONFIG_IDF_TARGET \"([^\"]+)\".*$" "\\1"
+                _sim_target "${_sim_target_line}")
+        endif()
+    endif()
+    if(_sim_target STREQUAL "esp32p4")
+        set(_sim_default_product "p4_reference")
+    else()
+        set(_sim_default_product "s3_reference")
+    endif()
+endif()
+set(SIM_PRODUCT "${_sim_default_product}" CACHE STRING
+    "MicroTech product manifest used by the simulator; panel follows its board")
+set(_sim_requested_product "${SIM_PRODUCT}")
+
+include("${MT_ROOT}/products/products.cmake")
+_mt_product_manifest_path("${_sim_requested_product}" _sim_product_manifest)
+include("${_sim_product_manifest}")
+set(_sim_default_board "${MT_PRODUCT_BOARD}")
+if(NOT DEFINED _sim_default_board OR _sim_default_board STREQUAL "")
     message(FATAL_ERROR
-        "SIM_PANEL must be a supported board geometry: 368x448 or 320x480")
+        "Product '${_sim_requested_product}' has no MT_PRODUCT_BOARD")
 endif()
 
-get_filename_component(MT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-set(SIM_PRODUCT "${_sim_default_product}" CACHE STRING
-    "MicroTech product manifest used by the simulator")
-set(_sim_requested_product "${SIM_PRODUCT}")
 include("${MT_ROOT}/layers/bsp/boards.cmake")
-include("${MT_ROOT}/products/products.cmake")
-mt_resolve_board("${_sim_target}" "${_sim_default_board}")
+mt_resolve_board("" "${_sim_default_board}")
 mt_resolve_product("${_sim_default_board}" "${_sim_requested_product}")
 mt_validate_product_capabilities(
     "${MT_BOARD_HAL_CAPABILITIES}" "${MT_PRODUCT_SERVICE_CAPABILITIES}")
 mt_product_expand_apps()
-if(NOT DEFINED SIM_STANDBY_SUPPORTED)
+
+string(REGEX MATCH "([0-9]+)[^0-9]+([0-9]+)" _sim_panel_match
+       "${MT_PRODUCT_DEVICE_PANEL}")
+if(NOT _sim_panel_match)
+    message(FATAL_ERROR
+        "Cannot parse panel geometry from '${MT_PRODUCT_DEVICE_PANEL}'")
+endif()
+set(SIM_BSP_H_RES "${CMAKE_MATCH_1}")
+set(SIM_BSP_V_RES "${CMAKE_MATCH_2}")
+if(NOT ((SIM_BSP_H_RES EQUAL 320 AND SIM_BSP_V_RES EQUAL 480) OR
+        (SIM_BSP_H_RES EQUAL 368 AND SIM_BSP_V_RES EQUAL 448)))
+    message(FATAL_ERROR
+        "Simulator does not support panel ${SIM_BSP_H_RES}x${SIM_BSP_V_RES}; "
+        "expected 368x448 or 320x480")
+endif()
+set(SIM_PANEL "${SIM_BSP_H_RES}x${SIM_BSP_V_RES}" CACHE STRING
+    "Derived from the selected product's board panel" FORCE)
+
+if(NOT DEFINED SIM_STANDBY_PRODUCT OR
+        NOT SIM_STANDBY_PRODUCT STREQUAL MT_PRODUCT_ID)
     if(MT_PRODUCT_SYSTEM_PM_SUPPORTED)
         set(SIM_STANDBY_SUPPORTED ON CACHE BOOL
             "Simulate a product with CPU standby support" FORCE)
@@ -52,6 +94,8 @@ if(NOT DEFINED SIM_STANDBY_SUPPORTED)
         set(SIM_STANDBY_SUPPORTED OFF CACHE BOOL
             "Simulate a product with CPU standby support" FORCE)
     endif()
+    set(SIM_STANDBY_PRODUCT "${MT_PRODUCT_ID}" CACHE INTERNAL
+        "Product whose standby default produced SIM_STANDBY_SUPPORTED" FORCE)
 endif()
 set(SIM_PRODUCT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/mt_product_profile.h")
 mt_product_write_header("${SIM_PRODUCT_HEADER}")
@@ -370,7 +414,6 @@ target_include_directories(microtech_sim PRIVATE
 # Production-config mirror is force-injected exactly like IDF does; HOST_TEST
 # is deliberately NOT defined (mailbox must drain on the LVGL worker timer).
 target_compile_definitions(microtech_sim PRIVATE
-    _GNU_SOURCE
     APP_RESOURCES_ENABLED=1
     SIM_BSP_H_RES=${SIM_BSP_H_RES}U
     SIM_BSP_V_RES=${SIM_BSP_V_RES}U

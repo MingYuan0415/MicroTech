@@ -323,7 +323,9 @@ After the change, run the following in order, each item once:
    changes, rebuild and run the host tests again;
 2. Compile the relevant host test suites and get them fully green (commands in
    AGENTS.md);
-3. Manually self-check naming, Doxygen, logging, and cleanup exits against the
+3. Run `python3 tools/agent/mt.py build sim`; all supported simulator
+   configurations must build;
+4. Manually self-check naming, Doxygen, logging, and cleanup exits against the
    [MUST] items of this document (AStyle does not cover them);
-4. For changes touching hardware, power, display, or storage, state the on-device
+5. For changes touching hardware, power, display, or storage, state the on-device
    verification scope; host tests do not replace board validation.

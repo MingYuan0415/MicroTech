@@ -24,6 +24,7 @@ GROUPS = {
     "resources": (ROOT / "tests" / "resources", "test_*.py", ROOT),
     "display-tools": (ROOT / "tests" / "display", "test_*.py", ROOT),
     "sim-tools": (ROOT / "sim", "test_*.py", ROOT),
+    "sim-build": (ROOT / "tests" / "sim-build", "test_*.py", ROOT),
     "skill-tools": (ROOT / ".agents" / "skills" / "lvgl-ui-layout" / "tests",
                     "test_*.py", ROOT),
     "design-skills": ([

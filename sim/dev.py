@@ -288,6 +288,20 @@ def session_summary():
     app = result.get('active_app') or '未知页面'
     return '运行中 pid=%d（%s，%s，%s）' % (pid, mode, network, app)
 
+def _device_product():
+    """Return the product selected by the most recent root idf.py build."""
+    profile = os.path.join(ROOT, 'build', 'mt_product_profile.h')
+    try:
+        with open(profile, encoding='utf-8', errors='replace') as handle:
+            for line in handle:
+                prefix = '#define MT_PRODUCT_NAME "'
+                if line.startswith(prefix):
+                    return line[len(prefix):].split('"', 1)[0]
+    except OSError:
+        pass
+    return ''
+
+
 def build():
     """Serialize incremental CMake/Ninja builds shared by simulator tools."""
     os.makedirs(BUILD, exist_ok=True)
@@ -296,13 +310,20 @@ def build():
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
             print('  首次配置 cmake ...')
-            rc = subprocess.call(['cmake', '-S', os.path.join(ROOT, 'sim'),
-                                  '-B', BUILD, '-G', 'Ninja',
-                                  '-DSIM_MUSIC_BACKEND=' + MUSIC_BACKEND],
-                                 cwd=ROOT)
-            if rc != 0:
-                print('  configure 失败')
-                return False
+        configure = ['cmake', '-S', os.path.join(ROOT, 'sim'),
+                     '-B', BUILD, '-G', 'Ninja',
+                     '-DSIM_MUSIC_BACKEND=' + MUSIC_BACKEND]
+        product = _device_product()
+        if product:
+            configure.append('-DSIM_PRODUCT=' + product)
+        configured = subprocess.run(configure, cwd=ROOT,
+                                    capture_output=True, text=True)
+        if configured.returncode != 0:
+            print('  configure 失败')
+            lines = (configured.stdout + configured.stderr).splitlines()[-20:]
+            for line in lines:
+                print('   ', line)
+            return False
         proc = subprocess.run(['cmake', '--build', BUILD], cwd=ROOT,
                               capture_output=True, text=True)
         if proc.returncode != 0:
