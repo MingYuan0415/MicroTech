@@ -137,6 +137,40 @@ class FlybirdsRPC:
         return {'ok': True, 'result': result}
 
 
+class TreeAssertTest(unittest.TestCase):
+    def setUp(self):
+        self.runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        self.tree = _node('lv_obj', 0, 0, 368, 448, children=[
+            _label('已选择 3/3', 16, 80),
+            _label('天气', 16, 120)])
+
+    def _step(self, command):
+        with patch.object(scenarios, 'rpc',
+                          return_value={'ok': True,
+                                        'result': {'tree': self.tree}}):
+            self.runner._step(command)
+
+    def test_contains_and_absent_can_be_combined(self):
+        self._step({'cmd': 'tree_assert',
+                    'contains': {'type': 'lv_label', 'text': '天气'},
+                    'absent': {'type': 'lv_label', 'text': '已选满'}})
+
+    def test_absent_rejects_a_matching_node(self):
+        with self.assertRaisesRegex(AssertionError, 'unexpected node matches'):
+            self._step({'cmd': 'tree_assert',
+                        'absent': {'type': 'lv_label', 'text': '已选择 3/3'}})
+
+    def test_contains_requires_a_matching_node(self):
+        with self.assertRaisesRegex(AssertionError, 'no node matches'):
+            self._step({'cmd': 'tree_assert',
+                        'contains': {'type': 'lv_label', 'text': '音乐'}})
+
+    def test_empty_assertion_is_rejected(self):
+        with self.assertRaisesRegex(AssertionError,
+                                    'needs a contains or absent map'):
+            self._step({'cmd': 'tree_assert'})
+
+
 class FlybirdsRestartRegressionTest(unittest.TestCase):
     def _run(self, surface):
         runner = scenarios.Runner('127.0.0.1', 5002, '.')

@@ -247,17 +247,20 @@ class ProductCatalogTest(unittest.TestCase):
 
     def test_optional_entry_points_are_guarded(self) -> None:
         home = (APPS / "home_app" / "src" / "home_app.c").read_text(
-            encoding="utf-8").splitlines()
-        for app_id in ("WEATHER", "CLOCK", "CALCULATOR", "CALENDAR"):
+            encoding="utf-8")
+        for app_id in ("WEATHER", "CLOCK"):
             needle = f"APP_MANAGER_ID_{app_id}"
-            indexes = [index for index, line in enumerate(home)
-                       if needle in line and "_home_card" in line]
-            self.assertTrue(indexes, f"home has no {app_id} card")
-            for index in indexes:
-                window = "\n".join(home[max(0, index - 10):index + 1])
-                self.assertIn(
-                    f"app_manager_builtin_has_app({needle})", window,
-                    f"home {app_id} card is not guarded")
+            self.assertIn(
+                f"app_manager_builtin_has_app({needle})", home,
+                f"home has no guarded {app_id} band")
+        self.assertNotIn("APP_MANAGER_ID_CALCULATOR", home)
+        self.assertNotIn("APP_MANAGER_ID_CALENDAR", home)
+        shortcuts = (APPS / "home_app" / "src" / "home_shortcuts.c").read_text(
+            encoding="utf-8")
+        self.assertIn("app_manager_builtin_list_open()", shortcuts)
+        self.assertIn("APP_MANAGER_APP_FLAG_HIDDEN", shortcuts)
+        self.assertIn("APP_MANAGER_ID_HOME", shortcuts)
+        self.assertIn("APP_MANAGER_ID_MENU", shortcuts)
 
         settings = (APPS / "settings_app" / "src" / "settings_app.c").read_text(
             encoding="utf-8").splitlines()

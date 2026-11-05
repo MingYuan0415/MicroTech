@@ -1,0 +1,131 @@
+{
+    "name": "home-shortcuts",
+    "steps": [
+        {
+            "cmd": "navigate",
+            "app": "home"
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "long_press_text",
+            "text": "计算器",
+            "ms": 700
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "主页快捷方式"
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "已选择 3/3"
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "absent": {
+                "type": "lv_label",
+                "text": "已选满，取消一个再更换"
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_button",
+                "state.disabled": true
+            }
+        },
+        {
+            "cmd": "screenshot",
+            "name": "home_shortcut_picker.png"
+        },
+        {
+            "cmd": "tap_text",
+            "text": "音乐"
+        },
+        {
+            "cmd": "step",
+            "times": 10
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "已选择 2/3"
+            }
+        },
+        {
+            "cmd": "tap_text",
+            "text": "文件管理"
+        },
+        {
+            "cmd": "step",
+            "times": 10
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "已选择 3/3"
+            }
+        },
+        {
+            "cmd": "drag",
+            "x0": 2,
+            "y0": 240,
+            "x1": 180,
+            "y1": 240,
+            "steps": 8,
+            "hold_steps": 1,
+            "settle_ms": 330
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "应用"
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "未连接"
+            }
+        },
+        {
+            "cmd": "screenshot",
+            "name": "home_shortcuts.png"
+        }
+    ]
+}

@@ -17,7 +17,8 @@ Scenario JSON:
     ]
   }
 
-tree_assert: every node matching ALL given key/values must exist
+tree_assert: contains asserts that a node matching ALL given key/values exists;
+absent asserts that no node matches ALL given key/values
 (coords/flags/state are checked via the flattened dotted key, e.g.
  "coords.x" style nesting is supported by walking dicts; a numeric key may
  match a range with {"min": N, "max": M}).
@@ -106,9 +107,14 @@ class Runner:
         self.host, self.port = host, port
         self.out_dir = out_dir
         self.sock = None
+        self.width = 368
+        self.height = 448
 
     def connect(self):
         self.sock = socket.create_connection((self.host, self.port), timeout=60)
+        ping = self.call('sim.ping')
+        self.width = int(ping.get('width', self.width))
+        self.height = int(ping.get('height', self.height))
 
     def call(self, method, params=None):
         reply = rpc(self.sock, method, params)
@@ -316,14 +322,16 @@ class Runner:
                          _text_targets(tree, step['text'])
                          if label.get('flags', {}).get('visible', True) and
                          64 <= label['coords']['y'] and
-                         label['coords']['y'] + label['coords']['h'] <= 448]
+                         label['coords']['y'] + label['coords']['h'] <=
+                         self.height]
                 if nodes:
                     break
                 targets = [node for node in _walk(tree) if node.get('text') == step['text']]
                 above = targets and targets[-1]['coords']['y'] < 64
                 if targets and all(node.get('coords', {}).get('y', 0) >= 64 and
                                    node.get('coords', {}).get('y', 0) +
-                                   node.get('coords', {}).get('h', 0) <= 448
+                                   node.get('coords', {}).get('h', 0) <=
+                                   self.height
                                    for node in targets):
                     self.call('sim.step', {'ms': 330})
                     continue
@@ -338,6 +346,43 @@ class Runner:
             self.call('sim.step', {'ms': 660})
             time.sleep(0.05)
             self.call('sim.step', {'ms': 330})
+        elif cmd == 'long_press_text':
+            nodes = []
+            for attempt in range(12):
+                tree = self.call('sim.tree')['tree']
+                time.sleep(0.05)
+                nodes = [target for label, target in
+                         _text_targets(tree, step['text'])
+                         if label.get('flags', {}).get('visible', True) and
+                         64 <= label['coords']['y'] and
+                         label['coords']['y'] + label['coords']['h'] <=
+                         self.height]
+                if nodes:
+                    break
+                targets = [node for node in _walk(tree)
+                           if node.get('text') == step['text']]
+                above = targets and targets[-1]['coords']['y'] < 64
+                if targets and all(node.get('coords', {}).get('y', 0) >= 64 and
+                                   node.get('coords', {}).get('y', 0) +
+                                   node.get('coords', {}).get('h', 0) <=
+                                   self.height
+                                   for node in targets):
+                    self.call('sim.step', {'ms': 330})
+                    continue
+                self._step({'cmd': 'drag', 'x0': 180,
+                            'y0': 170 if above else 390,
+                            'x1': 180, 'y1': 390 if above else 170,
+                            'steps': 8})
+            assert nodes, 'reachable text not found: %s' % step['text']
+            box = nodes[-1]['coords']
+            x, y = box['x'] + box['w'] // 2, box['y'] + box['h'] // 2
+            self.call('sim.touch', {'action': 'down', 'x': x, 'y': y})
+            held = 0
+            while held < int(step.get('ms', 700)):
+                self.call('sim.step', {'ms': 33})
+                held += 33
+            self.call('sim.touch', {'action': 'up', 'x': x, 'y': y})
+            self.call('sim.step', {'ms': int(step.get('settle_ms', 330))})
         elif cmd == 'touch':
             self.call('sim.touch', {k: step[k] for k in ('action', 'x', 'y')})
         elif cmd == 'long_press':
@@ -460,11 +505,20 @@ class Runner:
                     'error %r != %r' % (reply.get('error'), want)
         elif cmd == 'tree_assert':
             tree = self.call('sim.tree', step.get('params') or {})['tree']
-            match = step.get('contains')
-            assert isinstance(match, dict), 'tree_assert needs a contains map'
-            any_match = any(_flat_matches(node, match)
-                            for node in _walk(tree))
-            assert any_match, 'no node matches %s' % json.dumps(match, ensure_ascii=False)
+            present = step.get('contains')
+            absent = step.get('absent')
+            assert isinstance(present, dict) or isinstance(absent, dict), \
+                'tree_assert needs a contains or absent map'
+            if present is not None:
+                assert any(_flat_matches(node, present)
+                           for node in _walk(tree)), \
+                    'no node matches %s' % json.dumps(present,
+                                                      ensure_ascii=False)
+            if absent is not None:
+                assert not any(_flat_matches(node, absent)
+                               for node in _walk(tree)), \
+                    'unexpected node matches %s' % json.dumps(absent,
+                                                              ensure_ascii=False)
         elif cmd == 'call':
             self.call(step['method'], step.get('params'))
         elif cmd == 'assert_result':

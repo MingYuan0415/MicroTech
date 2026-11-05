@@ -20,6 +20,7 @@
 #include "host_power.h"
 #include "music_service.h"
 #include "music_app_internal.h"
+#include "home_shortcuts_page.h"
 #include "nv_storage.h"
 #include "power_service.h"
 #include "weather_app_internal.h"
@@ -3386,7 +3387,8 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(system.visible_edge_count == 0U);
     _assert_indicator_hidden();
 
-    /* Home remains non-interactive even when an App history target exists. */
+    /* Home's root page remains non-interactive even when an App history target
+     * exists. */
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
@@ -3400,6 +3402,24 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
+
+    /* A Home sub-page may gesture back to its previous Page; only Home's root
+     * page stays non-interactive even when an App history target exists. */
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_HOME,
+                     HOME_SHORTCUTS_PAGE_ID) == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_HOME,
+                                 HOME_SHORTCUTS_PAGE_ID));
+    system = _system_gesture_snapshot();
+    assert(system.visible_edge_count == 2U);
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(_wait_for_page_active(APP_MANAGER_ID_HOME,
+                                 APP_MANAGER_ID_HOME_ROOT));
+    assert(!app_manager_is_page_present(APP_MANAGER_ID_HOME,
+                                        HOME_SHORTCUTS_PAGE_ID));
 
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);

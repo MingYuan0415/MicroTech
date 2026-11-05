@@ -46,20 +46,8 @@
    "name": "home.png"
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 96,
-   "y": 252
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 96,
-   "y": 252
+   "cmd": "tap_text",
+   "text": "天气"
   },
   {
    "cmd": "step",
@@ -87,20 +75,8 @@
    "cmd": "wait_idle"
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 271,
-   "y": 252
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 271,
-   "y": 252
+   "cmd": "tap_text",
+   "text": "时钟"
   },
   {
    "cmd": "step",

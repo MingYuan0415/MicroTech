@@ -766,14 +766,86 @@
           ],
           "expect_visible": [
             "天气",
-            "时钟",
             "计算器",
-            "日历"
+            "音乐",
+            "时钟",
+            "应用"
           ],
           "single_line": [
-            "倒计时 · 专注",
-            "四则运算",
-            "查看月历"
+            "计算器",
+            "音乐",
+            "时钟",
+            "应用"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "shortcut_files",
+          "seed": [
+            {
+              "cmd": "long_press_text",
+              "text": "计算器",
+              "ms": 700
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 5000
+            },
+            {
+              "cmd": "tap_text",
+              "text": "音乐"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tap_text",
+              "text": "文件管理"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 5000
+            },
+            {
+              "cmd": "drag",
+              "x0": 2,
+              "y0": 240,
+              "x1": 180,
+              "y1": 240,
+              "steps": 8,
+              "hold_steps": 1,
+              "settle_ms": 330
+            },
+            {
+              "cmd": "step",
+              "ms": 990
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 5000
+            }
+          ],
+          "expect_visible": [
+            "天气",
+            "计算器",
+            "时钟",
+            "文件管理",
+            "应用"
+          ],
+          "single_line": [
+            "计算器",
+            "时钟",
+            "文件管理",
+            "应用"
           ],
           "allow_disabled": []
         },
@@ -850,6 +922,49 @@
           "expect_visible": [],
           "single_line": [],
           "allow_disabled": []
+        }
+      ]
+    },
+    {
+      "app": "home",
+      "page": "shortcuts",
+      "states": [
+        {
+          "name": "picker",
+          "seed": [],
+          "expect_visible": [
+            "主页快捷方式",
+            "已选择 3/3",
+            "天气",
+            "计算器",
+            "音乐",
+            "系统设置",
+            "文件管理"
+          ],
+          "expect_absent": [
+            "已选满，取消一个再更换"
+          ],
+          "single_line": [
+            "已选择 3/3",
+            "天气",
+            "计算器",
+            "音乐",
+            "时钟",
+            "日历",
+            "飞鸟",
+            "录音",
+            "系统设置",
+            "文件管理"
+          ],
+          "allow_disabled": [
+            "天气",
+            "日历",
+            "飞鸟",
+            "录音",
+            "水平仪",
+            "系统设置",
+            "文件管理"
+          ]
         }
       ]
     },

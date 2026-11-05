@@ -444,7 +444,9 @@ trailing `...` that LVGL already replaced in place appears in both `text` and
 `lines` (this is the basis for detecting truncation). Images provide
 `image_semantic_id`; slider/bar/arc provide `value`/`min`/`max`; switch/checkbox
 provide `checked`; dropdown/roller provide `selected`. A scenario's
-`tree_assert.contains` does superset matching against node fields.
+`tree_assert.contains` and `tree_assert.absent` do superset matching against
+node fields, requiring at least one matching node or no matching node
+respectively.
 
 Lock discipline: tree/screenshot/hash hold `esp_lv_adapter_lock` read-only/copy;
 step/navigate take no lock; touch/key only write atomic state. `pause` completes
@@ -542,7 +544,10 @@ Every scenario gets an independent sim process + independent NVS directory (the
 resident-app policy matches a cold start). Scenarios live in `sim/ci/scenarios/`
 (`run_ci.sh` walks that directory, there is no separate manifest):
 `all_apps.json` (text assertions for each built-in App's main page +
-screenshots), `smoke_pages.json` (navigation/gestures/multiple pages),
+screenshots), `home_shortcuts.json` (long-press Home dock → card picker, max-3
+selection, edge-back, remounted dock), `home_navigation.json` (Home sub-page
+edge-back and HOME-key return to root), `home_timer.json` (active countdown
+complication on Home), `smoke_pages.json` (navigation/gestures/multiple pages),
 `p4_smoke.json` (product-neutral home/settings/weather smoke for the P4
 variant; run with `SIM_PRODUCT=p4_reference`),
 `weather_flow.json` (the real weather pipeline: the `sim_http` script layer is

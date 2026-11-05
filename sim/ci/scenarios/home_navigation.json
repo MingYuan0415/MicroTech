@@ -1,0 +1,111 @@
+{
+    "name": "home-navigation",
+    "steps": [
+        {
+            "cmd": "navigate",
+            "app": "home"
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "long_press_text",
+            "text": "计算器",
+            "ms": 700
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "主页快捷方式"
+            }
+        },
+        {
+            "cmd": "drag",
+            "x0": 2,
+            "y0": 240,
+            "x1": 180,
+            "y1": 240,
+            "steps": 8,
+            "hold_steps": 1,
+            "settle_ms": 330
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "应用"
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "未连接"
+            }
+        },
+        {
+            "cmd": "long_press_text",
+            "text": "计算器",
+            "ms": 700
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "主页快捷方式"
+            }
+        },
+        {
+            "cmd": "key",
+            "button": "boot",
+            "action": "click"
+        },
+        {
+            "cmd": "step",
+            "times": 30
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "应用"
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "contains": {
+                "type": "lv_label",
+                "text": "未连接"
+            }
+        }
+    ]
+}

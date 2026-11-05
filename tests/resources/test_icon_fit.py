@@ -1,9 +1,10 @@
-"""Validate that app icons survive the 1:1 (clipping) draw windows.
+"""Validate that app icons survive the draw windows used by consumers.
 
 LVGL draws a plain `lv_image` at its natural size inside the object box and
 clips the overflow, so a record exported larger than the object a consumer
-creates is silently cropped. The launcher draws app icons in its 72 px well and
-the task switcher in a 56 px window; the home cards draw their glyphs at 40 px.
+creates is silently cropped. The launcher draws app icons in its 72 px well,
+the task switcher in a 56 px window, and the Home shortcut dock scales the
+same records into a 56 px window.
 
 The window sizes are read from the consumers' own constants, not restated here:
 changing a consumer's size re-derives this table and fails the icons that no
@@ -24,9 +25,8 @@ APP_CORE_SRC = PROJECT_ROOT / "layers" / "app_manager" / "app_core" / "src"
 # Which draw sites each icon record appears in. Sizes come from the code below.
 #   launcher_tile - `app_ui_add_icon_tile` image inside the launcher well
 #   switcher      - task-switcher card icon
-#   home_card     - home complication glyph (`_home_card_glyph`)
-#   ring_glyph    - home clock card glyph inside the progress ring
-APP_ICON = ("launcher_tile", "switcher")
+#   home_shortcut - Home dock image inside its circular well
+APP_ICON = ("launcher_tile", "switcher", "home_shortcut")
 HOME_ICON_ROLES = {
     "APP_IMAGE_HOME_ICON": APP_ICON,
     "APP_IMAGE_MENU_ICON": APP_ICON,
@@ -37,14 +37,11 @@ HOME_ICON_ROLES = {
     "APP_IMAGE_LEVEL_ICON": APP_ICON,
     "APP_IMAGE_CALENDAR_ICON": APP_ICON,
     "APP_IMAGE_CALCULATOR_ICON": APP_ICON,
+    "APP_IMAGE_FILES_ICON": APP_ICON,
     "APP_IMAGE_FLYBIRDS_ICON": APP_ICON,
     "APP_IMAGE_DIAGNOSTICS_ICON": APP_ICON,
+    "APP_IMAGE_MUSIC_ICON": APP_ICON,
     "APP_IMAGE_WEATHER_APP": APP_ICON,
-    # Complication glyphs appear only on their home card.
-    "APP_IMAGE_HOME_CALCULATOR": ("home_card",),
-    "APP_IMAGE_HOME_CALENDAR": ("home_card",),
-    # The 28 px ring glyph is the one record authored for a single small use.
-    "APP_IMAGE_HOME_RING_CLOCK": ("ring_glyph",),
 }
 
 # The renderer composites the SVG onto the opaque black canvas, so only ink
@@ -73,23 +70,12 @@ def _switcher_icon_px() -> int:
     return int(match.group(1))
 
 
-def _home_card_px() -> int:
-    """Glyph size `_home_card_glyph` passes to `app_ui_image`."""
+def _home_shortcut_px() -> int:
+    """Image size `_home_shortcut_tile` gives the dock picture."""
     text = (APPS_DIR / "home_app" / "src" / "home_app.c").read_text(
         encoding="utf-8")
-    start = text.index("static void _home_card_glyph(")
-    match = re.search(r"app_ui_image\(row, image_id, fallback_symbol, (\d+)\)",
-                      text[start:])
-    assert match, "_home_card_glyph no longer sizes its glyph"
-    return int(match.group(1))
-
-
-def _ring_glyph_px() -> int:
-    text = (APPS_DIR / "home_app" / "src" / "home_app.c").read_text(
-        encoding="utf-8")
-    start = text.index("_home_ring_glyph")
-    match = re.search(r"lv_obj_set_size\(image, (\d+), (\d+)\)", text[start:])
-    assert match, "_home_ring_glyph no longer sizes its image"
+    match = re.search(r"#define HOME_SHORTCUT_IMAGE\s+(\d+)", text)
+    assert match, "home_app no longer defines HOME_SHORTCUT_IMAGE"
     return int(match.group(1))
 
 
@@ -97,11 +83,27 @@ def _draw_windows() -> dict:
     sizes = {
         "launcher_tile": _launcher_tile_image_px(),
         "switcher": _switcher_icon_px(),
-        "home_card": _home_card_px(),
-        "ring_glyph": _ring_glyph_px(),
+        "home_shortcut": _home_shortcut_px(),
     }
     return {token: tuple(sizes[role] for role in roles)
             for token, roles in HOME_ICON_ROLES.items()}
+
+
+def _app_icon_manifest_records() -> list:
+    """Every 72 px SVG registered as an App's launcher icon."""
+    records = []
+    for manifest in sorted(APPS_DIR.glob("*/resource_manifest.cmake")):
+        text = manifest.read_text(encoding="utf-8")
+        for source, _output, semantic, width, height, kind in re.findall(
+            r'"([^|"]+)\|([^|"]+)\|([^|"]+)\|(\d+)\|(\d+)\|(\w+)"', text
+        ):
+            if kind != "SVG" or (semantic != "APP_IMAGE_WEATHER_APP" and
+                                 not semantic.endswith("_ICON")):
+                continue
+            path = (manifest.parent / source.replace(
+                "${CMAKE_CURRENT_LIST_DIR}/", "")).resolve()
+            records.append((semantic, path, int(width), int(height)))
+    return records
 
 
 def _records() -> list:
@@ -160,7 +162,9 @@ class IconFitTest(unittest.TestCase):
     """An icon must stay inside every window a consumer draws it into."""
 
     def test_every_icon_record_declares_its_draw_sites(self) -> None:
-        for semantic, path, _width, _height in _records():
+        records = _app_icon_manifest_records()
+        self.assertGreater(len(records), 10)
+        for semantic, path, _width, _height in records:
             with self.subTest(icon=semantic):
                 self.assertIn(semantic, HOME_ICON_ROLES,
                               f"{semantic} has no draw site recorded")

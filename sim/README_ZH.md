@@ -341,7 +341,9 @@ label 额外提供 `long_mode`（`0 WRAP / 1 DOTS / 2 SCROLL / 3 SCROLL_CIRCULAR
 `text` 仍是未自动断行的原文；DOTS 模式下已被 LVGL 原地替换的尾部 `...` 会同时
 出现在 `text` 和 `lines` 中（这是检测截断的依据）。image 提供 `image_semantic_id`；
 slider/bar/arc 提供 `value`/`min`/`max`；switch/checkbox 提供 `checked`；
-dropdown/roller 提供 `selected`。场景的 `tree_assert.contains` 对节点字段做超集匹配。
+dropdown/roller 提供 `selected`。场景的 `tree_assert.contains` 和
+`tree_assert.absent` 对节点字段做超集匹配，分别要求至少存在一个匹配节点、
+不存在任何匹配节点。
 
 锁纪律：tree/screenshot/hash 持 `esp_lv_adapter_lock` 只读/拷贝；step/navigate 不持锁；
 touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停期间 `wait_idle`
@@ -408,7 +410,10 @@ NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`
 
 每个场景独立 sim 进程 + 独立 NVS 目录（resident-app 策略与冷启动一致）。
 场景位于 `sim/ci/scenarios/`（`run_ci.sh` 遍历该目录，无单独清单）：`all_apps.json`
-（每个内置 App 主页面文本断言 + 截图）、`smoke_pages.json`（导航/手势/多页）、
+（每个内置 App 主页面文本断言 + 截图）、`home_shortcuts.json`（长按主页快捷坞进入
+卡片选择页、最多 3 个、边缘返回、返回后重建快捷坞）、`home_navigation.json`
+（Home 子页边缘返回与 HOME 键回根页）、`home_timer.json`（主页显示运行中的倒计时
+实时带）、`smoke_pages.json`（导航/手势/多页）、
 `p4_smoke.json`（P4 版型的 home/settings/weather 产品无关冒烟；用
 `SIM_PRODUCT=p4_reference` 运行）、
 `weather_flow.json`（真 weather 管线：
