@@ -4325,5 +4325,35 @@
         }
       ]
     }
-  ]
+  ],
+  "product_overrides": {
+    "p4_reference": {
+      "skip_pages": [
+        "level/root"
+      ],
+      "states": {
+        "menu/root/grid": {
+          "expect_visible_remove": [
+            "水平仪"
+          ]
+        },
+        "settings/wifi/saved_profiles": {
+          "allow_truncation_add": [
+            "办公室 Mesh 主"
+          ]
+        },
+        "settings/wifi/scan_list": {
+          "allow_truncation_add": [
+            "a very long neighbour guest netw",
+            "办公室 Mesh 主"
+          ]
+        },
+        "settings/about/about": {
+          "allow_truncation_add": [
+            "Jan  1 2026"
+          ]
+        }
+      }
+    }
+  }
 }

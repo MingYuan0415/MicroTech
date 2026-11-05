@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -12,9 +13,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SnapshotPolicyTest(unittest.TestCase):
     def test_no_tracked_ui_golden_assets(self):
-        self.assertFalse(
-            (ROOT / "sim" / "ci" / "golden").exists(),
-            "simulator UI goldens are review artifacts, not version baselines",
+        tracked = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "sim/ci/golden"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        self.assertEqual(tracked.returncode, 0)
+        self.assertEqual(
+            tracked.stdout.strip(),
+            "",
+            "simulator UI goldens are review artifacts, not tracked baselines",
         )
 
     def test_review_spec_has_no_golden_flags(self):

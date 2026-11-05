@@ -457,6 +457,8 @@ while paused. A CI session stays resident until `sim.exit` or a signal.
 sim/ci/run_ci.sh                    # port preflight + check_lv_conf + build + staged parity + all scenarios
 sim/ci/run_ci.sh --scenario smoke_pages
                                     # one scenario; repeat --scenario for more
+SIM_PRODUCT=p4_reference sim/ci/run_ci.sh --scenario p4_smoke
+                                    # P4 product-neutral smoke
 sim/ci/run_ci.sh build/sim          # build a custom simulator directory
 ```
 
@@ -541,6 +543,8 @@ resident-app policy matches a cold start). Scenarios live in `sim/ci/scenarios/`
 (`run_ci.sh` walks that directory, there is no separate manifest):
 `all_apps.json` (text assertions for each built-in App's main page +
 screenshots), `smoke_pages.json` (navigation/gestures/multiple pages),
+`p4_smoke.json` (product-neutral home/settings/weather smoke for the P4
+variant; run with `SIM_PRODUCT=p4_reference`),
 `weather_flow.json` (the real weather pipeline: the `sim_http` script layer is
 fed `sim/ci/fixtures/*.json`, validating location→current/hourly/`daily` parsing
 and rendering, and opening the forecast subpage), `pm_lifecycle.json` (screen

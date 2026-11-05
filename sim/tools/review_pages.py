@@ -465,6 +465,51 @@ def _reachable(node, ancestors, vw, vh):
     return True
 
 
+def _build_product(build):
+    """Return the product id written by the simulator build, if available."""
+    profile = os.path.join(build, 'mt_product_profile.h')
+    try:
+        with open(profile, encoding='utf-8', errors='replace') as handle:
+            for line in handle:
+                prefix = '#define MT_PRODUCT_NAME "'
+                if line.startswith(prefix):
+                    return line[len(prefix):].split('"', 1)[0]
+    except OSError:
+        pass
+    return ''
+
+
+def _apply_product_overrides(spec, product):
+    """Apply the selected product's review expectations to the shared spec."""
+    overrides = (spec.get('product_overrides') or {}).get(product, {})
+    if not overrides:
+        return spec
+    skip_pages = set(overrides.get('skip_pages') or [])
+    state_overrides = overrides.get('states') or {}
+    pages = []
+    for page in spec['pages']:
+        page_key = '%s/%s' % (page['app'], page.get('page', 'root'))
+        if page_key in skip_pages:
+            continue
+        for state in page.get('states', []):
+            state_key = '%s/%s' % (page_key, state['name'])
+            override = state_overrides.get(state_key) or {}
+            remove = set(override.get('expect_visible_remove') or [])
+            if remove:
+                state['expect_visible'] = [
+                    item for item in state.get('expect_visible', [])
+                    if item not in remove
+                ]
+            additions = override.get('allow_truncation_add') or []
+            if additions:
+                state['allow_truncation'] = list(
+                    state.get('allow_truncation', [])
+                ) + additions
+        pages.append(page)
+    spec['pages'] = pages
+    return spec
+
+
 def _selected_pages(spec, pages):
     requested = set(pages.split(',')) if pages else None
     available = {'%s/%s' % (p['app'], p.get('page', 'root')): p
@@ -649,6 +694,7 @@ def main():
         args.shots = tempfile.mkdtemp(prefix='review-', dir=args.build)
 
     spec = json.load(open(args.spec))
+    spec = _apply_product_overrides(spec, _build_product(args.build))
     try:
         spec['pages'] = _selected_pages(spec, args.pages)
     except ValueError as error:
@@ -682,9 +728,8 @@ def main():
         runner.close()
 
 
-def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
-    runner.connect()
-    ping = runner.call('sim.ping')
+def _viewport_from_ping(ping):
+    """Return the live simulator viewport from a sim.ping response."""
     try:
         vw = int(ping['width'])
         vh = int(ping['height'])
@@ -692,6 +737,12 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
         raise RuntimeError('sim.ping did not report a valid viewport') from error
     if vw <= 0 or vh <= 0:
         raise RuntimeError('invalid simulator viewport %dx%d' % (vw, vh))
+    return vw, vh
+
+
+def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
+    runner.connect()
+    vw, vh = _viewport_from_ping(runner.call('sim.ping'))
     os.makedirs(args.shots, exist_ok=True)
 
     failures = []
@@ -777,8 +828,11 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                                       for l in _visible_labels(tree))
                     if all(w in have for w in want):
                         break
-                _path, folded = _capture_full_page(runner, name, vw, vh,
-                                                   not state.get('animated'))
+                path, folded = _capture_full_page(runner, name, vw, vh,
+                                                  not state.get('animated'))
+                snapshot = os.path.join(args.shots, os.path.basename(path))
+                if os.path.abspath(path) != os.path.abspath(snapshot):
+                    shutil.copyfile(path, snapshot)
                 snapshots += 1
                 for viol in _lint(tree, page, state, vw, vh):
                     failures.append('%s: %s' % (name, viol))

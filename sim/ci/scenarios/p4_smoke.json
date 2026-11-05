@@ -1,0 +1,25 @@
+{
+    "name": "p4-smoke",
+    "steps": [
+        {"cmd": "set_time", "epoch": 1775000000},
+        {"cmd": "set_power", "voltage": 3900, "pct": 66, "charging": false},
+        {"cmd": "step", "times": 15},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label"}},
+        {"cmd": "navigate", "app": "home"},
+        {"cmd": "step", "times": 20},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label"}},
+        {"cmd": "screenshot", "name": "p4_smoke_home.png"},
+        {"cmd": "navigate", "app": "settings"},
+        {"cmd": "step", "times": 20},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label"}},
+        {"cmd": "screenshot", "name": "p4_smoke_settings.png"},
+        {"cmd": "navigate", "app": "weather"},
+        {"cmd": "step", "times": 20},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "contains": {"type": "lv_label"}},
+        {"cmd": "screenshot", "name": "p4_smoke_weather.png"}
+    ]
+}

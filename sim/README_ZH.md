@@ -353,6 +353,8 @@ touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停
 sim/ci/run_ci.sh                    # 端口预检 + check_lv_conf + 构建 + staged parity + 全部场景
 sim/ci/run_ci.sh --scenario smoke_pages
                                     # 只跑一条场景；可重复传 --scenario
+SIM_PRODUCT=p4_reference sim/ci/run_ci.sh --scenario p4_smoke
+                                    # P4 产品无关冒烟
 sim/ci/run_ci.sh build/sim          # 构建自定义模拟器目录
 ```
 
@@ -407,6 +409,8 @@ NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`
 每个场景独立 sim 进程 + 独立 NVS 目录（resident-app 策略与冷启动一致）。
 场景位于 `sim/ci/scenarios/`（`run_ci.sh` 遍历该目录，无单独清单）：`all_apps.json`
 （每个内置 App 主页面文本断言 + 截图）、`smoke_pages.json`（导航/手势/多页）、
+`p4_smoke.json`（P4 版型的 home/settings/weather 产品无关冒烟；用
+`SIM_PRODUCT=p4_reference` 运行）、
 `weather_flow.json`（真 weather 管线：
 `sim_http` 脚本层灌入 `sim/ci/fixtures/*.json`，验证 location→current/hourly/
 `daily` 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）、

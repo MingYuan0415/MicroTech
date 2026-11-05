@@ -94,6 +94,42 @@ class ReviewPagesTest(unittest.TestCase):
         self.addCleanup(runner.dir.cleanup)
         return runner
 
+    def test_viewport_comes_from_ping(self):
+        self.assertEqual(
+            review._viewport_from_ping({'width': 320, 'height': 480}),
+            (320, 480),
+        )
+        with self.assertRaises(RuntimeError):
+            review._viewport_from_ping({'width': 320})
+        with self.assertRaises(RuntimeError):
+            review._viewport_from_ping({'width': 0, 'height': 480})
+
+    def test_product_overrides_skip_pages_and_adjust_expectations(self):
+        spec = {
+            'pages': [
+                {'app': 'level', 'page': 'root', 'states': [{'name': 'root'}]},
+                {
+                    'app': 'menu',
+                    'page': 'root',
+                    'states': [{'name': 'grid', 'expect_visible': ['水平仪']}],
+                },
+            ],
+            'product_overrides': {
+                'p4_reference': {
+                    'skip_pages': ['level/root'],
+                    'states': {
+                        'menu/root/grid': {
+                            'expect_visible_remove': ['水平仪'],
+                        },
+                    },
+                },
+            },
+        }
+        result = review._apply_product_overrides(spec, 'p4_reference')
+        self.assertEqual(len(result['pages']), 1)
+        self.assertEqual(result['pages'][0]['app'], 'menu')
+        self.assertEqual(result['pages'][0]['states'][0]['expect_visible'], [])
+
     def test_selection_must_include_executable_states(self):
         spec = {'pages': [{'app': 'settings', 'page': 'wifi',
                            'states': [{'name': 'idle'}]}]}
