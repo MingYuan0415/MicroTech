@@ -123,6 +123,27 @@
    }
   },
   {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "共 10 个"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "当前与预报"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "absent": {
+    "type": "lv_label",
+    "text": "全部功能"
+   }
+  },
+  {
    "cmd": "screenshot",
    "name": "apps_menu.png"
   },

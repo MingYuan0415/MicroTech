@@ -111,14 +111,14 @@ class ReviewPagesTest(unittest.TestCase):
                 {
                     'app': 'menu',
                     'page': 'root',
-                    'states': [{'name': 'grid', 'expect_visible': ['水平仪']}],
+                    'states': [{'name': 'index', 'expect_visible': ['水平仪']}],
                 },
             ],
             'product_overrides': {
                 'p4_reference': {
                     'skip_pages': ['level/root'],
                     'states': {
-                        'menu/root/grid': {
+                        'menu/root/index': {
                             'expect_visible_remove': ['水平仪'],
                         },
                     },

@@ -3404,12 +3404,8 @@ bool host_lv_sys_layer_card_height(int32_t *height)
     return false;
 }
 
-bool host_lv_click_action(const char *title)
+static lv_obj_t *_host_lv_find_action_button(const char *title)
 {
-    if (_host_lv_input_is_blocked())
-    {
-        return false;
-    }
     /* Prefer a direct child label match so a nested control (for example a
      * card close button) wins over its interactive parent container. */
     for (size_t pass = 0U; pass < 2U; ++pass)
@@ -3423,14 +3419,66 @@ bool host_lv_click_action(const char *title)
                     (object->state & LV_STATE_DISABLED) == 0U &&
                     (direct_only ?
                      _host_lv_has_direct_label_text(object, title) :
-                     _host_lv_has_descendant_text(object, title)) &&
-                    _host_lv_emit(object, LV_EVENT_CLICKED))
+                     _host_lv_has_descendant_text(object, title)))
             {
-                return true;
+                return object;
             }
         }
     }
-    return false;
+    return NULL;
+}
+
+bool host_lv_click_action(const char *title)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *object = _host_lv_find_action_button(title);
+    return object != NULL && _host_lv_emit(object, LV_EVENT_CLICKED);
+}
+
+bool host_lv_tap_action(const char *title)
+{
+    if (_host_lv_input_is_blocked())
+    {
+        return false;
+    }
+    lv_obj_t *object = _host_lv_find_action_button(title);
+    if (object == NULL)
+    {
+        return false;
+    }
+
+    const lv_point_t point =
+    {
+        .x = _host_lv_absolute_position(object, true) + object->width / 2,
+        .y = _host_lv_absolute_position(object, false) +
+        (object->height > 0 ? object->height / 2 : HOST_LV_VER_RES / 2),
+    };
+    s_pointer_indev.point = point;
+    s_pointer_indev.state = LV_INDEV_STATE_PRESSED;
+    s_pointer_indev.active_object = object;
+    s_pointer_indev.sequence_active = true;
+    s_pointer_indev.wait_release = false;
+    s_pointer_indev.moved = false;
+    s_pointer_indev.scroll_object = NULL;
+    s_pointer_indev.scroll_sum = (lv_point_t)
+    {
+        .x = 0,
+        .y = 0,
+    };
+    s_pointer_indev.last_point = point;
+    (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED, &s_pointer_indev,
+                                   NULL);
+    s_pointer_indev.active_object = NULL;
+    s_pointer_indev.sequence_active = false;
+    s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
+    (void)_host_lv_emit_with_input(object, LV_EVENT_RELEASED, &s_pointer_indev,
+                                   NULL);
+    (void)_host_lv_emit_with_input(object, LV_EVENT_CLICKED, &s_pointer_indev,
+                                   NULL);
+    return true;
 }
 
 static bool _host_lv_has_descendant_text_prefix(const lv_obj_t *object,

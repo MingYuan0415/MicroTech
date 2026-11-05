@@ -3369,16 +3369,31 @@
       "page": "root",
       "states": [
         {
-          "name": "grid",
+          "name": "index",
           "seed": [],
           "expect_visible": [
+            "天气",
+            "当前与预报",
+            "计算器",
+            "四则运算",
             "系统设置",
-            "水平仪",
-            "录音",
-            "计算器"
+            "设备与电源",
+            "文件管理",
+            "浏览存储卡文件"
+          ],
+          "expect_absent": [
+            "主页",
+            "全部功能"
           ],
           "single_line": [
-            "计算器"
+            "天气",
+            "当前与预报",
+            "计算器",
+            "四则运算",
+            "系统设置",
+            "设备与电源",
+            "文件管理",
+            "浏览存储卡文件"
           ],
           "allow_disabled": []
         }
@@ -4447,11 +4462,6 @@
         "level/root"
       ],
       "states": {
-        "menu/root/grid": {
-          "expect_visible_remove": [
-            "水平仪"
-          ]
-        },
         "settings/wifi/saved_profiles": {
           "allow_truncation_add": [
             "办公室 Mesh 主"
@@ -4466,6 +4476,11 @@
         "settings/about/about": {
           "allow_truncation_add": [
             "Jan  1 2026"
+          ]
+        },
+        "menu/root/index": {
+          "expect_visible_remove": [
+            "水平仪"
           ]
         }
       }

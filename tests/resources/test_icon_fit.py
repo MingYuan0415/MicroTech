@@ -3,8 +3,9 @@
 LVGL draws a plain `lv_image` at its natural size inside the object box and
 clips the overflow, so a record exported larger than the object a consumer
 creates is silently cropped. The launcher draws app icons in its 72 px well,
-the task switcher in a 56 px window, and the Home shortcut dock scales the
-same records into a 56 px window.
+the task switcher in a 56 px window, Home scales the same record into a
+56 px dock window, and the Applications list scales it inside a 56 px row
+window.
 
 The window sizes are read from the consumers' own constants, not restated here:
 changing a consumer's size re-derives this table and fails the icons that no
@@ -26,7 +27,8 @@ APP_CORE_SRC = PROJECT_ROOT / "layers" / "app_manager" / "app_core" / "src"
 #   launcher_tile - `app_ui_add_icon_tile` image inside the launcher well
 #   switcher      - task-switcher card icon
 #   home_shortcut - Home dock image inside its circular well
-APP_ICON = ("launcher_tile", "switcher", "home_shortcut")
+#   menu_row      - Applications list image inside its App-icon row well
+APP_ICON = ("launcher_tile", "switcher", "home_shortcut", "menu_row")
 HOME_ICON_ROLES = {
     "APP_IMAGE_HOME_ICON": APP_ICON,
     "APP_IMAGE_MENU_ICON": APP_ICON,
@@ -79,11 +81,21 @@ def _home_shortcut_px() -> int:
     return int(match.group(1))
 
 
+def _menu_row_px() -> int:
+    """Clipping window used for a scaled App icon in a grouped list row."""
+    text = (APPS_DIR / "common" / "src" / "app_ui.c").read_text(
+        encoding="utf-8")
+    match = re.search(r"#define APP_UI_ROW_ICON_WINDOW\s+(\d+)", text)
+    assert match, "app_ui no longer defines APP_UI_ROW_ICON_WINDOW"
+    return int(match.group(1))
+
+
 def _draw_windows() -> dict:
     sizes = {
         "launcher_tile": _launcher_tile_image_px(),
         "switcher": _switcher_icon_px(),
         "home_shortcut": _home_shortcut_px(),
+        "menu_row": _menu_row_px(),
     }
     return {token: tuple(sizes[role] for role in roles)
             for token, roles in HOME_ICON_ROLES.items()}

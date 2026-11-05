@@ -94,6 +94,18 @@ lv_indev_t *host_lv_pointer_indev(void);
  */
 bool host_lv_click_action(const char *title);
 /**
+ * @brief Tap the visible action containing an exact title with a full event
+ *        sequence matching LVGL's pointer model.
+ *
+ * Unlike host_lv_click_action(), this resets per-press state before emitting
+ * CLICKED. Use it after a drag when the target's click guard depends on the
+ * PRESSED to PRESSING transition.
+ *
+ * @param title is the action label to match.
+ * @return true when a tap sequence was emitted; false when not found.
+ */
+bool host_lv_tap_action(const char *title);
+/**
  * @brief Swipe up on the visible action containing an exact title.
  * @param title is the action label to match.
  * @return true when the swipe sequence was emitted; false when not found.

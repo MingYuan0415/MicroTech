@@ -571,6 +571,11 @@ static esp_err_t _click_action_on_ui(void *arg)
     return host_lv_click_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
+static esp_err_t _tap_action_on_ui(void *arg)
+{
+    return host_lv_tap_action(arg) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
 static esp_err_t _click_back_on_ui(void *arg)
 {
     (void)arg;
@@ -1162,6 +1167,18 @@ static void _click_action(const char *title)
     if (result != ESP_OK)
     {
         fprintf(stderr, "click_action failed: %s\\n", title);
+    }
+    assert(result == ESP_OK);
+}
+
+static void _tap_action(const char *title)
+{
+    const esp_err_t result = app_manager_ui_call(
+                                 _tap_action_on_ui, (void *)title,
+                                 UI_TIMEOUT_MS);
+    if (result != ESP_OK)
+    {
+        fprintf(stderr, "tap_action failed: %s\\n", title);
     }
     assert(result == ESP_OK);
 }
@@ -3804,8 +3821,10 @@ static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
         assert(_wait_for_active(APP_MANAGER_ID_MENU));
     }
 
-    /* Tapping a background card restores that task and closes the switcher. */
-    _click_action("天气");
+    /* Tapping a background card restores that task and closes the switcher.
+     * Use a full pointer sequence because the preceding horizontal swipe
+     * deliberately leaves the card's drag guard set until a new PRESSED. */
+    _tap_action("天气");
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
     _wait_for_switcher(false);
 
