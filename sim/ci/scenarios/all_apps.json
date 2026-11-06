@@ -60,7 +60,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "暂无实时天气"
+    "text": "暂无天气"
    }
   },
   {
@@ -1319,7 +1319,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "暂无实时天气"
+    "text": "暂无天气"
    }
   }
  ]

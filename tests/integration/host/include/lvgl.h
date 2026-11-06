@@ -111,6 +111,16 @@ typedef uint32_t lv_obj_flag_t;
 typedef uint32_t lv_part_t;
 typedef uint32_t lv_style_selector_t;
 typedef uint32_t lv_state_t;
+typedef uint32_t lv_dir_t;
+typedef uint8_t lv_anim_enable_t;
+
+/** @brief Fake scale mode values used by the weather page. */
+typedef enum
+{
+    LV_SCALE_MODE_HORIZONTAL_TOP = 0x00U,
+    LV_SCALE_MODE_HORIZONTAL_BOTTOM = 0x01U,
+    LV_SCALE_MODE_ROUND_INNER = 0x08U,
+} lv_scale_mode_t;
 /** @brief Fake LVGL event callback. */
 typedef void (*lv_event_cb_t)(lv_event_t *event);
 /** @brief Fake LVGL timer callback. */
@@ -239,6 +249,7 @@ typedef int lv_text_align_t;
 #define LV_EVENT_LONG_PRESSED         15
 #define LV_EVENT_LONG_PRESSED_REPEAT  16
 #define LV_EVENT_GESTURE              17
+#define LV_EVENT_SCROLL_END           18
 #define LV_FLEX_ALIGN_START           0
 #define LV_FLEX_ALIGN_CENTER          1
 #define LV_FLEX_ALIGN_SPACE_BETWEEN   2
@@ -284,6 +295,7 @@ typedef int lv_text_align_t;
 #define LV_PART_INDICATOR             1
 #define LV_PART_KNOB                  2
 #define LV_PART_SELECTED              3
+#define LV_PART_ITEMS                 4
 #define LV_SCROLLBAR_MODE_AUTO        0
 #define LV_SCROLLBAR_MODE_OFF         1
 #define LV_SIZE_CONTENT               (-1)
@@ -370,6 +382,27 @@ lv_obj_t *lv_switch_create(lv_obj_t *parent);
 lv_obj_t *lv_bar_create(lv_obj_t *parent);
 /** @brief Create a fake line chart. */
 lv_obj_t *lv_chart_create(lv_obj_t *parent);
+/** @brief Create a fake tileview. */
+lv_obj_t *lv_tileview_create(lv_obj_t *parent);
+/** @brief Add a fake tile to a tileview. */
+lv_obj_t *lv_tileview_add_tile(lv_obj_t *tileview, uint8_t col_id,
+                               uint8_t row_id, lv_dir_t direction);
+/** @brief Select a fake tile by grid position. */
+void lv_tileview_set_tile_by_index(lv_obj_t *tileview, uint32_t col_id,
+                                   uint32_t row_id, lv_anim_enable_t anim_en);
+/** @brief Return the active fake tile. */
+lv_obj_t *lv_tileview_get_tile_active(lv_obj_t *tileview);
+/** @brief Create a fake scale. */
+lv_obj_t *lv_scale_create(lv_obj_t *parent);
+void lv_scale_set_mode(lv_obj_t *scale, lv_scale_mode_t mode);
+void lv_scale_set_total_tick_count(lv_obj_t *scale, uint32_t count);
+void lv_scale_set_major_tick_every(lv_obj_t *scale, uint32_t every);
+void lv_scale_set_label_show(lv_obj_t *scale, bool show);
+void lv_scale_set_range(lv_obj_t *scale, int32_t minimum, int32_t maximum);
+void lv_scale_set_angle_range(lv_obj_t *scale, uint32_t angle);
+void lv_scale_set_rotation(lv_obj_t *scale, int32_t rotation);
+void lv_scale_set_line_needle_value(lv_obj_t *scale, lv_obj_t *needle,
+                                    int32_t length, int32_t value);
 /** @brief Create a fake Canvas. */
 lv_obj_t *lv_canvas_create(lv_obj_t *parent);
 /** @brief Create a fake QR code object. */
@@ -873,6 +906,8 @@ HOST_LV_NOOP_3(lv_obj_set_style_transform_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_align, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_text_letter_space, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_anim_duration, lv_obj_t *, uint32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_max_height, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_max_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_min_height, lv_obj_t *, int32_t, int)

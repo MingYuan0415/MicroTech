@@ -82,6 +82,9 @@ struct lv_obj_t
     int32_t scroll_x;
     int32_t scroll_target_x;
     bool scroll_animating;
+    int32_t tile_col;
+    int32_t tile_row;
+    lv_obj_t *tile_active;
     const lv_font_t *text_font;
     int label_long_mode;
     void *user_data;
@@ -1111,6 +1114,113 @@ lv_result_t lv_obj_send_event(lv_obj_t *object, lv_event_code_t code,
 lv_obj_t *lv_chart_create(lv_obj_t *parent)
 {
     return _host_lv_allocate_object(HOST_LV_OBJECT_CHART, parent);
+}
+
+lv_obj_t *lv_tileview_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_GENERIC, parent);
+}
+
+lv_obj_t *lv_tileview_add_tile(lv_obj_t *tileview, uint8_t col_id,
+                               uint8_t row_id, lv_dir_t direction)
+{
+    (void)direction;
+    lv_obj_t *tile = _host_lv_allocate_object(HOST_LV_OBJECT_GENERIC, tileview);
+    if (tile != NULL)
+    {
+        tile->tile_col = col_id;
+        tile->tile_row = row_id;
+        tile->x = (int32_t)col_id * 320;
+        tile->y = (int32_t)row_id * 480;
+        if (tileview != NULL && tileview->tile_active == NULL)
+        {
+            tileview->tile_active = tile;
+        }
+    }
+    return tile;
+}
+
+void lv_tileview_set_tile_by_index(lv_obj_t *tileview, uint32_t col_id,
+                                   uint32_t row_id, lv_anim_enable_t anim_en)
+{
+    (void)anim_en;
+    if (tileview == NULL)
+    {
+        return;
+    }
+    for (size_t index = 0U; index < HOST_LV_OBJECT_CAPACITY; ++index)
+    {
+        lv_obj_t *candidate = &s_objects[index];
+        if (candidate->live && candidate->parent == tileview &&
+                candidate->tile_col == (int32_t)col_id &&
+                candidate->tile_row == (int32_t)row_id)
+        {
+            tileview->tile_active = candidate;
+            return;
+        }
+    }
+}
+
+lv_obj_t *lv_tileview_get_tile_active(lv_obj_t *tileview)
+{
+    return tileview != NULL ? tileview->tile_active : NULL;
+}
+
+lv_obj_t *lv_scale_create(lv_obj_t *parent)
+{
+    return _host_lv_allocate_object(HOST_LV_OBJECT_GENERIC, parent);
+}
+
+void lv_scale_set_mode(lv_obj_t *scale, lv_scale_mode_t mode)
+{
+    (void)scale;
+    (void)mode;
+}
+
+void lv_scale_set_total_tick_count(lv_obj_t *scale, uint32_t count)
+{
+    (void)scale;
+    (void)count;
+}
+
+void lv_scale_set_major_tick_every(lv_obj_t *scale, uint32_t every)
+{
+    (void)scale;
+    (void)every;
+}
+
+void lv_scale_set_label_show(lv_obj_t *scale, bool show)
+{
+    (void)scale;
+    (void)show;
+}
+
+void lv_scale_set_range(lv_obj_t *scale, int32_t minimum, int32_t maximum)
+{
+    (void)scale;
+    (void)minimum;
+    (void)maximum;
+}
+
+void lv_scale_set_angle_range(lv_obj_t *scale, uint32_t angle)
+{
+    (void)scale;
+    (void)angle;
+}
+
+void lv_scale_set_rotation(lv_obj_t *scale, int32_t rotation)
+{
+    (void)scale;
+    (void)rotation;
+}
+
+void lv_scale_set_line_needle_value(lv_obj_t *scale, lv_obj_t *needle,
+                                    int32_t length, int32_t value)
+{
+    (void)scale;
+    (void)needle;
+    (void)length;
+    (void)value;
 }
 
 lv_obj_t *lv_canvas_create(lv_obj_t *parent)
