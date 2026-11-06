@@ -153,6 +153,10 @@ The rest of the policy:
   row whose worst-case width is proven.
 - Give frequently changing bounded values a stable width based on their
   worst-case formatted text to prevent layout jitter.
+- Transient feedback never owns layout space. Do not reveal a transient
+  message by unhiding a label inside a flex/grid flow; that moves every
+  following control. Use `app_ui_toast_show(page->root, text)`, which applies
+  `IGNORE_LAYOUT` + `FLOATING` at the page root and auto-dismisses.
 - `LV_LABEL_LONG_SCROLL_CIRCULAR` animates forever: the page never goes idle,
   which breaks simulator `wait_idle` coverage and burns refresh cycles. Reserve
   it for a single prominent header or status label, never for repeated list

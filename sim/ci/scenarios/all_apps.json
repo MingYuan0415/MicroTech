@@ -159,41 +159,8 @@
    "cmd": "wait_idle"
   },
   {
-   "cmd": "tree_assert",
-   "contains": {
-    "type": "lv_label",
-    "text": "秒表"
-   }
-  },
-  {
-   "cmd": "drag",
-   "x0": 184,
-   "y0": 246,
-   "x1": 184,
-   "y1": 60
-  },
-  {
-   "cmd": "tree_assert",
-   "contains": {
-    "type": "lv_label",
-    "text": "秒表"
-   }
-  },
-  {
-   "cmd": "touch",
-   "action": "down",
-   "x": 184,
-   "y": 228
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 184,
-   "y": 228
+   "cmd": "tap_text",
+   "text": "倒计时"
   },
   {
    "cmd": "step",
@@ -207,43 +174,8 @@
    }
   },
   {
-   "cmd": "navigate",
-   "app": "clock",
-   "page": "countdown"
-  },
-  {
-   "cmd": "step",
-   "times": 25
-  },
-  {
-   "cmd": "wait_idle"
-  },
-  {
-   "cmd": "tree_assert",
-   "contains": {
-    "type": "lv_label",
-    "text": "选择时长后开始"
-   }
-  },
-  {
-   "cmd": "touch",
-   "action": "down",
-   "x": 184,
-   "y": 333
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 184,
-   "y": 333
-  },
-  {
-   "cmd": "step",
-   "times": 10
+   "cmd": "tap_text",
+   "text": "10 分"
   },
   {
    "cmd": "tree_assert",
@@ -253,24 +185,8 @@
    }
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 10
+   "cmd": "tap_text",
+   "text": "开始"
   },
   {
    "cmd": "tree_assert",
@@ -284,24 +200,8 @@
    "name": "clock_countdown.png"
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 10
+   "cmd": "tap_text",
+   "text": "暂停"
   },
   {
    "cmd": "tree_assert",
@@ -311,24 +211,8 @@
    }
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 271,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 271,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 10
+   "cmd": "tap_text",
+   "text": "重置"
   },
   {
    "cmd": "tree_assert",
@@ -338,20 +222,8 @@
    }
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 316,
-   "y": 333
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 316,
-   "y": 333
+   "cmd": "tap_text",
+   "text": "自定义"
   },
   {
    "cmd": "step",
@@ -368,30 +240,14 @@
    }
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 245,
-   "y": 176
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 245,
-   "y": 176
-  },
-  {
-   "cmd": "step",
-   "times": 20
+   "cmd": "tap_text",
+   "text": "25 分"
   },
   {
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "共 11 分钟"
+    "text": "共 25 分钟"
    }
   },
   {
@@ -399,20 +255,8 @@
    "name": "clock_duration.png"
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 184,
-   "y": 278
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 184,
-   "y": 278
+   "cmd": "tap_text",
+   "text": "确定"
   },
   {
    "cmd": "step",
@@ -425,28 +269,12 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "11:00"
+    "text": "25:00"
    }
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 10
+   "cmd": "tap_text",
+   "text": "开始"
   },
   {
    "cmd": "tree_assert",
@@ -456,44 +284,12 @@
    }
   },
   {
-   "cmd": "touch",
-   "action": "down",
-   "x": 97,
-   "y": 399
+   "cmd": "tap_text",
+   "text": "暂停"
   },
   {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 97,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 10
-  },
-  {
-   "cmd": "touch",
-   "action": "down",
-   "x": 271,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 2
-  },
-  {
-   "cmd": "touch",
-   "action": "up",
-   "x": 271,
-   "y": 399
-  },
-  {
-   "cmd": "step",
-   "times": 10
+   "cmd": "tap_text",
+   "text": "重置"
   },
   {
    "cmd": "navigate",

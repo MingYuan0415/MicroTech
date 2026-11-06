@@ -27,6 +27,8 @@
 #include "weather_service.h"
 #include "app_image_ids.h"
 #include "app_ui.h"
+#include "esp_timer.h"
+#include "timer_service.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -1485,6 +1487,11 @@ static void _initialize_stack(void)
     assert(app_manager_mailbox_init() == ESP_OK);
     assert(event_bus_init() == ESP_OK);
     assert(music_service_init(NULL) == ESP_OK);
+    const timer_service_config_t timer_config =
+    {
+        .monotonic_time_us = esp_timer_get_time,
+    };
+    assert(timer_service_init(&timer_config) == ESP_OK);
 
     app_manager_ui_dispatch_fn dispatcher = NULL;
     assert(app_manager_get_ui_dispatch_fn(&dispatcher) == ESP_OK);
@@ -2544,6 +2551,95 @@ static void MT_TEST_MAYBE_UNUSED _test_weather_page_screen_lifecycles(void)
     _click_back();
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(host_weather_snapshot_lease_count() == 0U);
+}
+
+static void MT_TEST_MAYBE_UNUSED _test_clock_redesign_interactions(void)
+{
+    assert(app_manager_is_actived(APP_MANAGER_ID_HOME));
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_CLOCK, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_CLOCK));
+    host_lv_complete_generic_animations();
+    assert(_ui_has_text("时钟"));
+
+    _click_action("倒计时");
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "countdown"));
+    host_lv_complete_generic_animations();
+
+    const size_t animations_before = host_lv_generic_animation_start_count();
+    assert(timer_service_countdown_start(10U * 60000U) == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_text("倒计时进行中"));
+    assert(host_lv_generic_animation_start_count() > animations_before);
+    assert(timer_service_countdown_pause() == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    _wait_for_text("已暂停");
+    assert(timer_service_countdown_reset() == ESP_OK);
+    _wait_for_text("选择时长后开始");
+
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "root"));
+    host_lv_complete_generic_animations();
+    _click_action("秒表");
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "stopwatch"));
+    host_lv_complete_generic_animations();
+    _tap_action("开始");
+    host_lv_complete_generic_animations();
+    assert(_wait_for_text("正在计时"));
+    assert(_ui_has_text("分段"));
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    /* The fake pointer path does not drive the stand-alone lap button
+     * reliably inside a two-button control row; the simulator spec owns that
+     * gesture. Here verify the service-backed state returns to idle. */
+    assert(timer_service_stopwatch_pause() == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_text("已暂停"));
+    assert(timer_service_stopwatch_reset() == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_text("还没有分段"));
+
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "root"));
+    host_lv_complete_generic_animations();
+    _click_action("专注");
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "focus"));
+    host_lv_complete_generic_animations();
+    assert(_ui_has_text("25 分专注 · 5 分休息"));
+    _tap_action("25/5");
+    host_lv_complete_generic_animations();
+    assert(timer_service_focus_start(25U * 60000U, 5U * 60000U) == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_text("专注中"));
+    _tap_action("45/10");
+    assert(_wait_for_text("运行中不能切换时长"));
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    host_lv_complete_generic_animations();
+    assert(!_ui_has_text("运行中不能切换时长"));
+    assert(timer_service_focus_pause() == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_wait_for_text("继续"));
+    assert(_wait_for_text("已暂停"));
+    assert(timer_service_focus_reset() == ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "root"));
+    host_lv_complete_generic_animations();
+
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_CLOCK, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
 static void MT_TEST_MAYBE_UNUSED _test_other_real_app_screen_lifecycles(void)
@@ -4555,6 +4651,7 @@ int main(void)
     _test_optional_services_unavailable();
     _test_music_page_screen_lifecycles();
     _assert_real_page_start_contract();
+    _test_clock_redesign_interactions();
     _test_other_real_app_screen_lifecycles();
     _test_flybirds_failed_pause_keeps_ticking();
     _test_screen_pause_finishes_transition();
@@ -4590,6 +4687,7 @@ int main(void)
     assert(app_manager_lifecycle_shutdown_begin_and_wait() == ESP_OK);
     assert(app_manager_ui_call(_runtime_deinit_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
+    assert(timer_service_deinit() == ESP_OK);
     assert(!app_manager_back_gesture_is_enabled());
     assert(_lv_resource_counts().screens == 0U);
     assert(_system_gesture_snapshot().object_count == 0U);

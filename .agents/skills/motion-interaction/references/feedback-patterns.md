@@ -39,6 +39,17 @@
 - A modal that grows into a multi-step flow should have its own navigation
   context, not a replaced page behind it.
 
+## Toasts
+
+- A toast is transient, non-modal feedback: anchor it to the page root with
+  `IGNORE_LAYOUT` + `FLOATING`, never insert it into a flex/grid flow.
+- Keep one toast per page; a new message replaces the caption and restarts the
+  dwell time. A tap must pass through to the content underneath.
+- Enter and exit inside the `micro` budget: 140 ms in and 120 ms out with
+  opacity plus a short translate; no loop and no layout-property animation.
+- Use the shared `app_ui_toast_show()` helper instead of page-local toast
+  copies so dismissal, replacement, and teardown behave consistently.
+
 ## Lists
 
 - Do not stagger rows on every page entry.

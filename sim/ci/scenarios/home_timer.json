@@ -1,24 +1,69 @@
 {
-    "name": "home-timer",
-    "steps": [
-        {"cmd": "navigate", "app": "clock", "page": "countdown"},
-        {"cmd": "step", "times": 25},
-        {"cmd": "wait_idle"},
-        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "选择时长后开始"}},
-        {"cmd": "touch", "action": "down", "x": 184, "y": 333},
-        {"cmd": "step", "times": 2},
-        {"cmd": "touch", "action": "up", "x": 184, "y": 333},
-        {"cmd": "step", "times": 10},
-        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "10:00"}},
-        {"cmd": "touch", "action": "down", "x": 97, "y": 399},
-        {"cmd": "step", "times": 2},
-        {"cmd": "touch", "action": "up", "x": 97, "y": 399},
-        {"cmd": "step", "times": 10},
-        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "倒计时进行中"}},
-        {"cmd": "navigate", "app": "home", "page": "root"},
-        {"cmd": "step", "times": 30},
-        {"cmd": "wait_idle"},
-        {"cmd": "tree_assert", "contains": {"type": "lv_label", "text": "倒计时"}},
-        {"cmd": "screenshot", "name": "home_timer.png"}
-    ]
+  "name": "home-timer",
+  "steps": [
+    {
+      "cmd": "navigate",
+      "app": "clock",
+      "page": "countdown"
+    },
+    {
+      "cmd": "step",
+      "times": 25
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "选择时长后开始"
+      }
+    },
+    {
+      "cmd": "tap_text",
+      "text": "10 分"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "10:00"
+      }
+    },
+    {
+      "cmd": "tap_text",
+      "text": "开始"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "倒计时进行中"
+      }
+    },
+    {
+      "cmd": "navigate",
+      "app": "home",
+      "page": "root"
+    },
+    {
+      "cmd": "step",
+      "times": 30
+    },
+    {
+      "cmd": "wait_idle"
+    },
+    {
+      "cmd": "tree_assert",
+      "contains": {
+        "type": "lv_label",
+        "text": "倒计时"
+      }
+    },
+    {
+      "cmd": "screenshot",
+      "name": "home_timer.png"
+    }
+  ]
 }

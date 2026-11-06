@@ -48,6 +48,11 @@ same usability verdict in every profile.
 - **Flexibility** — shortcuts for experts, simple path for novices.
 - **Aesthetic and minimalist design** — only relevant information; one primary
   action.
+- **Transient feedback** — warnings, rejected actions, and short receipts must
+  not hide or show an in-flow label: changing a flex/grid child moves every
+  control below it. Use `app_ui_toast_show(page->root, text)` for a non-modal,
+  auto-dismissing overlay; keep inline labels for persistent state and
+  instructions.
 - **Error recovery** — what happened, what was preserved, what to do next.
 - **Help/documentation** — contextual, task-focused, searchable where relevant.
 

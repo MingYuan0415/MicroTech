@@ -1,0 +1,65 @@
+{
+ "name": "clock_toast",
+ "steps": [
+  {
+   "cmd": "navigate",
+   "app": "clock",
+   "page": "focus"
+  },
+  {
+   "cmd": "step",
+   "times": 25
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "专注"
+   }
+  },
+  {
+   "cmd": "tap_text",
+   "text": "开始"
+  },
+  {
+   "cmd": "step",
+   "times": 4
+  },
+  {
+   "cmd": "tap_text",
+   "text": "45/10"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "运行中不能切换时长"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "clock_toast.png"
+  },
+  {
+   "cmd": "step",
+   "times": 80
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "absent": {
+    "type": "lv_label",
+    "text": "运行中不能切换时长"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "clock_toast_dismissed.png"
+  }
+ ]
+}

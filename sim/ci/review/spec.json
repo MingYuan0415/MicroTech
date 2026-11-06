@@ -1451,6 +1451,35 @@
             "未开始"
           ],
           "allow_disabled": []
+        },
+        {
+          "name": "active",
+          "seed": [
+            {
+              "cmd": "navigate",
+              "app": "clock",
+              "page": "countdown"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "navigate",
+              "app": "clock",
+              "page": "root"
+            }
+          ],
+          "expect_visible": [
+            "时钟",
+            "倒计时",
+            "剩余",
+            "秒表",
+            "专注"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "fresh": true
         }
       ]
     },
@@ -1463,12 +1492,69 @@
           "seed": [],
           "expect_visible": [
             "倒计时",
-            "选择时长后开始"
+            "选择时长后开始",
+            "预计"
           ],
           "single_line": [
             "选择时长后开始"
           ],
           "allow_disabled": []
+        },
+        {
+          "name": "running",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "10 分"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "times": 8
+            }
+          ],
+          "expect_visible": [
+            "倒计时",
+            "倒计时进行中",
+            "进行中",
+            "预计"
+          ],
+          "single_line": [
+            "倒计时进行中"
+          ],
+          "allow_disabled": [],
+          "fresh": true
+        },
+        {
+          "name": "paused",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "10 分"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "暂停"
+            }
+          ],
+          "expect_visible": [
+            "倒计时",
+            "已暂停",
+            "继续",
+            "剩余"
+          ],
+          "single_line": [
+            "已暂停"
+          ],
+          "allow_disabled": [],
+          "fresh": true
         }
       ]
     },
@@ -1480,10 +1566,30 @@
           "name": "pick",
           "seed": [],
           "expect_visible": [
-            "时长"
+            "时长",
+            "共 5 分钟",
+            "5 分",
+            "确定"
           ],
           "single_line": [],
           "allow_disabled": []
+        },
+        {
+          "name": "preset",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "25 分"
+            }
+          ],
+          "expect_visible": [
+            "时长",
+            "共 25 分钟",
+            "确定"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "fresh": true
         }
       ]
     },
@@ -1495,10 +1601,64 @@
           "name": "idle",
           "seed": [],
           "expect_visible": [
-            "秒表"
+            "秒表",
+            "轻触开始计时",
+            "还没有分段"
           ],
           "single_line": [],
           "allow_disabled": []
+        },
+        {
+          "name": "running",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "times": 4
+            }
+          ],
+          "expect_visible": [
+            "秒表",
+            "正在计时",
+            "暂停",
+            "分段"
+          ],
+          "single_line": [
+            "正在计时"
+          ],
+          "allow_disabled": [],
+          "fresh": true,
+          "animated": true
+        },
+        {
+          "name": "lap",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "times": 8
+            },
+            {
+              "cmd": "tap_text",
+              "text": "分段"
+            }
+          ],
+          "expect_visible": [
+            "秒表",
+            "最近",
+            "第 1 段",
+            "分段"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "fresh": true,
+          "animated": true
         }
       ]
     },
@@ -1510,10 +1670,93 @@
           "name": "idle",
           "seed": [],
           "expect_visible": [
-            "专注"
+            "专注",
+            "25 分专注 · 5 分休息",
+            "已完成 0 轮"
           ],
           "single_line": [],
           "allow_disabled": []
+        },
+        {
+          "name": "running",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "times": 8
+            }
+          ],
+          "expect_visible": [
+            "专注",
+            "专注中",
+            "本轮",
+            "暂停"
+          ],
+          "single_line": [
+            "专注中"
+          ],
+          "allow_disabled": [],
+          "fresh": true
+        },
+        {
+          "name": "toast",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "times": 4
+            },
+            {
+              "cmd": "tap_text",
+              "text": "45/10"
+            }
+          ],
+          "expect_visible": [
+            "专注",
+            "运行中不能切换时长",
+            "暂停",
+            "已完成 0 轮"
+          ],
+          "single_line": [
+            "运行中不能切换时长"
+          ],
+          "allow_disabled": [],
+          "fresh": true,
+          "animated": true
+        },
+        {
+          "name": "paused",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "times": 4
+            },
+            {
+              "cmd": "tap_text",
+              "text": "暂停"
+            }
+          ],
+          "expect_visible": [
+            "专注",
+            "已暂停",
+            "继续",
+            "已完成 0 轮"
+          ],
+          "single_line": [
+            "已暂停"
+          ],
+          "allow_disabled": [],
+          "fresh": true
         }
       ]
     },

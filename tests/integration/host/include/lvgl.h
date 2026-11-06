@@ -272,6 +272,7 @@ typedef int lv_text_align_t;
 #define LV_OBJ_FLAG_IGNORE_LAYOUT     (1U << 17)
 #define LV_OBJ_FLAG_FLOATING          (1U << 18)
 #define LV_OBJ_FLAG_OVERFLOW_VISIBLE  (1U << 20)
+#define LV_OBJ_FLAG_USER_1            (1U << 27)
 #define LV_OPA_TRANSP                 0
 #define LV_OPA_10                     26
 #define LV_OPA_20                     51
@@ -443,6 +444,25 @@ void lv_obj_set_user_data(lv_obj_t *object, void *user_data);
 void *lv_obj_get_user_data(lv_obj_t *object);
 /** @brief Return whether all requested fake object flags are set. */
 bool lv_obj_has_flag(const lv_obj_t *object, lv_obj_flag_t flags);
+/** @brief Set one of the four user-reserved fake object flags. */
+static inline void lv_obj_set_user_flag(lv_obj_t *object, uint32_t bit,
+                                        bool enabled)
+{
+    const uint32_t flag = (uint32_t)1U << (27U + bit);
+    if (enabled)
+    {
+        lv_obj_add_flag(object, flag);
+    }
+    else
+    {
+        lv_obj_remove_flag(object, flag);
+    }
+}
+/** @brief Read one of the four user-reserved fake object flags. */
+static inline bool lv_obj_get_user_flag(lv_obj_t *object, uint32_t bit)
+{
+    return lv_obj_has_flag(object, (uint32_t)1U << (27U + bit));
+}
 /* LVGL 9.6 dedicated per-flag setters/is_ helpers on the fake object. */
 #define MT_FAKE_FLAG_SETTER(name, flag) \
     static inline void lv_obj_set_##name(lv_obj_t *object, bool en) \
@@ -833,6 +853,7 @@ HOST_LV_NOOP_3(lv_obj_set_style_bg_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_post, lv_obj_t *, bool, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_border_side, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_all, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_bottom, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_column, lv_obj_t *, int32_t, int)
