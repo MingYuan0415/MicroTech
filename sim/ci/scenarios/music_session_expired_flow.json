@@ -1,0 +1,135 @@
+{
+ "name": "music-session-expired-flow",
+ "steps": [
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "catalog_playing"
+  },
+  {
+   "cmd": "navigate",
+   "app": "music"
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "touch",
+   "action": "down",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 2
+  },
+  {
+   "cmd": "touch",
+   "action": "up",
+   "x": 42,
+   "y": 25
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "每日推荐"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "模拟晨间歌单"
+   }
+  },
+  {
+   "cmd": "music",
+   "action": "fixture",
+   "name": "session_expired"
+  },
+  {
+   "cmd": "step",
+   "times": 30
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "登录已过期，请重新登录"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "QQ 扫码登录"
+   }
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.apps",
+   "expect": {
+    "active_page": "login_method",
+    "page_stack_valid": true,
+    "page_stack_transitioning": false,
+    "page_stack_stable": true
+   },
+   "expect_set": [
+    "login_method"
+   ],
+   "field": "music_pages"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "QQ 扫码登录"
+  },
+  {
+   "cmd": "step",
+   "times": 20
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.music",
+   "params": {
+    "action": "status"
+   },
+   "expect": {
+    "state": 4,
+    "qr_available": true
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "absent": {
+    "type": "lv_label",
+    "text": "登录态已失效"
+   }
+  },
+  {
+   "cmd": "screenshot",
+   "name": "music_session_expired_qr.png"
+  }
+ ]
+}

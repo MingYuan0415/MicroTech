@@ -368,7 +368,7 @@ cleanup:
              !atomic_load_explicit(&s_stream.shutdown, memory_order_acquire))
     {
         _set_status(MUSIC_PLAYBACK_IDLE, MUSIC_SERVICE_FAILURE_NONE);
-        music_service_stream_finished();
+        music_service_stream_finished(generation);
     }
     else if (!failed)
     {
@@ -378,7 +378,8 @@ cleanup:
     {
         music_service_stream_failed(
             s_stream.status.failure != MUSIC_SERVICE_FAILURE_NONE ?
-            s_stream.status.failure : MUSIC_SERVICE_FAILURE_INTERNAL);
+            s_stream.status.failure : MUSIC_SERVICE_FAILURE_INTERNAL,
+            generation);
     }
     pthread_mutex_lock(&s_stream.lock);
     if (s_stream.active_generation == generation)

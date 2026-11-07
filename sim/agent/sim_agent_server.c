@@ -44,6 +44,7 @@
 #include "sim_lv_adapter.h"
 #include "sim_png.h"
 #include "sim_time.h"
+#include "time_service.h"
 #include "music_service.h"
 #include "music_app_internal.h"
 #include "weather_service.h"
@@ -66,6 +67,10 @@ static _Atomic int s_listen_fd = -1;
 static pthread_t s_accept_thread;
 static atomic_bool s_running;
 static pthread_mutex_t s_rpc_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t s_apps_snapshot_lock = PTHREAD_MUTEX_INITIALIZER;
+static app_manager_page_stack_t s_music_stack_snapshot;
+static char s_active_page_snapshot[APP_MANAGER_ID_BYTES];
+static bool s_apps_snapshot_valid;
 static char s_out_dir[256] = "shots";
 #ifdef SIM_MUSIC_REAL
     static uint32_t s_sim_stream_generation;
@@ -245,6 +250,58 @@ static const char *_wait_idle_error(sim_wait_idle_result_t result)
     return "wait idle timed out";
 }
 
+static void _capture_apps_snapshot_on_ui(void *arg)
+{
+    (void)arg;
+    app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+    size_t task_count = 0U;
+    const bool have_tasks = app_manager_get_recent_tasks(
+                                tasks, APP_MANAGER_MAX_RECENT_TASKS,
+                                &task_count) == ESP_OK;
+    app_manager_page_stack_t stack;
+    const esp_err_t stack_result = app_manager_get_page_stack("music",
+        &stack);
+    (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+    s_active_page_snapshot[0] = '\0';
+    for (size_t index = 0U; have_tasks && index < task_count; ++index)
+    {
+        if (tasks[index].active && tasks[index].page_id != NULL)
+        {
+            (void)snprintf(s_active_page_snapshot,
+                           sizeof(s_active_page_snapshot), "%s",
+                           tasks[index].page_id);
+            break;
+        }
+    }
+    s_apps_snapshot_valid = have_tasks && stack_result == ESP_OK;
+    if (s_apps_snapshot_valid)
+    {
+        s_music_stack_snapshot = stack;
+    }
+    else
+    {
+        memset(&s_music_stack_snapshot, 0, sizeof(s_music_stack_snapshot));
+    }
+    (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
+}
+
+static bool _capture_apps_snapshot_now_ci(void)
+{
+    if (!sim_lv_ci_enabled() ||
+            app_manager_ui_post(_capture_apps_snapshot_on_ui, NULL) != ESP_OK)
+    {
+        return false;
+    }
+    if (sim_lv_ci_step(0U) != 0)
+    {
+        return false;
+    }
+    (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+    const bool valid = s_apps_snapshot_valid;
+    (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
+    return valid;
+}
+
 static void _add_weather_status(cJSON *result)
 {
     weather_service_status_snapshot_t status = {0};
@@ -325,6 +382,10 @@ static sim_wait_idle_result_t _wait_idle(uint32_t timeout_ms,
         if (animations == 0U && have_previous &&
                 previous == current && current == after)
         {
+            if (sim_lv_ci_enabled())
+            {
+                (void)_capture_apps_snapshot_now_ci();
+            }
             if (hash_out != NULL)
             {
                 *hash_out = after;
@@ -420,7 +481,17 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         else
         {
+            (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+            s_apps_snapshot_valid = false;
+            (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
             *ok = (sim_lv_ci_step(step_ms) == 0);
+            if (*ok)
+            {
+                /* Once the requested virtual time has advanced, the snapshot
+                 * is a diagnostic only. Do not turn a capture failure into a
+                 * failed step after topology has already mutated. */
+                (void)_capture_apps_snapshot_now_ci();
+            }
             cJSON_AddNumberToObject(result, "frames",
                                     (double)sim_lv_frame_count());
         }
@@ -563,6 +634,9 @@ static cJSON *_handle(cJSON *request, bool *ok)
     }
     else if (strcmp(method, "sim.touch") == 0)
     {
+        (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+        s_apps_snapshot_valid = false;
+        (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
         const cJSON *action = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                                   params, "action") : NULL;
         const cJSON *x = params != NULL ? cJSON_GetObjectItemCaseSensitive(
@@ -590,6 +664,9 @@ static cJSON *_handle(cJSON *request, bool *ok)
     }
     else if (strcmp(method, "sim.key") == 0)
     {
+        (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+        s_apps_snapshot_valid = false;
+        (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
         const cJSON *button = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                                   params, "button") : NULL;
         const cJSON *action = params != NULL ? cJSON_GetObjectItemCaseSensitive(
@@ -626,6 +703,9 @@ static cJSON *_handle(cJSON *request, bool *ok)
     }
     else if (strcmp(method, "sim.navigate") == 0)
     {
+        (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+        s_apps_snapshot_valid = false;
+        (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
         const cJSON *app = params != NULL ? cJSON_GetObjectItemCaseSensitive(
                                params, "app") : NULL;
         const char *app_id = cJSON_GetStringValue(app);
@@ -777,11 +857,33 @@ static cJSON *_handle(cJSON *request, bool *ok)
         }
         else
         {
-            const esp_err_t res = sim_time_set_epoch((int64_t)epoch->valuedouble);
+            const int64_t epoch_seconds = (int64_t)epoch->valuedouble;
+            esp_err_t res = sim_time_set_epoch(epoch_seconds);
+            if (res == ESP_OK && cJSON_IsTrue(
+                        cJSON_GetObjectItemCaseSensitive(params, "trust_time")))
+            {
+                time_t native_epoch = (time_t)epoch_seconds;
+                struct tm local_time;
+                if ((int64_t)native_epoch != epoch_seconds ||
+                        localtime_r(&native_epoch, &local_time) == NULL)
+                {
+                    res = ESP_ERR_INVALID_ARG;
+                }
+                else
+                {
+                    res = time_service_set_local(&local_time);
+                }
+            }
             *ok = (res == ESP_OK);
             if (!*ok)
             {
                 cJSON_AddStringToObject(result, "error", esp_err_to_name(res));
+            }
+            else
+            {
+                cJSON_AddNumberToObject(
+                    result, "time_quality",
+                    (double)time_service_get_quality());
             }
         }
     }
@@ -1626,6 +1728,10 @@ static cJSON *_handle(cJSON *request, bool *ok)
                 cJSON_AddBoolToObject(result, "logged_in", status.logged_in);
                 cJSON_AddBoolToObject(result, "qr_available",
                                       status.qr_available);
+                cJSON_AddBoolToObject(result, "network_ready",
+                                      status.network_ready);
+                cJSON_AddBoolToObject(result, "time_ready",
+                                      status.time_ready);
                 cJSON_AddNumberToObject(result, "login_type",
                                         (double)status.login_type);
                 cJSON_AddStringToObject(result, "qr_status",
@@ -2046,12 +2152,70 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                     d->root_page_id : "");
             cJSON_AddItemToArray(apps, item);
         }
+        cJSON *active_page = cJSON_AddStringToObject(
+                                 result, "active_page", "");
+        cJSON *music_pages = cJSON_AddArrayToObject(result, "music_pages");
+        bool snapshot_valid = false;
+        bool transitioning = false;
         if (!sim_lv_ci_enabled() && !sim_lv_paused())
         {
-            const char *active = app_manager_get_active_app_id();
-            cJSON_AddStringToObject(result, "active",
-                                    active != NULL ? active : "");
+            app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+            size_t task_count = 0U;
+            app_manager_page_stack_t stack;
+            const bool tasks_valid = app_manager_get_recent_tasks(
+                                         tasks, APP_MANAGER_MAX_RECENT_TASKS,
+                                         &task_count) == ESP_OK;
+            const bool stack_valid = app_manager_get_page_stack(
+                                         "music", &stack) == ESP_OK;
+            snapshot_valid = tasks_valid && stack_valid;
+            if (snapshot_valid)
+            {
+                for (size_t index = 0U; index < task_count; ++index)
+                {
+                    if (tasks[index].active && tasks[index].page_id != NULL)
+                    {
+                        cJSON_SetValuestring(active_page,
+                                             tasks[index].page_id);
+                        break;
+                    }
+                }
+                transitioning = stack.transitioning;
+                for (size_t index = 0U; index < stack.page_count; ++index)
+                {
+                    cJSON_AddItemToArray(
+                        music_pages,
+                        cJSON_CreateString(stack.page_ids[index]));
+                }
+            }
         }
+        else
+        {
+            if (!sim_lv_paused())
+            {
+                (void)app_manager_ui_post(_capture_apps_snapshot_on_ui, NULL);
+            }
+            (void)pthread_mutex_lock(&s_apps_snapshot_lock);
+            snapshot_valid = s_apps_snapshot_valid;
+            if (snapshot_valid)
+            {
+                cJSON_SetValuestring(active_page, s_active_page_snapshot);
+                transitioning = s_music_stack_snapshot.transitioning;
+                for (size_t index = 0U;
+                        index < s_music_stack_snapshot.page_count; ++index)
+                {
+                    cJSON_AddItemToArray(
+                        music_pages,
+                        cJSON_CreateString(
+                            s_music_stack_snapshot.page_ids[index]));
+                }
+            }
+            (void)pthread_mutex_unlock(&s_apps_snapshot_lock);
+        }
+        cJSON_AddBoolToObject(result, "page_stack_valid", snapshot_valid);
+        cJSON_AddBoolToObject(result, "page_stack_transitioning",
+                              transitioning);
+        cJSON_AddBoolToObject(result, "page_stack_stable",
+                              snapshot_valid && !transitioning);
     }
     else
     {

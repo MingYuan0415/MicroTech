@@ -670,6 +670,34 @@ static esp_err_t _prepare_fixture(const char *name,
         }
         return ESP_OK;
     }
+    if (strcmp(name, "session_expired") == 0)
+    {
+        _init_fixture_base(fixture, name,
+                           MUSIC_SERVICE_STATE_AUTH_REQUIRED,
+                           MUSIC_SERVICE_FAILURE_AUTH);
+        return ESP_OK;
+    }
+    if (strcmp(name, "session_validating") == 0)
+    {
+        _init_fixture_base(fixture, name,
+                           MUSIC_SERVICE_STATE_VALIDATING_SESSION,
+                           MUSIC_SERVICE_FAILURE_NONE);
+        return ESP_OK;
+    }
+    if (strcmp(name, "session_storage_failure") == 0)
+    {
+        _init_fixture_base(fixture, name,
+                           MUSIC_SERVICE_STATE_AUTH_REQUIRED,
+                           MUSIC_SERVICE_FAILURE_STORAGE);
+        return ESP_OK;
+    }
+    if (strcmp(name, "session_validation_error") == 0)
+    {
+        _init_fixture_base(fixture, name,
+                           MUSIC_SERVICE_STATE_VALIDATING_SESSION,
+                           MUSIC_SERVICE_FAILURE_NETWORK);
+        return ESP_OK;
+    }
     if (strcmp(name, "service_error") == 0)
     {
         _init_fixture_base(fixture, name, MUSIC_SERVICE_STATE_ERROR,
@@ -768,6 +796,11 @@ static void _apply_fixture(const sim_music_fixture_t *fixture)
     {
         (void)snprintf(status->qr_status, sizeof(status->qr_status),
                        "二维码已过期，请重新登录");
+    }
+    else if (fixture->failure == MUSIC_SERVICE_FAILURE_STORAGE)
+    {
+        (void)snprintf(status->qr_status, sizeof(status->qr_status),
+                       "登录态保存失败");
     }
     else if (fixture->failure == MUSIC_SERVICE_FAILURE_AUTH)
     {
@@ -1042,9 +1075,9 @@ esp_err_t music_service_set_time_ready(bool ready)
 esp_err_t music_service_retry(void)
 {
     (void)pthread_mutex_lock(&s_music.lock);
-    s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
     if (s_music.status.state == MUSIC_SERVICE_STATE_ERROR)
     {
+        s_music.status.failure = MUSIC_SERVICE_FAILURE_NONE;
         s_music.status.state = s_music.status.logged_in ?
                                MUSIC_SERVICE_STATE_READY :
                                MUSIC_SERVICE_STATE_LOGGED_OUT;

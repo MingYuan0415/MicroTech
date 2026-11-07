@@ -67,6 +67,8 @@ static const app_manager_standby_ops_t s_standby_ops = {0};
 
 static char s_cc_time[8];
 static char s_cc_date[32];
+static event_bus_sub_handle_t s_time_subscription =
+    EVENT_BUS_SUB_HANDLE_INVALID;
 
 static esp_err_t _cc_get_wifi(app_manager_radio_state_t *state,
                               const char **ssid)
@@ -220,6 +222,23 @@ static esp_err_t _input_unregister(void)
 /* Reserve mailbox slots for page commands and synchronous UI calls. */
 #define SIM_UI_DISPATCH_RESERVE 4U
 
+static void _sim_time_quality_event(
+    event_bus_msg_id_t msg_id, uint32_t sub_type,
+    const void *payload, size_t payload_size, void *user_data)
+{
+    (void)user_data;
+    if (msg_id != TIME_SERVICE_MSG ||
+            sub_type != TIME_SERVICE_MSG_SUB_TYPE_QUALITY ||
+            payload == NULL || payload_size != sizeof(time_service_quality_t))
+    {
+        return;
+    }
+    time_service_quality_t quality;
+    memcpy(&quality, payload, sizeof(quality));
+    (void)music_service_set_time_ready(
+        quality != TIME_SERVICE_QUALITY_INVALID);
+}
+
 static uint32_t _sim_ui_dispatch_depth(void)
 {
     uint32_t depth = CONFIG_APP_MANAGER_MAILBOX_CAPACITY;
@@ -296,6 +315,17 @@ esp_err_t sim_runtime_boot(void)
     if (result != ESP_OK)
     {
         fprintf(stderr, "sim boot: time_service_init failed %s\n", esp_err_to_name(result));
+        return result;
+    }
+    result = event_bus_subscribe(TIME_SERVICE_MSG,
+                                 TIME_SERVICE_MSG_SUB_TYPE_QUALITY,
+                                 _sim_time_quality_event, NULL,
+                                 EVENT_BUS_DISPATCH_PUBLISHER,
+                                 &s_time_subscription);
+    if (result != ESP_OK)
+    {
+        fprintf(stderr, "sim boot: time event subscription failed %s\n",
+                esp_err_to_name(result));
         return result;
     }
     const timer_service_config_t timer_config =

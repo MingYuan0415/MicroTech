@@ -360,7 +360,15 @@ coordinates + computed `LV_PART_MAIN` style + type value + image semantic ID;
 with `include_layers:true` the top/sys layers are appended in an `overlays`
 array, and the task switcher lives on the sys layer), `sim.touch {action,x,y}`,
 `sim.key {button,action}` (press/release/click), `sim.navigate {app}` (posts to
-the mailbox, does not block), `sim.apps`, `sim.set_time {epoch}`,
+the mailbox, does not block), `sim.apps` (the registered App list plus
+`active_page`, `page_stack_valid`, `page_stack_transitioning`,
+`page_stack_stable`, and the complete retained `music_pages` stack; normal mode
+queries the UI worker synchronously, while CI refreshes a UI-worker capture
+after each step and idle wait so step gating never blocks the RPC; `page_stack_stable`
+is true only when the snapshot is valid and no transition or recovery is running),
+`sim.set_time {epoch,trust_time?}`
+(setting `trust_time:true` also marks the app clock as manually trusted and
+returns `time_quality`; the default only changes deterministic test time),
 `sim.set_power {voltage?,pct?,charging,vbus}` (voltage/pct may each be omitted;
 a missing pct falls back to the voltage-derived display),
 `sim.set_wifi {state}` (connected/disconnected), `sim.set_imu {pitch,roll}`

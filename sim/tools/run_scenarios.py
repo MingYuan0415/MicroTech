@@ -532,6 +532,23 @@ class Runner:
             for key, want in (step.get('expect') or {}).items():
                 assert res.get(key) == want, \
                     'result[%s] %r != %r' % (key, res.get(key), want)
+            exact = step.get('expect_set')
+            if exact is not None:
+                key = step.get('field', 'music_pages')
+                have = res.get(key)
+                assert isinstance(have, list), \
+                    'result[%s] is not a list: %r' % (key, have)
+                assert set(have) == set(exact), \
+                    'result[%s] %r != %r' % (key, have, exact)
+            absent = step.get('expect_absent')
+            if absent is not None:
+                key = step.get('field', 'music_pages')
+                have = res.get(key)
+                assert isinstance(have, list), \
+                    'result[%s] is not a list: %r' % (key, have)
+                overlap = sorted(set(have) & set(absent))
+                assert not overlap, \
+                    'result[%s] unexpectedly contains %r' % (key, overlap)
         else:
             raise RuntimeError('unknown step cmd %r' % cmd)
 

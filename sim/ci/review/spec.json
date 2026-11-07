@@ -4683,6 +4683,67 @@
           ]
         },
         {
+          "name": "session_expired",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "session_expired"
+            }
+          ],
+          "expect_visible": [
+            "QQ 音乐",
+            "登录已过期，请重新登录"
+          ],
+          "single_line": [
+            "QQ 音乐",
+            "登录已过期，请重新登录"
+          ]
+        },
+        {
+          "name": "session_validating",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "session_validating"
+            }
+          ],
+          "expect_visible": [
+            "QQ 音乐",
+            "正在验证登录状态…"
+          ],
+          "single_line": [
+            "QQ 音乐",
+            "正在验证登录状态…"
+          ],
+          "allow_disabled_types": [
+            "lv_button"
+          ]
+        },
+        {
+          "name": "session_storage_failure",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "session_storage_failure"
+            }
+          ],
+          "expect_visible": [
+            "QQ 音乐",
+            "登录态保存失败，请重新登录",
+            "QQ 扫码登录",
+            "微信扫码登录"
+          ],
+          "single_line": [
+            "QQ 音乐",
+            "登录态保存失败，请重新登录",
+            "QQ 扫码登录",
+            "微信扫码登录"
+          ]
+        },
+        {
           "name": "service_error",
           "pre_seed": [
             {
