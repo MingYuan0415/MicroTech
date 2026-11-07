@@ -327,6 +327,7 @@ typedef int lv_text_align_t;
 #define LV_SYMBOL_LOOP      "loop"
 #define LV_SYMBOL_MUTE      "mute"
 #define LV_SYMBOL_OK        "ok"
+#define LV_SYMBOL_MINUS     "minus"
 #define LV_SYMBOL_PAUSE     "pause"
 #define LV_SYMBOL_PLAY      "play"
 #define LV_SYMBOL_PREV      "previous"

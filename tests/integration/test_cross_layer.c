@@ -1761,6 +1761,12 @@ static void MT_TEST_MAYBE_UNUSED _test_real_app_navigation(void)
     _click_back();
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
 
+    assert(host_weather_publish(false) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text("当前无气象预警"));
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+
     host_weather_set_available_mask(forecast_only);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
