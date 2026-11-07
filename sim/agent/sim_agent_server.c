@@ -57,6 +57,8 @@
 #include "connectivity_manager.h"
 
 #define SIM_AGENT_LINE_MAX (256 * 1024)
+/* Matches weather_service_port_retry_after(), which caps parsed headers. */
+#define SIM_WEATHER_RETRY_AFTER_MAX 3600U
 
 #include "sim_quit.h"
 
@@ -133,6 +135,21 @@ static bool _number_in_range(const cJSON *item, double minimum,
 static bool _optional_bool(const cJSON *item)
 {
     return (item == NULL) || cJSON_IsBool(item);
+}
+
+static bool _optional_uint32_in_range(const cJSON *item, uint32_t maximum)
+{
+    if (item == NULL)
+    {
+        return true;
+    }
+    if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
+            item->valuedouble > (double)maximum)
+    {
+        return false;
+    }
+    const uint32_t value = (uint32_t)item->valuedouble;
+    return item->valuedouble == (double)value;
 }
 
 /** @brief Seed bounded, real UTF-8 files for storage UI review. */
@@ -1881,6 +1898,12 @@ static cJSON *_handle(cJSON *request, bool *ok)
                               cJSON_GetObjectItemCaseSensitive(params, "status") : NULL;
         const cJSON *body = params != NULL ?
                             cJSON_GetObjectItemCaseSensitive(params, "body") : NULL;
+        const cJSON *retry_after = params != NULL ?
+                                   cJSON_GetObjectItemCaseSensitive(params,
+                                       "retry_after_seconds") : NULL;
+        const cJSON *refresh = params != NULL ?
+                               cJSON_GetObjectItemCaseSensitive(params,
+                                   "refresh") : NULL;
         const char *path = cJSON_GetStringValue(endpoint);
         const char *json = cJSON_GetStringValue(body);
         const bool valid_endpoint = (path != NULL) &&
@@ -1890,7 +1913,10 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                      (strcmp(path, "hourly") == 0) ||
                                      (strcmp(path, "daily") == 0));
         if (!valid_endpoint || (json == NULL) ||
-                ((status != NULL) && !_number_in_range(status, 100.0, 599.0)))
+                ((status != NULL) && !_number_in_range(status, 100.0, 599.0)) ||
+                !_optional_uint32_in_range(
+                    retry_after, SIM_WEATHER_RETRY_AFTER_MAX) ||
+                !_optional_bool(refresh))
         {
             *ok = false;
             cJSON_AddStringToObject(result, "error", "invalid weather params");
@@ -1910,8 +1936,10 @@ static cJSON *_handle(cJSON *request, bool *ok)
                                          (status != NULL) ? (int)status->valuedouble : 200,
                                          "application/json",
                                          (const uint8_t *)json,
-                                         strlen(json)) == 0);
-            if (*ok)
+                                         strlen(json),
+                                         (retry_after != NULL) ?
+                                         (uint32_t)retry_after->valuedouble : 0U) == 0);
+            if (*ok && (refresh == NULL || cJSON_IsTrue(refresh)))
             {
                 (void)weather_service_request_refresh();
             }

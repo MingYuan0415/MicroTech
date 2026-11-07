@@ -538,6 +538,10 @@ MT_FAKE_FLAG_IS(clickable, LV_OBJ_FLAG_CLICKABLE)
 MT_FAKE_FLAG_IS(scrollable, LV_OBJ_FLAG_SCROLLABLE)
 MT_FAKE_FLAG_IS(overflow_visible, LV_OBJ_FLAG_OVERFLOW_VISIBLE)
 #undef MT_FAKE_FLAG_IS
+/* The forecast page needs a real vertical offset model to prove that a
+ * snapshot rebuild preserves the user's list position. Keep these out of the
+ * inline no-op set so tests can observe the actual value. */
+void lv_obj_scroll_to_y(lv_obj_t *object, int32_t y, int anim);
 /** @brief Add state flags to a fake object. */
 void lv_obj_add_state(lv_obj_t *object, lv_state_t state);
 /** @brief Remove state flags from a fake object. */
@@ -864,16 +868,23 @@ static inline lv_color_t lv_color_white(void)
         (void)fourth; \
     }
 
-HOST_LV_NOOP_2(lv_obj_set_flex_flow, lv_obj_t *, int)
+/** @brief Select a fake object's flex flow for scroll-bound calculations. */
+void lv_obj_set_flex_flow(lv_obj_t *object, int flow);
 HOST_LV_NOOP_2(lv_timer_set_period, lv_timer_t *, uint32_t)
-HOST_LV_NOOP_2(lv_obj_set_flex_grow, lv_obj_t *, int)
+/** @brief Record a fake object's flex-grow factor. */
+void lv_obj_set_flex_grow(lv_obj_t *object, int grow);
 void lv_obj_set_scroll_dir(lv_obj_t *object, int dir);
 /** @brief Return the fake object's scroll direction. */
 int lv_obj_get_scroll_dir(const lv_obj_t *object);
 /** @brief Return the fake object's horizontal scroll offset. */
 int32_t lv_obj_get_scroll_x(const lv_obj_t *object);
-/** @brief Return the fake object's vertical scroll offset (always zero). */
+/** @brief Return the fake object's bounded vertical scroll offset. */
 int32_t lv_obj_get_scroll_y(const lv_obj_t *object);
+/** @brief Set the positive viewport height used for fake flex scroll bounds. */
+void host_lv_set_layout_viewport_height(int32_t height);
+/** @brief Return the exact vertical target passed to the latest scroll call. */
+bool host_lv_object_requested_scroll_y(const lv_obj_t *object,
+                                       int32_t *scroll_y);
 /** @brief Scroll the fake object; anim == 0 applies instantly. */
 void lv_obj_scroll_to_x(lv_obj_t *object, int32_t x, int anim);
 /** @brief Return the fake scroll animation target and current offset. */
@@ -888,14 +899,15 @@ HOST_LV_NOOP_3(lv_obj_set_style_border_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_post, lv_obj_t *, bool, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_border_side, lv_obj_t *, int, int)
-HOST_LV_NOOP_3(lv_obj_set_style_pad_all, lv_obj_t *, int32_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_pad_bottom, lv_obj_t *, int32_t, int)
+void lv_obj_set_style_pad_all(lv_obj_t *object, int32_t pad, int selector);
+void lv_obj_set_style_pad_bottom(lv_obj_t *object, int32_t pad,
+                                 int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_pad_column, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_gap, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_left, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_right, lv_obj_t *, int32_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_pad_row, lv_obj_t *, int32_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_pad_top, lv_obj_t *, int32_t, int)
+void lv_obj_set_style_pad_row(lv_obj_t *object, int32_t pad, int selector);
+void lv_obj_set_style_pad_top(lv_obj_t *object, int32_t pad, int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_radius, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_translate_y, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_shadow_width, lv_obj_t *, int32_t, int)
@@ -909,14 +921,17 @@ HOST_LV_NOOP_3(lv_obj_set_style_text_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_line_space, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_text_letter_space, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_anim_duration, lv_obj_t *, uint32_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_max_height, lv_obj_t *, int32_t, int)
+void lv_obj_set_style_max_height(lv_obj_t *object, int32_t height,
+                                 int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_max_width, lv_obj_t *, int32_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_min_height, lv_obj_t *, int32_t, int)
+void lv_obj_set_style_min_height(lv_obj_t *object, int32_t height,
+                                 int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_arc_rounded, lv_obj_t *, bool, int)
 HOST_LV_NOOP_4(lv_obj_align, lv_obj_t *, int, int32_t, int32_t)
+HOST_LV_NOOP_2(lv_obj_set_align, lv_obj_t *, int)
 HOST_LV_NOOP_4(lv_obj_set_flex_align, lv_obj_t *, int, int, int)
-HOST_LV_NOOP_3(lv_obj_set_style_pad_hor, lv_obj_t *, int32_t, int)
-HOST_LV_NOOP_3(lv_obj_set_style_pad_ver, lv_obj_t *, int32_t, int)
+void lv_obj_set_style_pad_hor(lv_obj_t *object, int32_t pad, int selector);
+void lv_obj_set_style_pad_ver(lv_obj_t *object, int32_t pad, int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_border_opa, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_clip_corner, lv_obj_t *, bool, int)
 HOST_LV_NOOP_3(lv_obj_set_style_arc_width, lv_obj_t *, int32_t, int)
@@ -934,7 +949,6 @@ HOST_LV_NOOP_2(lv_roller_set_visible_row_count, lv_obj_t *, int)
 HOST_LV_NOOP_3(lv_roller_set_selected, lv_obj_t *, uint32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_line_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_2(lv_obj_set_ext_click_area, lv_obj_t *, int32_t)
-HOST_LV_NOOP_3(lv_obj_scroll_to_y, lv_obj_t *, int32_t, int)
 /** @brief Apply the modelled subset of a shared style to a fake object. */
 void lv_obj_add_style(lv_obj_t *object, const lv_style_t *style,
                       lv_style_selector_t selector);

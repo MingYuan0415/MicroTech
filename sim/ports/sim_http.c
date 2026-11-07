@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -23,6 +24,7 @@ typedef struct sim_http_script
 {
     char *match;
     int status;
+    uint32_t retry_after_seconds;
     char *content_type;
     uint8_t *body;
     size_t size;
@@ -35,7 +37,8 @@ static pthread_mutex_t s_script_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int sim_http_set_response(const char *url_substring, int status,
                           const char *content_type,
-                          const uint8_t *body, size_t size);
+                          const uint8_t *body, size_t size,
+                          uint32_t retry_after_seconds);
 
 int sim_http_set_script_only(bool enabled);
 
@@ -47,7 +50,8 @@ int sim_http_set_script_only(bool enabled)
 
 int sim_http_set_response(const char *url_substring, int status,
                           const char *content_type,
-                          const uint8_t *body, size_t size)
+                          const uint8_t *body, size_t size,
+                          uint32_t retry_after_seconds)
 {
     if (url_substring == NULL)
     {
@@ -67,6 +71,7 @@ int sim_http_set_response(const char *url_substring, int status,
             }
             s_scripts[i].size = (s_scripts[i].body != NULL) ? size : 0U;
             s_scripts[i].status = status;
+            s_scripts[i].retry_after_seconds = retry_after_seconds;
             free(s_scripts[i].content_type);
             s_scripts[i].content_type =
                 (content_type != NULL) ? strdup(content_type) : NULL;
@@ -89,6 +94,7 @@ int sim_http_set_response(const char *url_substring, int status,
         memcpy(slot->body, body, slot->size);
     }
     slot->status = status;
+    slot->retry_after_seconds = retry_after_seconds;
     (void)pthread_mutex_unlock(&s_script_lock);
     return (slot->match != NULL) ? 0 : -1;
 }
@@ -116,6 +122,7 @@ static bool _script_snapshot(const char *url, sim_http_script_t *out)
             continue;
         }
         out->status = s_scripts[i].status;
+        out->retry_after_seconds = s_scripts[i].retry_after_seconds;
         out->size = s_scripts[i].size;
         if (s_scripts[i].content_type != NULL)
         {
@@ -345,6 +352,14 @@ esp_err_t esp_http_client_perform(esp_http_client_handle_t client)
         {
             (void)_emit(client, HTTP_EVENT_ON_HEADER, NULL, 0,
                         "Content-Type", script.content_type);
+        }
+        if (script.retry_after_seconds > 0U)
+        {
+            char retry_after[16];
+            (void)snprintf(retry_after, sizeof(retry_after), "%u",
+                           (unsigned)script.retry_after_seconds);
+            (void)_emit(client, HTTP_EVENT_ON_HEADER, NULL, 0,
+                        "Retry-After", retry_after);
         }
         (void)_emit(client, HTTP_EVENT_ON_HEADERS_COMPLETE, NULL, 0, NULL,
                     NULL);

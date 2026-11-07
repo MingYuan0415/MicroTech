@@ -27,7 +27,7 @@ Commands:
   set-power <voltage_mv> <pct> [charging] [--vbus true|false]
   set-imu <pitch_deg> <roll_deg>
   pause <on|off>
-  set-weather <endpoint> <file>
+  set-weather <endpoint> <file> [--status N] [--retry-after S] [--no-refresh]
   music <status|login|scan|confirm|cancel_login|logout|refresh|play_pause|next|prev|stop|set_mode|fixture> [value]
   pm [--off-ms N] [--standby-ms N] [--get]
   exit
@@ -52,6 +52,27 @@ def rpc(sock, method, params=None):
             raise RuntimeError("connection closed")
         buf += chunk
     return json.loads(buf.split(b"\n", 1)[0].decode())
+
+
+def _retry_after_seconds(value):
+    seconds = int(value)
+    if seconds < 0 or seconds > 3600:
+        raise argparse.ArgumentTypeError(
+            "retry-after must be between 0 and 3600 seconds")
+    return seconds
+
+
+def _weather_request(args):
+    with open(args.file) as fixture:
+        request = {
+            "endpoint": args.endpoint,
+            "status": args.status,
+            "body": fixture.read(),
+            "refresh": not args.no_refresh,
+        }
+    if args.retry_after is not None:
+        request["retry_after_seconds"] = args.retry_after
+    return request
 
 
 def _read_timeout(args):
@@ -97,7 +118,12 @@ def main():
     ep = sub.add_parser("set-power"); ep.add_argument("voltage", nargs="?"); ep.add_argument("pct", nargs="?"); ep.add_argument("charging", nargs="?", default="false"); ep.add_argument("--vbus", default=None)
     ei = sub.add_parser("set-imu"); ei.add_argument("pitch", type=float); ei.add_argument("roll", type=float)
     pp = sub.add_parser("pause"); pp.add_argument("enabled", choices=["on", "off"])
-    ew = sub.add_parser("set-weather"); ew.add_argument("endpoint"); ew.add_argument("file")
+    ew = sub.add_parser("set-weather")
+    ew.add_argument("endpoint")
+    ew.add_argument("file")
+    ew.add_argument("--status", type=int, default=200)
+    ew.add_argument("--retry-after", type=_retry_after_seconds, default=None)
+    ew.add_argument("--no-refresh", action="store_true")
     mu = sub.add_parser("music"); mu.add_argument("action"); mu.add_argument("value", nargs="?")
     sub.add_parser("exit")
     pm = sub.add_parser("pm"); pm.add_argument("--off-ms", type=int, default=None); pm.add_argument("--standby-ms", type=int, default=None); pm.add_argument("--get", action="store_true")
@@ -196,9 +222,7 @@ def main():
         elif args.cmd == "pause":
             req = ("sim.pause", {"enabled": args.enabled == "on"})
         elif args.cmd == "set-weather":
-            req = ("sim.set_weather", {"endpoint": args.endpoint,
-                                       "status": 200,
-                                       "body": open(args.file).read()})
+            req = ("sim.set_weather", _weather_request(args))
         elif args.cmd == "music":
             music = {"action": args.action}
             if args.action == "login":

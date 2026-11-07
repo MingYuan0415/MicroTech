@@ -484,9 +484,15 @@ class Runner:
                 rooted = os.path.join(MT_ROOT, path)
                 if os.path.exists(rooted):
                     path = rooted
-            body = open(path).read()
-            self.call('sim.set_weather', {'endpoint': step['endpoint'],
-                                          'status': 200, 'body': body})
+            with open(path) as fixture:
+                body = fixture.read()
+            request = {'endpoint': step['endpoint'], 'body': body,
+                       'refresh': step.get('refresh', True)}
+            if step.get('status') is not None:
+                request['status'] = step['status']
+            if step.get('retry_after_seconds') is not None:
+                request['retry_after_seconds'] = step['retry_after_seconds']
+            self.call('sim.set_weather', request)
         elif cmd == 'set_time':
             self.call('sim.set_time', {'epoch': step['epoch']})
         elif cmd == 'pause':

@@ -6,10 +6,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief Register/replace a canned response for URLs containing the key. */
+/** @brief Register/replace a canned response for URLs containing the key.
+ *
+ * @param retry_after_seconds adds a Retry-After header when nonzero, so CI can
+ *        exercise upstream rate limiting instead of only faking service state.
+ */
 int sim_http_set_response(const char *url_substring, int status,
                           const char *content_type,
-                          const uint8_t *body, size_t size);
+                          const uint8_t *body, size_t size,
+                          uint32_t retry_after_seconds);
 /** @brief CI mode: unscripted URLs fail like an offline radio (no curl). */
 int sim_http_set_script_only(bool enabled);
 

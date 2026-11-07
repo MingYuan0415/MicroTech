@@ -364,8 +364,11 @@ the mailbox, does not block), `sim.apps`, `sim.set_time {epoch}`,
 `sim.set_power {voltage?,pct?,charging,vbus}` (voltage/pct may each be omitted;
 a missing pct falls back to the voltage-derived display),
 `sim.set_wifi {state}` (connected/disconnected), `sim.set_imu {pitch,roll}`
-(degrees), `sim.set_weather {endpoint,status,body}` (loads the sim_http script
-table then `request_refresh`, real parse chain), `sim.pause {enabled}`,
+(degrees), `sim.set_weather {endpoint,status,body,retry_after_seconds?,refresh?}`
+(loads the sim_http script table, emits `Retry-After` when the bounded seconds
+value is nonzero, then requests a refresh unless `refresh` is false; the CLI
+exposes the same fields as `--status`, `--retry-after`, and `--no-refresh`),
+`sim.pause {enabled}`,
 `sim.music {action}` (`status`, `login`, `cancel_login`, `logout`, `refresh`,
 `play_pause`, `next`, `prev`, `stop`, `set_mode`; fake builds also accept
 `fixture {name}` to atomically install a deterministic Music state, plus

@@ -8,7 +8,12 @@
 
 #include "esp_heap_caps.h"
 
-#define HOST_LV_OBJECT_CAPACITY 256U
+/* Allocate enough fixed slots for a page transition where the old and new
+ * trees coexist. The weather forecast screen is deliberately object-dense;
+ * remounting the root during its back transition exceeded the old 256-slot
+ * pool and made one label's creation fail without exercising any product
+ * behavior. */
+#define HOST_LV_OBJECT_CAPACITY 384U
 #define HOST_LV_EVENT_CAPACITY  4U
 #define HOST_LV_TIMER_CAPACITY  16U
 #define HOST_LV_GENERIC_ANIM_CAPACITY 16U
@@ -79,8 +84,19 @@ struct lv_obj_t
     lv_obj_flag_t flags;
     lv_state_t state;
     int scroll_dir;
+    bool flex_layout;
+    int flex_flow;
+    uint8_t flex_grow;
+    int32_t pad_top;
+    int32_t pad_bottom;
+    int32_t pad_row;
+    int32_t min_height;
+    int32_t max_height;
     int32_t scroll_x;
     int32_t scroll_target_x;
+    int32_t scroll_y;
+    int32_t scroll_target_y;
+    int32_t requested_scroll_y;
     bool scroll_animating;
     int32_t tile_col;
     int32_t tile_row;
@@ -216,6 +232,7 @@ static uint64_t s_z_order;
 static unsigned s_qrcode_update_count;
 static unsigned s_qrcode_scrubbed_delete_count;
 static lv_chart_series_t s_chart_series;
+static int32_t s_layout_viewport_height = HOST_LV_VER_RES;
 
 static void _host_lv_release_snapshot_allocations(void)
 {
@@ -352,6 +369,144 @@ static int32_t _host_lv_resolve_dimension(const lv_obj_t *object,
                                  HOST_LV_VER_RES) :
                                 (horizontal ? parent->width : parent->height);
     return (int32_t)(((int64_t)parent_size * percent) / 100);
+}
+
+static int32_t _host_lv_layout_height(const lv_obj_t *object);
+
+static int32_t _host_lv_clamp_layout_height(const lv_obj_t *object,
+        int32_t height)
+{
+    if (height < 0)
+    {
+        height = 0;
+    }
+    if (object->min_height > 0 && height < object->min_height)
+    {
+        height = object->min_height;
+    }
+    if (object->max_height > 0 && height > object->max_height)
+    {
+        height = object->max_height;
+    }
+    return height;
+}
+
+static int32_t _host_lv_content_height(const lv_obj_t *object)
+{
+    if (object->kind == HOST_LV_OBJECT_LABEL)
+    {
+        return 28;
+    }
+    if (!object->flex_layout)
+    {
+        int32_t height = 0;
+        const uint32_t child_count = lv_obj_get_child_count(object);
+        for (uint32_t index = 0U; index < child_count; ++index)
+        {
+            const lv_obj_t *child = lv_obj_get_child(object, (int32_t)index);
+            if (child != NULL &&
+                    (child->flags & (LV_OBJ_FLAG_HIDDEN |
+                                     LV_OBJ_FLAG_IGNORE_LAYOUT |
+                                     LV_OBJ_FLAG_FLOATING)) == 0U)
+            {
+                const int32_t bottom = child->y +
+                                       _host_lv_layout_height(child);
+                if (bottom > height)
+                {
+                    height = bottom;
+                }
+            }
+        }
+        return object->pad_top + height + object->pad_bottom;
+    }
+
+    const bool row = object->flex_flow == LV_FLEX_FLOW_ROW ||
+                     object->flex_flow == LV_FLEX_FLOW_ROW_WRAP;
+    int32_t main_extent = 0;
+    int32_t cross_extent = 0;
+    uint32_t visible_count = 0U;
+    const uint32_t child_count = lv_obj_get_child_count(object);
+    for (uint32_t index = 0U; index < child_count; ++index)
+    {
+        const lv_obj_t *child = lv_obj_get_child(object, (int32_t)index);
+        if (child == NULL ||
+                (child->flags & (LV_OBJ_FLAG_HIDDEN |
+                                 LV_OBJ_FLAG_IGNORE_LAYOUT |
+                                 LV_OBJ_FLAG_FLOATING)) != 0U)
+        {
+            continue;
+        }
+        const int32_t height = _host_lv_layout_height(child);
+        if (row)
+        {
+            if (height > cross_extent)
+            {
+                cross_extent = height;
+            }
+        }
+        else
+        {
+            main_extent += height;
+        }
+        const int32_t width = _host_lv_resolve_dimension(child, child->width,
+            true);
+        if (row && width > main_extent)
+        {
+            main_extent = width;
+        }
+        ++visible_count;
+    }
+    if (!row && visible_count > 1U)
+    {
+        main_extent += object->pad_row * (int32_t)(visible_count - 1U);
+    }
+    if (row)
+    {
+        main_extent = cross_extent;
+    }
+    return object->pad_top + main_extent + object->pad_bottom;
+}
+
+static int32_t _host_lv_layout_height(const lv_obj_t *object)
+{
+    if (object == NULL || !object->live)
+    {
+        return 0;
+    }
+    if (object->height > 0)
+    {
+        return _host_lv_clamp_layout_height(object, object->height);
+    }
+    if (object->flex_grow > 0U && object->parent != NULL &&
+            object->parent->flex_layout &&
+            object->parent->flex_flow == LV_FLEX_FLOW_COLUMN)
+    {
+        return _host_lv_clamp_layout_height(object,
+                                            s_layout_viewport_height);
+    }
+    return _host_lv_clamp_layout_height(object,
+                                        _host_lv_content_height(object));
+}
+
+static int32_t _host_lv_scroll_max_y(const lv_obj_t *object)
+{
+    if (object == NULL || !object->live)
+    {
+        return 0;
+    }
+    const int32_t viewport = _host_lv_layout_height(object);
+    const int32_t content = _host_lv_content_height(object);
+    return content > viewport ? content - viewport : 0;
+}
+
+static int32_t _host_lv_bounded_scroll_y(const lv_obj_t *object, int32_t y)
+{
+    const int32_t maximum = _host_lv_scroll_max_y(object);
+    if (y < 0)
+    {
+        return 0;
+    }
+    return y > maximum ? maximum : y;
 }
 
 static int32_t _host_lv_absolute_position(const lv_obj_t *object,
@@ -899,6 +1054,7 @@ void host_lv_reset(void)
     s_qrcode_update_count = 0U;
     s_qrcode_scrubbed_delete_count = 0U;
     memset(&s_chart_series, 0, sizeof(s_chart_series));
+    s_layout_viewport_height = HOST_LV_VER_RES;
 }
 
 lv_indev_t *host_lv_pointer_indev(void)
@@ -1480,7 +1636,8 @@ void lv_obj_clean(lv_obj_t *object)
     }
     /* Match real LVGL: cleaning only deletes the children; a pointer
      * sequence targeting the cleaned container itself survives, while a
-     * sequence targeting a deleted child is reset by its deletion. */
+     * sequence targeting a deleted child is reset by its deletion. LVGL also
+     * clears the container's own scroll offset. */
     for (size_t index = 0U; index < HOST_LV_OBJECT_CAPACITY; ++index)
     {
         lv_obj_t *child = &s_objects[index];
@@ -1489,6 +1646,12 @@ void lv_obj_clean(lv_obj_t *object)
             _host_lv_delete_object(child);
         }
     }
+    object->scroll_x = 0;
+    object->scroll_target_x = 0;
+    object->scroll_y = 0;
+    object->scroll_target_y = 0;
+    object->requested_scroll_y = 0;
+    object->scroll_animating = false;
 }
 
 lv_event_dsc_t *lv_obj_add_event_cb(lv_obj_t *object,
@@ -1920,6 +2083,14 @@ void lv_obj_remove_style_all(lv_obj_t *object)
         object->text_opacity = LV_OPA_COVER;
         object->image_recolor = 0U;
         object->image_opacity = LV_OPA_COVER;
+        object->flex_layout = false;
+        object->flex_flow = 0;
+        object->flex_grow = 0U;
+        object->pad_top = 0;
+        object->pad_bottom = 0;
+        object->pad_row = 0;
+        object->min_height = 0;
+        object->max_height = 0;
     }
 }
 
@@ -1995,6 +2166,118 @@ lv_indev_state_t lv_indev_get_state(const lv_indev_t *indev)
            LV_INDEV_STATE_RELEASED;
 }
 
+void lv_obj_set_flex_flow(lv_obj_t *object, int flow)
+{
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    object->flex_layout = true;
+    object->flex_flow = flow;
+}
+
+void lv_obj_set_flex_grow(lv_obj_t *object, int grow)
+{
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    object->flex_grow = grow <= 0 ? 0U :
+                        (grow > UINT8_MAX ? UINT8_MAX : (uint8_t)grow);
+}
+
+void lv_obj_set_style_pad_all(lv_obj_t *object, int32_t pad, int selector)
+{
+    (void)selector;
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    object->pad_top = pad;
+    object->pad_bottom = pad;
+}
+
+void lv_obj_set_style_pad_bottom(lv_obj_t *object, int32_t pad, int selector)
+{
+    (void)selector;
+    if (object != NULL && object->live)
+    {
+        object->pad_bottom = pad;
+    }
+}
+
+void lv_obj_set_style_pad_hor(lv_obj_t *object, int32_t pad, int selector)
+{
+    (void)object;
+    (void)pad;
+    (void)selector;
+}
+
+void lv_obj_set_style_pad_row(lv_obj_t *object, int32_t pad, int selector)
+{
+    (void)selector;
+    if (object != NULL && object->live)
+    {
+        object->pad_row = pad;
+    }
+}
+
+void lv_obj_set_style_pad_top(lv_obj_t *object, int32_t pad, int selector)
+{
+    (void)selector;
+    if (object != NULL && object->live)
+    {
+        object->pad_top = pad;
+    }
+}
+
+void lv_obj_set_style_pad_ver(lv_obj_t *object, int32_t pad, int selector)
+{
+    (void)selector;
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    object->pad_top = pad;
+    object->pad_bottom = pad;
+}
+
+void lv_obj_set_style_min_height(lv_obj_t *object, int32_t height,
+                                 int selector)
+{
+    (void)selector;
+    if (object != NULL && object->live)
+    {
+        object->min_height = height;
+    }
+}
+
+void lv_obj_set_style_max_height(lv_obj_t *object, int32_t height,
+                                 int selector)
+{
+    (void)selector;
+    if (object != NULL && object->live)
+    {
+        object->max_height = height;
+    }
+}
+
+void host_lv_set_layout_viewport_height(int32_t height)
+{
+    s_layout_viewport_height = height > 0 ? height : HOST_LV_VER_RES;
+}
+
+bool host_lv_object_requested_scroll_y(const lv_obj_t *object,
+                                       int32_t *scroll_y)
+{
+    if (!lv_obj_is_valid(object) || scroll_y == NULL)
+    {
+        return false;
+    }
+    *scroll_y = object->requested_scroll_y;
+    return true;
+}
+
 void lv_obj_set_scroll_dir(lv_obj_t *object, int dir)
 {
     if (object != NULL)
@@ -2015,8 +2298,7 @@ int32_t lv_obj_get_scroll_x(const lv_obj_t *object)
 
 int32_t lv_obj_get_scroll_y(const lv_obj_t *object)
 {
-    (void)object;
-    return 0;
+    return lv_obj_is_valid(object) ? object->scroll_y : 0;
 }
 
 void lv_obj_scroll_to_x(lv_obj_t *object, int32_t x, int anim)
@@ -2038,6 +2320,27 @@ void lv_obj_scroll_to_x(lv_obj_t *object, int32_t x, int anim)
     }
 }
 
+void lv_obj_scroll_to_y(lv_obj_t *object, int32_t y, int anim)
+{
+    if (!lv_obj_is_valid(object))
+    {
+        return;
+    }
+    object->requested_scroll_y = y;
+    const int32_t bounded = _host_lv_bounded_scroll_y(object, y);
+    if (anim)
+    {
+        object->scroll_target_y = bounded;
+        object->scroll_animating = true;
+    }
+    else
+    {
+        object->scroll_y = bounded;
+        object->scroll_target_y = bounded;
+        object->scroll_animating = false;
+    }
+}
+
 void lv_obj_get_scroll_end(lv_obj_t *object, lv_point_t *end)
 {
     if (!lv_obj_is_valid(object) || end == NULL)
@@ -2046,7 +2349,8 @@ void lv_obj_get_scroll_end(lv_obj_t *object, lv_point_t *end)
     }
     end->x = object->scroll_animating ? object->scroll_target_x :
              object->scroll_x;
-    end->y = 0;
+    end->y = object->scroll_animating ? object->scroll_target_y :
+             object->scroll_y;
 }
 
 void lv_obj_stop_scroll_anim(const lv_obj_t *object)
@@ -2071,6 +2375,7 @@ void host_lv_complete_scroll_animations(void)
         if (object->live && object->scroll_animating)
         {
             object->scroll_x = object->scroll_target_x;
+            object->scroll_y = object->scroll_target_y;
             object->scroll_animating = false;
         }
     }
@@ -4136,6 +4441,46 @@ bool host_lv_visible_label_snapshot(
         }
     }
     return false;
+}
+
+static const lv_obj_t *_host_lv_label_ancestor(const char *text,
+        const lv_font_t *font, size_t depth)
+{
+    host_lv_system_object_snapshot_t snapshot;
+    if (!host_lv_visible_label_snapshot(text, font, &snapshot))
+    {
+        return NULL;
+    }
+    const lv_obj_t *ancestor = snapshot.object;
+    for (size_t index = 0U; index < depth; ++index)
+    {
+        ancestor = lv_obj_get_parent(ancestor);
+        if (ancestor == NULL)
+        {
+            return NULL;
+        }
+    }
+    return ancestor;
+}
+
+bool host_lv_label_ancestor_scroll_y(const char *text, const lv_font_t *font,
+                                     size_t depth, int32_t *scroll_y)
+{
+    const lv_obj_t *ancestor = _host_lv_label_ancestor(text, font, depth);
+    if (ancestor == NULL || scroll_y == NULL)
+    {
+        return false;
+    }
+    *scroll_y = lv_obj_get_scroll_y(ancestor);
+    return true;
+}
+
+bool host_lv_label_ancestor_requested_scroll_y(const char *text,
+        const lv_font_t *font, size_t depth, int32_t *requested_y)
+{
+    const lv_obj_t *ancestor = _host_lv_label_ancestor(text, font, depth);
+    return ancestor != NULL &&
+           host_lv_object_requested_scroll_y(ancestor, requested_y);
 }
 
 bool host_lv_canvas_alpha_snapshot(const lv_obj_t *canvas, int32_t x,

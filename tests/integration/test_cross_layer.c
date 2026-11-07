@@ -737,6 +737,103 @@ static esp_err_t _query_label_layout_on_ui(void *arg)
     return ESP_OK;
 }
 
+typedef struct label_scroll_query
+{
+    const char *text;
+    const lv_font_t *font;
+    size_t depth;
+    bool found;
+    int32_t scroll_y;
+    int32_t requested_y;
+} label_scroll_query_t;
+
+static esp_err_t _query_label_scroll_on_ui(void *arg)
+{
+    label_scroll_query_t *query = arg;
+    query->found = host_lv_label_ancestor_scroll_y(
+                       query->text, query->font, query->depth,
+                       &query->scroll_y);
+    return ESP_OK;
+}
+
+static int32_t _ui_label_ancestor_scroll_y(const char *text,
+        const lv_font_t *font, size_t depth)
+{
+    label_scroll_query_t query =
+    {
+        .text = text,
+        .font = font,
+        .depth = depth,
+    };
+    assert(app_manager_ui_call(_query_label_scroll_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(query.found);
+    return query.scroll_y;
+}
+
+static esp_err_t _query_label_requested_scroll_on_ui(void *arg)
+{
+    label_scroll_query_t *query = arg;
+    query->found = host_lv_label_ancestor_requested_scroll_y(
+                       query->text, query->font, query->depth,
+                       &query->requested_y);
+    return ESP_OK;
+}
+
+static int32_t _ui_label_ancestor_requested_scroll_y(const char *text,
+        const lv_font_t *font, size_t depth)
+{
+    label_scroll_query_t query =
+    {
+        .text = text,
+        .font = font,
+        .depth = depth,
+    };
+    assert(app_manager_ui_call(_query_label_requested_scroll_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(query.found);
+    return query.requested_y;
+}
+
+static esp_err_t _set_label_ancestor_scroll_on_ui(void *arg)
+{
+    label_scroll_query_t *query = arg;
+    host_lv_system_object_snapshot_t snapshot;
+    query->found = host_lv_visible_label_snapshot(
+                       query->text, query->font, &snapshot);
+    if (!query->found)
+    {
+        return ESP_OK;
+    }
+    lv_obj_t *ancestor = (lv_obj_t *)snapshot.object;
+    for (size_t index = 0U; index < query->depth; ++index)
+    {
+        ancestor = lv_obj_get_parent(ancestor);
+        if (ancestor == NULL)
+        {
+            query->found = false;
+            return ESP_OK;
+        }
+    }
+    lv_obj_scroll_to_y(ancestor, query->scroll_y, LV_ANIM_OFF);
+    return ESP_OK;
+}
+
+static void _set_label_ancestor_scroll_y(const char *text,
+        const lv_font_t *font, size_t depth, int32_t scroll_y)
+{
+    label_scroll_query_t query =
+    {
+        .text = text,
+        .font = font,
+        .depth = depth,
+        .scroll_y = scroll_y,
+    };
+    assert(app_manager_ui_call(_set_label_ancestor_scroll_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(query.found);
+}
+
 static esp_err_t _query_label_input_on_ui(void *arg)
 {
     label_input_query_t *query = arg;
@@ -1477,6 +1574,33 @@ static __attribute__((unused)) void _exercise_audio_volume_slider(void)
     assert(host_audio_volume() == 81U);
 }
 
+static void _test_fake_vertical_scroll_bounds(void)
+{
+    host_lv_reset();
+    host_lv_set_layout_viewport_height(80);
+    lv_obj_t *container = lv_obj_create(lv_screen_active());
+    assert(container != NULL);
+    lv_obj_set_size(container, 120, 80);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(container, 4, 0);
+    lv_obj_set_style_pad_row(container, 6, 0);
+    for (size_t index = 0U; index < 3U; ++index)
+    {
+        lv_obj_t *child = lv_obj_create(container);
+        assert(child != NULL);
+        lv_obj_set_size(child, 20, 40);
+    }
+
+    lv_obj_scroll_to_y(container, 4096, LV_ANIM_OFF);
+    int32_t requested = 0;
+    assert(host_lv_object_requested_scroll_y(container, &requested));
+    assert(requested == 4096);
+    assert(lv_obj_get_scroll_y(container) == 3 * 40 + 2 * 6 + 2 * 4 - 80);
+    lv_obj_scroll_to_y(container, -20, LV_ANIM_OFF);
+    assert(lv_obj_get_scroll_y(container) == 0);
+    host_lv_reset();
+}
+
 static void _initialize_stack(void)
 {
     host_runtime_reset();
@@ -1687,7 +1811,7 @@ static void MT_TEST_MAYBE_UNUSED _test_real_app_navigation(void)
     host_weather_set_service_state(WEATHER_SERVICE_STATE_AUTH_ERROR, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
-    assert(_ui_has_text("服务状态：服务认证失败，显示已有数据"));
+    assert(_ui_has_text("认证失败，显示已有数据"));
     host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
@@ -1710,6 +1834,37 @@ static void MT_TEST_MAYBE_UNUSED _test_real_app_navigation(void)
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     assert(_ui_has_text("湿度 65% · 10 km/h"));
+
+    /* A live snapshot rebuild must preserve the hourly list position. The
+     * label is inside the row; two parent hops reach the scrolling list. */
+    const char *hourly_anchor = "湿度 65% · 10 km/h";
+    const lv_font_t *hourly_font = &s_theme_fonts[APP_THEME_FONT_SMALL];
+    const label_layout_query_t hourly_layout =
+        _ui_label_layout(hourly_anchor, hourly_font);
+    const label_input_query_t hourly_input =
+        _ui_label_input(hourly_anchor, hourly_font);
+    assert(hourly_layout.found);
+    assert(!hourly_input.parent_scrollable);
+    _set_label_ancestor_scroll_y(hourly_anchor, hourly_font, 2U, 4096);
+    const int32_t hourly_scroll =
+        _ui_label_ancestor_scroll_y(hourly_anchor, hourly_font, 2U);
+    const int32_t hourly_requested =
+        _ui_label_ancestor_requested_scroll_y(hourly_anchor, hourly_font, 2U);
+    assert(hourly_requested == 4096);
+    assert(hourly_scroll > 0);
+    assert(hourly_scroll < hourly_requested);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_RATE_LIMITED, 75U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
+    assert(_ui_has_text(hourly_anchor));
+    assert(_ui_has_text("请求受限，显示已有数据"));
+    assert(_ui_label_ancestor_scroll_y(hourly_anchor, hourly_font, 2U) ==
+           hourly_scroll);
+    assert(_ui_label_ancestor_requested_scroll_y(hourly_anchor, hourly_font,
+            2U) == hourly_scroll);
+    host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
+    assert(host_weather_publish(true) == ESP_OK);
+    assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
 
     host_weather_set_layout_extremes(true);
     assert(host_weather_publish(true) == ESP_OK);
@@ -1745,7 +1900,7 @@ static void MT_TEST_MAYBE_UNUSED _test_real_app_navigation(void)
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
     _click_action("实况");
     assert(_ui_has_text("暂无实况数据"));
-    assert(_ui_has_text("服务状态：服务认证失败，显示已有数据"));
+    assert(_ui_has_text("认证失败，显示已有数据"));
     host_weather_set_service_state(WEATHER_SERVICE_STATE_READY, 0U);
     assert(host_weather_publish(true) == ESP_OK);
     assert(app_manager_ui_call(_ui_barrier, NULL, UI_TIMEOUT_MS) == ESP_OK);
@@ -4605,6 +4760,7 @@ static void _test_settings_sound_page_volume(void)
 
 int main(void)
 {
+    _test_fake_vertical_scroll_bounds();
     _initialize_stack();
     _test_host_audio_lease_contract();
 #if defined(MT_FULL_PRODUCT_TEST)

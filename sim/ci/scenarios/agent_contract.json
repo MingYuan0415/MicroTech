@@ -63,6 +63,27 @@
   },
   {
    "cmd": "expect_error",
+   "method": "sim.set_weather",
+   "params": {"endpoint": "current", "status": 429, "body": "{}",
+              "retry_after_seconds": 3601},
+   "error": "invalid weather params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_weather",
+   "params": {"endpoint": "current", "status": 429, "body": "{}",
+              "retry_after_seconds": 1.5},
+   "error": "invalid weather params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.set_weather",
+   "params": {"endpoint": "current", "status": 429, "body": "{}",
+              "refresh": "invalid"},
+   "error": "invalid weather params"
+  },
+  {
+   "cmd": "expect_error",
    "method": "sim.set_wifi",
    "params": {"state": "unknown"},
    "error": "invalid wifi state"

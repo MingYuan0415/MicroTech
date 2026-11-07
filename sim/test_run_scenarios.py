@@ -1,6 +1,7 @@
 """False-success regressions for the Flybirds scenario's closed-loop action."""
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -169,6 +170,45 @@ class TreeAssertTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError,
                                     'needs a contains or absent map'):
             self._step({'cmd': 'tree_assert'})
+
+
+class WeatherStepTest(unittest.TestCase):
+    def _run(self, step):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        with patch.object(scenarios, 'rpc',
+                          return_value={'ok': True, 'result': {}}) as rpc:
+            runner._step(step)
+        return rpc.call_args.args[2]
+
+    def test_weather_request_preserves_optional_semantics(self):
+        with tempfile.NamedTemporaryFile('w', suffix='.json') as fixture:
+            fixture.write('{"ok":true}')
+            fixture.flush()
+            request = self._run({
+                'cmd': 'set_weather',
+                'endpoint': 'current',
+                'file': fixture.name,
+                'status': 429,
+                'retry_after_seconds': 0,
+                'refresh': False,
+            })
+        self.assertEqual(request['endpoint'], 'current')
+        self.assertEqual(request['status'], 429)
+        self.assertEqual(request['retry_after_seconds'], 0)
+        self.assertIs(request['refresh'], False)
+
+    def test_weather_request_does_not_invent_optional_fields(self):
+        with tempfile.NamedTemporaryFile('w', suffix='.json') as fixture:
+            fixture.write('{}')
+            fixture.flush()
+            request = self._run({
+                'cmd': 'set_weather',
+                'endpoint': 'daily',
+                'file': fixture.name,
+            })
+        self.assertNotIn('status', request)
+        self.assertNotIn('retry_after_seconds', request)
+        self.assertIs(request['refresh'], True)
 
 
 class FlybirdsRestartRegressionTest(unittest.TestCase):

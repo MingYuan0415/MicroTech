@@ -323,6 +323,36 @@ bool host_lv_visible_label_snapshot(
     const char *text, const lv_font_t *font,
     host_lv_system_object_snapshot_t *snapshot);
 /**
+ * @brief Return the vertical scroll offset of the visible label's ancestor at
+ *        a requested depth.
+ *
+ * The forecast rows are labels nested inside a scrolling list. This helper
+ * resolves the label, walks its parents, and reads the requested one so a test
+ * can prove a snapshot rebuild preserved the user's list position.
+ *
+ * @param text is the exact visible label text.
+ * @param font is the label's explicitly bound font.
+ * @param depth is the number of parent hops; one is the direct parent.
+ * @param scroll_y receives the resolved ancestor's vertical scroll offset.
+ * @return true when the label and ancestor exist.
+ */
+bool host_lv_label_ancestor_scroll_y(const char *text, const lv_font_t *font,
+                                     size_t depth, int32_t *scroll_y);
+/**
+ * @brief Return the exact top offset requested for a visible label ancestor.
+ *
+ * Unlike host_lv_label_ancestor_scroll_y(), this reports the value passed to
+ * lv_obj_scroll_to_y() before LVGL clamps it to the content bounds.
+ *
+ * @param text is the exact visible label text.
+ * @param font is the label's explicitly bound font.
+ * @param depth is the number of parent hops; one is the direct parent.
+ * @param requested_y receives the unclamped requested vertical offset.
+ * @return true when the label and ancestor exist.
+ */
+bool host_lv_label_ancestor_requested_scroll_y(const char *text,
+        const lv_font_t *font, size_t depth, int32_t *requested_y);
+/**
  * @brief Read one A8 pixel from a live fake Canvas.
  * @param canvas is the Canvas identity returned by an object snapshot.
  * @param x is the zero-based Canvas-local horizontal coordinate.

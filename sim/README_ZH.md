@@ -280,8 +280,10 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 （press/release/click）、`sim.navigate {app}`（投 mailbox，不阻塞）、`sim.apps`、
 `sim.set_time {epoch}`、`sim.set_power {voltage?,pct?,charging,vbus}`（voltage/pct 可各自省略；缺 pct 走电压回退显示）、
 `sim.set_wifi {state}`（connected/disconnected）、`sim.set_imu {pitch,roll}`（度）、
-`sim.set_weather {endpoint,status,body}`
-（灌 sim_http 脚本表后 `request_refresh`，真解析链）、`sim.pause {enabled}`、
+`sim.set_weather {endpoint,status,body,retry_after_seconds?,refresh?}`
+（灌 sim_http 脚本表；`retry_after_seconds` 非零时按上限内的值发出 `Retry-After`；
+`refresh` 默认为 true，设为 false 可只替换夹具而不请求刷新；CLI 对应
+`--status`、`--retry-after`、`--no-refresh`）、`sim.pause {enabled}`、
 `sim.music {action}`（`status`、`login`、`cancel_login`、`logout`、`refresh`、
 `play_pause`、`next`、`prev`、`stop`、`set_mode`；fake 构建还接受
 `fixture {name}`，以及 `scan`、`confirm` 推进扫码与登录成功；可选的 real 后端还接受
