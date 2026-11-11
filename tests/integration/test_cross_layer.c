@@ -1869,7 +1869,7 @@ static void MT_TEST_MAYBE_UNUSED _test_real_app_navigation(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
-    assert(_ui_has_text("08:30"));
+    assert(_ui_has_text("08:30:00"));
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
     assert(_lv_resource_counts().screens == 2U);
 
@@ -2338,17 +2338,17 @@ static void _test_home_resume_before_first_draw(void)
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     _start_first_frame_navigation(
-        APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, "root", "08:30", "--:--");
+        APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, "root", "08:30:00", "--:--:--");
     assert(_wait_for_transitioning());
-    assert(_transition_target_has_text("08:30"));
-    assert(!_transition_target_has_text("--:--"));
+    assert(_transition_target_has_text("08:30:00"));
+    assert(!_transition_target_has_text("--:--:--"));
     assert(_lv_resource_counts().timers == 1U);
     _assert_event_slot_headroom(3);
 
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_wait_for_first_frame_completion());
     _assert_first_frame_probe(1U);
-    assert(_ui_has_text("08:30"));
+    assert(_ui_has_text("08:30:00"));
     assert(_lv_resource_counts().timers == 1U);
     _assert_event_slot_headroom(3);
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
@@ -2655,7 +2655,7 @@ static void MT_TEST_MAYBE_UNUSED _test_optional_services_unavailable(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
-    assert(_wait_for_text("08:30"));
+    assert(_wait_for_text("08:30:00"));
     _assert_event_slot_headroom(3);
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
@@ -3120,7 +3120,7 @@ static void MT_TEST_MAYBE_UNUSED _test_other_real_app_screen_lifecycles(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(app_manager_get_running_apps() == 1U);
     assert(app_manager_is_page_present(APP_MANAGER_ID_HOME, "root"));
-    assert(_ui_has_text("08:30"));
+    assert(_ui_has_text("08:30:00"));
     _assert_event_slot_headroom(3);
 }
 
@@ -3706,7 +3706,7 @@ static void _test_home_screen_lifecycle(void)
     assert(resources.screens == 2U);
     assert(resources.timers == 1U);
     _assert_event_slot_headroom(3);
-    assert(_ui_has_text("08:30"));
+    assert(_ui_has_text("08:30:00"));
 
     assert(_lifecycle_observed(
                APP_MANAGER_ID_HOME, "root", APP_MANAGER_MSG_ONSTART,

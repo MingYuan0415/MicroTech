@@ -35,7 +35,7 @@
             "cmd": "tree_assert",
             "contains": {
                 "type": "lv_label",
-                "text": "已选择 3/3"
+                "text": "已选择 4/4"
             }
         },
         {
@@ -71,7 +71,7 @@
             "cmd": "tree_assert",
             "contains": {
                 "type": "lv_label",
-                "text": "已选择 2/3"
+                "text": "已选择 3/4"
             }
         },
         {
@@ -89,7 +89,7 @@
             "cmd": "tree_assert",
             "contains": {
                 "type": "lv_label",
-                "text": "已选择 3/3"
+                "text": "已选择 4/4"
             }
         },
         {

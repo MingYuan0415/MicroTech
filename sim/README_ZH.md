@@ -413,7 +413,7 @@ NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`
 每个场景独立 sim 进程 + 独立 NVS 目录（resident-app 策略与冷启动一致）。
 场景位于 `sim/ci/scenarios/`（`run_ci.sh` 遍历该目录，无单独清单）：`all_apps.json`
 （每个内置 App 主页面文本断言 + 截图）、`home_shortcuts.json`（长按主页快捷坞进入
-卡片选择页、最多 3 个、边缘返回、返回后重建快捷坞）、`home_navigation.json`
+卡片选择页、最多 4 个、边缘返回、返回后重建快捷坞）、`home_navigation.json`
 （Home 子页边缘返回与 HOME 键回根页）、`home_timer.json`（主页显示运行中的倒计时
 实时带）、`smoke_pages.json`（导航/手势/多页）、
 `p4_smoke.json`（P4 版型的 home/settings/weather 产品无关冒烟；用

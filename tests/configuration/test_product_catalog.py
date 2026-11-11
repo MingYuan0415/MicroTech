@@ -260,7 +260,8 @@ class ProductCatalogTest(unittest.TestCase):
         self.assertIn("app_manager_builtin_list_open()", shortcuts)
         self.assertIn("APP_MANAGER_APP_FLAG_HIDDEN", shortcuts)
         self.assertIn("APP_MANAGER_ID_HOME", shortcuts)
-        self.assertIn("APP_MANAGER_ID_MENU", shortcuts)
+        # Menu is a normal selectable dock entry; only Home stays excluded.
+        self.assertNotIn("APP_MANAGER_ID_MENU", shortcuts)
 
         settings = (APPS / "settings_app" / "src" / "settings_app.c").read_text(
             encoding="utf-8").splitlines()

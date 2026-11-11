@@ -555,7 +555,7 @@ Every scenario gets an independent sim process + independent NVS directory (the
 resident-app policy matches a cold start). Scenarios live in `sim/ci/scenarios/`
 (`run_ci.sh` walks that directory, there is no separate manifest):
 `all_apps.json` (text assertions for each built-in App's main page +
-screenshots), `home_shortcuts.json` (long-press Home dock → card picker, max-3
+screenshots), `home_shortcuts.json` (long-press Home dock → card picker, max-4
 selection, edge-back, remounted dock), `home_navigation.json` (Home sub-page
 edge-back and HOME-key return to root), `home_timer.json` (active countdown
 complication on Home), `smoke_pages.json` (navigation/gestures/multiple pages),
