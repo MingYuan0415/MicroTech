@@ -84,9 +84,6 @@ class ConfigurationGovernanceTest(unittest.TestCase):
 
     def test_removed_configuration_is_absent_from_defaults(self) -> None:
         paths = [self.root / "sdkconfig.defaults"]
-        paths.extend(sorted(
-            (self.root / "tests/display/profile_defaults").glob("*.defaults")
-        ))
         paths.extend([
             self.root / "sdkconfig.defaults.esp32s3",
             self.root / "sdkconfig.defaults.esp32p4",

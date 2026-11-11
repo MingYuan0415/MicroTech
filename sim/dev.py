@@ -119,8 +119,7 @@ def _prepare_instance():
                 with socket.socket() as sock:
                     sock.bind(('127.0.0.1', 0))
                     candidate = sock.getsockname()[1]
-                if candidate != 5001:
-                    port_lock = _reserve_port(candidate)
+                port_lock = _reserve_port(candidate)
         _PORT_LOCK = port_lock
         _ALLOCATOR_LOCK = allocator_lock
         PORT = candidate
@@ -496,7 +495,7 @@ def start_session(navigate=None, headless=False, online=False):
                 with socket.socket() as sock:
                     sock.bind(('127.0.0.1', 0))
                     candidate = sock.getsockname()[1]
-                if candidate != 5001 and not _port_open(candidate):
+                if not _port_open(candidate):
                     _PORT_LOCK = _reserve_port(candidate)
             PORT = candidate
             session_dir = (os.environ.get('SIM_SESSION_DIR') or

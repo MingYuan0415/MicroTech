@@ -155,8 +155,8 @@ way a device keeps `/data`, while `sim/ci/run_ci.sh` and
 `sim/tools/review_pages.py` give each scenario or review session its own
 emptied directory, because a retained snapshot would make the next cold start
 report the previous scenario's weather and break its empty-state asserts. The
-agent protocol (TCP JSON-RPC, default `127.0.0.1:5002`, avoiding the on-device
-baseline port 5001) is documented in `sim/tools/simctl.py`.
+agent protocol (TCP JSON-RPC, default `127.0.0.1:5002`) is documented in
+`sim/tools/simctl.py`.
 
 ## Weather Integration (Live Network Data)
 
@@ -347,8 +347,8 @@ volume for UI review; write/clear hold MAINTENANCE when modifying the recording
 directory and publish an SD revision, and are refused while a recording is in
 progress.
 
-`--agent-port N` (default 5002, bound to 127.0.0.1 only; 5001 is left for the
-on-device baseline). The protocol is line-delimited JSON-RPC:
+`--agent-port N` (default 5002, bound to 127.0.0.1 only). The protocol is
+line-delimited JSON-RPC:
 `{"id":1,"method":"sim.ping","params":{...}}` →
 `{"id":1,"ok":true,"result":{...}}`.
 

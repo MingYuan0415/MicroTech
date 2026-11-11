@@ -121,7 +121,7 @@ CLI：`--headless`、`--ci`、`--res-dir <staged 资源目录>`、`--nvs-dir <NV
 重启保留，与真机保留 `/data` 的语义一致；`sim/ci/run_ci.sh` 与
 `sim/tools/review_pages.py` 则为每条场景或每次审查会话分配各自的空目录，因为残留的
 快照会让下一次冷启动直接带上上一条场景的天气，使其空态断言失败。
-Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`，避开真机基准 5001）见
+Agent 协议（TCP JSON-RPC，默认 `127.0.0.1:5002`）见
 `sim/tools/simctl.py`。
 
 ## 天气联调（联网实时数据）
@@ -266,7 +266,7 @@ fail_mount/fail_format/fail_space 注入失败；fault 报告介质故障用于�
 fixture 在卷内创建有界中文目录与多页长名称文件，供 UI 审查；write/clear 修改录音
 目录时持 MAINTENANCE 并发布 SD revision，录音占用期间拒绝执行。
 
-`--agent-port N`（默认 5002，仅绑 127.0.0.1；5001 留给真机基准）。协议为逐行
+`--agent-port N`（默认 5002，仅绑 127.0.0.1）。协议为逐行
 JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `{"id":1,"ok":true,"result":{...}}`。
 

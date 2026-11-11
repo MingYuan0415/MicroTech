@@ -5,14 +5,14 @@
 - `main/`: entry point, runtime, storage and network assembly. Resources are aggregated from the `layers/apps/*/assets/` and `layers/app_manager/app_theme/assets/` manifests and packaged into the `res` partition.
 - `layers/`: `bsp`, `middleware`, `app_manager`, `apps` — four independent Git submodules. Changes inside a layer are committed and pushed in the submodule; the parent repository updates the pointer in the same commit.
 - `products/`: board/product/design-target composition manifests, see [`products/README.md`](products/README.md). Product selection is explicit through `MT_PRODUCT`; board selection is explicit through `MT_BOARD`.
-- `sim/`: standalone host LVGL simulator, see [`sim/README.md`](sim/README.md). Agents bind `127.0.0.1:5002` only (5001 is reserved for the on-device baseline).
-- `tests/`: `connectivity` and `integration` are cross-layer host tests; `display` is the on-device benchmark tool. `managed_components/` is read-only.
+- `sim/`: standalone host LVGL simulator, see [`sim/README.md`](sim/README.md). Agents bind `127.0.0.1:5002` only.
+- `tests/`: `connectivity` and `integration` are cross-layer host tests. `managed_components/` is read-only.
 - `tools/agent/`: agent-facing command wrapper; see [`doc/agent-workflow.md`](doc/agent-workflow.md).
 
 ## Default Working Mode
 
 - Change only code directly related to the task; analysis tasks are read-only; do not change code outside the plan, but report the problems you find. Conclusions come from code, tests, or documentation — never from guesses.
-- **Minimal verification**: follow L0–L3 in "Host Tests and Verification Tiers" and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, display benchmarks, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
+- **Minimal verification**: follow L0–L3 in "Host Tests and Verification Tiers" and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
 - **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened. The simulator build gate below is the sole exception because it enforces the required host-build contract.
 - Flash or erase only when the user explicitly asks.
 
@@ -96,7 +96,7 @@ Do not re-run a gate when the artifact under test did not change; validating a f
 
 ## Device Faults
 
-Use only the logs the user currently provides, and check in order: reset reason, panic backtrace, heap headroom, task WDT, boot placement, app state transitions. Display benchmark thresholds and configuration are in `tests/display/README.md`; built-in UI host regression uses `sim/ci/run_ci.sh`.
+Use only the logs the user currently provides, and check in order: reset reason, panic backtrace, heap headroom, task WDT, boot placement, app state transitions. Built-in UI host regression uses `sim/ci/run_ci.sh`.
 
 ## Coding Style
 

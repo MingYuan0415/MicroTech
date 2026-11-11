@@ -24,5 +24,5 @@ SOFTWARE.
 Adapted from the `aix-skills` project at
 https://github.com/easyzoom/aix-skills (MIT) for MicroTech. The workflow is
 limited to the existing LVGL 9.5 and esp_lvgl_adapter display architecture,
-its ownership boundaries, and the on-board display benchmark described in
-tests/display/README.md.
+its ownership boundaries, and the on-board display architecture described in
+layers/bsp/README.md and layers/app_manager/README.md.

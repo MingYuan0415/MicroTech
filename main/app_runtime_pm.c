@@ -49,7 +49,6 @@ typedef struct app_runtime_sleep_context
 
 static atomic_bool s_standby_admitted = false;
 static atomic_uint s_standby_request_users = 0U;
-static atomic_bool s_benchmark_inhibited = false;
 static bool s_system_pm_available;
 static app_runtime_sleep_context_t s_sleep_context;
 static const bsp_power_ops_t *s_bsp_power;
@@ -60,10 +59,6 @@ static void *s_app_input_context;
 static bool _app_runtime_pm_is_standby_allowed(void)
 {
     if (!s_system_pm_available)
-    {
-        return false;
-    }
-    if (atomic_load_explicit(&s_benchmark_inhibited, memory_order_acquire))
     {
         return false;
     }
@@ -109,9 +104,7 @@ static bool _app_runtime_pm_commit_guard(uint32_t generation, void *context)
      * playback admitted in that window would otherwise be put to sleep under
      * an in-flight SD transfer: light sleep stops the SPI clock, the read
      * times out (0x107) and the medium is reported dead. */
-    return !atomic_load_explicit(&s_benchmark_inhibited,
-                                 memory_order_acquire) &&
-           !recorder_service_is_busy() &&
+    return !recorder_service_is_busy() &&
            !music_service_is_playing() &&
            (!s_sleep_context.device_link_participant ||
             !device_link_service_is_busy()) &&
@@ -567,8 +560,6 @@ static void _app_runtime_pm_system_wake_callback(
 
 void app_runtime_pm_reset(void)
 {
-    atomic_store_explicit(&s_benchmark_inhibited, false,
-                          memory_order_release);
     s_system_pm_available = false;
     memset(&s_sleep_context, 0, sizeof(s_sleep_context));
     s_bsp_power = NULL;
@@ -590,17 +581,6 @@ void app_runtime_pm_close_admission(void)
 void app_runtime_pm_open_admission(void)
 {
     atomic_store_explicit(&s_standby_admitted, true, memory_order_release);
-}
-
-esp_err_t app_runtime_pm_set_benchmark_inhibited(bool inhibited)
-{
-    atomic_store_explicit(&s_benchmark_inhibited, inhibited,
-                          memory_order_release);
-    if (!s_system_pm_available)
-    {
-        return ESP_OK;
-    }
-    return inhibited ? system_pm_cancel_standby() : ESP_OK;
 }
 
 esp_err_t app_runtime_pm_build_system_config(system_pm_config_t *config,

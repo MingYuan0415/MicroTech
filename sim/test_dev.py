@@ -13,7 +13,7 @@ class DevSessionTests(unittest.TestCase):
         with mock.patch.object(dev, '_pid_argv', return_value=['/wrong/sim']):
             self.assertFalse(dev._pid_is_simulator(10))
         with mock.patch.object(dev, '_pid_argv',
-                               return_value=[dev.BINARY, '--agent-port', '5001']):
+                               return_value=[dev.BINARY, '--agent-port', '5003']):
             self.assertFalse(dev._pid_is_simulator(10))
         with mock.patch.object(dev, '_pid_argv',
                                return_value=[dev.BINARY, '--agent-port', '5002']):

@@ -8,7 +8,6 @@ idf_component_register(
          "app_runtime_control.c"
          "network_runtime.c"
          "p4_radio_runtime.c"
-         "display_benchmark.c"
          "fs_storage/fs_storage.c"
     INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES
@@ -53,12 +52,6 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MT_PRODUCT_NAME="${MT_PRODUCT_ID}")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "SHELL:-include ${MT_PRODUCT_HEADER}")
-
-include("${CMAKE_CURRENT_LIST_DIR}/display_benchmark_profile.cmake")
-if(CONFIG_MAIN_DISPLAY_BENCHMARK)
-    target_include_directories(${COMPONENT_LIB} PRIVATE
-        "${DISPLAY_BENCHMARK_PROFILE_DIR}")
-endif()
 
 # 统一资源清单和分区打包规则。资源由 Apps/App Theme 所有，main 只负责聚合。
 # 清单解析与暂存规则与 sim 共用：见 ../cmake/mt_app_resources.cmake。

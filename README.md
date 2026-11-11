@@ -24,7 +24,7 @@ ESP32-C6 over ESP-Hosted SDIO, with the co-processor firmware in
 | `layers/apps/` | Built-in LVGL applications such as Home, Menu, Settings, and Setup |
 | `products/` | Product manifests that bind a board, design target and selected App set |
 | `sim/` | Standalone CMake host LVGL simulator (not part of the root IDF build) |
-| `tests/` | Cross-layer host tests and the on-device display benchmark tool |
+| `tests/` | Cross-layer host tests |
 
 The four directories under `layers/` are independent Git submodules;
 `managed_components/` is managed by the ESP-IDF Component Manager. Do not modify
@@ -72,12 +72,12 @@ screen-off, and (on ESP32-S3) standby/wake behavior on hardware.
 ## Host tests
 
 Run the CMake/CTest suites from the root `AGENTS.md` that match the impact
-surface of the change. Configuration, resources, display tools, and simulator
-Python tests share one entry point:
+surface of the change. Configuration, resources, and simulator Python tests
+share one entry point:
 
 ```sh
 python3 tests/run_python_tests.py configuration resources
-python3 tests/run_python_tests.py display-tools sim-tools
+python3 tests/run_python_tests.py sim-tools
 python3 tests/run_python_tests.py contracts
 ```
 
@@ -120,8 +120,6 @@ python3 tests/run_python_tests.py contracts
   documented in the respective middleware component docs.
 - **LVGL host simulator**: page debugging, JSON-RPC Agent driving, and control-tree
   regression; see [`sim/README.md`](sim/README.md).
-- **Display stress benchmark**: hardware only; acceptance thresholds, profiles,
-  and configuration baseline are in [`tests/display/README.md`](tests/display/README.md).
 
 ## Development constraints
 

@@ -44,10 +44,9 @@ sources (`main/`, `layers/`, excluding `tests/`, `managed_components/`,
 4. Removed configuration symbols must not reappear. The list is
    `DEPRECATED_CONFIG_TOKENS` in `test_configuration_governance.py` (it covers the
    deleted `CONFIG_BSP_AUDIO_*`, `CONFIG_BSP_DISPLAY_*`,
-   `CONFIG_APP_MANAGER_DISPLAY_BENCHMARK`, and the old per-service task and queue
-   symbols).
-5. Removed configuration must not appear in `sdkconfig.defaults` or in
-   `tests/display/profile_defaults/*.defaults`.
+   `CONFIG_APP_MANAGER_DISPLAY_BENCHMARK`, and the old per-service task and
+   queue symbols).
+5. Removed configuration must not appear in `sdkconfig.defaults`.
 6. The project's Kconfig symbol set is not machine-pinned; adding or removing a
    symbol needs no test update, but a removed symbol must still be registered in
    `DEPRECATED_CONFIG_TOKENS` (rule 4) so it cannot come back.

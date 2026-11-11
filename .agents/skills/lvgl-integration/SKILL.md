@@ -6,30 +6,28 @@ description: Preserve MicroTech display-pipeline ownership when changing registr
 # MicroTech LVGL Display Pipeline
 
 This skill carries only the ownership rules that no single file states. Baseline
-values, benchmark gates, and pin maps live in the owning docs and code; do not
-copy them here.
+values and pin maps live in the owning docs and code; do not copy them here.
 
 ## Sources of Truth
 
 - `dependencies.lock` for the active adapter and LVGL versions.
 - `layers/app_manager/app_core/src/app_manager_lvgl_adapter.c` for display
-  registration, custom draw submission, diagnostics, and lifecycle ownership.
+  registration, custom draw submission, and lifecycle ownership.
 - `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/board_display.c` for the S3
   panel bus, touch path, TE policy and power sequencing.
 - `layers/bsp/waveshare/esp32-p4-wifi6-touch-lcd-3.5/board_display.c` for the
   P4 ST7796 SPI path, 20-row DMA chunks and display resume sequencing. Read the
   board selected by `MT_BOARD`, not a hardcoded board name.
-- `layers/bsp/README.md` and `tests/display/README.md` for the production
-  baseline (clocks, buffer rows, DMA chunks, queue depth, TE/direct-DMA) and
-  benchmark acceptance gates.
+- `layers/bsp/README.md` and `layers/app_manager/README.md` for the production
+  baseline (clocks, buffer rows, DMA chunks, queue depth, TE/direct-DMA).
 
 ## Ownership
 
 - `esp_lvgl_adapter` owns LVGL init, tick/task scheduling, display
   registration, and the flush-ready handshake.
 - App Manager owns adapter configuration, the panel proxy and custom
-  draw-bitmap callback, diagnostics, transitions, input consumption, and
-  suspend/resume coordination.
+  draw-bitmap callback, transitions, input consumption, and suspend/resume
+  coordination.
 - BSP owns panel IO, touch IO, QSPI, GPIO, panel power, and reset sequencing.
 
 ## Hard Rules
@@ -47,4 +45,4 @@ copy them here.
   to change the baseline.
 - Select validation under `AGENTS.md`; hardware timing and performance claims
   require on-device evidence. State unexecuted checks without treating this
-  skill as authorization to flash or run a benchmark.
+  skill as authorization to flash or run hardware checks.

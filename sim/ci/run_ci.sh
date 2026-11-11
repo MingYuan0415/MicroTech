@@ -111,7 +111,6 @@ run_scenario() {
     flock 8
     while true; do
         PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-        [ "$PORT" = 5001 ] && continue
         exec 7>"${TMPDIR:-/tmp}/microtech-sim-port-$PORT.lock"
         if flock -n 7; then break; fi
     done

@@ -41,12 +41,4 @@ config MAIN_WEATHER_DEVICE_TOKEN
         Device token issued by mt-server, without the Bearer prefix. This
         value is stored as plaintext in sdkconfig and compiled into firmware.
 
-config MAIN_DISPLAY_BENCHMARK
-    bool "Enable the display benchmark product profile"
-    depends on APP_MANAGER_DISPLAY_DIAGNOSTICS
-    default n
-    help
-        Build the root-owned runtime benchmark from a generated typed profile.
-        Production configurations must leave this disabled.
-
 endmenu

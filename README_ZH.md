@@ -47,11 +47,11 @@ P4 版型还需烧录 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md) 中的 ES
 
 ## 宿主测试
 
-按改动影响面运行根 `AGENTS.md` 中对应的 CMake/CTest 套件。配置、资源、显示工具和模拟器 Python 测试使用统一入口：
+按改动影响面运行根 `AGENTS.md` 中对应的 CMake/CTest 套件。配置、资源和模拟器 Python 测试使用统一入口：
 
 ```sh
 python3 tests/run_python_tests.py configuration resources
-python3 tests/run_python_tests.py display-tools sim-tools
+python3 tests/run_python_tests.py sim-tools
 python3 tests/run_python_tests.py contracts
 ```
 
@@ -63,7 +63,6 @@ python3 tests/run_python_tests.py contracts
 - **恢复出厂**：持久化 reset marker 后重启，启动阶段幂等清除 Wi-Fi、引导状态、显示/待机偏好、水平仪校准、内部 `/data` 及 BLE bond/CCCD；全部收敛后才清除 marker 并恢复广告。外置 SD 卡及录音不受影响。
 - **文件与录音存储**：普通挂载不格式化；文件服务初始化失败时释放部分分配并降级启动，runtime 只清理成功取得的服务所有权，停止与重启不依赖失败实例的反初始化。浏览、显式维护和录音使用权契约见各 middleware 组件文档。
 - **LVGL 宿主模拟器**：页面调试、JSON-RPC Agent 驱动与控件树回归，见 [`sim/README_ZH.md`](sim/README_ZH.md)。
-- **显示压力基准**：仅真机执行，验收门槛、profile 与配置基线见 [`tests/display/README.md`](tests/display/README.md)。
 
 ## 开发约束
 

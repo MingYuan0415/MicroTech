@@ -50,7 +50,6 @@ Host suites are discovered from their `CMakeLists.txt`:
 
 A suite's sanitizer option is read from its `CMakeLists.txt`; do not guess the
 name. `mt.py list` shows the alias and option. `connectivity` needs `IDF_PATH`.
-Hardware-only work (`tests/display`) is intentionally not a wrapper suite.
 
 Python groups are selected separately with `mt.py py`; `design-skills` covers
 the design-contract, aesthetic-review and motion-interaction helper tests,
@@ -143,7 +142,7 @@ to validate discovery.
 
 ## Boundaries
 
-The wrapper does not replace hardware validation, does not run display
-benchmarks, and does not cache test results. Re-run a gate when its inputs
+The wrapper does not replace hardware validation and does not cache test
+results. Re-run a gate when its inputs
 change; do not treat a summary as evidence that an unrelated artifact is
 current.

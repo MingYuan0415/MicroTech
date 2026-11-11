@@ -104,8 +104,6 @@ def _allocate_port():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        if port == 5001:
-            continue
         reservation_path = os.path.join(
             os.environ.get('TMPDIR') or '/tmp',
             'microtech-sim-port-%d.lock' % port)

@@ -79,9 +79,8 @@ selectable without the implementation behind it.
 
 - `CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM` permits PSRAM-backed task
   stacks. The `lvgl` worker uses one (`stack_in_psram = true` in
-  `app_manager_lvgl_adapter.c`); the display-diagnostics task is another when
-  enabled, and any task created with `MALLOC_CAP_SPIRAM` is subject to the
-  same rule.
+  `app_manager_lvgl_adapter.c`); any task created with `MALLOC_CAP_SPIRAM` is
+  subject to the same rule.
 - A flash write, erase, or commit disables the flash and PSRAM caches. If the
   active stack pointer is in PSRAM, ESP-IDF asserts in
   `spi_flash_disable_interrupts_caches_and_other_cpu()`; without the assert the
@@ -96,8 +95,9 @@ selectable without the implementation behind it.
 - NVS and flash reads through the cache are allowed; the restriction is on
   operations that disable the cache.
 - Do not move the LVGL worker stack to internal RAM to make a storage call
-  legal. `tests/display/README.md` requires the render task stack in PSRAM;
-  move the storage call off the worker instead.
+  legal. `layers/app_manager/app_core/Kconfig` and
+  `app_manager_lvgl_adapter.c` require the LVGL worker stack in PSRAM; move
+  the storage call off the worker instead.
 
 ## ESP32-S3 Pin Guardrails
 
