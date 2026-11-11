@@ -25,52 +25,51 @@ REQUIREMENT_PIN = re.compile(
 class DependencyPinTest(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parents[2]
-        self.lock = yaml.safe_load(
-            (self.root / "dependencies.lock").read_text(encoding="utf-8")
-        ) or {}
-        # One lock describes the last resolved target, not every target at
-        # once. Judge conditional manifests against the lock's own target so a
-        # deliberate per-target build does not make the check stale.
-        self.target = str(self.lock.get("target") or self._sdkconfig_target())
+        self.locks = self._load_locks()
 
-    def _sdkconfig_target(self) -> str:
-        path = self.root / "sdkconfig"
-        if not path.exists():
-            return ""
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("CONFIG_IDF_TARGET="):
-                return line.split("=", 1)[1].strip().strip('"')
-        return ""
+    def _load_locks(self):
+        paths = sorted(self.root.glob("dependencies.lock.*"))
+        if not paths:
+            legacy = self.root / "dependencies.lock"
+            if legacy.is_file():
+                paths = [legacy]
+        self.assertTrue(
+            paths,
+            "no dependencies.lock.<target> or dependencies.lock found",
+        )
+        locks = []
+        for path in paths:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            target = str(data.get("target") or "").strip()
+            self.assertTrue(target, f"{path.name}: missing target")
+            locks.append((path, data, target))
+        return locks
 
-    def _condition_matches(self, condition: str) -> bool:
+    def _condition_matches(self, condition: str, target: str) -> bool:
         exact = re.fullmatch(r"target\s*==\s*([A-Za-z0-9_]+)", condition)
         if exact:
-            return exact.group(1) == self.target
+            return exact.group(1) == target
         negated = re.fullmatch(r"target\s*!=\s*([A-Za-z0-9_]+)", condition)
         if negated:
-            return negated.group(1) != self.target
+            return negated.group(1) != target
         member = re.fullmatch(r"target\s+in\s*\[([^\]]*)\]", condition)
         if member:
             names = {item.strip() for item in member.group(1).split(",")
                      if item.strip()}
-            return self.target in names
+            return target in names
         # A rule the checker cannot evaluate is treated as applicable so the
-        # dependency still has to be locked for the active target.
+        # dependency still has to be locked for the lock's target.
         return True
 
-    def _dependency_applies(self, spec) -> bool:
+    def _dependency_applies(self, spec, target: str) -> bool:
         if not isinstance(spec, dict):
             return True
         rules = spec.get("rules")
         if not rules:
             return True
-        # The lock describes the active target only; a target-scoped manifest
-        # entry for another target is expected to be absent.
-        if not self.target:
-            return False
         for rule in rules:
             condition = str((rule or {}).get("if", "")).strip()
-            if not condition or self._condition_matches(condition):
+            if not condition or self._condition_matches(condition, target):
                 return True
         return False
 
@@ -111,25 +110,32 @@ class DependencyPinTest(unittest.TestCase):
         self.assertEqual(failures, [], "\n".join(failures))
 
     def test_registry_dependencies_exist_in_lock(self) -> None:
-        locked = set((self.lock.get("dependencies") or {}).keys())
-        self.assertTrue(locked, "dependencies.lock did not parse any components")
-        # The component manager accepts both fully qualified and bare names,
-        # so match on the final path component as well.
-        locked_short = {name.rsplit("/", 1)[-1] for name in locked}
+        manifests = list(self._manifests())
         failures = []
-        for relative, path in self._manifests():
-            for name, spec in self._dependencies(relative, path).items():
-                if name == "idf":
-                    continue
-                if isinstance(spec, dict) and "path" in spec:
-                    continue
-                if not self._dependency_applies(spec):
-                    continue
-                if name in locked or name.rsplit("/", 1)[-1] in locked_short:
-                    continue
-                failures.append(
-                    f"{relative}: {name} is absent from dependencies.lock"
-                )
+        for lock_path, lock, target in self.locks:
+            locked = set((lock.get("dependencies") or {}).keys())
+            self.assertTrue(
+                locked,
+                f"{lock_path.name} did not parse any components",
+            )
+            # The component manager accepts both fully qualified and bare
+            # names, so match on the final path component as well.
+            locked_short = {name.rsplit("/", 1)[-1] for name in locked}
+            for relative, path in manifests:
+                for name, spec in self._dependencies(relative, path).items():
+                    if name == "idf":
+                        continue
+                    if isinstance(spec, dict) and "path" in spec:
+                        continue
+                    if not self._dependency_applies(spec, target):
+                        continue
+                    if (name in locked or
+                            name.rsplit("/", 1)[-1] in locked_short):
+                        continue
+                    failures.append(
+                        f"{relative}: {name} is absent from {lock_path.name} "
+                        f"(target {target})"
+                    )
         self.assertEqual(failures, [], "\n".join(failures))
 
     def test_host_requirements_are_exactly_pinned(self) -> None:

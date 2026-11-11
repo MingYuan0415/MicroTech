@@ -17,7 +17,7 @@ only what they already enforce.
 | App sources, include dirs, services, capabilities and reset hooks | App manifest | `layers/apps/<app>/app.cmake`, listed by `app_catalog.cmake` |
 | Protocol constants and semantics | Contract submodule | `contracts/device_link` (`protocol.yaml`, `vectors/golden.json`); the submodule pointer is the only code pin |
 | Contract schema metadata | Middleware component | `layers/middleware/components/device_link/device-link-contract.lock` |
-| External dependency versions | Manifest + lock | each `idf_component.yml` and the root `dependencies.lock` |
+| External dependency versions | Manifest + lock | each `idf_component.yml` and the per-target `dependencies.lock.<target>` |
 
 A product may add non-BSP service capabilities (for example radio), but the
 selected board must declare `MT_BOARD_RADIO_SUPPORTED` for radio and it cannot
@@ -63,21 +63,22 @@ governance):
    `*` (the test checks the literal `""`/`"*"` per entry; bounded ranges are
    allowed).
 2. A registry dependency name declared in `idf_component.yml` must exist in the
-   root `dependencies.lock`; version consistency is guaranteed by the component
-   manager resolving against the lock, the test does not compare versions entry by
-   entry.
+   matching per-target `dependencies.lock.<target>`; version consistency is
+   guaranteed by the component manager resolving against the lock, the test does
+   not compare versions entry by entry.
 3. Every dependency in the root `requirements*.txt` must be pinned exactly
    (`name==version`); range specifiers are forbidden.
 
-After changing a version in `idf_component.yml`, re-resolve and update
-`dependencies.lock`; never edit the lock by hand.
+After changing a version in `idf_component.yml`, re-resolve and update the lock
+for each affected target; never edit a lock by hand.
 
-There is one `dependencies.lock`, and it describes the target resolved by the
-last Component Manager run. It is not a combined release manifest for both
-targets. `tests/configuration/test_dependency_pins.py` judges conditional
-manifest entries against the lock's own `target`, so a deliberate S3 or P4
-build does not make the lock look stale. Build and verify each target
-separately from a clean build directory.
+The project keeps one lock per IDF target: `dependencies.lock.<target>`. The
+root `CMakeLists.txt` sets the Component Manager's `DEPENDENCIES_LOCK` build
+property so each target resolves into its own file; the files are committed and
+are not a combined release manifest. `tests/configuration/test_dependency_pins.py`
+judges conditional manifest entries against each lock's own `target`, so a
+deliberate S3 or P4 build does not make the other target's lock look stale.
+Build and verify each target separately from a clean build directory.
 
 ## 4. Check Entry Point
 

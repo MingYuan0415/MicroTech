@@ -10,7 +10,7 @@ values and pin maps live in the owning docs and code; do not copy them here.
 
 ## Sources of Truth
 
-- `dependencies.lock` for the active adapter and LVGL versions.
+- `dependencies.lock.<target>` for the active adapter and LVGL versions.
 - `layers/app_manager/app_core/src/app_manager_lvgl_adapter.c` for display
   registration, custom draw submission, and lifecycle ownership.
 - `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/board_display.c` for the S3

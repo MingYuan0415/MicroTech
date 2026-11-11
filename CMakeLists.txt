@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.22)
 if(NOT IDF_TARGET)
     set(IDF_TARGET "esp32s3")
 endif()
+# The Component Manager rewrites the dependency lock whenever the target
+# changes. Keep one committed lock per target so S3 and P4 builds do not dirty
+# a shared root dependencies.lock.
+set(DEPENDENCIES_LOCK "dependencies.lock.${IDF_TARGET}")
 set(MT_BOARD "" CACHE STRING
     "MicroTech board id; empty selects the target's only registered board")
 set(MT_PRODUCT "" CACHE STRING
@@ -33,6 +37,7 @@ set(EXTRA_COMPONENT_DIRS
     layers/apps
 )
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+idf_build_set_property(DEPENDENCIES_LOCK "${DEPENDENCIES_LOCK}")
 project(microtech)
 
 if(CONFIG_ESP_LVGL_ADAPTER_ENABLE_FREETYPE AND NOT CONFIG_LV_USE_CLIB_MALLOC)
