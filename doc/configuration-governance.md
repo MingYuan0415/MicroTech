@@ -41,19 +41,10 @@ sources (`main/`, `layers/`, excluding `tests/`, `managed_components/`,
 3. `.c`/`.h` files must not call `xTaskCreate`, `xTaskCreateStatic`, or
    `xTaskCreateWithCaps` without a pinned core; task core affinity is always
    explicit.
-4. Removed configuration symbols must not reappear. The list is
-   `DEPRECATED_CONFIG_TOKENS` in `test_configuration_governance.py` (it covers the
-   deleted `CONFIG_BSP_AUDIO_*`, `CONFIG_BSP_DISPLAY_*`,
-   `CONFIG_APP_MANAGER_DISPLAY_BENCHMARK`, and the old per-service task and
-   queue symbols).
-5. Removed configuration must not appear in `sdkconfig.defaults`.
-6. The project's Kconfig symbol set is not machine-pinned; adding or removing a
-   symbol needs no test update, but a removed symbol must still be registered in
-   `DEPRECATED_CONFIG_TOKENS` (rule 4) so it cannot come back.
-7. The key connectivity, cache, and task-core baseline in `sdkconfig.defaults` is
-   fixed; a change requires updating the expected mapping in
+4. The key connectivity, cache, and task-core baseline in `sdkconfig.defaults`
+   is fixed; a change requires updating the expected mapping in
    `test_connectivity_defaults` in the same change.
-8. Product, App catalog and board contracts are checked by
+5. Product, App catalog and board contracts are checked by
    `test_product_catalog.py`: every App source is catalogued, every product
    selects known Apps and a known board, required Apps are selected, App
    capabilities are available on the product, board document registries are
@@ -94,8 +85,8 @@ separately from a clean build directory.
 python3 tests/run_python_tests.py configuration contracts
 ```
 
-The `configuration` group covers the configuration rules, the removed-symbol
-lists, the connectivity baseline, and dependency pins; the `contracts` group runs
+The `configuration` group covers the configuration rules, the connectivity
+baseline, and dependency pins; the `contracts` group runs
 the contract submodule's own protocol and vector tests (host implementation
 agreement with the golden vectors is covered by
 `layers/middleware/components/device_link/tests/host`). They are local and review

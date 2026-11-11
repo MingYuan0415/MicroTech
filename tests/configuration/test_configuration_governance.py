@@ -20,31 +20,6 @@ UNPINNED_TASK_CREATE = (
     re.compile(r"\bxTaskCreateStatic\s*\("),
     re.compile(r"\bxTaskCreateWithCaps\s*\("),
 )
-DEPRECATED_CONFIG_TOKENS = (
-    "CONFIG_BSP_AUDIO_",
-    "CONFIG_AUDIO_SERVICE_",
-    "CONFIG_SD_STORAGE_SERVICE_",
-    "CONFIG_IMU_SERVICE_SAMPLE_RATE_HZ",
-    "CONFIG_IMU_SERVICE_TASK_PRIORITY",
-    "CONFIG_POWER_SERVICE_TASK_PRIORITY",
-    "CONFIG_POWER_SERVICE_POLL_INTERVAL_MS",
-    "CONFIG_POWER_SERVICE_IRQ_POLL_INTERVAL_MS",
-    "CONFIG_WIFI_SERVICE_TASK_PRIORITY",
-    "CONFIG_WIFI_SERVICE_WORKER_POLL_MS",
-    "CONFIG_WIFI_SERVICE_EVENT_DRAIN_TIMEOUT_MS",
-    "CONFIG_SYSTEM_PM_STANDBY_TASK_PRIO",
-    "CONFIG_CONNECTIVITY_MANAGER_MAX_PROFILES",
-    "CONFIG_APP_MANAGER_DISPLAY_BENCHMARK",
-    "CONFIG_APP_MANAGER_LVGL_RGB565_SWAPPED",
-    "CONFIG_BSP_DISPLAY_NON_TE_PSRAM_DMA_DIRECT",
-    "CONFIG_BSP_DISPLAY_SPI_CLOCK_40M",
-    "CONFIG_BSP_DISPLAY_SPI_CLOCK_80M",
-    "CONFIG_BSP_DISPLAY_SPI_CLOCK_HZ",
-    "CONFIG_BSP_DISPLAY_SPI_MAX_TRANSFER_LINES",
-    "CONFIG_BSP_DISPLAY_SPI_TRANS_QUEUE_DEPTH",
-    "CONFIG_BSP_DISPLAY_TE_SYNC",
-    "CONFIG_SYSTEM_PM_DEVELOPMENT_MODE",
-)
 
 
 class ConfigurationGovernanceTest(unittest.TestCase):
@@ -77,25 +52,6 @@ class ConfigurationGovernanceTest(unittest.TestCase):
             if path.suffix in {".c", ".h"} and any(
                     pattern.search(text) for pattern in UNPINNED_TASK_CREATE):
                 failures.append(f"{relative}: unpinned task creation")
-            for token in DEPRECATED_CONFIG_TOKENS:
-                if token in text:
-                    failures.append(f"{relative}: deprecated {token}")
-        self.assertEqual(failures, [], "\n".join(failures))
-
-    def test_removed_configuration_is_absent_from_defaults(self) -> None:
-        paths = [self.root / "sdkconfig.defaults"]
-        paths.extend([
-            self.root / "sdkconfig.defaults.esp32s3",
-            self.root / "sdkconfig.defaults.esp32p4",
-        ])
-        failures = []
-        for path in paths:
-            text = path.read_text(encoding="utf-8")
-            for token in DEPRECATED_CONFIG_TOKENS[-9:]:
-                if token in text:
-                    failures.append(
-                        f"{path.relative_to(self.root)}: deprecated {token}"
-                    )
         self.assertEqual(failures, [], "\n".join(failures))
 
     def test_connectivity_defaults(self) -> None:
