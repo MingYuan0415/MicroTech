@@ -61,6 +61,12 @@ static atomic_size_t s_caps_task_count;
 static atomic_size_t s_caps_task_owner_delete_count;
 static atomic_size_t s_caps_task_wrong_delete_count;
 static atomic_size_t s_caps_task_self_delete_count;
+static atomic_size_t s_event_group_wait_count;
+static atomic_uint s_event_group_last_timeout;
+static atomic_bool s_task_tick_sequence_enabled;
+static atomic_bool s_task_tick_sequence_first_pending;
+static atomic_uint s_task_tick_sequence_first;
+static atomic_uint s_task_tick_sequence_subsequent;
 static atomic_uint s_last_task_stack_caps;
 
 static int _host_init_monotonic_condition(pthread_cond_t *condition)
@@ -426,6 +432,9 @@ EventBits_t xEventGroupWaitBits(EventGroupHandle_t group,
     {
         return 0U;
     }
+    (void)atomic_fetch_add(&s_event_group_wait_count, 1U);
+    atomic_store_explicit(&s_event_group_last_timeout, timeout,
+                          memory_order_relaxed);
     (void)pthread_mutex_lock(&group->lock);
     struct timespec deadline = {0};
     if (timeout != 0 && timeout != portMAX_DELAY)
@@ -722,6 +731,18 @@ uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit, TickType_t timeout)
 
 TickType_t xTaskGetTickCount(void)
 {
+    if (atomic_load_explicit(&s_task_tick_sequence_enabled,
+                             memory_order_relaxed))
+    {
+        if (atomic_exchange_explicit(&s_task_tick_sequence_first_pending,
+                                     false, memory_order_relaxed))
+        {
+            return atomic_load_explicit(&s_task_tick_sequence_first,
+                                        memory_order_relaxed);
+        }
+        return atomic_load_explicit(&s_task_tick_sequence_subsequent,
+                                    memory_order_relaxed);
+    }
     struct timespec current;
     (void)clock_gettime(CLOCK_MONOTONIC, &current);
     const uint64_t ticks = (uint64_t)current.tv_sec * configTICK_RATE_HZ +
@@ -904,8 +925,45 @@ size_t host_caps_task_self_delete_count(void)
                                 memory_order_relaxed);
 }
 
+size_t host_event_group_wait_count(void)
+{
+    return atomic_load_explicit(&s_event_group_wait_count,
+                                memory_order_relaxed);
+}
+
+TickType_t host_event_group_last_timeout(void)
+{
+    return atomic_load_explicit(&s_event_group_last_timeout,
+                                memory_order_relaxed);
+}
+
+void host_task_set_tick_count_sequence(bool enabled, TickType_t first,
+                                       TickType_t subsequent)
+{
+    atomic_store_explicit(&s_task_tick_sequence_first, first,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_subsequent, subsequent,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_first_pending, true,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_enabled, enabled,
+                          memory_order_relaxed);
+}
+
 void host_task_shutdown(void)
 {
+    atomic_store_explicit(&s_event_group_wait_count, 0U,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_event_group_last_timeout, 0U,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_enabled, false,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_first_pending, false,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_first, 0U,
+                          memory_order_relaxed);
+    atomic_store_explicit(&s_task_tick_sequence_subsequent, 0U,
+                          memory_order_relaxed);
     (void)pthread_mutex_lock(&s_task_state_lock);
     TaskHandle_t task = s_created_task;
     s_created_task = NULL;

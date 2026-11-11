@@ -126,6 +126,8 @@ typedef struct lifecycle_observation
     app_manager_lifecycle_observer_phase_t phase;
     size_t live_objects;
     size_t live_timers;
+    unsigned weather_snapshot_acquires;
+    unsigned weather_snapshot_leases;
 } lifecycle_observation_t;
 
 typedef struct lv_resource_counts
@@ -384,7 +386,116 @@ static void _lifecycle_observer(
     observation->phase = phase;
     observation->live_objects = host_lv_live_object_count();
     observation->live_timers = host_lv_live_timer_count();
+    observation->weather_snapshot_acquires =
+        host_weather_snapshot_acquire_count();
+    observation->weather_snapshot_leases = host_weather_snapshot_lease_count();
     _first_frame_observe_lifecycle(app_id, page_id, message, phase);
+}
+
+static bool _lifecycle_last_weather_acquisitions(
+    const char *app_id, const char *page_id,
+    app_manager_msg_type_t message,
+    app_manager_lifecycle_observer_phase_t phase,
+    unsigned *acquires)
+{
+    for (size_t index = s_lifecycle_observation_count; index > 0U; --index)
+    {
+        const lifecycle_observation_t *observation =
+            &s_lifecycle_observations[index - 1U];
+        if (strcmp(observation->app_id, app_id) == 0 &&
+                strcmp(observation->page_id, page_id) == 0 &&
+                observation->message == message &&
+                observation->phase == phase)
+        {
+            *acquires = observation->weather_snapshot_acquires;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool _lifecycle_last_weather_leases(
+    const char *app_id, const char *page_id,
+    app_manager_msg_type_t message,
+    app_manager_lifecycle_observer_phase_t phase,
+    unsigned *leases)
+{
+    for (size_t index = s_lifecycle_observation_count; index > 0U; --index)
+    {
+        const lifecycle_observation_t *observation =
+            &s_lifecycle_observations[index - 1U];
+        if (strcmp(observation->app_id, app_id) == 0 &&
+                strcmp(observation->page_id, page_id) == 0 &&
+                observation->message == message &&
+                observation->phase == phase)
+        {
+            *leases = observation->weather_snapshot_leases;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool _lifecycle_weather_leases_transient(
+    const char *app_id, const char *page_id,
+    app_manager_msg_type_t message, unsigned *minimum,
+    unsigned *maximum)
+{
+    size_t start_index = 0U;
+    bool start_found = false;
+    for (size_t index = s_lifecycle_observation_count; index > 0U; --index)
+    {
+        const lifecycle_observation_t *observation =
+            &s_lifecycle_observations[index - 1U];
+        if (strcmp(observation->app_id, app_id) == 0 &&
+                strcmp(observation->page_id, page_id) == 0 &&
+                observation->message == APP_MANAGER_MSG_ONSTART &&
+                observation->phase == APP_MANAGER_LIFECYCLE_OBSERVER_AFTER)
+        {
+            start_index = index;
+            start_found = true;
+            break;
+        }
+    }
+    bool found = false;
+    *minimum = UINT32_MAX;
+    *maximum = 0U;
+    for (size_t index = start_found ? start_index : 0U;
+            index < s_lifecycle_observation_count; ++index)
+    {
+        const lifecycle_observation_t *observation =
+            &s_lifecycle_observations[index];
+        if (strcmp(observation->app_id, app_id) == 0 &&
+                strcmp(observation->page_id, page_id) == 0 &&
+                observation->message == message)
+        {
+            found = true;
+            if (observation->weather_snapshot_leases < *minimum)
+            {
+                *minimum = observation->weather_snapshot_leases;
+            }
+            if (observation->weather_snapshot_leases > *maximum)
+            {
+                *maximum = observation->weather_snapshot_leases;
+            }
+        }
+    }
+    return found;
+}
+
+static bool _lifecycle_mount_weather_acquisitions(
+    const char *app_id, const char *page_id, unsigned *before,
+    unsigned *after)
+{
+    *before = 0U;
+    *after = 0U;
+    bool before_found = _lifecycle_last_weather_acquisitions(
+                            app_id, page_id, APP_MANAGER_MSG_ONMOUNT,
+                            APP_MANAGER_LIFECYCLE_OBSERVER_BEFORE, before);
+    bool after_found = _lifecycle_last_weather_acquisitions(
+                           app_id, page_id, APP_MANAGER_MSG_ONMOUNT,
+                           APP_MANAGER_LIFECYCLE_OBSERVER_AFTER, after);
+    return before_found && after_found;
 }
 
 static size_t _lifecycle_observed(const char *app_id, const char *page_id,
@@ -1171,6 +1282,94 @@ static bool _touch(touch_action_t action, int32_t x, int32_t y)
     assert(app_manager_ui_call(_touch_on_ui, &request,
                                UI_TIMEOUT_MS) == ESP_OK);
     return request.handled;
+}
+
+static esp_err_t _pull_active_page_on_ui(void *arg)
+{
+    bool *handled = arg;
+    lv_obj_t *screen = lv_screen_active();
+    assert(screen != NULL);
+    lv_obj_t *root = NULL;
+    const uint32_t child_count = lv_obj_get_child_count(screen);
+    for (uint32_t index = 0U; index < child_count; ++index)
+    {
+        lv_obj_t *child = lv_obj_get_child(screen, (int32_t)index);
+        if (child != NULL && lv_obj_is_clickable(child) &&
+                lv_obj_get_width(child) >= 300 &&
+                lv_obj_get_height(child) >= 400)
+        {
+            root = child;
+            break;
+        }
+    }
+    if (root == NULL)
+    {
+        *handled = false;
+        return ESP_OK;
+    }
+    *handled = host_lv_touch_press_object(root, 100, 160);
+    if (*handled)
+    {
+        *handled = host_lv_touch_move(100, 220);
+    }
+    if (*handled)
+    {
+        *handled = host_lv_touch_release(100, 220);
+    }
+    return ESP_OK;
+}
+
+static bool _try_pull_active_page(void)
+{
+    bool handled = false;
+    assert(app_manager_ui_call(_pull_active_page_on_ui, &handled,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return handled;
+}
+
+static void _pull_active_page(void)
+{
+    assert(_try_pull_active_page());
+}
+
+static unsigned _page_refresh_count(const char *app_id)
+{
+    if (strcmp(app_id, APP_MANAGER_ID_WEATHER) == 0)
+    {
+        return host_weather_refresh_count();
+    }
+    assert(strcmp(app_id, APP_MANAGER_ID_SETTINGS) == 0);
+    return host_connectivity_manager_call_count(
+               HOST_CONNECTIVITY_MANAGER_CALL_REQUEST_SCAN);
+}
+
+static void _test_real_page_pull_resume(
+    const char *app_id, const char *page_id, size_t active_timers)
+{
+    const unsigned refreshes_before = _page_refresh_count(app_id);
+    _pull_active_page();
+    assert(_page_refresh_count(app_id) == refreshes_before + 1U);
+
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_lv_resource_counts().timers == 0U);
+    assert(!_try_pull_active_page());
+    assert(_page_refresh_count(app_id) == refreshes_before + 1U);
+
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_page_is_actived(app_id, page_id));
+    assert(_lv_resource_counts().timers == active_timers);
+    _pull_active_page();
+    assert(_page_refresh_count(app_id) == refreshes_before + 2U);
+
+    assert(app_manager_ui_call(_screen_pause_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_lv_resource_counts().timers == 0U);
+    assert(app_manager_ui_call(_screen_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_page_is_actived(app_id, page_id));
+    assert(_lv_resource_counts().timers == active_timers);
 }
 
 static system_gesture_snapshot_t _system_gesture_snapshot(void)
@@ -2575,6 +2774,32 @@ static void _exercise_real_page_screen_lifecycle(
     assert(_wait_for_dynamic_task_count(active_workers));
     _assert_event_slot_headroom(active_subscriptions);
     assert(host_weather_snapshot_lease_count() == active_weather_snapshots);
+    unsigned leases_before_mount = 0U;
+    if (!_lifecycle_last_weather_leases(
+                app_id, page_id, APP_MANAGER_MSG_ONSTART,
+                APP_MANAGER_LIFECYCLE_OBSERVER_AFTER, &leases_before_mount))
+    {
+        leases_before_mount = host_weather_snapshot_lease_count() -
+                              active_weather_snapshots;
+    }
+    unsigned leases_after_mount = 0U;
+    assert(_lifecycle_last_weather_leases(
+               app_id, page_id, APP_MANAGER_MSG_ONMOUNT,
+               APP_MANAGER_LIFECYCLE_OBSERVER_AFTER, &leases_after_mount));
+    assert(leases_after_mount == leases_before_mount);
+    unsigned mount_lease_minimum = 0U;
+    unsigned mount_lease_maximum = 0U;
+    assert(_lifecycle_weather_leases_transient(
+               app_id, page_id, APP_MANAGER_MSG_ONMOUNT,
+               &mount_lease_minimum, &mount_lease_maximum));
+    assert(mount_lease_minimum == leases_before_mount);
+    assert(mount_lease_maximum == leases_before_mount);
+    unsigned mount_acquires_before = 0U;
+    unsigned mount_acquires_after = 0U;
+    assert(_lifecycle_mount_weather_acquisitions(
+               app_id, page_id, &mount_acquires_before,
+               &mount_acquires_after));
+    assert(mount_acquires_after == mount_acquires_before);
 
     const size_t starts_before = _lifecycle_observed(
                                      app_id, page_id,
@@ -2598,6 +2823,11 @@ static void _exercise_real_page_screen_lifecycle(
     assert(_wait_for_dynamic_task_count(0U));
     _assert_event_slot_headroom(0);
     assert(host_weather_snapshot_lease_count() == 0U);
+    unsigned leases_after_pause = 1U;
+    assert(_lifecycle_last_weather_leases(
+               app_id, page_id, APP_MANAGER_MSG_ONPAUSE,
+               APP_MANAGER_LIFECYCLE_OBSERVER_AFTER, &leases_after_pause));
+    assert(leases_after_pause == 0U);
     assert(!app_manager_is_actived(app_id));
     assert(!app_page_is_actived(app_id, page_id));
     assert(app_manager_get_active_app_id() == NULL);
@@ -2634,6 +2864,7 @@ static void MT_TEST_MAYBE_UNUSED _test_weather_page_screen_lifecycles(void)
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
            ESP_OK);
     assert(_wait_for_page_active(APP_MANAGER_ID_WEATHER, "root"));
+    _test_real_page_pull_resume(APP_MANAGER_ID_WEATHER, "root", 0U);
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_WEATHER, "root", "Shenzhen", 0U, 0U, 1U, 1U);
 
@@ -2806,6 +3037,28 @@ static void MT_TEST_MAYBE_UNUSED _test_other_real_app_screen_lifecycles(void)
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
     _exercise_real_page_screen_lifecycle(
         APP_MANAGER_ID_SETTINGS, "root", "系统设置", 0U, 0U, 0U, 0U);
+
+    _click_action("Wi-Fi");
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "wifi"));
+    _test_real_page_pull_resume(APP_MANAGER_ID_SETTINGS, "wifi", 1U);
+    _exercise_real_page_screen_lifecycle(
+        APP_MANAGER_ID_SETTINGS, "wifi", "Wi-Fi 开关", 1U, 0U, 0U, 0U);
+    connectivity_manager_operation_id_t scan_operation =
+        host_connectivity_manager_current_operation();
+    if (scan_operation != 0U)
+    {
+        const connectivity_manager_scan_snapshot_t finished_scan =
+        {
+            .operation_id = scan_operation,
+            .last_error = ESP_OK,
+            .running = false,
+        };
+        assert(host_connectivity_manager_publish_scan(&finished_scan) == ESP_OK);
+        scan_operation = host_connectivity_manager_current_operation();
+    }
+    assert(scan_operation == 0U);
+    _click_back();
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
 
     _click_action("显示与电源");
     assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "display"));
@@ -4131,8 +4384,17 @@ static esp_err_t _pull_refresh_attach_on_ui(void *arg)
     lv_obj_set_scroll_dir(page.content, LV_DIR_VER);
     lv_obj_set_scrollable(page.content, true);
     lv_obj_set_clickable(page.content, true);
+    lv_obj_set_clickable(page.root, false);
+    const bool root_was_clickable = lv_obj_is_clickable(page.root);
     app_ui_pull_refresh_attach(&s_pull_refresh, &page,
                                _pull_refresh_on_refresh, NULL);
+    assert(s_pull_refresh.root_event == NULL);
+    assert(s_pull_refresh.content_event == NULL);
+    assert(lv_obj_is_clickable(page.root) == root_was_clickable);
+    app_ui_pull_refresh_resume(&s_pull_refresh);
+    assert(s_pull_refresh.root_event != NULL);
+    assert(s_pull_refresh.content_event != NULL);
+    assert(lv_obj_is_clickable(page.root));
     return ESP_OK;
 }
 
@@ -4145,6 +4407,42 @@ static esp_err_t _pull_refresh_stray_tap_on_ui(void *arg)
     result->anim_after = host_lv_generic_animation_start_count();
     result->offset = s_pull_refresh.offset;
     result->refreshing = s_pull_refresh.refreshing;
+    return ESP_OK;
+}
+
+static esp_err_t _pull_refresh_pause_on_ui(void *arg)
+{
+    size_t *timers_before = arg;
+    const bool root_was_clickable = s_pull_refresh.root_was_clickable;
+    *timers_before = host_lv_live_timer_count();
+    assert(s_pull_refresh.timeout != NULL);
+    assert(s_pull_refresh.root_event != NULL);
+    assert(s_pull_refresh.content_event != NULL);
+    app_ui_pull_refresh_pause(&s_pull_refresh);
+    assert(s_pull_refresh.timeout == NULL);
+    assert(s_pull_refresh.root_event == NULL);
+    assert(s_pull_refresh.content_event == NULL);
+    assert(lv_obj_is_clickable(s_pull_refresh.root) == root_was_clickable);
+    assert(host_lv_live_timer_count() + 1U == *timers_before);
+    assert(!s_pull_refresh.refreshing);
+    assert(s_pull_refresh.offset == 0);
+    return ESP_OK;
+}
+
+static esp_err_t _pull_refresh_resume_on_ui(void *arg)
+{
+    (void)arg;
+    app_ui_pull_refresh_resume(&s_pull_refresh);
+    assert(s_pull_refresh.root_event != NULL);
+    assert(s_pull_refresh.content_event != NULL);
+    assert(lv_obj_is_clickable(s_pull_refresh.root));
+    return ESP_OK;
+}
+
+static esp_err_t _pull_refresh_resumed_drag_on_ui(void *arg)
+{
+    bool *handled = arg;
+    *handled = host_lv_touch_press(184, 300);
     return ESP_OK;
 }
 
@@ -4187,6 +4485,23 @@ static void _test_pull_refresh_hold(void)
     assert(tap.refreshing);
     assert(tap.offset == 56);
     assert(tap.anim_after == tap.anim_before);
+
+    /* PAUSE drops the foreground timer and hold; RESUME restores the gesture. */
+    size_t timers_before_pause = 0U;
+    assert(app_manager_ui_call(_pull_refresh_pause_on_ui, &timers_before_pause,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_pull_refresh_resume_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    bool resumed_press_handled = false;
+    assert(app_manager_ui_call(_pull_refresh_resumed_drag_on_ui,
+                               &resumed_press_handled, UI_TIMEOUT_MS) == ESP_OK);
+    assert(resumed_press_handled);
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 360));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 420));
+    assert(s_pull_refresh.armed);
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 420));
+    assert(s_pull_refresh.refreshing);
+    assert(s_pull_refresh_fired == 2U);
 
     /* Completion closes the hold and animates the page back to rest. */
     assert(app_manager_ui_call(_pull_refresh_finish_on_ui, NULL,

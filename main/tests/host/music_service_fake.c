@@ -4,6 +4,25 @@ EVENT_BUS_DEFINE_ID(TIME_SERVICE_MSG);
 
 #include <string.h>
 
+static unsigned s_time_ready_calls;
+static bool s_last_time_ready;
+
+void host_music_service_fake_reset(void)
+{
+    s_time_ready_calls = 0U;
+    s_last_time_ready = false;
+}
+
+unsigned host_music_service_fake_time_ready_calls(void)
+{
+    return s_time_ready_calls;
+}
+
+bool host_music_service_fake_last_time_ready(void)
+{
+    return s_last_time_ready;
+}
+
 esp_err_t music_service_init(const music_service_config_t *config)
 {
     (void)config;
@@ -22,7 +41,8 @@ esp_err_t music_service_set_network_ready(bool ready)
 
 esp_err_t music_service_set_time_ready(bool ready)
 {
-    (void)ready;
+    ++s_time_ready_calls;
+    s_last_time_ready = ready;
     return ESP_OK;
 }
 

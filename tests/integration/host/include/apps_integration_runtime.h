@@ -45,6 +45,8 @@ void host_optional_services_set_available(bool available);
 unsigned host_weather_refresh_count(void);
 /** @brief Return currently retained immutable weather snapshots. */
 unsigned host_weather_snapshot_lease_count(void);
+/** @brief Return all Weather snapshot acquisitions since the last reset. */
+unsigned host_weather_snapshot_acquire_count(void);
 /** @brief Select the result returned by weather manual refresh. */
 void host_weather_set_refresh_result(esp_err_t result);
 /** @brief Publish a new immutable weather snapshot with or without alerts. */
@@ -193,6 +195,13 @@ bool host_lv_toggle_visible_switch(bool checked);
 bool host_lv_click_back(void);
 /** @brief Start one pointer sequence at a logical display coordinate. */
 bool host_lv_touch_press(int32_t x, int32_t y);
+/**
+ * @brief Start one pointer sequence with an explicit live target object.
+ *
+ * This preserves normal pressed/move/release callback delivery while avoiding
+ * a fake-layout hit test when a test already owns the semantic target.
+ */
+bool host_lv_touch_press_object(lv_obj_t *object, int32_t x, int32_t y);
 /** @brief Move the active fake pointer sequence. */
 bool host_lv_touch_move(int32_t x, int32_t y);
 /** @brief Release the active fake pointer sequence. */

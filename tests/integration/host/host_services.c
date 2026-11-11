@@ -68,6 +68,7 @@ static atomic_uint s_audio_set_volume_count;
 static atomic_int s_audio_read_peak;
 static atomic_bool s_audio_fail_next_volume;
 static atomic_uint s_weather_snapshot_index;
+static atomic_uint s_weather_snapshot_acquires;
 static atomic_uint s_weather_snapshot_leases;
 static atomic_uint s_weather_refresh_count;
 static atomic_int s_weather_refresh_result;
@@ -119,6 +120,7 @@ void host_runtime_reset(void)
     atomic_store(&s_nv_volume_present, false);
     atomic_store(&s_nv_volume_set_count, 0U);
     atomic_store(&s_weather_snapshot_index, 0U);
+    atomic_store(&s_weather_snapshot_acquires, 0U);
     atomic_store(&s_weather_snapshot_leases, 0U);
     atomic_store(&s_weather_refresh_count, 0U);
     atomic_store(&s_weather_refresh_result, ESP_OK);
@@ -262,6 +264,11 @@ unsigned host_weather_refresh_count(void)
 unsigned host_weather_snapshot_lease_count(void)
 {
     return atomic_load(&s_weather_snapshot_leases);
+}
+
+unsigned host_weather_snapshot_acquire_count(void)
+{
+    return atomic_load(&s_weather_snapshot_acquires);
 }
 
 void host_weather_set_refresh_result(esp_err_t result)
@@ -417,6 +424,8 @@ esp_err_t weather_service_snapshot_acquire(
     unsigned index = atomic_load_explicit(&s_weather_snapshot_index,
                                           memory_order_acquire);
     *snapshot = &s_weather_snapshots[index];
+    atomic_fetch_add_explicit(&s_weather_snapshot_acquires, 1U,
+                              memory_order_relaxed);
     atomic_fetch_add_explicit(&s_weather_snapshot_leases, 1U,
                               memory_order_relaxed);
     return ESP_OK;

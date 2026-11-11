@@ -3441,14 +3441,25 @@ bool host_lv_touch_press(int32_t x, int32_t y)
         .y = y,
     };
     lv_obj_t *target = _host_lv_find_pointer_target(&s_pointer_indev.point);
-    if (target == NULL)
+    return host_lv_touch_press_object(target, x, y);
+}
+
+bool host_lv_touch_press_object(lv_obj_t *object, int32_t x, int32_t y)
+{
+    if (s_pointer_indev.sequence_active || object == NULL || !object->live ||
+            !_host_lv_is_visible(object))
     {
         s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
         return false;
     }
 
+    s_pointer_indev.point = (lv_point_t)
+    {
+        .x = x,
+        .y = y,
+    };
     s_pointer_indev.state = LV_INDEV_STATE_PRESSED;
-    s_pointer_indev.active_object = target;
+    s_pointer_indev.active_object = object;
     s_pointer_indev.sequence_active = true;
     s_pointer_indev.wait_release = false;
     s_pointer_indev.moved = false;
@@ -3459,7 +3470,7 @@ bool host_lv_touch_press(int32_t x, int32_t y)
         .y = 0,
     };
     s_pointer_indev.last_point = s_pointer_indev.point;
-    (void)_host_lv_emit_with_input(target, LV_EVENT_PRESSED,
+    (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED,
                                    &s_pointer_indev, NULL);
     return true;
 }

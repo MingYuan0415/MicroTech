@@ -50,5 +50,12 @@ size_t host_caps_task_owner_delete_count(void);
 size_t host_caps_task_wrong_delete_count(void);
 /** @brief Return WithCaps tasks that attempted to delete themselves. */
 size_t host_caps_task_self_delete_count(void);
+/** @brief Return the number of event-group waits entered by host code. */
+size_t host_event_group_wait_count(void);
+/** @brief Return the timeout used by the latest event-group wait. */
+TickType_t host_event_group_last_timeout(void);
+/** @brief Drive xTaskGetTickCount with a first and subsequent deterministic tick. */
+void host_task_set_tick_count_sequence(bool enabled, TickType_t first,
+                                       TickType_t subsequent);
 
 #endif /* __CROSS_LAYER_HOST_FREERTOS_H__ */

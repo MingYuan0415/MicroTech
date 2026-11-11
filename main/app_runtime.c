@@ -187,12 +187,22 @@ static void _app_runtime_time_event(
     {
         return;
     }
+    time_service_quality_t quality;
+    memcpy(&quality, payload, sizeof(quality));
+    if (s_ownership.weather_attempted)
+    {
+        const esp_err_t weather_result = weather_service_notify_time_changed();
+        if (weather_result != ESP_OK &&
+                weather_result != ESP_ERR_INVALID_STATE)
+        {
+            LOG_W("weather time update failed: %s",
+                  esp_err_to_name(weather_result));
+        }
+    }
     if (!s_ownership.music_attempted)
     {
         return;
     }
-    time_service_quality_t quality;
-    memcpy(&quality, payload, sizeof(quality));
     const esp_err_t result = music_service_set_time_ready(
                                  quality != TIME_SERVICE_QUALITY_INVALID);
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE)

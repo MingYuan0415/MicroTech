@@ -129,6 +129,9 @@ typedef struct test_runtime
     connectivity_manager_state_t connectivity_state;
     event_bus_cb_t connectivity_callback;
     void *connectivity_callback_context;
+    event_bus_cb_t time_callback;
+    void *time_callback_context;
+    unsigned weather_time_notifications;
 } test_runtime_t;
 
 EVENT_BUS_DEFINE_ID(CONNECTIVITY_MANAGER_MSG);
@@ -140,6 +143,9 @@ void host_file_service_reset(void);
 void host_file_service_set_init_result(esp_err_t result);
 bool host_file_service_is_initialized(void);
 size_t host_file_service_deinit_count(void);
+void host_music_service_fake_reset(void);
+unsigned host_music_service_fake_time_ready_calls(void);
+bool host_music_service_fake_last_time_ready(void);
 void host_onboarding_set_pending(bool pending);
 
 static const app_manager_app_desc_t s_required_apps[] =
@@ -213,6 +219,7 @@ static void _test_reset(void)
     s_test.sd_mounted = true;
     s_test.sd_mount_result = ESP_OK;
     host_file_service_reset();
+    host_music_service_fake_reset();
 }
 
 static void _test_clear_events(void)
@@ -569,6 +576,8 @@ esp_err_t event_bus_subscribe(event_bus_msg_id_t msg_id, uint32_t sub_type,
         assert(callback != NULL);
         assert(context == EVENT_BUS_DISPATCH_PUBLISHER);
         assert(out_handle != NULL);
+        s_test.time_callback = callback;
+        s_test.time_callback_context = user_data;
         *out_handle = 2U;
         return ESP_OK;
     }
@@ -594,6 +603,8 @@ esp_err_t event_bus_unsubscribe_sync(event_bus_sub_handle_t handle,
     if (handle == 2U)
     {
         assert(timeout_ms > 0U);
+        s_test.time_callback = NULL;
+        s_test.time_callback_context = NULL;
         return ESP_OK;
     }
     assert(handle == 1U);
@@ -768,6 +779,12 @@ esp_err_t weather_service_set_network_ready(bool ready,
 {
     s_test.weather_network_ready = ready;
     s_test.weather_ipv4_address = ipv4_address;
+    return ESP_OK;
+}
+
+esp_err_t weather_service_notify_time_changed(void)
+{
+    ++s_test.weather_time_notifications;
     return ESP_OK;
 }
 
@@ -1819,6 +1836,43 @@ static void _test_degradable_connectivity_failures(void)
     assert(!_test_event_seen(TEST_EVENT_CONNECTIVITY_DEINIT));
 }
 
+static void _publish_time_quality(event_bus_cb_t callback, void *context,
+                                  time_service_quality_t quality)
+{
+    assert(callback != NULL);
+    callback(TIME_SERVICE_MSG, TIME_SERVICE_MSG_SUB_TYPE_QUALITY,
+             &quality, sizeof(quality), context);
+}
+
+static void _test_time_quality_fanout(void)
+{
+    _test_reset();
+    assert(app_runtime_start() == ESP_OK);
+    assert(s_test.time_callback != NULL);
+    assert(s_test.weather_participant);
+
+    const event_bus_cb_t callback = s_test.time_callback;
+    void *const callback_context = s_test.time_callback_context;
+    _publish_time_quality(callback, callback_context,
+                          TIME_SERVICE_QUALITY_NTP);
+    assert(s_test.weather_time_notifications == 1U);
+    assert(host_music_service_fake_time_ready_calls() == 1U);
+    assert(host_music_service_fake_last_time_ready());
+
+    _publish_time_quality(callback, callback_context,
+                          TIME_SERVICE_QUALITY_INVALID);
+    assert(s_test.weather_time_notifications == 2U);
+    assert(host_music_service_fake_time_ready_calls() == 2U);
+    assert(!host_music_service_fake_last_time_ready());
+
+    assert(app_runtime_stop() == ESP_OK);
+    assert(s_test.time_callback == NULL);
+    _publish_time_quality(callback, callback_context,
+                          TIME_SERVICE_QUALITY_NTP);
+    assert(s_test.weather_time_notifications == 2U);
+    assert(host_music_service_fake_time_ready_calls() == 2U);
+}
+
 int main(void)
 {
     _test_successful_lifecycle();
@@ -1828,6 +1882,7 @@ int main(void)
     _test_cleanup_retry_before_restart();
     _test_every_cleanup_failure_is_retryable();
     _test_degradable_connectivity_failures();
+    _test_time_quality_fanout();
     _test_degradable_hardware_failures();
     _test_imu_init_cleanup_retry_keeps_bridge();
     _test_file_init_failure_is_degradable();

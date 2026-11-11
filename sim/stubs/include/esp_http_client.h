@@ -11,6 +11,9 @@
 extern "C" {
 #endif
 
+#define ESP_ERR_HTTP_BASE      (0x7000)
+#define ESP_ERR_HTTP_EAGAIN    (ESP_ERR_HTTP_BASE + 7)
+
 typedef struct weather_host_http_client *esp_http_client_handle_t;
 
 /** @brief HTTP method used by the music-service host port. */
@@ -63,6 +66,7 @@ typedef struct esp_http_client_config
     int buffer_size;
     int buffer_size_tx;
     bool keep_alive_enable;
+    bool is_async;
 } esp_http_client_config_t;
 
 esp_http_client_handle_t esp_http_client_init(
