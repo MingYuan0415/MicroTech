@@ -3328,10 +3328,11 @@ void *heap_caps_calloc(size_t count, size_t size, uint32_t caps)
     return host_lv_heap_caps_aligned_calloc(sizeof(void *), count, size, caps);
 }
 
-/* Deterministic caps-dependent heap figures for host tests. The internal free
- * value is below the reserve-adjusted total so the task switcher must subtract
- * the reserve from free as well as total; otherwise the fixture would hide the
- * accounting bug this check exists to catch. */
+/* Deterministic caps-dependent heap figures for host tests. The internal total
+ * includes the re-registered DMA reserve pool and the free value is already the
+ * actual sum of free bytes. Keep free below the 128 KiB reserve so this matches
+ * the real S3 case where subtracting the reserve from free would clamp it to
+ * zero; the expected used value must come from total minus the unmodified free. */
 size_t heap_caps_get_total_size(uint32_t caps)
 {
     if ((caps & MALLOC_CAP_SPIRAM) != 0U)
@@ -3355,7 +3356,7 @@ size_t heap_caps_get_free_size(uint32_t caps)
     {
         return 190U * 1024U;
     }
-    return 200U * 1024U;
+    return 96U * 1024U;
 }
 
 size_t heap_caps_get_largest_free_block(uint32_t caps)

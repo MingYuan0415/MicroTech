@@ -22,6 +22,8 @@
         {"cmd": "tree_assert", "params": {"include_layers": true},
          "contains": {"type": "lv_label", "text": "系统设置"}},
         {"cmd": "tree_assert", "params": {"include_layers": true},
+         "contains": {"type": "lv_label", "text": "108k/204k"}},
+        {"cmd": "tree_assert", "params": {"include_layers": true},
          "absent": {"type": "lv_obj", "coords.x": 0, "coords.y": 52,
                     "flags.scrollable": true}},
         {"cmd": "call", "method": "sim.switcher",

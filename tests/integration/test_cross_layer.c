@@ -4247,7 +4247,7 @@ static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
     assert(_ui_has_text("后台运行"));
     assert(_ui_has_text("清除"));
     assert(_ui_has_text("RAM"));
-    assert(_ui_has_text("132k/204k"));
+    assert(_ui_has_text("108k/204k"));
     assert(_ui_has_text("1.3/8.0M"));
     {
         app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];

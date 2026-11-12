@@ -1282,6 +1282,10 @@ void heap_caps_free(void *memory)
     free(memory);
 }
 
+/* The simulated internal heap models the S3 layout: 332 KiB of region total
+ * includes the 128 KiB DMA pool that is re-registered as a separate region,
+ * leaving 204 KiB of physical RAM. Keep free below the reserve so the task
+ * switcher exercises the same free-accounting path as the device. */
 size_t heap_caps_get_free_size(uint32_t caps)
 {
     if (caps & MALLOC_CAP_SPIRAM)
@@ -1292,7 +1296,7 @@ size_t heap_caps_get_free_size(uint32_t caps)
     {
         return 190U * 1024U;
     }
-    return 218U * 1024U;
+    return 96U * 1024U;
 }
 
 size_t heap_caps_get_total_size(uint32_t caps)
