@@ -1,0 +1,33 @@
+{
+    "name": "task-switcher-full",
+    "steps": [
+        {"cmd": "step", "times": 10},
+        {"cmd": "wait_idle"},
+        {"cmd": "navigate", "app": "menu"},
+        {"cmd": "step", "times": 25},
+        {"cmd": "wait_idle"},
+        {"cmd": "navigate", "app": "weather"},
+        {"cmd": "step", "times": 25},
+        {"cmd": "wait_idle"},
+        {"cmd": "navigate", "app": "settings"},
+        {"cmd": "step", "times": 25},
+        {"cmd": "wait_idle"},
+        {"cmd": "navigate", "app": "clock"},
+        {"cmd": "step", "times": 25},
+        {"cmd": "wait_idle"},
+        {"cmd": "call", "method": "sim.switcher", "params": {}},
+        {"cmd": "wait_idle"},
+        {"cmd": "tree_assert", "params": {"include_layers": true},
+         "contains": {"type": "lv_label", "text": "最近任务"}},
+        {"cmd": "tree_assert", "params": {"include_layers": true},
+         "contains": {"type": "lv_label", "text": "系统设置"}},
+        {"cmd": "tree_assert", "params": {"include_layers": true},
+         "absent": {"type": "lv_obj", "coords.x": 0, "coords.y": 52,
+                    "flags.scrollable": true}},
+        {"cmd": "call", "method": "sim.switcher",
+         "params": {"action": "clear_all"}},
+        {"cmd": "wait_idle"},
+        {"cmd": "assert_result", "method": "sim.switcher",
+         "params": {"get": true}, "expect": {"visible": false}}
+    ]
+}

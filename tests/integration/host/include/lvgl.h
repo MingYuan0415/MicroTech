@@ -913,6 +913,7 @@ HOST_LV_NOOP_3(lv_obj_set_style_translate_y, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_shadow_width, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_shadow_opa, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_outline_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_outline_color, lv_obj_t *, lv_color_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_outline_opa, lv_obj_t *, int, int)
 HOST_LV_NOOP_3(lv_obj_set_style_transform_height, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_transform_width, lv_obj_t *, int32_t, int)
@@ -924,6 +925,7 @@ HOST_LV_NOOP_3(lv_obj_set_style_anim_duration, lv_obj_t *, uint32_t, int)
 void lv_obj_set_style_max_height(lv_obj_t *object, int32_t height,
                                  int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_max_width, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_min_width, lv_obj_t *, int32_t, int)
 void lv_obj_set_style_min_height(lv_obj_t *object, int32_t height,
                                  int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_arc_rounded, lv_obj_t *, bool, int)

@@ -1,0 +1,224 @@
+{
+    "name": "task-switcher-interactions",
+    "steps": [
+        {
+            "cmd": "step",
+            "times": 10
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "navigate",
+            "app": "menu"
+        },
+        {
+            "cmd": "step",
+            "times": 25
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "navigate",
+            "app": "weather"
+        },
+        {
+            "cmd": "step",
+            "times": 25
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "call",
+            "method": "sim.switcher",
+            "params": {}
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "params": {
+                "include_layers": true
+            },
+            "contains": {
+                "type": "lv_label",
+                "text": "最近任务"
+            }
+        },
+        {
+            "cmd": "drag",
+            "x0": 180,
+            "y0": 300,
+            "x1": 180,
+            "y1": 360,
+            "hold_steps": 1,
+            "steps": 6
+        },
+        {
+            "cmd": "assert_result",
+            "method": "sim.switcher",
+            "params": {
+                "get": true
+            },
+            "expect": {
+                "visible": true
+            }
+        },
+        {
+            "cmd": "drag",
+            "x0": 80,
+            "y0": 177,
+            "x1": 0,
+            "y1": 177,
+            "hold_steps": 1,
+            "steps": 6
+        },
+        {
+            "cmd": "step",
+            "times": 10
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "tree_assert",
+            "params": {
+                "include_layers": true
+            },
+            "contains": {
+                "type": "lv_label",
+                "text": "1",
+                "coords.x": 144,
+                "coords.y": 12
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "params": {
+                "include_layers": true
+            },
+            "contains": {
+                "type": "lv_label",
+                "text": "天气",
+                "coords.x": 96
+            }
+        },
+        {
+            "cmd": "tree_assert",
+            "params": {
+                "include_layers": true
+            },
+            "absent": {
+                "type": "lv_label",
+                "text": "应用",
+                "coords.x": 96
+            }
+        },
+        {
+            "cmd": "touch",
+            "action": "down",
+            "x": 250,
+            "y": 26
+        },
+        {
+            "cmd": "step",
+            "times": 2
+        },
+        {
+            "cmd": "touch",
+            "action": "up",
+            "x": 250,
+            "y": 26
+        },
+        {
+            "cmd": "step",
+            "times": 2
+        },
+        {
+            "cmd": "tree_assert",
+            "params": {
+                "include_layers": true
+            },
+            "contains": {
+                "type": "lv_label",
+                "text": "确认清除"
+            }
+        },
+        {
+            "cmd": "step",
+            "times": 100
+        },
+        {
+            "cmd": "tree_assert",
+            "params": {
+                "include_layers": true
+            },
+            "absent": {
+                "type": "lv_label",
+                "text": "确认清除"
+            }
+        },
+        {
+            "cmd": "assert_result",
+            "method": "sim.switcher",
+            "params": {
+                "get": true
+            },
+            "expect": {
+                "visible": true
+            }
+        },
+        {
+            "cmd": "touch",
+            "action": "down",
+            "x": 250,
+            "y": 26
+        },
+        {
+            "cmd": "step",
+            "times": 2
+        },
+        {
+            "cmd": "touch",
+            "action": "up",
+            "x": 250,
+            "y": 26
+        },
+        {
+            "cmd": "step",
+            "times": 2
+        },
+        {
+            "cmd": "touch",
+            "action": "down",
+            "x": 250,
+            "y": 26
+        },
+        {
+            "cmd": "step",
+            "times": 2
+        },
+        {
+            "cmd": "touch",
+            "action": "up",
+            "x": 250,
+            "y": 26
+        },
+        {
+            "cmd": "wait_idle"
+        },
+        {
+            "cmd": "assert_result",
+            "method": "sim.switcher",
+            "params": {
+                "get": true
+            },
+            "expect": {
+                "visible": false
+            }
+        }
+    ]
+}

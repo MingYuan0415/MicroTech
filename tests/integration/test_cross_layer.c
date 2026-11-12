@@ -3854,10 +3854,10 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(app_manager_back_gesture_is_enabled());
     system_gesture_snapshot_t system = _system_gesture_snapshot();
     /* Sys Layer holds the two gesture strips, the indicator, its arrow,
-     * the permanent task-switcher tree (header, title, clear button/label,
-     * content, empty-state label, RAM footer rows/bars/values) and the
-     * persistent snapshot-transition overlay (overlay + from/to images). */
-    assert(system.object_count == 21U);
+     * the permanent task-switcher tree (header, title, count, clear
+     * button/label, content, empty-state group, memory footer) and the
+     * persistent snapshot-transition overlay. */
+    assert(system.object_count == 27U);
     assert(system.left_edge_found && system.right_edge_found);
     assert(system.indicator_found && system.arrow_found);
     assert(system.indicator.canvas);
@@ -4223,15 +4223,6 @@ static void _open_task_switcher(void)
     _wait_for_switcher(true);
 }
 
-static void _wait_for_text_gone(const char *text)
-{
-    for (int i = 0; i < 2000 && _ui_has_text(text); i++)
-    {
-        usleep(1000);
-    }
-    assert(!_ui_has_text(text));
-}
-
 static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
 {
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
@@ -4245,17 +4236,19 @@ static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     /* Opening the switcher keeps the foreground task running and lists every
-     * eligible resident task, most recently used first, each on its own
-     * card with a status line. */
+     * eligible resident task, most recently used first, each on its own row
+     * with a status line. */
     _open_task_switcher();
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
     assert(_ui_has_text("最近任务"));
     assert(_ui_has_text("应用"));
-    assert(_ui_has_text("当前"));
+    assert(_ui_has_text("前台运行"));
     assert(_ui_has_text("天气"));
-    assert(_ui_has_text("点按切换"));
+    assert(_ui_has_text("后台运行"));
     assert(_ui_has_text("清除"));
-    assert(_ui_has_text("内部内存"));
+    assert(_ui_has_text("RAM"));
+    assert(_ui_has_text("132k/204k"));
+    assert(_ui_has_text("1.3/8.0M"));
     {
         app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
         size_t task_count = 0U;
@@ -4271,41 +4264,25 @@ static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
         assert(tasks[1].icon_id == APP_IMAGE_WEATHER_APP);
     }
 
-    /* A horizontal swipe that stays on a card must scroll the card list, not
-     * activate the card: the card has to hand the horizontal scroll up to the
-     * list scroller. Regression for cards that cleared BOTH scroll-chain axes
-     * and so blocked the list swipe entirely. */
+    /* A leftward swipe on a background row closes that task; the switcher
+     * stays open and the foreground task is unchanged. */
+    assert(host_lv_swipe_left_action("天气"));
+    for (int i = 0; i < 5000; ++i)
     {
-        const unsigned takeovers_before = host_lv_scroll_takeover_count();
-        int32_t scroll_x = 0;
-        int32_t target_x = 0;
-        bool animating = false;
-        assert(host_lv_swipe_left_action("天气"));
-        assert(host_lv_scroll_takeover_count() > takeovers_before);
-        assert(host_lv_scroll_snapshot_by_title("天气", &scroll_x, &target_x,
-                                                &animating));
-        /* The swipe must neither activate nor dismiss: the switcher stays up
-         * on the same foreground task. */
-        assert(_switcher_visible());
-        assert(_wait_for_active(APP_MANAGER_ID_MENU));
+        app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+        size_t task_count = 0U;
+        assert(app_manager_get_recent_tasks(tasks,
+                                            APP_MANAGER_MAX_RECENT_TASKS,
+                                            &task_count) == ESP_OK);
+        if (task_count == 1U &&
+                strcmp(tasks[0].app_id, APP_MANAGER_ID_MENU) == 0)
+        {
+            break;
+        }
+        usleep(1000);
     }
-
-    /* Tapping a background card restores that task and closes the switcher.
-     * Use a full pointer sequence because the preceding horizontal swipe
-     * deliberately leaves the card's drag guard set until a new PRESSED. */
-    _tap_action("天气");
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
-    _wait_for_switcher(false);
-
-    /* The per-card close button removes that task; the switcher stays open
-     * and the remaining card becomes the current one. */
-    _open_task_switcher();
-    assert(_ui_has_text("天气"));
-    assert(_ui_has_text("当前"));
-    _click_action(LV_SYMBOL_CLOSE);
-    _wait_for_text_gone("应用");
     assert(_switcher_visible());
-    assert(_ui_has_text("天气"));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
     {
         app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
         size_t task_count = 0U;
@@ -4313,13 +4290,24 @@ static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
                                             APP_MANAGER_MAX_RECENT_TASKS,
                                             &task_count) == ESP_OK);
         assert(task_count == 1U);
-        assert(strcmp(tasks[0].app_id, APP_MANAGER_ID_WEATHER) == 0);
+        assert(strcmp(tasks[0].app_id, APP_MANAGER_ID_MENU) == 0);
     }
 
-    /* Tapping the current card only dismisses the switcher. */
-    _click_action("天气");
+    /* Tapping the current row only dismisses the switcher. */
+    _click_action("应用");
     _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    /* Tapping a background row restores that task and closes the switcher. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
+           ESP_OK);
     assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _open_task_switcher();
+    assert(_ui_has_text("应用"));
+    assert(_ui_has_text("后台运行"));
+    _click_action("应用");
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     /* A repeated open while visible dismisses back to the task. */
     _open_task_switcher();
@@ -4327,19 +4315,62 @@ static void MT_TEST_MAYBE_UNUSED _test_system_task_switcher(void)
                APP_MANAGER_NAV_SYSTEM_TASK_SWITCHER_SHOW, NULL, NULL) ==
            ESP_OK);
     _wait_for_switcher(false);
-    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
-    /* Clearing all tasks returns to Home and closes the switcher. */
+    /* Recreate a background task, then close the current task through its own
+     * close button; the switcher stays open and the remaining row is shown. */
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_WEATHER, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+    _open_task_switcher();
+    assert(_ui_has_text("天气"));
+    assert(_ui_has_text("前台运行"));
+    _click_action(LV_SYMBOL_CLOSE);
+    for (int i = 0; i < 5000; ++i)
+    {
+        app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+        size_t task_count = 0U;
+        assert(app_manager_get_recent_tasks(tasks,
+                                            APP_MANAGER_MAX_RECENT_TASKS,
+                                            &task_count) == ESP_OK);
+        if (task_count == 1U &&
+                strcmp(tasks[0].app_id, APP_MANAGER_ID_MENU) == 0)
+        {
+            break;
+        }
+        usleep(1000);
+    }
+    assert(_switcher_visible());
+    assert(_ui_has_text("应用"));
+    {
+        app_manager_recent_task_t tasks[APP_MANAGER_MAX_RECENT_TASKS];
+        size_t task_count = 0U;
+        assert(app_manager_get_recent_tasks(tasks,
+                                            APP_MANAGER_MAX_RECENT_TASKS,
+                                            &task_count) == ESP_OK);
+        assert(task_count == 1U);
+        assert(strcmp(tasks[0].app_id, APP_MANAGER_ID_MENU) == 0);
+    }
+
+    /* Switch to the remaining task. */
+    _click_action("应用");
+    _wait_for_switcher(false);
+    assert(_wait_for_active(APP_MANAGER_ID_MENU));
+
+    /* Clearing all tasks requires a second explicit confirmation. */
     _open_task_switcher();
     _click_action("清除");
+    assert(_switcher_visible());
+    assert(_ui_has_text("确认清除"));
+    _click_action("确认清除");
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     _wait_for_switcher(false);
 
     /* The empty state shows and a plain tap on the backdrop still dismisses
      * (the memory footer stays visible while open). */
     _open_task_switcher();
-    assert(_ui_has_text("暂无任务"));
-    assert(_ui_has_text("内部内存"));
+    assert(_ui_has_text("暂无最近任务"));
+    assert(_ui_has_text("RAM"));
     assert(_touch(TOUCH_ACTION_PRESS, 184, 200));
     assert(_touch(TOUCH_ACTION_RELEASE, 184, 200));
     _wait_for_switcher(false);

@@ -3,9 +3,9 @@
 LVGL draws a plain `lv_image` at its natural size inside the object box and
 clips the overflow, so a record exported larger than the object a consumer
 creates is silently cropped. The launcher draws app icons in its 72 px well,
-the task switcher in a 56 px window, Home scales the same record into a
-56 px dock window, and the Applications list scales it inside a 56 px row
-window.
+the task switcher uses its own icon window size, Home scales the same record
+into a 56 px dock window, and the Applications list scales it inside a 56 px
+row window.
 
 The window sizes are read from the consumers' own constants, not restated here:
 changing a consumer's size re-derives this table and fails the icons that no
@@ -25,7 +25,7 @@ APP_CORE_SRC = PROJECT_ROOT / "layers" / "app_manager" / "app_core" / "src"
 
 # Which draw sites each icon record appears in. Sizes come from the code below.
 #   launcher_tile - `app_ui_add_icon_tile` image inside the launcher well
-#   switcher      - task-switcher card icon
+#   switcher      - task-switcher row icon
 #   home_shortcut - Home dock image inside its circular well
 #   menu_row      - Applications list image inside its App-icon row well
 APP_ICON = ("launcher_tile", "switcher", "home_shortcut", "menu_row")

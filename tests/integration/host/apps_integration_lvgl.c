@@ -14,7 +14,9 @@
  * pool and made one label's creation fail without exercising any product
  * behavior. */
 #define HOST_LV_OBJECT_CAPACITY 384U
-#define HOST_LV_EVENT_CAPACITY  4U
+/* A task-switcher row binds pressed, pressing, released, press-lost and
+ * clicked handlers, so the fake must hold more than the old four slots. */
+#define HOST_LV_EVENT_CAPACITY  8U
 #define HOST_LV_TIMER_CAPACITY  16U
 #define HOST_LV_GENERIC_ANIM_CAPACITY 16U
 #define HOST_LV_GENERIC_ANIM_COMPLETION_CAPACITY 64U
@@ -3326,8 +3328,10 @@ void *heap_caps_calloc(size_t count, size_t size, uint32_t caps)
     return host_lv_heap_caps_aligned_calloc(sizeof(void *), count, size, caps);
 }
 
-/* Deterministic caps-dependent heap figures mirroring the simulator stub so
- * the task switcher memory footer renders stable values under host tests. */
+/* Deterministic caps-dependent heap figures for host tests. The internal free
+ * value is below the reserve-adjusted total so the task switcher must subtract
+ * the reserve from free as well as total; otherwise the fixture would hide the
+ * accounting bug this check exists to catch. */
 size_t heap_caps_get_total_size(uint32_t caps)
 {
     if ((caps & MALLOC_CAP_SPIRAM) != 0U)
@@ -3351,7 +3355,7 @@ size_t heap_caps_get_free_size(uint32_t caps)
     {
         return 190U * 1024U;
     }
-    return 218U * 1024U;
+    return 200U * 1024U;
 }
 
 size_t heap_caps_get_largest_free_block(uint32_t caps)
