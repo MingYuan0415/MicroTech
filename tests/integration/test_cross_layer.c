@@ -4949,12 +4949,13 @@ static void _test_control_center_volume_row_hidden(void)
             &snapshot.snapshot.pressed, &snapshot.snapshot.disabled));
     assert(!_ui_has_text("60%"));
 
-    /* Card height is derived from the rows it built. No Wi-Fi, Bluetooth or
-     * volume bridge is wired here, so the card holds the header, the brightness
-     * row and the action row only: 70 + (60 + 12) + (56 + 12) = 210. */
+    /* Panel height is derived from the rows it built. No Wi-Fi, Bluetooth or
+     * volume bridge is wired here, so the panel holds the header, the
+     * brightness capsule and the action row only:
+     * 16 + 56 + 68 + 52 + 16 + 2 * 12 + 32 fill = 264. */
     int32_t height = 0;
     assert(host_lv_sys_layer_card_height(&height));
-    assert(height == 210);
+    assert(height == 264);
 
     /* A write-only bridge must not build the row either: the surface needs both
      * halves, so this layout is identical to the missing-bridge one. */
