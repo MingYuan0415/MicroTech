@@ -12,7 +12,7 @@ the original ESP32, WROOM, WROVER, or another Waveshare board.
 
 ## Sources of Truth
 
-- Read `AGENTS.md` and `layers/bsp/README.md` first.
+- Read `AGENTS.md`, `doc/verification.md`, and `layers/bsp/README.md` first.
 - Read the concrete implementation under
   `layers/bsp/waveshare/esp32-s3-touch-amoled-1.8/` or
   `layers/bsp/waveshare/esp32-p4-wifi6-touch-lcd-3.5/` before describing pins,
@@ -39,7 +39,7 @@ the original ESP32, WROOM, WROVER, or another Waveshare board.
 
 ## Adding or Reviewing a Board Variant
 
-1. Read the nearest `AGENTS.md`, `layers/bsp/boards.cmake`, the existing board
+1. Read `AGENTS.md`, `layers/bsp/boards.cmake`, the existing board
    manifests and the product manifests. A board owns only implemented hardware
    facts; a product owns App composition and runtime policy.
 2. Create `waveshare/<vendor-board>/board.cmake` with `MT_BOARD_ID`,
@@ -130,7 +130,7 @@ selectable without the implementation behind it.
    ESP32-S3 datasheet or ESP-IDF capability definitions.
 4. Keep ISRs short and IRAM-safe where required. Keep blocking I2C, expander,
    and peripheral work in task context.
-5. Select tests by actual source and contract impact under `AGENTS.md`.
+5. Select tests by actual source and contract impact under `doc/verification.md`.
    Driver timing, DMA, power, sleep/wake, radio coexistence, and physical
    behavior need hardware evidence; report unexecuted checks as limitations,
    not as implicit authorization or a requirement to flash on every task.

@@ -31,9 +31,9 @@ audio loop.
 
 This suite links app and app_manager sources, so a red build here is a
 regression signal for any change under `layers/apps/` or `layers/app_manager/`
-(see the impact table in `AGENTS.md`). Run it with the `none` profile per
-task; the sanitizer profiles are only required when a change touches memory
-ownership or concurrency.
+(see the impact table in [`doc/verification.md`](../../doc/verification.md)).
+Run it with the `none` profile per task; the sanitizer profiles are only
+required when a change touches memory ownership or concurrency.
 
 From the repository root, run the normal profile:
 

@@ -11,7 +11,7 @@ fixing visible symptoms with additional coordinates.
 
 ## Establish the Current Contract
 
-1. Read the nearest `AGENTS.md`, the locked LVGL version, project theme/fonts,
+1. Read `AGENTS.md`, the locked LVGL version, project theme/fonts,
    target display dimensions, parent page helper, and relevant host fakes.
 2. Inspect the complete object tree and all style padding, border, gap, width,
    height, flex/grid, scroll, and event flags that affect it. Do not reason from
@@ -230,7 +230,7 @@ The rest of the policy:
    gaps — not only direct taps on the parent.
 3. Run the narrow host tests and project-required formatting/diff checks.
    Broader sanitizer, firmware-build, and hardware scope follows the
-   `AGENTS.md` default workflow.
+   `doc/verification.md` workflow.
 4. Simulator-side validation — worst-case data states (shortest, longest,
    missing, loading, error; signed numeric formats; multi-line Chinese), the
    scroll policy checked both ways by dragging (a scrolling page must move

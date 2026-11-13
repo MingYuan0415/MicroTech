@@ -6,8 +6,9 @@ description: Create, modify, or review MicroTech Apps and Pages in layers/apps, 
 # MicroTech App Development
 
 Apply this workflow to built-in applications under `layers/apps`. Follow
-`AGENTS.md` and `doc/code-style.md`; verify current types, contracts, and
-capacities in the owning headers instead of copying them from this skill.
+`AGENTS.md`, `doc/verification.md`, and `doc/code-style.md`; verify current
+types, contracts, and capacities in the owning headers instead of copying them
+from this skill.
 
 ## Sources of Truth
 
@@ -79,7 +80,7 @@ public types in `app_manager_types.h` override this summary.
    size before decoding with `memcpy`. A custom completion can run after Page
    teardown, so never pass Page arena or a callback stack pointer as its context.
 8. Add focused host coverage for the changed behavior; validation scope
-   follows the `AGENTS.md` default workflow.
+   follows the `doc/verification.md` workflow.
 9. For visible or interaction changes, use `ui-review` at the affected-page
    scope. Simulator commands, scenario assertions, and session operation live
    in `sim/README.md`; layout decisions use `lvgl-ui-layout`. Pure logic changes
@@ -221,7 +222,7 @@ App:
 
 ## App-Focused Verification
 
-Use the tiers in `AGENTS.md` for commands and scope. Before handing off, record
+Use the tiers in `doc/verification.md` for commands and scope. Before handing off, record
 which of these App-local checks were completed and which remain unverified:
 
 - App IDs, catalog membership, product selection, and manifest hidden state are

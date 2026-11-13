@@ -2,9 +2,9 @@
 
 `tools/agent/mt.py` is the command-line entry point for agent-facing build,
 test, formatting, Git, simulator, and page-review output. It is a presentation
-layer: the wrapped command decides pass or fail. `mt.py build sim` is the
-simulator build gate and succeeds only when every supported simulator
-configuration builds.
+layer: the wrapped command decides pass or fail. What to run and when is
+defined in [`doc/verification.md`](verification.md); this document covers
+command behavior and output.
 
 ## Why
 
@@ -33,12 +33,11 @@ python3 tools/agent/mt.py ui --pages settings/wifi
 ```
 
 `build` accepts a suite alias, `idf`, or `sim`. `build sim` is the mandatory
-simulator build gate: it configures the canonical products (`s3_reference` with
-fake and real music, `p4_reference` and `minimal` with fake music); each
-configuration's panel geometry comes from its product's board manifest. `test`
-builds first, then runs CTest. `--profile none|address|thread` selects the
-sanitizer profile supported by that suite; each profile uses a separate build
-directory.
+simulator build gate defined in [`doc/verification.md`](verification.md): it
+configures every canonical simulator product and derives each configuration's
+panel geometry from its product's board manifest. `test` builds first, then runs
+CTest. `--profile none|address|thread` selects the sanitizer profile supported
+by that suite; each profile uses a separate build directory.
 
 ## Suites
 

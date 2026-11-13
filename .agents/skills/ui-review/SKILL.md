@@ -6,9 +6,10 @@ description: Review MicroTech visible UI and interaction changes using affected-
 # UI Review
 
 Use the simulator's real LVGL layout and fonts to check the changed behavior,
-not just source structure or a default-state screenshot. General validation and
-authorization follow `AGENTS.md`. Commands, tree fields, fixture seeding, and
-session operation are maintained in `sim/README.md`.
+not just source structure or a default-state screenshot. General validation
+follows `doc/verification.md`; authorization follows `AGENTS.md`. Commands, tree
+fields, fixture seeding, and session operation are maintained in
+`sim/README.md`.
 
 ## Choose Scope Before Running
 

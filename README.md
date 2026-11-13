@@ -71,9 +71,9 @@ screen-off, and (on ESP32-S3) standby/wake behavior on hardware.
 
 ## Host tests
 
-Run the CMake/CTest suites from the root `AGENTS.md` that match the impact
-surface of the change. Configuration, resources, and simulator Python tests
-share one entry point:
+Run the CMake/CTest suites selected by the impact surface in
+[`doc/verification.md`](doc/verification.md). Configuration, resources, and
+simulator Python tests share one entry point:
 
 ```sh
 python3 tests/run_python_tests.py configuration resources

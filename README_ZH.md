@@ -15,7 +15,7 @@ MicroTech 是面向 Waveshare ESP32-S3 Touch AMOLED 1.8 以及第二版型 Waves
 | `layers/apps/` | Home、Menu、Settings、Setup 等内置 LVGL 应用 |
 | `products/` | 产品清单：绑定板卡、设计 target 与所选 App 集合 |
 | `sim/` | 独立 CMake 宿主 LVGL 模拟器（不接入根 IDF 构建） |
-| `tests/` | 跨层宿主测试与真机显示基准工具 |
+| `tests/` | 跨层宿主测试 |
 
 四个 `layers/` 目录是独立 Git 子模块；`managed_components/` 由 ESP-IDF Component Manager 管理，均不应直接修改。
 
@@ -47,7 +47,7 @@ P4 版型还需烧录 [`firmware/c6-cp/`](firmware/c6-cp/README_ZH.md) 中的 ES
 
 ## 宿主测试
 
-按改动影响面运行根 `AGENTS.md` 中对应的 CMake/CTest 套件。配置、资源和模拟器 Python 测试使用统一入口：
+按 [`doc/verification.md`](doc/verification.md) 中的改动影响面选择并运行对应的 CMake/CTest 套件。配置、资源和模拟器 Python 测试使用统一入口：
 
 ```sh
 python3 tests/run_python_tests.py configuration resources

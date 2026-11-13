@@ -322,7 +322,7 @@ After the change, run the following in order, each item once:
 1. Format: run the 8.1 command, then `git diff --check`; if formatting produced
    changes, rebuild and run the host tests again;
 2. Compile the relevant host test suites and get them fully green (commands in
-   AGENTS.md);
+   [`doc/verification.md`](verification.md));
 3. Run `python3 tools/agent/mt.py build sim`; all supported simulator
    configurations must build;
 4. Manually self-check naming, Doxygen, logging, and cleanup exits against the

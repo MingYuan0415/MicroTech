@@ -43,6 +43,6 @@ values and pin maps live in the owning docs and code; do not copy them here.
   synchronization, or direct PSRAM DMA are available profiles or production
   fixes; consult the owning docs for current support and the evidence needed
   to change the baseline.
-- Select validation under `AGENTS.md`; hardware timing and performance claims
+- Select validation under `doc/verification.md`; hardware timing and performance claims
   require on-device evidence. State unexecuted checks without treating this
   skill as authorization to flash or run hardware checks.

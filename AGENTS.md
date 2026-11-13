@@ -2,105 +2,40 @@
 
 ## Map
 
-- `main/`: entry point, runtime, storage and network assembly. Resources are aggregated from the `layers/apps/*/assets/` and `layers/app_manager/app_theme/assets/` manifests and packaged into the `res` partition.
-- `layers/`: `bsp`, `middleware`, `app_manager`, `apps` — four independent Git submodules. Changes inside a layer are committed and pushed in the submodule; the parent repository updates the pointer in the same commit.
-- `products/`: board/product/design-target composition manifests, see [`products/README.md`](products/README.md). Product selection is explicit through `MT_PRODUCT`; board selection is explicit through `MT_BOARD`.
+- `main/`: firmware entry, runtime, storage/network assembly. Resources declared by `layers/apps/resource_manifest.cmake` (which aggregates each app's `resource_manifest.cmake`) and `layers/app_manager/app_theme/resource_manifest.cmake` are staged from their `assets/` directories and packaged into the `res` partition.
+- `layers/`: `bsp`, `middleware`, `app_manager`, `apps` — four independent Git submodules. `bsp` owns board backends, `middleware` owns services, `app_manager` owns app lifecycle/theme/display power, and `apps` owns the built-in LVGL applications; each layer's `README.md` documents its components. Changes inside a layer are committed and pushed in the submodule; the parent repository updates the pointer in the same commit.
+- `products/`: board/product/design-target composition manifests, see [`products/README.md`](products/README.md). Product selection uses `MT_PRODUCT` (empty selects the board's default product); board selection uses `MT_BOARD` (empty selects the target's only registered board).
 - `sim/`: standalone host LVGL simulator, see [`sim/README.md`](sim/README.md). Agents bind `127.0.0.1:5002` only.
-- `tests/`: `connectivity` and `integration` are cross-layer host tests. `managed_components/` is read-only.
-- `tools/agent/`: agent-facing command wrapper; see [`doc/agent-workflow.md`](doc/agent-workflow.md).
+- `doc/`: build/verification, agent workflow, code style, configuration governance, design, colour, and audio-session guides; select by task below.
+- `tests/`: cross-layer host tests under `connectivity/` and `integration/`, plus repository guard tests under `tests/docs/`, `tests/configuration/`, `tests/resources/`, and `tests/sim-build/`. `managed_components/` is read-only.
+- `tools/agent/`: agent-facing command wrapper, see [`doc/agent-workflow.md`](doc/agent-workflow.md).
+
+## Start Here
+
+Load only the document that matches the task; do not preload unrelated topic documents.
+
+| Task | Read |
+| --- | --- |
+| Set up, flash, or select a board/product | [`README.md`](README.md), [`products/README.md`](products/README.md) |
+| Build, test, verify, or triage a device fault | [`doc/verification.md`](doc/verification.md) |
+| Run agent commands (`mt.py`) or inspect logs | [`doc/agent-workflow.md`](doc/agent-workflow.md) |
+| Write or review C/C++ | [`doc/code-style.md`](doc/code-style.md) |
+| Change Kconfig, runtime policy, dependency pins, or board/product contracts | [`doc/configuration-governance.md`](doc/configuration-governance.md) |
+| Work on a layer or component | the owning `layers/<layer>/README.md` and its component READMEs |
+| Work on the simulator, Agent Bridge, or page review | [`sim/README.md`](sim/README.md) |
+| Choose or change design profiles, targets, or visual language | [`doc/design/README.md`](doc/design/README.md), [`doc/color-language.md`](doc/color-language.md) |
+| Change audio session or recording ownership | [`doc/audio-session-lease.md`](doc/audio-session-lease.md) |
 
 ## Default Working Mode
 
 - Change only code directly related to the task; analysis tasks are read-only; do not change code outside the plan, but report the problems you find. Conclusions come from code, tests, or documentation — never from guesses.
-- **Minimal verification**: follow L0–L3 in "Host Tests and Verification Tiers" and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
-- **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened. The simulator build gate below is the sole exception because it enforces the required host-build contract.
+- **Minimal verification**: use the tiers in [`doc/verification.md`](doc/verification.md) and run each gate once per task. Do not run the full-repository CTest, sanitizers, `idf.py build`/`size`, or hardware checks by default; widen the scope only when the user explicitly asks for a commit, acceptance, or release verification, and state the widened part.
+- **Do not add process gates**: never add CMake `FATAL_ERROR`, mandatory Kconfig switches, CI gates, or new "do not" rules to solve a problem. Keep the LVGL profile gate in the root `CMakeLists.txt` and the `sdkconfig.defaults` baseline as they are — neither weakened nor strengthened. The simulator build gate in [`doc/verification.md`](doc/verification.md) is the sole exception because it enforces the required host-build contract.
 - Flash or erase only when the user explicitly asks.
-
-## Agent Tooling
-
-Agent-facing build, test, formatting, Git, simulator, and page-review commands go through
-`python3 tools/agent/mt.py` (see [`doc/agent-workflow.md`](doc/agent-workflow.md)). It prints a
-bounded `[PASS]`/`[FAIL]` summary and keeps the complete log under `.cache/agent/logs/`; read
-that log only when the summary is insufficient. Use `--full` for sanitizer reports,
-formatting/whitespace review, security review, and final acceptance evidence. The wrapper is a
-presentation layer: it does not weaken or replace the underlying command result, and the raw
-commands below remain valid for humans and CI.
-
-## Build
-
-```sh
-git submodule update --init --recursive
-idf.py set-target esp32s3 && idf.py build   # ESP32-S3 board, default product
-idf.py set-target esp32p4  && idf.py build   # ESP32-P4 board, default product
-idf.py -DMT_PRODUCT=<product-id> build       # explicit product after setting target
-idf.py size   # only when the change touches cache, DMA reservation, or resources
-```
-
-One target is active at a time; `set-target` replaces the local `sdkconfig`.
-Target-specific configuration lands in `sdkconfig.defaults.esp32s3` /
-`sdkconfig.defaults.esp32p4`, shared values in `sdkconfig.defaults`
-(`idf.py save-defconfig`); never edit `sdkconfig` by hand. The local `sdkconfig`
-may hold private deployment values: back it up before switching targets.
-`REQUIRES`/`PRIV_REQUIRES` must not depend on `CONFIG_xxx`; after a change to
-source-file discovery run `idf.py reconfigure` instead of editing the generated
-Ninja/CMake state.
-
-## Simulator Build Gate
-
-Every change must leave the host simulator buildable. The mandatory gate is:
-
-```sh
-python3 tools/agent/mt.py build sim
-```
-
-It configures and builds the canonical products under `build/sim-gate/`:
-`s3_reference` with fake and real music, `p4_reference` with fake music, and
-`minimal` with fake music. Panel geometry is derived from each product's board
-manifest. A failure in any configuration fails the gate.
-
-## Host Tests and Verification Tiers
-
-Each suite is a standalone CMake project (C11, `-Wall -Wextra -Werror -Wpedantic`) with the same flow:
-
-```sh
-python3 tools/agent/mt.py test <suite> [--profile none|address|thread]
-```
-
-Raw command for humans and CI:
-
-```sh
-cmake -S <suite path> -B /tmp/mt-<name> -G Ninja && cmake --build /tmp/mt-<name> && ctest --test-dir /tmp/mt-<name> --output-on-failure
-```
-
-**Impact surface**: a suite is affected when this task changed any source file that the suite compiles. For example, changing a clock page source affects only `tests/integration`; `layers/apps/tests/host` does not compile it.
-
-| Change location | Affected suites |
-| --- | --- |
-| `main/` | `main/tests/host` |
-| `layers/bsp/`, `layers/middleware/` | the matching `layers/*/tests/host` (bsp includes C++); add `main/tests/host` when `main` links it |
-| `layers/apps/` (pages, app_ui) | `layers/apps/tests/host`, `tests/integration` |
-| `layers/app_manager/` (app_core, app_theme) | `layers/app_manager/app_core/tests/host`, `tests/integration` |
-| network runtime/connectivity | `tests/connectivity` |
-| Kconfig/contract boundaries, resource manifests/assets | `python3 tools/agent/mt.py py configuration resources`; add `contracts` when the contract submodule changes |
-
-`tests/integration` uses the none profile by default; sanitizers (`-D<suite>_SANITIZER=address|thread`) are enabled only when the change involves memory ownership or concurrency, and normally one profile matched to the risk. Host tests do not cover driver timing, RF, DMA, or power consumption; go to hardware when needed and record the verified scope.
-
-**Tiers** (matching "minimal verification"):
-
-- L0 per edit batch: run `python3 tools/agent/mt.py fmt` over the changed files (idempotent) plus `python3 tools/agent/mt.py build <suite>` for the affected project.
-- L1 per task: run `python3 tools/agent/mt.py test <suite>` once for each affected host suite.
-- L2 before a UI change is done: `python3 tools/agent/mt.py sim` ×1 and `python3 tools/agent/mt.py ui --pages <affected>` ×1; the final review scope follows the tiers in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
-- L3 commit/acceptance: `python3 tools/agent/mt.py fmt --check`, `python3 tools/agent/mt.py git diff --check`, `python3 tools/agent/mt.py build sim`, and the affected host suites; `--full` when reviewing formatting or sanitizer evidence.
-
-Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run. When a gate fails, read the summary first, then `python3 tools/agent/mt.py log --last --grep 'error:|FAILED'`; do not rerun only to see output.
-
-## Device Faults
-
-Use only the logs the user currently provides, and check in order: reset reason, panic backtrace, heap headroom, task WDT, boot placement, app state transitions. Built-in UI host regression uses `sim/ci/run_ci.sh`.
 
 ## Coding Style
 
-Follow [`doc/code-style.md`](doc/code-style.md): 4 spaces, Allman braces, UPPER_SNAKE macros, lower_snake functions, `_` prefix for file-static functions, Doxygen on header APIs, formatted with AStyle 3.6.19. Performance first; avoid needless defensive code, and do not add locks, checks, or a single return point for the sake of uniformity — a failure with no cleanup obligation returns directly, and `goto` to a single exit serves only functions that really must release, unlock, or roll back.
+Follow [`doc/code-style.md`](doc/code-style.md) for all C/C++ changes; format with `python3 tools/agent/mt.py fmt`.
 
 ## Documentation Style
 
@@ -110,7 +45,7 @@ Language: agent-facing documents (`AGENTS.md`, `.agents/skills/`, `doc/`) and to
 
 ## Commits
 
-Header `<type>(<scope>): <subject>`, body states motivation and impact, trailer `Refs:` or `BREAKING CHANGE:`; a PR lists changes, tests, and resource impact. A submodule pointer update must land in the same commit as the content change; pointer-only bumps are forbidden. Run the full checklist (`git diff --check` + astyle + affected host suites, see code-style.md §8.2) only when the user asks for a commit or acceptance.
+Header `<type>(<scope>): <subject>`, body states motivation and impact, trailer `Refs:` or `BREAKING CHANGE:`; a PR lists changes, tests, and resource impact. A submodule pointer update must land in the same commit as the content change; pointer-only bumps are forbidden. Run the full checklist (`git diff --check` + astyle + affected host suites + `python3 tools/agent/mt.py build sim`, see code-style.md §8.2) only when the user asks for a commit or acceptance.
 
 ## Skills
 
@@ -130,6 +65,6 @@ Load `.agents/skills/` on demand; do not preload everything:
 | Display pipeline ownership, draw submission, flush handshake | `lvgl-integration` |
 | Firmware code size, map/archive analysis, build size comparison | `codesize` |
 
-The general build, configuration, debugging, and verification workflow is defined in this file; do not load a skill for it.
+The general build, debugging, and verification workflow is defined in [`doc/verification.md`](doc/verification.md); configuration contracts are in [`doc/configuration-governance.md`](doc/configuration-governance.md). Do not load a skill for either.
 
 Priority: this file and `doc/code-style.md` > current code, lock files, and topic documents > skill summaries; never override the current implementation with a constant from a skill.
