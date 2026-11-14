@@ -29,6 +29,7 @@ typedef struct host_lv_system_object_snapshot
     uint32_t invalidation_count;
     const char *text;
     int label_long_mode;
+    const char *identity;
 } host_lv_system_object_snapshot_t;
 
 /** @brief Reset all host service and LVGL fixtures. */
@@ -216,6 +217,16 @@ bool host_lv_visible_slider_snapshot(int32_t *value, bool *pressed,
  */
 bool host_lv_pointer_target_snapshot(
     host_lv_system_object_snapshot_t *snapshot);
+/**
+ * @brief Snapshot the control-center's sole system-layer scroll page.
+ * @param snapshot receives identity, geometry and style state.
+ * @param scroll_y receives the current vertical scroll offset.
+ * @param scroll_bottom receives the remaining downward scroll range.
+ * @return true when the page is visible and every pointer is valid.
+ */
+bool host_lv_sys_layer_page_snapshot(
+    host_lv_system_object_snapshot_t *snapshot, int32_t *scroll_y,
+    int32_t *scroll_bottom);
 /**
  * @brief Snapshot the fake display's active Screen.
  * @param snapshot receives identity, geometry and style state.

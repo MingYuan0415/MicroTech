@@ -383,6 +383,12 @@ sim/ci/run_ci.sh build/sim          # 构建自定义模拟器目录
 （如 `settings/about` 为 `368x674`），前 448 行与同状态的单帧截图逐字节一致
 （页面 chrome 保留）。滚动容器整体落在视口内（如 `recorder/files` 的列表），或
 尾部不超过 LVGL 拖动阈值（`MIN_REACHABLE_TRAVEL`）的页面，输出单帧 `368x448`。
+
+审查器在合成后的系统层树中检查覆盖界面。控制中心这类内嵌且可滚动的覆盖层会在其
+静态上下屏幕 chrome 之间拼接，生成高于视口的完整快照；没有可滚动内容页的全屏模态
+界面仍输出单帧。面板的圆角边缘只保留在完整快照的真实顶部与底部：中间条带会丢弃
+边缘带并由下一条带重绘对应行，因此不会出现横切控件行的拼接缝。lint 同样遍历系统层
+覆盖界面，因此覆盖界面可见状态下的禁用控件和文本都会被检查。
 折叠线以下（`flags.visible` 为 false）的内容同样参与检查：lint 走
 `_walk_on_screen`（只跳过 `flags.hidden` 子树），`single_line`、`expect_visible`、
 `expect_image` 和快照都覆盖折叠线以下的行。

@@ -43,6 +43,7 @@ typedef struct host_music_state
     atomic_uint login_cancel_count;
     bool initialized;
     bool seeded;
+    bool status_read_error;
 } host_music_state_t;
 
 static host_music_state_t s_music =
@@ -376,6 +377,7 @@ void host_music_reset(void)
     s_music.player.quality = MUSIC_QUALITY_HIGH;
     s_music.seeded = false;
     s_music.initialized = false;
+    s_music.status_read_error = false;
     for (int resource = 0; resource < HOST_MUSIC_RESOURCE_COUNT; ++resource)
     {
         atomic_store(&s_music.acquire_count[resource], 0U);
@@ -448,6 +450,13 @@ void host_music_set_player_state(int state, int failure)
     s_music.player.state = (music_playback_state_t)state;
     s_music.player.failure = (music_service_failure_t)failure;
     _set_generation_locked();
+    (void)pthread_mutex_unlock(&s_music.lock);
+}
+
+void host_music_set_status_read_error(bool enabled)
+{
+    (void)pthread_mutex_lock(&s_music.lock);
+    s_music.status_read_error = enabled;
     (void)pthread_mutex_unlock(&s_music.lock);
 }
 
@@ -1139,6 +1148,11 @@ esp_err_t music_service_get_player_status(music_player_status_t *status)
         return ESP_ERR_INVALID_ARG;
     }
     (void)pthread_mutex_lock(&s_music.lock);
+    if (s_music.status_read_error)
+    {
+        (void)pthread_mutex_unlock(&s_music.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     *status = s_music.player;
     (void)pthread_mutex_unlock(&s_music.lock);
     return ESP_OK;

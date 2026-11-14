@@ -105,6 +105,7 @@ struct lv_obj_t
     lv_obj_t *tile_active;
     const lv_font_t *text_font;
     int label_long_mode;
+    const char *identity;
     void *user_data;
     uint64_t z_order;
     lv_event_dsc_t bindings[HOST_LV_EVENT_CAPACITY];
@@ -128,6 +129,11 @@ struct lv_indev_t
     lv_obj_t *scroll_object;
     lv_point_t scroll_sum;
     lv_point_t last_point;
+    lv_point_t vect;
+    bool scroll_begin_sent;
+    bool stop_processing;
+    lv_event_dsc_t bindings[HOST_LV_EVENT_CAPACITY];
+    size_t binding_count;
 };
 
 struct lv_timer_t
@@ -728,10 +734,54 @@ static lv_obj_t *_host_lv_find_visible_slider_at(size_t wanted)
     return NULL;
 }
 
+static bool s_last_emit_stopped;
+
+static bool _host_lv_dispatch_indev(lv_indev_t *indev, lv_event_code_t code,
+                                    void *param)
+{
+    if (indev == NULL)
+    {
+        return false;
+    }
+    indev->stop_processing = false;
+    lv_obj_t *target = indev->active_object;
+    lv_indev_t *previous_indev = s_event_indev;
+    s_event_indev = indev;
+    for (size_t index = 0;
+            index < HOST_LV_EVENT_CAPACITY && indev->binding_count > 0U;
+            ++index)
+    {
+        const lv_event_dsc_t binding = indev->bindings[index];
+        if (binding.live &&
+                (binding.code == code || binding.code == LV_EVENT_ALL) &&
+                binding.callback != NULL)
+        {
+            lv_event_t event =
+            {
+                .code = code,
+                .user_data = binding.user_data,
+                .target = target,
+                .indev = indev,
+                .param = param,
+            };
+            binding.callback(&event);
+        }
+    }
+    s_event_indev = previous_indev;
+    const bool stopped = indev->stop_processing;
+    indev->stop_processing = false;
+    return stopped;
+}
+
 static bool _host_lv_emit_with_input(lv_obj_t *object, lv_event_code_t code,
                                      lv_indev_t *indev, void *param)
 {
     if (object == NULL || !object->live)
+    {
+        return false;
+    }
+    s_last_emit_stopped = _host_lv_dispatch_indev(indev, code, param);
+    if (s_last_emit_stopped)
     {
         return false;
     }
@@ -1736,6 +1786,14 @@ void *lv_obj_get_user_data(lv_obj_t *object)
     return object != NULL && object->live ? object->user_data : NULL;
 }
 
+void host_lv_set_object_identity(lv_obj_t *object, const char *identity)
+{
+    if (object != NULL && object->live)
+    {
+        object->identity = identity;
+    }
+}
+
 void lv_obj_add_state(lv_obj_t *object, lv_state_t state)
 {
     if (object != NULL && object->live)
@@ -2149,6 +2207,69 @@ lv_indev_t *lv_indev_active(void)
     return s_event_indev;
 }
 
+lv_obj_t *lv_indev_get_active_obj(void)
+{
+    return s_pointer_indev.active_object;
+}
+
+lv_event_dsc_t *lv_indev_add_event_cb(lv_indev_t *indev,
+                                      lv_event_cb_t callback,
+                                      lv_event_code_t code, void *user_data)
+{
+    if (indev != &s_pointer_indev || callback == NULL)
+    {
+        return NULL;
+    }
+    for (size_t index = 0U; index < HOST_LV_EVENT_CAPACITY; ++index)
+    {
+        lv_event_dsc_t *descriptor = &indev->bindings[index];
+        if (!descriptor->live)
+        {
+            *descriptor = (lv_event_dsc_t)
+            {
+                .live = true,
+                .callback = callback,
+                .code = code,
+                .user_data = user_data,
+            };
+            ++indev->binding_count;
+            return descriptor;
+        }
+    }
+    return NULL;
+}
+
+uint32_t lv_indev_remove_event_cb_with_user_data(lv_indev_t *indev,
+        lv_event_cb_t callback,
+        void *user_data)
+{
+    if (indev != &s_pointer_indev)
+    {
+        return 0U;
+    }
+    uint32_t removed = 0U;
+    for (size_t index = 0U; index < HOST_LV_EVENT_CAPACITY; ++index)
+    {
+        lv_event_dsc_t *descriptor = &indev->bindings[index];
+        if (descriptor->live && descriptor->callback == callback &&
+                descriptor->user_data == user_data)
+        {
+            memset(descriptor, 0, sizeof(*descriptor));
+            --indev->binding_count;
+            ++removed;
+        }
+    }
+    return removed;
+}
+
+void lv_indev_stop_processing(lv_indev_t *indev)
+{
+    if (indev == &s_pointer_indev)
+    {
+        indev->stop_processing = true;
+    }
+}
+
 void lv_indev_get_point(const lv_indev_t *indev, lv_point_t *point)
 {
     if (point == NULL)
@@ -2160,6 +2281,24 @@ void lv_indev_get_point(const lv_indev_t *indev, lv_point_t *point)
         .x = 0,
         .y = 0,
     };
+}
+
+void lv_indev_get_vect(const lv_indev_t *indev, lv_point_t *vector)
+{
+    if (vector == NULL)
+    {
+        return;
+    }
+    *vector = indev == &s_pointer_indev ? indev->vect : (lv_point_t)
+    {
+        .x = 0,
+        .y = 0,
+    };
+}
+
+lv_obj_t *lv_indev_get_scroll_obj(const lv_indev_t *indev)
+{
+    return indev == &s_pointer_indev ? indev->scroll_object : NULL;
 }
 
 lv_indev_state_t lv_indev_get_state(const lv_indev_t *indev)
@@ -2303,6 +2442,15 @@ int32_t lv_obj_get_scroll_y(const lv_obj_t *object)
     return lv_obj_is_valid(object) ? object->scroll_y : 0;
 }
 
+int32_t lv_obj_get_scroll_bottom(const lv_obj_t *object)
+{
+    if (!lv_obj_is_valid(object))
+    {
+        return 0;
+    }
+    return _host_lv_scroll_max_y(object) - object->scroll_y;
+}
+
 void lv_obj_scroll_to_x(lv_obj_t *object, int32_t x, int anim)
 {
     if (!lv_obj_is_valid(object))
@@ -2409,6 +2557,12 @@ void lv_indev_reset(lv_indev_t *indev, lv_obj_t *object)
             .x = 0,
             .y = 0,
         };
+        indev->vect = (lv_point_t)
+        {
+            .x = 0,
+            .y = 0,
+        };
+        indev->scroll_begin_sent = false;
     }
     if (indev != NULL && indev != &s_pointer_indev)
     {
@@ -3474,6 +3628,12 @@ bool host_lv_touch_press_object(lv_obj_t *object, int32_t x, int32_t y)
         .x = 0,
         .y = 0,
     };
+    s_pointer_indev.vect = (lv_point_t)
+    {
+        .x = 0,
+        .y = 0,
+    };
+    s_pointer_indev.scroll_begin_sent = false;
     s_pointer_indev.last_point = s_pointer_indev.point;
     (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED,
                                    &s_pointer_indev, NULL);
@@ -3497,7 +3657,7 @@ static void _host_lv_scroll_takeover(lv_indev_t *indev)
     indev->scroll_sum.x += indev->point.x - indev->last_point.x;
     indev->scroll_sum.y += indev->point.y - indev->last_point.y;
     indev->last_point = indev->point;
-    if (indev->scroll_sum.x == 0)
+    if (indev->scroll_sum.x == 0 && indev->scroll_sum.y == 0)
     {
         return;
     }
@@ -3508,12 +3668,22 @@ static void _host_lv_scroll_takeover(lv_indev_t *indev)
     {
         if ((object->flags & LV_OBJ_FLAG_SCROLLABLE) != 0U)
         {
-            if (horizontal ?
-                    (object->scroll_dir & LV_DIR_HOR) != 0 :
-                    (object->scroll_dir & LV_DIR_VER) != 0)
+            const bool direction_enabled = horizontal ?
+                                           (object->scroll_dir & LV_DIR_HOR) != 0 :
+                                           (object->scroll_dir & LV_DIR_VER) != 0;
+            const bool has_range = horizontal ||
+                                   (indev->scroll_sum.y < 0 ?
+                                    object->scroll_y <
+                                    _host_lv_scroll_max_y(object) :
+                                    object->scroll_y > 0);
+            if (direction_enabled && has_range)
             {
                 indev->scroll_object = object;
+                indev->scroll_begin_sent = true;
                 s_scroll_takeover_count++;
+                (void)_host_lv_emit_with_input(object,
+                                               LV_EVENT_SCROLL_BEGIN,
+                                               indev, NULL);
                 return;
             }
         }
@@ -3544,6 +3714,11 @@ bool host_lv_touch_move(int32_t x, int32_t y)
         .x = x,
         .y = y,
     };
+    s_pointer_indev.vect = (lv_point_t)
+    {
+        .x = s_pointer_indev.point.x - s_pointer_indev.last_point.x,
+        .y = s_pointer_indev.point.y - s_pointer_indev.last_point.y,
+    };
     lv_obj_t *target = s_pointer_indev.active_object;
     if (target == NULL || !target->live)
     {
@@ -3557,6 +3732,20 @@ bool host_lv_touch_move(int32_t x, int32_t y)
         (void)_host_lv_emit_with_input(target, LV_EVENT_PRESSING,
                                        &s_pointer_indev, NULL);
         _host_lv_scroll_takeover(&s_pointer_indev);
+        if (s_pointer_indev.scroll_object != NULL)
+        {
+            lv_obj_t *scroll_object = s_pointer_indev.scroll_object;
+            const int32_t before = lv_obj_get_scroll_y(scroll_object);
+            lv_obj_scroll_to_y(scroll_object,
+                               before - s_pointer_indev.vect.y,
+                               LV_ANIM_OFF);
+            if (lv_obj_get_scroll_y(scroll_object) != before)
+            {
+                (void)_host_lv_emit_with_input(scroll_object,
+                                               LV_EVENT_SCROLL,
+                                               &s_pointer_indev, NULL);
+            }
+        }
     }
     else
     {
@@ -3581,30 +3770,45 @@ bool host_lv_touch_release(int32_t x, int32_t y)
     };
     lv_obj_t *target = s_pointer_indev.active_object;
     const bool wait_release = s_pointer_indev.wait_release;
-    s_pointer_indev.active_object = NULL;
     s_pointer_indev.sequence_active = false;
     s_pointer_indev.wait_release = false;
     s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
     if (target == NULL || !target->live || wait_release)
     {
+        s_pointer_indev.active_object = NULL;
         return true;
     }
 
-    const bool was_scrolling = s_pointer_indev.scroll_object != NULL;
+    lv_obj_t *scroll_object = s_pointer_indev.scroll_object;
+    const bool was_scrolling = scroll_object != NULL;
     if ((target->flags & LV_OBJ_FLAG_PRESS_LOCK) != 0U ||
             _host_lv_contains_point(target, &s_pointer_indev.point))
     {
-        /* Match real LVGL ordering: the scroll object is still reported while
-         * LV_EVENT_RELEASED is delivered, and is only dropped afterwards. */
+        /* Match real LVGL ordering: indev callbacks run before the widget and
+         * the active object and scroll object remain visible during RELEASED. */
         (void)_host_lv_emit_with_input(target, LV_EVENT_RELEASED,
                                        &s_pointer_indev, NULL);
+        const bool stopped = s_last_emit_stopped;
+        if (scroll_object != NULL)
+        {
+            (void)_host_lv_emit_with_input(scroll_object,
+                                           LV_EVENT_SCROLL_END,
+                                           &s_pointer_indev,
+                                           &s_pointer_indev);
+        }
         s_pointer_indev.scroll_object = NULL;
+        s_pointer_indev.scroll_begin_sent = false;
         s_pointer_indev.scroll_sum = (lv_point_t)
         {
             .x = 0,
             .y = 0,
         };
-        if (!was_scrolling &&
+        s_pointer_indev.vect = (lv_point_t)
+        {
+            .x = 0,
+            .y = 0,
+        };
+        if (target->live && !was_scrolling && !stopped &&
                 _host_lv_contains_point(target, &s_pointer_indev.point))
         {
             (void)_host_lv_emit_with_input(target, LV_EVENT_CLICKED,
@@ -3616,6 +3820,7 @@ bool host_lv_touch_release(int32_t x, int32_t y)
         (void)_host_lv_emit_with_input(target, LV_EVENT_PRESS_LOST,
                                        &s_pointer_indev, NULL);
     }
+    s_pointer_indev.active_object = NULL;
     return true;
 }
 
@@ -3802,18 +4007,17 @@ bool host_lv_visible_slider_at_count(size_t *count)
     return true;
 }
 
-bool host_lv_sys_layer_card_height(int32_t *height)
+static void _host_lv_snapshot_object(
+    const lv_obj_t *object, host_lv_system_object_snapshot_t *snapshot);
+
+static lv_obj_t *_host_lv_find_sys_layer_page(void)
 {
-    if (height == NULL)
-    {
-        return false;
-    }
-    /* The control-center card is the one direct child of the full-panel scrim
-     * that is inset from the top-left corner; the scrim itself spans the whole
-     * panel and the capture band is only 40 px tall. */
+    /* The control-center page is the only scrolling direct child of the
+     * full-panel scrim. The transparent dismiss strip does not scroll, and the
+     * transition shield is hidden while the surface is settled. */
     for (size_t index = 0; index < HOST_LV_OBJECT_CAPACITY; ++index)
     {
-        const lv_obj_t *candidate = &s_objects[index];
+        lv_obj_t *candidate = &s_objects[index];
         if (!candidate->live || candidate->parent == NULL ||
                 !_host_lv_is_descendant(candidate, &s_sys_layer) ||
                 !_host_lv_is_visible(candidate))
@@ -3824,15 +4028,49 @@ bool host_lv_sys_layer_card_height(int32_t *height)
         const bool parent_is_scrim = parent->x == 0 && parent->y == 0 &&
                                      parent->width == HOST_LV_HOR_RES &&
                                      parent->height == HOST_LV_VER_RES;
-        if (!parent_is_scrim || candidate->x <= 0 || candidate->y <= 0 ||
-                candidate->height <= 40)
+        const bool vertical_page =
+            (candidate->flags & LV_OBJ_FLAG_SCROLLABLE) != 0U &&
+            (candidate->scroll_dir & LV_DIR_VER) != 0U;
+        if (parent_is_scrim && vertical_page)
         {
-            continue;
+            return candidate;
         }
-        *height = candidate->height;
-        return true;
     }
-    return false;
+    return NULL;
+}
+
+bool host_lv_sys_layer_card_height(int32_t *height)
+{
+    if (height == NULL)
+    {
+        return false;
+    }
+    lv_obj_t *page = _host_lv_find_sys_layer_page();
+    if (page == NULL)
+    {
+        return false;
+    }
+    *height = lv_obj_get_height(page);
+    return true;
+}
+
+bool host_lv_sys_layer_page_snapshot(
+    host_lv_system_object_snapshot_t *snapshot, int32_t *scroll_y,
+    int32_t *scroll_bottom)
+{
+    if (snapshot == NULL || scroll_y == NULL || scroll_bottom == NULL)
+    {
+        return false;
+    }
+    lv_obj_t *page = _host_lv_find_sys_layer_page();
+    if (page == NULL)
+    {
+        return false;
+    }
+    _host_lv_snapshot_object(page, snapshot);
+    *scroll_y = lv_obj_get_scroll_y(page);
+    *scroll_bottom = lv_obj_get_scroll_bottom(page);
+    return true;
 }
 
 static lv_obj_t *_host_lv_find_action_button(const char *title)
@@ -3888,6 +4126,7 @@ bool host_lv_tap_action(const char *title)
         (object->height > 0 ? object->height / 2 : HOST_LV_VER_RES / 2),
     };
     s_pointer_indev.point = point;
+    s_pointer_indev.last_point = point;
     s_pointer_indev.state = LV_INDEV_STATE_PRESSED;
     s_pointer_indev.active_object = object;
     s_pointer_indev.sequence_active = true;
@@ -3899,16 +4138,25 @@ bool host_lv_tap_action(const char *title)
         .x = 0,
         .y = 0,
     };
-    s_pointer_indev.last_point = point;
+    s_pointer_indev.vect = (lv_point_t)
+    {
+        .x = 0,
+        .y = 0,
+    };
+    s_pointer_indev.scroll_begin_sent = false;
     (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED, &s_pointer_indev,
                                    NULL);
-    s_pointer_indev.active_object = NULL;
     s_pointer_indev.sequence_active = false;
     s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
     (void)_host_lv_emit_with_input(object, LV_EVENT_RELEASED, &s_pointer_indev,
                                    NULL);
-    (void)_host_lv_emit_with_input(object, LV_EVENT_CLICKED, &s_pointer_indev,
-                                   NULL);
+    const bool stopped = s_last_emit_stopped;
+    if (!stopped)
+    {
+        (void)_host_lv_emit_with_input(object, LV_EVENT_CLICKED,
+                                       &s_pointer_indev, NULL);
+    }
+    s_pointer_indev.active_object = NULL;
     return true;
 }
 
@@ -3984,13 +4232,24 @@ static bool _host_lv_swipe_sequence(const char *title,
                 .x = 0,
                 .y = 0,
             };
+            s_pointer_indev.vect = (lv_point_t)
+            {
+                .x = 0,
+                .y = 0,
+            };
             s_pointer_indev.last_point = points[0];
+            s_pointer_indev.scroll_begin_sent = false;
             (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED,
                                            &s_pointer_indev, NULL);
             for (size_t step = 1U; step < count; step++)
             {
                 s_pointer_indev.last_point = s_pointer_indev.point;
                 s_pointer_indev.point = points[step];
+                s_pointer_indev.vect = (lv_point_t)
+                {
+                    .x = points[step].x - s_pointer_indev.last_point.x,
+                    .y = points[step].y - s_pointer_indev.last_point.y,
+                };
                 s_pointer_indev.moved = true;
                 (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSING,
                                                &s_pointer_indev, NULL);
@@ -4002,12 +4261,13 @@ static bool _host_lv_swipe_sequence(const char *title,
             }
             const bool was_scrolling =
                 s_pointer_indev.scroll_object != NULL;
-            s_pointer_indev.active_object = NULL;
             s_pointer_indev.sequence_active = false;
             s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
             (void)_host_lv_emit_with_input(object, LV_EVENT_RELEASED,
                                            &s_pointer_indev, NULL);
-            if (!was_scrolling)
+            const bool stopped = s_last_emit_stopped;
+            s_pointer_indev.active_object = NULL;
+            if (!was_scrolling && !stopped)
             {
                 (void)_host_lv_emit_with_input(object, LV_EVENT_CLICKED,
                                                &s_pointer_indev, NULL);
@@ -4378,6 +4638,7 @@ static void _host_lv_snapshot_object(
                               .invalidation_count = object->invalidation_count,
                               .text = object->text,
                               .label_long_mode = object->label_long_mode,
+                              .identity = object->identity,
     };
 }
 

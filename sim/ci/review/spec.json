@@ -921,7 +921,682 @@
           ],
           "expect_visible": [],
           "single_line": [],
-          "allow_disabled": []
+          "allow_disabled": [
+            "蓝牙"
+          ]
+        },
+        {
+          "name": "control_center_app_cards",
+          "pre_seed": [
+            {
+              "cmd": "set_bluetooth",
+              "enabled": false,
+              "bound": false,
+              "active": false
+            },
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "catalog_playing"
+            },
+            {
+              "cmd": "navigate",
+              "app": "home"
+            },
+            {
+              "cmd": "wait_idle"
+            }
+          ],
+          "seed": [
+            {
+              "cmd": "call",
+              "method": "sim.control_center",
+              "params": {
+                "action": "show"
+              }
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "assert_result",
+              "method": "sim.control_center",
+              "params": {
+                "get": true
+              },
+              "expect": {
+                "visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": 0,
+                "scroll.bottom": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "Wi-Fi",
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "absent": {
+                "type": "lv_label",
+                "text": "模拟曲目 01",
+                "flags.visible": true
+              }
+            }
+          ],
+          "expect_visible": [],
+          "single_line": [],
+          "allow_disabled": [
+            "蓝牙"
+          ],
+          "allow_truncation": []
+        },
+        {
+          "name": "control_center_app_cards_scrolled",
+          "pre_seed": [
+            {
+              "cmd": "music",
+              "action": "fixture",
+              "name": "catalog_playing"
+            },
+            {
+              "cmd": "navigate",
+              "app": "home"
+            },
+            {
+              "cmd": "wait_idle"
+            }
+          ],
+          "seed": [
+            {
+              "cmd": "call",
+              "method": "sim.control_center",
+              "params": {
+                "action": "show"
+              }
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "assert_result",
+              "method": "sim.control_center",
+              "params": {
+                "get": true
+              },
+              "expect": {
+                "visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": 0,
+                "scroll.bottom": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "drag",
+              "x0": 184,
+              "y0": 300,
+              "x1": 184,
+              "y1": 120,
+              "steps": 8,
+              "settle_ms": 330
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "app_id": "music",
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": false
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "模拟曲目 01",
+                "coords.x": {
+                  "min": 70,
+                  "max": 130
+                },
+                "coords.y": {
+                  "min": 179,
+                  "max": 209
+                },
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "确定性乐队",
+                "coords.x": {
+                  "min": 70,
+                  "max": 130
+                },
+                "coords.y": {
+                  "min": 209,
+                  "max": 239
+                },
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "正在播放 · 0:42 / 3:00",
+                "coords.x": {
+                  "min": 24,
+                  "max": 60
+                },
+                "coords.y": {
+                  "min": 244,
+                  "max": 274
+                },
+                "flags.visible": true
+              }
+            }
+          ],
+          "expect_visible": [],
+          "single_line": [],
+          "allow_disabled": [],
+          "allow_truncation": []
+        },
+        {
+          "name": "control_center_clock_card",
+          "pre_seed": [
+            {
+              "cmd": "navigate",
+              "app": "clock",
+              "page": "countdown"
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "10 分"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "navigate",
+              "app": "clock",
+              "page": "stopwatch"
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "navigate",
+              "app": "home"
+            },
+            {
+              "cmd": "wait_idle"
+            }
+          ],
+          "seed": [
+            {
+              "cmd": "call",
+              "method": "sim.control_center",
+              "params": {
+                "action": "show"
+              }
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "assert_result",
+              "method": "sim.control_center",
+              "params": {
+                "get": true
+              },
+              "expect": {
+                "visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": 0,
+                "scroll.bottom": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "drag",
+              "x0": 184,
+              "y0": 300,
+              "x1": 184,
+              "y1": 120,
+              "steps": 8,
+              "settle_ms": 330
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "app_id": "clock",
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": false
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "倒计时",
+                "coords.x": {
+                  "min": 90,
+                  "max": 130
+                },
+                "coords.y": {
+                  "min": 179,
+                  "max": 219
+                },
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "进行中",
+                "coords.x": {
+                  "min": 90,
+                  "max": 130
+                },
+                "coords.y": {
+                  "min": 229,
+                  "max": 259
+                },
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "秒表",
+                "coords.x": {
+                  "min": 90,
+                  "max": 130
+                },
+                "coords.y": {
+                  "min": 264,
+                  "max": 304
+                },
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "进行中",
+                "coords.x": {
+                  "min": 90,
+                  "max": 130
+                },
+                "coords.y": {
+                  "min": 314,
+                  "max": 349
+                },
+                "flags.visible": true
+              }
+            }
+          ],
+          "expect_visible": [],
+          "single_line": [],
+          "allow_disabled": [],
+          "allow_truncation": [],
+          "fresh": true
+        },
+        {
+          "name": "control_center_recorder_card",
+          "pre_seed": [
+            {
+              "cmd": "sd",
+              "action": "clear"
+            },
+            {
+              "cmd": "navigate",
+              "app": "recorder",
+              "page": "root"
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开始"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "assert_result",
+              "method": "sim.sd",
+              "params": {
+                "action": "svc"
+              },
+              "expect": {
+                "state": 1
+              }
+            },
+            {
+              "cmd": "navigate",
+              "app": "home"
+            },
+            {
+              "cmd": "wait_idle"
+            }
+          ],
+          "seed": [
+            {
+              "cmd": "call",
+              "method": "sim.control_center",
+              "params": {
+                "action": "show"
+              }
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "assert_result",
+              "method": "sim.sd",
+              "params": {
+                "action": "svc"
+              },
+              "expect": {
+                "state": 1
+              }
+            },
+            {
+              "cmd": "assert_result",
+              "method": "sim.control_center",
+              "params": {
+                "get": true
+              },
+              "expect": {
+                "visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": 0,
+                "scroll.bottom": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "absent": {
+                "type": "lv_label",
+                "text": "语音备忘录",
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "drag",
+              "x0": 184,
+              "y0": 300,
+              "x1": 184,
+              "y1": 120,
+              "steps": 8,
+              "settle_ms": 330
+            },
+            {
+              "cmd": "wait_idle"
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "coords.x": 8,
+                "coords.y": 8,
+                "coords.w": 352,
+                "coords.h": 392,
+                "flags.scrollable": true,
+                "scroll.dir": 12,
+                "scroll.y": {
+                  "min": 1
+                }
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_obj",
+                "app_id": "recorder",
+                "flags.visible": true,
+                "flags.clickable": true,
+                "flags.scrollable": false
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "语音备忘录",
+                "coords.x": {
+                  "min": 40,
+                  "max": 180
+                },
+                "coords.y": {
+                  "min": 189,
+                  "max": 224
+                },
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "tree_assert",
+              "params": {
+                "include_layers": true
+              },
+              "contains": {
+                "type": "lv_label",
+                "text": "录音中 · 轻触卡片打开",
+                "coords.x": {
+                  "min": 24,
+                  "max": 60
+                },
+                "coords.y": {
+                  "min": 259,
+                  "max": 289
+                },
+                "flags.visible": true
+              }
+            }
+          ],
+          "expect_visible": [],
+          "single_line": [],
+          "allow_disabled": [],
+          "allow_truncation": [],
+          "fresh": true
         }
       ]
     },

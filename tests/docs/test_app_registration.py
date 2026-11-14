@@ -76,8 +76,9 @@ class AppRegistrationTest(unittest.TestCase):
         registered = set()
         for descriptor in APPS_DIR.rglob("*_app.c"):
             registered.update(re.findall(
-                r"APP_MANAGER_APP_EXPORT(?:_META)?\(\s*[^,]+,\s*[^,]+,\s*"
-                r"[^,]+,\s*(APP_MANAGER_ID_[A-Z_]+)",
+                r"APP_MANAGER_APP_EXPORT(?:_META(?:_CARD)?)?"
+                r"\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*"
+                r"(APP_MANAGER_ID_[A-Z_]+)",
                 descriptor.read_text(encoding="utf-8")))
         registered &= set(macros)
         for macro in registered:

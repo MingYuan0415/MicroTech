@@ -11,6 +11,7 @@
 #include "cJSON.h"
 
 #include "app_manager.h"
+#include "app_manager_control_center.h"
 #include "app_resources_generated.h"
 #include "lvgl.h"
 #include "core/lv_obj_class_private.h"
@@ -362,6 +363,11 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     cJSON_AddStringToObject(node, "type",
                             (cls != NULL && cls->name != NULL) ? cls->name
                             : "lv_obj");
+    const char *app_id = app_manager_control_center_card_identity(obj);
+    if (app_id != NULL)
+    {
+        cJSON_AddStringToObject(node, "app_id", app_id);
+    }
     lv_obj_get_coords(obj, &coords);
     cJSON *box = cJSON_AddObjectToObject(node, "coords");
     if (box != NULL)

@@ -23,6 +23,7 @@
 #include "home_shortcuts_page.h"
 #include "nv_storage.h"
 #include "power_service.h"
+#include "recorder_service.h"
 #include "weather_app_internal.h"
 #include "weather_service.h"
 #include "app_image_ids.h"
@@ -758,6 +759,7 @@ typedef struct touch_request
     touch_action_t action;
     int32_t x;
     int32_t y;
+    lv_obj_t *target;
     bool handled;
 } touch_request_t;
 
@@ -1032,7 +1034,10 @@ static esp_err_t _touch_on_ui(void *arg)
     touch_request_t *request = arg;
     if (request->action == TOUCH_ACTION_PRESS)
     {
-        request->handled = host_lv_touch_press(request->x, request->y);
+        request->handled = request->target != NULL ?
+                           host_lv_touch_press_object(request->target,
+                               request->x, request->y) :
+                           host_lv_touch_press(request->x, request->y);
     }
     else if (request->action == TOUCH_ACTION_MOVE)
     {
@@ -1278,6 +1283,20 @@ static bool _touch(touch_action_t action, int32_t x, int32_t y)
         .action = action,
         .x = x,
         .y = y,
+    };
+    assert(app_manager_ui_call(_touch_on_ui, &request,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return request.handled;
+}
+
+static bool _touch_object(lv_obj_t *object, int32_t x, int32_t y)
+{
+    touch_request_t request =
+    {
+        .action = TOUCH_ACTION_PRESS,
+        .x = x,
+        .y = y,
+        .target = object,
     };
     assert(app_manager_ui_call(_touch_on_ui, &request,
                                UI_TIMEOUT_MS) == ESP_OK);
@@ -4612,6 +4631,248 @@ static esp_err_t _cc_show_settled_on_ui(void *arg)
     return result;
 }
 
+static esp_err_t _control_center_hide_on_ui(void *arg)
+{
+    (void)arg;
+    return app_manager_control_center_hide();
+}
+
+static esp_err_t _cc_show_on_ui(void *arg)
+{
+    (void)arg;
+    return app_manager_control_center_show();
+}
+
+static esp_err_t _cc_complete_animations_on_ui(void *arg)
+{
+    (void)arg;
+    host_lv_complete_generic_animations();
+    return ESP_OK;
+}
+
+static esp_err_t MT_TEST_MAYBE_UNUSED _cc_fail_object_after_on_ui(void *arg)
+{
+    const unsigned *successful_creations = arg;
+    assert(successful_creations != NULL);
+    host_lv_snapshot_fail_object_creation_after(*successful_creations);
+    return ESP_OK;
+}
+
+typedef struct cc_system_text_query
+{
+    const char *text;
+    bool found;
+    const lv_obj_t *object;
+} cc_system_text_query_t;
+
+static esp_err_t _query_cc_system_text_on_ui(void *arg)
+{
+    cc_system_text_query_t *query = arg;
+    host_lv_system_object_snapshot_t snapshot = {0};
+    query->found = host_lv_system_label_snapshot(query->text, &snapshot);
+    query->object = query->found ? snapshot.object : NULL;
+    return ESP_OK;
+}
+
+static bool _cc_system_has_text(const char *text)
+{
+    cc_system_text_query_t query = {.text = text};
+    assert(app_manager_ui_call(_query_cc_system_text_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return query.found;
+}
+
+static const lv_obj_t *_cc_system_text_object(const char *text)
+{
+    cc_system_text_query_t query = {.text = text};
+    assert(app_manager_ui_call(_query_cc_system_text_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(query.found);
+    return query.object;
+}
+
+static esp_err_t _cc_system_object_count_on_ui(void *arg)
+{
+    size_t *count = arg;
+    *count = host_lv_system_object_count();
+    return ESP_OK;
+}
+
+static size_t _cc_system_object_count(void)
+{
+    size_t count = 0U;
+    assert(app_manager_ui_call(_cc_system_object_count_on_ui, &count,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    return count;
+}
+
+#define CC_CARD_ORDER_MAX 3U
+
+typedef struct cc_card_order_query
+{
+    const char *app_ids[CC_CARD_ORDER_MAX];
+    size_t app_id_count;
+    bool found;
+    bool ordered;
+    uint32_t control_index;
+    uint32_t section_index;
+    uint32_t actions_index;
+    uint32_t card_indices[CC_CARD_ORDER_MAX];
+    uint32_t child_count;
+} cc_card_order_query_t;
+
+static bool _cc_object_contains(const lv_obj_t *ancestor,
+                                const lv_obj_t *object)
+{
+    for (const lv_obj_t *current = object; current != NULL;
+            current = lv_obj_get_parent(current))
+    {
+        if (current == ancestor)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static lv_obj_t *_cc_direct_child_under(lv_obj_t *ancestor, lv_obj_t *object)
+{
+    lv_obj_t *child = object;
+    while (lv_obj_get_parent(child) != NULL &&
+            lv_obj_get_parent(child) != ancestor)
+    {
+        child = lv_obj_get_parent(child);
+    }
+    return lv_obj_get_parent(child) == ancestor ? child : NULL;
+}
+
+static uint8_t _cc_brightness_percent(uint8_t raw)
+{
+    const uint8_t floor = 16U;
+    if (raw <= floor)
+    {
+        return 0U;
+    }
+    const uint32_t span = 255U - floor;
+    return (uint8_t)(((uint32_t)(raw - floor) * 100U + span / 2U) / span);
+}
+
+static esp_err_t _query_cc_card_order_on_ui(void *arg)
+{
+    cc_card_order_query_t *query = arg;
+    if (query == NULL || query->app_id_count == 0U ||
+            query->app_id_count > CC_CARD_ORDER_MAX)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    lv_obj_t *hosts[CC_CARD_ORDER_MAX] = {0};
+    const size_t object_count = host_lv_system_object_count();
+    for (size_t object_index = 0U; object_index < object_count; ++object_index)
+    {
+        host_lv_system_object_snapshot_t object;
+        if (!host_lv_system_object_snapshot(object_index, &object) ||
+                object.identity == NULL)
+        {
+            continue;
+        }
+        for (size_t card_index = 0U; card_index < query->app_id_count;
+                ++card_index)
+        {
+            if (strcmp(object.identity, query->app_ids[card_index]) == 0)
+            {
+                hosts[card_index] = (lv_obj_t *)object.object;
+            }
+        }
+    }
+    for (size_t index = 0U; index < query->app_id_count; ++index)
+    {
+        if (hosts[index] == NULL)
+        {
+            return ESP_OK;
+        }
+    }
+
+    char brightness_text[8];
+    (void)snprintf(brightness_text, sizeof(brightness_text), "%u%%",
+                   (unsigned)_cc_brightness_percent(
+                       app_manager_screen_get_brightness()));
+    host_lv_system_object_snapshot_t brightness_label;
+    host_lv_system_object_snapshot_t action_label;
+    if (!host_lv_system_label_snapshot(brightness_text, &brightness_label) ||
+            !host_lv_system_label_snapshot("熄屏", &action_label))
+    {
+        return ESP_OK;
+    }
+
+    lv_obj_t *content = lv_obj_get_parent(hosts[0]);
+    while (content != NULL &&
+            !_cc_object_contains(content,
+                                 (const lv_obj_t *)brightness_label.object))
+    {
+        content = lv_obj_get_parent(content);
+    }
+    if (content == NULL)
+    {
+        return ESP_OK;
+    }
+
+    lv_obj_t *cards = lv_obj_get_parent(hosts[0]);
+    lv_obj_t *section = cards != NULL ? lv_obj_get_parent(cards) : NULL;
+    lv_obj_t *control = _cc_direct_child_under(
+                            content, (lv_obj_t *)brightness_label.object);
+    lv_obj_t *actions = _cc_direct_child_under(
+                            content, (lv_obj_t *)action_label.object);
+    if (cards == NULL || section == NULL || control == NULL ||
+            actions == NULL || _cc_direct_child_under(content, cards) != section)
+    {
+        return ESP_OK;
+    }
+
+    uint32_t previous_index = 0U;
+    bool ordered = true;
+    lv_obj_t *previous_host = NULL;
+    for (size_t index = 0U; index < query->app_id_count; ++index)
+    {
+        if (hosts[index] == previous_host ||
+                lv_obj_get_parent(hosts[index]) != cards)
+        {
+            return ESP_OK;
+        }
+        const uint32_t host_index = lv_obj_get_index(hosts[index]);
+        if (index > 0U && host_index <= previous_index)
+        {
+            ordered = false;
+        }
+        query->card_indices[index] = host_index;
+        previous_index = host_index;
+        previous_host = hosts[index];
+    }
+
+    query->found = true;
+    query->control_index = lv_obj_get_index(control);
+    query->actions_index = lv_obj_get_index(actions);
+    query->section_index = lv_obj_get_index(section);
+    query->child_count = lv_obj_get_child_count(content);
+    query->ordered = ordered &&
+                     query->actions_index > query->control_index &&
+                     query->section_index > query->actions_index &&
+                     query->section_index + 1U == query->child_count;
+    return ESP_OK;
+}
+
+static void _assert_cc_card_order(const char *const *app_ids, size_t count)
+{
+    assert(app_ids != NULL);
+    assert(count > 0U);
+    cc_card_order_query_t query = {.app_id_count = count};
+    memcpy(query.app_ids, app_ids, count * sizeof(app_ids[0]));
+    assert(app_manager_ui_call(_query_cc_card_order_on_ui, &query,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(query.found);
+    assert(query.ordered);
+}
+
 static esp_err_t _cc_set_ops_on_ui(void *arg)
 {
     app_manager_control_center_set_ops(arg);
@@ -4632,6 +4893,27 @@ static esp_err_t _cc_volume_set(uint8_t percent)
 static esp_err_t _cc_volume_set_persisted(uint8_t percent)
 {
     return audio_service_set_volume_persisted(percent);
+}
+
+static esp_err_t _cc_wifi_get(app_manager_radio_state_t *state,
+                              const char **ssid)
+{
+    if (state == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *state = APP_MANAGER_RADIO_OFF;
+    if (ssid != NULL)
+    {
+        *ssid = NULL;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t _cc_wifi_set(bool enabled)
+{
+    (void)enabled;
+    return ESP_OK;
 }
 
 static void _cc_slider(size_t index, cc_slider_request_t *request)
@@ -4753,6 +5035,32 @@ static void MT_TEST_MAYBE_UNUSED _test_control_center_band_and_entering_toggle(v
     assert(toggle.visible_after_first);
     assert(toggle.second == ESP_OK);
     assert(!toggle.visible_after_second);
+
+    /* Card descendants stay clickable even when their container is press
+     * locked, so the foreground shield must reject both transition paths. */
+    assert(app_manager_ui_call(_cc_show_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    const lv_obj_t *screen_off_label = _cc_system_text_object("熄屏");
+    const size_t entering_objects = _cc_system_object_count();
+    assert(_cc_system_has_text("熄屏"));
+    assert(_tap_action_on_ui("熄屏") == ESP_ERR_NOT_FOUND);
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+    assert(_cc_system_text_object("熄屏") == screen_off_label);
+    assert(_cc_system_object_count() == entering_objects);
+    assert(_tap_action_on_ui("熄屏") == ESP_OK);
+    assert(!app_manager_control_center_is_visible());
+
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+    assert(app_manager_ui_call(_cc_show_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_tap_action_on_ui("熄屏") == ESP_ERR_NOT_FOUND);
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(!app_manager_control_center_is_visible());
 
     assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
@@ -4949,13 +5257,11 @@ static void _test_control_center_volume_row_hidden(void)
             &snapshot.snapshot.pressed, &snapshot.snapshot.disabled));
     assert(!_ui_has_text("60%"));
 
-    /* Panel height is derived from the rows it built. No Wi-Fi, Bluetooth or
-     * volume bridge is wired here, so the panel holds the header, the
-     * brightness capsule and the action row only:
-     * 16 + 56 + 68 + 52 + 16 + 2 * 12 + 32 fill = 264. */
+    /* The surface is one full-height scroll page. Missing optional controls
+     * change its content height, not the viewport height. */
     int32_t height = 0;
     assert(host_lv_sys_layer_card_height(&height));
-    assert(height == 264);
+    assert(height == 448 - 8 - 48);
 
     /* A write-only bridge must not build the row either: the surface needs both
      * halves, so this layout is identical to the missing-bridge one. */
@@ -4982,6 +5288,546 @@ static void _test_control_center_volume_row_hidden(void)
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_control_center_set_enabled(false) == ESP_OK);
 }
+
+typedef struct cc_page_snapshot
+{
+    host_lv_system_object_snapshot_t object;
+    int32_t scroll_y;
+    int32_t scroll_bottom;
+    bool found;
+} cc_page_snapshot_t;
+
+static esp_err_t _cc_page_snapshot_on_ui(void *arg)
+{
+    cc_page_snapshot_t *snapshot = arg;
+    snapshot->found = host_lv_sys_layer_page_snapshot(
+                          &snapshot->object, &snapshot->scroll_y,
+                          &snapshot->scroll_bottom);
+    return ESP_OK;
+}
+
+static cc_page_snapshot_t _cc_page_snapshot(void)
+{
+    cc_page_snapshot_t snapshot = {0};
+    assert(app_manager_ui_call(_cc_page_snapshot_on_ui, &snapshot,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(snapshot.found);
+    return snapshot;
+}
+
+static void _test_control_center_page_gestures(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    const app_manager_control_center_ops_t ops =
+    {
+        .get_wifi = _cc_wifi_get,
+        .set_wifi = _cc_wifi_set,
+        .get_volume = _cc_volume_get,
+        .set_volume = _cc_volume_set,
+        .set_volume_persisted = _cc_volume_set_persisted,
+    };
+    assert(app_manager_ui_call(_cc_set_ops_on_ui, (void *)&ops,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+
+    const cc_page_snapshot_t initial = _cc_page_snapshot();
+    assert(initial.object.width == 368 - 2 * 8);
+    assert(initial.object.height == 448 - 8 - 48);
+    assert(initial.scroll_y == 0);
+    assert(initial.scroll_bottom > 0);
+
+    /* A drag over a normal system control must reach the sole page scroller
+     * rather than opening a nested scroll surface. */
+    assert(_touch_object((lv_obj_t *)initial.object.object, 184, 300));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 240));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 240));
+    const cc_page_snapshot_t after_control_drag = _cc_page_snapshot();
+    assert(after_control_drag.object.object == initial.object.object);
+    assert(after_control_drag.scroll_y > initial.scroll_y);
+    assert(app_manager_control_center_is_visible());
+
+    /* Reopening resets the long page before the dedicated strip checks. */
+    assert(app_manager_ui_call(_control_center_hide_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(!app_manager_control_center_is_visible());
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_cc_page_snapshot().scroll_y == 0);
+
+    /* Short pull on the transparent strip rebounds to the visible surface. */
+    assert(_touch(TOUCH_ACTION_PRESS, 184, 424));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 414));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 414));
+    assert(app_manager_control_center_is_visible());
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+
+    /* A deliberate strip drag owns the sheet directly and closes it. */
+    assert(_touch(TOUCH_ACTION_PRESS, 184, 424));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 350));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 350));
+    assert(!app_manager_control_center_is_visible());
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    /* A normal page scroll that starts with headroom may consume its last
+     * range during the same gesture; reaching the bottom alone must not close. */
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    const cc_page_snapshot_t scroll_start = _cc_page_snapshot();
+    assert(scroll_start.scroll_bottom > 0);
+    assert(_touch_object((lv_obj_t *)scroll_start.object.object, 184, 360));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 180));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 180));
+    const cc_page_snapshot_t reached_bottom = _cc_page_snapshot();
+    assert(reached_bottom.scroll_y > 0);
+    assert(reached_bottom.scroll_bottom == 0);
+    assert(app_manager_control_center_is_visible());
+
+    /* Once already at the hard bottom, one fresh upward gesture has no page
+     * range left and is the explicit dismissal signal. */
+    assert(_touch_object((lv_obj_t *)reached_bottom.object.object, 184, 340));
+    assert(_touch(TOUCH_ACTION_MOVE, 184, 280));
+    assert(_touch(TOUCH_ACTION_RELEASE, 184, 280));
+    assert(!app_manager_control_center_is_visible());
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+
+#if defined(MT_PRODUCT_HAS_MUSIC_APP) && defined(MT_PRODUCT_HAS_CLOCK_APP)
+/* Force the first provider in a rebuilt card set to fail. The second provider
+ * must still mount. The failed slot is retried without rebuilding the healthy
+ * card, so the Clock tree remains address-stable while Music recovers. */
+static void _test_control_center_failed_card_mount(void)
+{
+    host_music_reset();
+    host_music_seed_success();
+    host_music_set_player_state(MUSIC_PLAYBACK_PLAYING,
+                                MUSIC_SERVICE_FAILURE_NONE);
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_cc_system_has_text("测试曲目 1"));
+
+    /* Adding the Clock provider changes the active set and triggers a rebuild.
+     * The Music host is allocated first, then its provider card creation fails. */
+    assert(timer_service_countdown_start(10U * 60000U) == ESP_OK);
+    const unsigned one_successful_creation = 1U;
+    assert(app_manager_ui_call(_cc_fail_object_after_on_ui,
+                               (void *)&one_successful_creation,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    _step_cc_poll();
+    assert(!_cc_system_has_text("测试曲目 1"));
+    assert(_cc_system_has_text("倒计时"));
+    const lv_obj_t *countdown_title = _cc_system_text_object("倒计时");
+    const size_t stable_objects = _cc_system_object_count();
+
+    /* The next poll reaches the retry deadline. Music remounts in its original
+     * slot while the already-mounted Clock tree is retained. */
+    _step_cc_poll();
+    assert(_cc_system_has_text("测试曲目 1"));
+    assert(_cc_system_text_object("倒计时") == countdown_title);
+    assert(_cc_system_object_count() > stable_objects);
+
+    /* Once the failed slot has recovered, later polls refresh both cards in
+     * place rather than rebuilding either host. */
+    const lv_obj_t *music_title = _cc_system_text_object("测试曲目 1");
+    const size_t recovered_objects = _cc_system_object_count();
+    _step_cc_poll();
+    assert(_cc_system_text_object("测试曲目 1") == music_title);
+    assert(_cc_system_text_object("倒计时") == countdown_title);
+    assert(_cc_system_object_count() == recovered_objects);
+    static const char *const card_ids[] =
+    {
+        APP_MANAGER_ID_MUSIC,
+        APP_MANAGER_ID_CLOCK,
+    };
+    _assert_cc_card_order(card_ids,
+                          sizeof(card_ids) / sizeof(card_ids[0]));
+
+    assert(app_manager_ui_call(_control_center_hide_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(timer_service_countdown_reset() == ESP_OK);
+    host_music_reset();
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+#endif
+
+#if defined(MT_PRODUCT_HAS_CLOCK_APP)
+/* Countdown and stopwatch can run at the same time. Each row owns its own open
+ * and pause controls, so one row's action must not select the other timer. */
+static void _test_control_center_clock_card(void)
+{
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(timer_service_stopwatch_reset() == ESP_OK);
+    assert(timer_service_focus_reset() == ESP_OK);
+    assert(timer_service_countdown_start(10U * 60000U) == ESP_OK);
+    assert(timer_service_stopwatch_start() == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_cc_system_has_text("倒计时"));
+    assert(_cc_system_has_text("秒表"));
+
+    timer_service_snapshot_t snapshot;
+    assert(timer_service_get_snapshot(&snapshot) == ESP_OK);
+    assert(snapshot.countdown_state == TIMER_SERVICE_RUNNING);
+    assert(snapshot.stopwatch_state == TIMER_SERVICE_RUNNING);
+
+    /* Simulate a transient timer-service outage after mount. The card must
+     * stay mounted and show its unavailable state; after recovery both timer
+     * rows must return without rebuilding the host. */
+    assert(timer_service_deinit() == ESP_OK);
+    _step_cc_poll();
+    assert(_cc_system_has_text("计时服务不可用"));
+    const timer_service_config_t timer_config =
+    {
+        .monotonic_time_us = esp_timer_get_time,
+    };
+    assert(timer_service_init(&timer_config) == ESP_OK);
+    assert(timer_service_countdown_start(10U * 60000U) == ESP_OK);
+    assert(timer_service_stopwatch_start() == ESP_OK);
+    _step_cc_poll();
+    assert(_cc_system_has_text("倒计时"));
+    assert(_cc_system_has_text("秒表"));
+
+    /* The stopwatch row opens its own page while the countdown keeps running. */
+    _tap_action("秒表");
+    assert(_wait_for_page_active(APP_MANAGER_ID_CLOCK, "stopwatch"));
+    host_lv_complete_generic_animations();
+
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    /* Countdown is the first row, so its pause control is the only visible
+     * "暂停" action. The stopwatch must keep running. */
+    _tap_action("暂停");
+    assert(timer_service_get_snapshot(&snapshot) == ESP_OK);
+    assert(snapshot.countdown_state == TIMER_SERVICE_PAUSED);
+    assert(snapshot.stopwatch_state == TIMER_SERVICE_RUNNING);
+
+    /* Refresh the captions so countdown changes to "继续" before resolving the
+     * remaining "暂停" control. */
+    _step_cc_poll();
+    _tap_action("暂停");
+    assert(timer_service_get_snapshot(&snapshot) == ESP_OK);
+    assert(snapshot.countdown_state == TIMER_SERVICE_PAUSED);
+    assert(snapshot.stopwatch_state == TIMER_SERVICE_PAUSED);
+
+    assert(app_manager_ui_call(_control_center_hide_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(timer_service_stopwatch_reset() == ESP_OK);
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+#endif
+
+#if defined(MT_PRODUCT_HAS_CLOCK_APP)
+static void _test_control_center_clock_focus_card(void)
+{
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(timer_service_stopwatch_reset() == ESP_OK);
+    assert(timer_service_focus_reset() == ESP_OK);
+    assert(timer_service_stopwatch_start() == ESP_OK);
+    assert(timer_service_focus_start(25U * 60000U, 5U * 60000U) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_cc_system_has_text("秒表"));
+    assert(_cc_system_has_text("专注"));
+    assert(_cc_system_has_text("进行中 · 第 1 轮"));
+
+    timer_service_snapshot_t snapshot;
+    assert(timer_service_get_snapshot(&snapshot) == ESP_OK);
+    assert(snapshot.stopwatch_state == TIMER_SERVICE_RUNNING);
+    assert(snapshot.focus_state == TIMER_SERVICE_RUNNING);
+
+    /* The stopwatch row precedes focus, so the first pause control only
+     * affects the stopwatch while focus continues. */
+    _tap_action("暂停");
+    assert(timer_service_get_snapshot(&snapshot) == ESP_OK);
+    assert(snapshot.stopwatch_state == TIMER_SERVICE_PAUSED);
+    assert(snapshot.focus_state == TIMER_SERVICE_RUNNING);
+
+    _tap_action("暂停");
+    assert(timer_service_get_snapshot(&snapshot) == ESP_OK);
+    assert(snapshot.stopwatch_state == TIMER_SERVICE_PAUSED);
+    assert(snapshot.focus_state == TIMER_SERVICE_PAUSED);
+    assert(_cc_system_has_text("已暂停 · 第 1 轮"));
+
+    assert(app_manager_ui_call(_control_center_hide_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(timer_service_stopwatch_reset() == ESP_OK);
+    assert(timer_service_focus_reset() == ESP_OK);
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+#endif
+
+#if defined(MT_PRODUCT_HAS_RECORDER_APP)
+static void _test_control_center_recorder_card(void)
+{
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(timer_service_stopwatch_reset() == ESP_OK);
+    assert(timer_service_focus_reset() == ESP_OK);
+    host_recorder_reset();
+    host_recorder_seed_recording(42U * 1000U);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    /* The card is mounted before the entrance transition, but its button is
+     * unreachable until the foreground shield stands down. */
+    assert(app_manager_ui_call(_cc_show_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_tap_action_on_ui("暂停") == ESP_ERR_NOT_FOUND);
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+    assert(_cc_system_has_text("语音备忘录"));
+    assert(_cc_system_has_text("录音中 · 轻触卡片打开"));
+
+    /* The mounted card must retain its host and render an unavailable state
+     * across a transient snapshot-read failure, then recover in place. */
+    host_recorder_set_available(false);
+    _step_cc_poll();
+    assert(_cc_system_has_text("语音备忘录"));
+    assert(_cc_system_has_text("录音服务不可用"));
+    host_recorder_set_available(true);
+    _step_cc_poll();
+    assert(_cc_system_has_text("录音中 · 轻触卡片打开"));
+
+    const unsigned pause_count = host_recorder_pause_count();
+    host_recorder_fail_next_command(ESP_ERR_INVALID_STATE);
+    assert(_tap_action_on_ui("暂停") == ESP_OK);
+    assert(host_recorder_pause_count() == pause_count + 1U);
+    assert(_cc_system_has_text("存储卡或音频不可用"));
+    assert(_cc_system_has_text("录音中 · 轻触卡片打开"));
+    assert(!_cc_system_has_text("正在处理"));
+
+    assert(_tap_action_on_ui("暂停") == ESP_OK);
+    assert(host_recorder_pause_count() == pause_count + 2U);
+    assert(_cc_system_has_text("正在处理"));
+    assert(_tap_action_on_ui("暂停") == ESP_ERR_NOT_FOUND);
+
+    host_recorder_complete_operation(RECORDER_SERVICE_PAUSED,
+                                     43U * 1000U);
+    _step_cc_poll();
+    assert(_cc_system_has_text("已暂停 · 轻触卡片打开"));
+    assert(_cc_system_has_text("继续"));
+
+    /* The same foreground shield protects card actions during the leave
+     * transition. Reopening proves the service-owned card survives the hide. */
+    assert(app_manager_ui_call(_cc_show_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_tap_action_on_ui("继续") == ESP_ERR_NOT_FOUND);
+    assert(app_manager_ui_call(_cc_complete_animations_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(!app_manager_control_center_is_visible());
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(_cc_system_has_text("已暂停 · 轻触卡片打开"));
+
+    const unsigned resume_count = host_recorder_resume_count();
+    assert(_tap_action_on_ui("继续") == ESP_OK);
+    assert(host_recorder_resume_count() == resume_count + 1U);
+    assert(_cc_system_has_text("正在处理"));
+    host_recorder_complete_operation(RECORDER_SERVICE_RECORDING,
+                                     44U * 1000U);
+    _step_cc_poll();
+    assert(_cc_system_has_text("录音中 · 轻触卡片打开"));
+
+    const unsigned stop_count = host_recorder_stop_count();
+    assert(_tap_action_on_ui("停止") == ESP_OK);
+    assert(host_recorder_stop_count() == stop_count + 1U);
+    assert(_cc_system_has_text("正在处理"));
+    host_recorder_complete_operation(RECORDER_SERVICE_IDLE, 0U);
+    _step_cc_poll();
+    assert(!_cc_system_has_text("语音备忘录"));
+
+    assert(app_manager_ui_call(_control_center_hide_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    host_recorder_reset();
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+#endif
+
+#if defined(MT_PRODUCT_HAS_MUSIC_APP) && defined(MT_PRODUCT_HAS_CLOCK_APP) && \
+    defined(MT_PRODUCT_HAS_RECORDER_APP)
+static void _test_control_center_card_provider_order(void)
+{
+    host_music_reset();
+    host_music_seed_success();
+    host_music_set_player_state(MUSIC_PLAYBACK_PLAYING,
+                                MUSIC_SERVICE_FAILURE_NONE);
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(timer_service_countdown_start(10U * 60000U) == ESP_OK);
+    host_recorder_reset();
+    host_recorder_seed_recording(42U * 1000U);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    static const char *const card_ids[] =
+    {
+        APP_MANAGER_ID_MUSIC,
+        APP_MANAGER_ID_CLOCK,
+        APP_MANAGER_ID_RECORDER,
+    };
+    _assert_cc_card_order(card_ids,
+                          sizeof(card_ids) / sizeof(card_ids[0]));
+
+    /* The card rows start below the controls. Scroll the shared content owner
+     * to the bottom, then use the Recorder header exactly as a first-time user
+     * would. Opening its page must close the overlay through the real routing
+     * path rather than through a direct navigation helper. */
+    const char *recorder_title = "语音备忘录";
+    const lv_font_t *recorder_font = &s_theme_fonts[APP_THEME_FONT_BODY];
+    _set_label_ancestor_scroll_y(recorder_title, recorder_font, 8U, INT32_MAX);
+    assert(_ui_label_ancestor_requested_scroll_y(recorder_title, recorder_font,
+            8U) == INT32_MAX);
+    assert(_ui_label_ancestor_scroll_y(recorder_title, recorder_font, 8U) >
+           0);
+
+    assert(_tap_action_on_ui((void *)recorder_title) == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_RECORDER, "root"));
+    assert(!app_manager_control_center_is_visible());
+    assert(_ui_has_text("录音"));
+
+    host_music_reset();
+    host_recorder_reset();
+    assert(timer_service_countdown_reset() == ESP_OK);
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+#endif
+
+#if defined(MT_PRODUCT_HAS_MUSIC_APP)
+static void _test_control_center_app_card(void)
+{
+    host_music_reset();
+    host_music_seed_success();
+    host_music_set_player_state(MUSIC_PLAYBACK_PLAYING,
+                                MUSIC_SERVICE_FAILURE_NONE);
+    assert(timer_service_countdown_start(10U * 60000U) == ESP_OK);
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+
+    assert(_ui_visible_text_count("测试曲目 1") == 0U);
+    const size_t countdown_texts = _ui_visible_text_count("倒计时");
+    assert(app_manager_control_center_set_enabled(true) == ESP_OK);
+    assert(app_manager_ui_call(_control_center_init_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    /* The Music and Clock cards are service-owned, so they appear without the
+     * corresponding App Page being mounted. The countdown time advances while
+     * the surface opens, so assert its state rather than an exact second. */
+    assert(_ui_has_text("测试曲目 1"));
+    assert(_ui_has_text("正在播放 · 0:42 / 3:00"));
+    assert(_ui_visible_text_count("倒计时") > countdown_texts);
+    assert(_ui_has_text("进行中"));
+    static const char *const card_ids[] =
+    {
+        APP_MANAGER_ID_MUSIC,
+        APP_MANAGER_ID_CLOCK,
+    };
+    _assert_cc_card_order(card_ids,
+                          sizeof(card_ids) / sizeof(card_ids[0]));
+    int32_t height = 0;
+    assert(host_lv_sys_layer_card_height(&height));
+    assert(height == 448 - 8 - 48);
+
+    /* A mounted card must survive a transient snapshot-read failure and show
+     * its unavailable state instead of being unmounted. It must then recover
+     * in place once the service answers again. */
+    host_music_set_status_read_error(true);
+    _step_cc_poll();
+    assert(_ui_has_text("测试曲目 1"));
+    assert(_ui_has_text("音乐服务暂不可用"));
+    host_music_set_status_read_error(false);
+    _step_cc_poll();
+    assert(_ui_has_text("测试曲目 1"));
+    assert(_ui_has_text("正在播放 · 0:42 / 3:00"));
+
+    /* A service-owned card disappears on the next poll when its source is no
+     * longer active, without waiting for the surface to close. */
+    host_music_set_player_state(MUSIC_PLAYBACK_IDLE,
+                                MUSIC_SERVICE_FAILURE_NONE);
+    _step_cc_poll();
+    assert(!_ui_has_text("测试曲目 1"));
+    assert(_ui_visible_text_count("倒计时") > countdown_texts);
+
+    /* Closing the surface destroys the remaining card trees. */
+    assert(app_manager_ui_call(_control_center_hide_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(!_ui_has_text("测试曲目 1"));
+
+    assert(timer_service_countdown_reset() == ESP_OK);
+    host_music_reset();
+    assert(app_manager_control_center_is_enabled());
+    assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_set_enabled(false) == ESP_OK);
+}
+#endif
 
 static void _test_standby_capability_ui(void)
 {
@@ -5130,8 +5976,26 @@ int main(void)
     _test_system_task_switcher();
     _test_pull_refresh_hold();
     _test_control_center_band_and_entering_toggle();
+    _test_control_center_page_gestures();
     _test_control_center_volume_row();
     _test_control_center_volume_row_hidden();
+#if defined(MT_PRODUCT_HAS_CLOCK_APP)
+    _test_control_center_clock_card();
+    _test_control_center_clock_focus_card();
+#endif
+#if defined(MT_PRODUCT_HAS_RECORDER_APP)
+    _test_control_center_recorder_card();
+#endif
+#if defined(MT_PRODUCT_HAS_MUSIC_APP) && defined(MT_PRODUCT_HAS_CLOCK_APP)
+    _test_control_center_failed_card_mount();
+#endif
+#if defined(MT_PRODUCT_HAS_MUSIC_APP) && defined(MT_PRODUCT_HAS_CLOCK_APP) && \
+    defined(MT_PRODUCT_HAS_RECORDER_APP)
+    _test_control_center_card_provider_order();
+#endif
+#if defined(MT_PRODUCT_HAS_MUSIC_APP)
+    _test_control_center_app_card();
+#endif
     _test_standby_capability_ui();
     _test_settings_sound_page_volume();
 #else
@@ -5144,8 +6008,12 @@ int main(void)
     _test_fifo_navigation_finishes_snapshot_transition();
     _test_home_screen_lifecycle();
     _test_pull_refresh_hold();
+    _test_control_center_page_gestures();
     _test_control_center_volume_row();
     _test_control_center_volume_row_hidden();
+#if defined(MT_PRODUCT_HAS_CLOCK_APP)
+    _test_control_center_clock_card();
+#endif
     _test_standby_capability_ui();
     _test_settings_sound_page_volume();
 #endif

@@ -16,6 +16,8 @@ SPEC.loader.exec_module(review)
 
 BOX_Y, BOX_H, VH = 64, 384, 448
 CHROME = (0, 0, 200)
+EDGE = (9, 9, 9)
+MODAL_EDGE = 8
 
 
 def _content_color(row):
@@ -30,23 +32,33 @@ class FakePageRunner:
     canvas is then checkable row by row without any simulator.
     """
 
-    def __init__(self, travel, stuck=False, initial_offset=0, advance=None):
+    def __init__(self, travel, stuck=False, initial_offset=0, advance=None,
+                 modal=False):
         self.travel = travel
         self.stuck = stuck
         self.offset = initial_offset
         self.advance = advance
+        self.modal = modal
+        self.box_y = 8 if modal else BOX_Y
+        self.box_h = 392 if modal else BOX_H
         self.press_y = None
         self.frames = 0
         self.dir = tempfile.TemporaryDirectory()
 
     def _frame(self):
-        image = Image.new('RGB', (368, VH))
+        image = Image.new('RGB', (368, VH), CHROME)
         pixels = image.load()
-        for y in range(VH):
-            color = CHROME if y < BOX_Y else _content_color(
-                self.offset + y - BOX_Y)
+        for y in range(self.box_y, self.box_y + self.box_h):
+            color = _content_color(self.offset + y - self.box_y)
             for x in range(4):
                 pixels[x, y] = color
+        if self.modal:
+            # A real panel paints rounded top/bottom edges inside the frame.
+            for y in list(range(self.box_y, self.box_y + MODAL_EDGE)) + \
+                    list(range(self.box_y + self.box_h - MODAL_EDGE,
+                               self.box_y + self.box_h)):
+                for x in range(4):
+                    pixels[x, y] = EDGE
         path = os.path.join(self.dir.name, 'f%d.png' % self.frames)
         self.frames += 1
         image.save(path)
@@ -54,13 +66,22 @@ class FakePageRunner:
 
     def call(self, method, params=None):
         if method == 'sim.tree':
-            return {'tree': {
+            panel = {
                 'type': 'lv_obj',
-                'coords': {'x': 0, 'y': BOX_Y, 'w': 368, 'h': BOX_H},
+                'coords': {'x': 0, 'y': self.box_y, 'w': 368,
+                           'h': self.box_h},
                 'flags': {'scrollable': True, 'hidden': False},
                 'scroll': {'dir': 12, 'top': self.offset,
                            'bottom': max(0, self.travel - self.offset),
-                           'y': self.offset}}}
+                           'y': self.offset}}
+            if not self.modal:
+                return {'tree': panel}
+            return {'tree': {
+                'type': 'lv_obj',
+                'coords': {'x': 0, 'y': 0, 'w': 368, 'h': VH},
+                'flags': {'floating': True, 'clickable': True,
+                          'hidden': False},
+                'children': [panel]}}
         if method == 'sim.screenshot':
             return {'path': self._frame()}
         if method == 'sim.wait_idle':
@@ -250,8 +271,9 @@ class ReviewPagesTest(unittest.TestCase):
             self.assertEqual(handle.size, (368, VH))
         self.assertIsNone(note)
 
-    def test_modal_scrim_preserves_one_surface_frame(self):
-        runner = self._fake_page(200, stuck=True)
+    def test_modal_scrim_without_scrollable_content_stays_one_frame(self):
+        """A true fixed modal has no page to stitch and remains one frame."""
+        runner = self._fake_page(0, stuck=True)
         original_call = runner.call
 
         def modal_call(method, params=None):
@@ -266,9 +288,40 @@ class ReviewPagesTest(unittest.TestCase):
         path, note = review._capture_full_page(runner, 'modal', 368, VH)
         with Image.open(path) as image:
             self.assertEqual(image.size, (368, VH))
-            self.assertEqual(image.getpixel((0, VH - 1)), _content_color(VH - 1 - BOX_Y))
         self.assertIn('modal', note)
-        self.assertEqual(runner.offset, 0)
+
+    def test_inset_modal_page_is_stitched_inside_its_surface(self):
+        """The control-center panel is inset yet owns a page taller than itself.
+
+        The screenshot must include the complete page instead of taking only the
+        visible viewport. Rows above the panel are screen chrome; the panel's
+        content expands in place; rows below it remain lower screen chrome.
+        """
+        runner = self._fake_page(296, modal=True)
+        path, note = review._capture_full_page(runner, 'modal', 368, VH)
+        with Image.open(path) as image:
+            image = image.convert('RGB')
+        panel_bottom = runner.box_y + runner.box_h
+        lower_chrome = VH - panel_bottom
+        self.assertEqual(image.size, (368, VH + 296))
+        self.assertIn('page content %d px' % (runner.box_h + 296), note)
+        pixels = image.load()
+        for y in range(runner.box_y):
+            self.assertEqual(pixels[0, y], CHROME)
+        for row in range(MODAL_EDGE, runner.box_h + 296 - MODAL_EDGE):
+            self.assertEqual(pixels[0, runner.box_y + row],
+                             _content_color(row),
+                             'canvas row %d must show content row %d'
+                             % (runner.box_y + row, row))
+        for row in list(range(0, MODAL_EDGE)) + \
+                list(range(runner.box_h + 296 - MODAL_EDGE,
+                           runner.box_h + 296)):
+            self.assertEqual(pixels[0, runner.box_y + row], EDGE,
+                             'edge band lost at content row %d' % row)
+        tail = runner.box_y + runner.box_h + 296
+        for y in range(tail, image.height):
+            self.assertEqual(pixels[0, y], CHROME)
+        self.assertEqual(image.height - tail, lower_chrome)
 
     def test_unscrollable_page_never_yields_a_short_canvas(self):
         """If the drag cannot advance, a truncated composite must fail loudly."""

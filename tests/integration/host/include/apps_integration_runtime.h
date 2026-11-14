@@ -29,10 +29,14 @@ typedef struct host_lv_system_object_snapshot
     uint32_t invalidation_count;
     const char *text;
     int label_long_mode;
+    const char *identity;
 } host_lv_system_object_snapshot_t;
 
 /** @brief Reset all host service and LVGL fixtures. */
 void host_runtime_reset(void);
+
+/** @brief Attach a stable identity to one fake LVGL object. */
+void host_lv_set_object_identity(lv_obj_t *object, const char *identity);
 /** @brief Select whether the fake product supports CPU standby. */
 void host_pm_set_standby_supported(bool supported);
 /**
@@ -266,6 +270,16 @@ bool host_lv_visible_slider_at_count(size_t *count);
  */
 bool host_lv_sys_layer_card_height(int32_t *height);
 /**
+ * @brief Snapshot the control-center's sole system-layer scroll page.
+ * @param snapshot receives identity, geometry and style state.
+ * @param scroll_y receives the current vertical scroll offset.
+ * @param scroll_bottom receives the remaining downward scroll range.
+ * @return true when the page is visible and every pointer is valid.
+ */
+bool host_lv_sys_layer_page_snapshot(
+    host_lv_system_object_snapshot_t *snapshot, int32_t *scroll_y,
+    int32_t *scroll_bottom);
+/**
  * @brief Snapshot the object which owns the active pointer sequence.
  * @param snapshot receives identity, geometry and style state.
  * @return true while a live pointer target exists; false otherwise.
@@ -434,7 +448,32 @@ unsigned host_music_acquire_count(int resource);
 unsigned host_music_release_count(int resource);
 /** @brief Select one player state and failure for lifecycle assertions. */
 void host_music_set_player_state(int state, int failure);
+/** @brief Make subsequent player-status reads fail with INVALID_STATE. */
+void host_music_set_status_read_error(bool enabled);
 /** @brief Return accepted Music login cancellations. */
 unsigned host_music_login_cancel_count(void);
+
+/** @brief Reset the Recorder fake to its default unavailable snapshot. */
+void host_recorder_reset(void);
+/** @brief Seed an active recording with a deterministic duration. */
+void host_recorder_seed_recording(uint32_t duration_ms);
+/** @brief Make subsequent Recorder snapshot reads fail while false. */
+void host_recorder_set_available(bool available);
+/** @brief Select whether the seeded service reports an operation in flight. */
+void host_recorder_set_operation_pending(bool pending);
+/** @brief Complete the in-flight operation with a new state and duration. */
+void host_recorder_complete_operation(int state, uint32_t duration_ms);
+/** @brief Reject the next admitted Recorder command with this result. */
+void host_recorder_fail_next_command(esp_err_t result);
+/** @brief Return all Recorder command admissions since reset. */
+unsigned host_recorder_command_count(void);
+/** @brief Return Recorder start admissions since reset. */
+unsigned host_recorder_start_count(void);
+/** @brief Return Recorder pause admissions since reset. */
+unsigned host_recorder_pause_count(void);
+/** @brief Return Recorder resume admissions since reset. */
+unsigned host_recorder_resume_count(void);
+/** @brief Return Recorder stop admissions since reset. */
+unsigned host_recorder_stop_count(void);
 
 #endif /* __CROSS_LAYER_RUNTIME_H__ */

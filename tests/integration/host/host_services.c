@@ -250,6 +250,7 @@ void host_runtime_reset(void)
     s_weather_snapshots[0].alerts.items[1].ends_at.epoch_seconds = 1785931200;
     s_weather_snapshots[0].alerts.items[1].ends_at.offset_minutes = 480;
     host_music_reset();
+    host_recorder_reset();
     host_lv_reset();
     host_connectivity_manager_reset();
     host_device_link_service_reset();

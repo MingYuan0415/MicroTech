@@ -510,6 +510,16 @@ screenshot in the same state (the page chrome is preserved). A page whose scroll
 container lies entirely within the viewport (such as the `recorder/files` list),
 or whose tail does not exceed the LVGL drag threshold (`MIN_REACHABLE_TRAVEL`),
 is output as a single `368x448` frame.
+
+Overlay surfaces are reviewed in their composed system-layer tree. An inset,
+scrollable overlay such as the control center is stitched between its static
+upper and lower screen chrome and produces an image taller than the viewport; a
+full-screen modal without a scrollable content page remains a single frame.
+The panel's rounded edge is kept only at the true top and bottom of that image:
+intermediate stripes discard the edge band and repaint those rows from the next
+stripe, so no seam cuts through a control row. Review lint also walks
+system-layer overlays, so disabled controls and text in an overlay are checked
+in the state where that overlay is actually visible.
 Content below the fold (`flags.visible` false) participates in the checks as
 well: lint uses `_walk_on_screen` (skipping only `flags.hidden` subtrees), and
 `single_line`, `expect_visible`, `expect_image`, and the snapshots all cover

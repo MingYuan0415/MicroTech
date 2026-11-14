@@ -249,7 +249,9 @@ typedef int lv_text_align_t;
 #define LV_EVENT_LONG_PRESSED         15
 #define LV_EVENT_LONG_PRESSED_REPEAT  16
 #define LV_EVENT_GESTURE              17
-#define LV_EVENT_SCROLL_END           18
+#define LV_EVENT_SCROLL_BEGIN         18
+#define LV_EVENT_SCROLL_END           19
+#define LV_EVENT_SCROLL               20
 #define LV_FLEX_ALIGN_START           0
 #define LV_FLEX_ALIGN_CENTER          1
 #define LV_FLEX_ALIGN_SPACE_BETWEEN   2
@@ -643,14 +645,30 @@ void *lv_event_get_param(lv_event_t *event);
 
 /** @brief Return the input device currently dispatching an event. */
 lv_indev_t *lv_indev_active(void);
+/** @brief Return the object currently owning the active pointer press. */
+lv_obj_t *lv_indev_get_active_obj(void);
+/** @brief Register a callback on a fake input device. */
+lv_event_dsc_t *lv_indev_add_event_cb(lv_indev_t *indev,
+                                      lv_event_cb_t callback,
+                                      lv_event_code_t code, void *user_data);
+/** @brief Remove matching callbacks from a fake input device. */
+uint32_t lv_indev_remove_event_cb_with_user_data(lv_indev_t *indev,
+        lv_event_cb_t callback,
+        void *user_data);
 /** @brief Return the fake pointer's current logical point. */
 void lv_indev_get_point(const lv_indev_t *indev, lv_point_t *point);
+/** @brief Return the fake pointer's latest movement vector. */
+void lv_indev_get_vect(const lv_indev_t *indev, lv_point_t *vector);
+/** @brief Return the fake pointer's active scroll object. */
+lv_obj_t *lv_indev_get_scroll_obj(const lv_indev_t *indev);
 /** @brief Return the fake pointer's current state. */
 lv_indev_state_t lv_indev_get_state(const lv_indev_t *indev);
 /** @brief Reset the fake input device and its active object. */
 void lv_indev_reset(lv_indev_t *indev, lv_obj_t *object);
 /** @brief Consume input events until the pointer is released. */
 void lv_indev_wait_release(lv_indev_t *indev);
+/** @brief Suppress widget delivery of the current input event. */
+void lv_indev_stop_processing(lv_indev_t *indev);
 
 /** @brief Set fake label text. */
 void lv_label_set_text(lv_obj_t *label, const char *text);
@@ -880,6 +898,8 @@ int lv_obj_get_scroll_dir(const lv_obj_t *object);
 int32_t lv_obj_get_scroll_x(const lv_obj_t *object);
 /** @brief Return the fake object's bounded vertical scroll offset. */
 int32_t lv_obj_get_scroll_y(const lv_obj_t *object);
+/** @brief Return the fake object's remaining downward scroll range. */
+int32_t lv_obj_get_scroll_bottom(const lv_obj_t *object);
 /** @brief Set the positive viewport height used for fake flex scroll bounds. */
 void host_lv_set_layout_viewport_height(int32_t height);
 /** @brief Return the exact vertical target passed to the latest scroll call. */

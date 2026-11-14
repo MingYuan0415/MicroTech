@@ -179,12 +179,55 @@ class ProductCatalogTest(unittest.TestCase):
                 source = (APPS / manifest["dir"] / "src" /
                           f"{app_id}_app.c").read_text(encoding="utf-8")
                 match = re.search(
-                    r"APP_MANAGER_APP_EXPORT(?:_META)?\([\s\S]*?\);", source)
+                    r"APP_MANAGER_APP_EXPORT"
+                    r"(?:_META(?:_CARD)?)?\([\s\S]*?\);", source)
                 self.assertIsNotNone(match, f"{app_id}: missing App descriptor")
                 self.assertEqual(
                     "APP_MANAGER_APP_FLAG_HIDDEN" in match.group(0),
                     manifest["MT_APP_HIDDEN"],
                     f"{app_id}: manifest hidden flag drifts from descriptor")
+
+    def test_selected_app_card_descriptors_have_provider_sources(self) -> None:
+        selected = {
+            app_id
+            for product in self.products.values()
+            for app_id in product["MT_PRODUCT_APPS"]
+        }
+        for app_id in sorted({"music", "clock", "recorder"} & selected):
+            with self.subTest(app=app_id):
+                manifest = _app_manifest(app_id)
+                app_dir = APPS / manifest["dir"]
+                descriptor = (app_dir / "src" /
+                              f"{app_id}_app.c").read_text(encoding="utf-8")
+                provider = f"{app_id}_control_center_card_ops"
+                descriptor_match = re.search(
+                    r"APP_MANAGER_APP_EXPORT_META_CARD\([\s\S]*?\);",
+                    descriptor)
+                self.assertIsNotNone(
+                    descriptor_match, f"{app_id}: missing card descriptor")
+                self.assertIn(
+                    f"&{provider}", descriptor_match.group(0),
+                    f"{app_id}: descriptor does not bind {provider}")
+
+                provider_source = f"src/{app_id}_control_card.c"
+                self.assertIn(
+                    provider_source, manifest["MT_APP_SOURCES"],
+                    f"{app_id}: provider source is not in manifest")
+                declaration = (app_dir / "src" /
+                               f"{app_id}_app_internal.h").read_text(
+                                   encoding="utf-8")
+                self.assertRegex(
+                    declaration,
+                    rf"extern\s+const\s+app_manager_control_center_card_ops_t\s+"
+                    rf"{provider}\s*;",
+                    f"{app_id}: missing provider declaration")
+                implementation = (app_dir / provider_source).read_text(
+                    encoding="utf-8")
+                self.assertRegex(
+                    implementation,
+                    rf"const\s+app_manager_control_center_card_ops_t\s+"
+                    rf"{provider}\s*=",
+                    f"{app_id}: missing provider implementation")
 
     def test_app_capabilities_are_available_on_each_product(self) -> None:
         for product_id, product in self.products.items():

@@ -228,17 +228,45 @@ MIN_OWNER_SPAN = 128
 # below that limit cannot be brought on screen by a stripe drag.
 # Keep in step with LV_INDEV_DEF_SCROLL_LIMIT (sim/lv_conf.h).
 MIN_REACHABLE_TRAVEL = 10
+# A modal panel paints its own rounded top and bottom edge inside the frame.
+# When the panel's content is stitched into a taller canvas, those edge rows
+# must not be repeated mid-page: they read as a seam cutting through a control
+# row. Exclude the band from every intermediate stripe and let the next stripe
+# paint the same content rows from its clean interior instead.
+MODAL_EDGE_BAND = 36
 
 
-def _scroll_owner(tree, vw, vh):
-    """Pick the page scroller whose content is clipped by the viewport bottom.
+def _modal_surface(tree, vw, vh):
+    """Return whether the tree is owned by a full-screen modal surface."""
+    for node in _walk_on_screen(tree):
+        flags = node.get('flags') or {}
+        box = node.get('coords') or {}
+        if (flags.get('floating') and flags.get('clickable') and
+                box.get('w', 0) >= vw and box.get('h', 0) >= vh):
+            return True
+    return False
+
+
+def _review_tree(runner):
+    """Read the composed screen, including system-layer overlays."""
+    return runner.call('sim.tree', {'include_layers': True})['tree']
+
+
+def _scroll_owner(tree, vw, vh, allow_embedded=False):
+    """Pick the page scroller whose content should be captured in full.
 
     Prefers a node that starts at the fold (a page content area) over one
     nested inside it, so the outermost page scroller wins; ties break on the
-    longest travel. Only a node whose own box reaches the viewport bottom
-    qualifies: that is the case where content is cut off by the screen, which a
-    scroll stripe can recover. A list whose box sits inside the viewport clips
-    its rows by itself, and appending them under the page would misrepresent it.
+    longest travel. A normal page scroller must reach the viewport bottom: that
+    is the case where content is cut off by the screen, which a scroll stripe
+    can recover. A list whose box sits inside the viewport clips its rows by
+    itself, and appending them under the page would misrepresent it.
+
+    Full-screen modal surfaces need one exception. Their internal panel can be
+    inset from the screen edges while still being the only element that owns a
+    long page; the control center is such a surface. `allow_embedded` keeps
+    that visible panel eligible, but still rejects fixed lists that do not
+    intersect the viewport.
 
     Returns `(coords, above, below)`: the current offset and how far the content
     extends above and below the viewport. Below is needed even when it is 0: a
@@ -246,7 +274,7 @@ def _scroll_owner(tree, vw, vh):
     than the viewport.
     """
     candidates = []
-    for node, _ancestors, in_hidden in _walk_annotated(tree):
+    for node, ancestors, in_hidden in _walk_annotated(tree):
         if in_hidden:
             continue
         flags = node.get('flags') or {}
@@ -261,15 +289,22 @@ def _scroll_owner(tree, vw, vh):
             continue
         if max(wide, tall) < MIN_OWNER_SPAN:
             continue
-        if (coords.get('y', 0) + tall) < vh:
-            # Only a box that fully reaches the viewport bottom leaves no canvas
-            # row unpainted.
-            continue
+        if allow_embedded:
+            if (coords.get('y', 0) >= vh or
+                    coords.get('y', 0) + tall <= 0):
+                continue
+            # The panel itself is shallower than any list embedded in it.
+            anchor = len(ancestors)
+        else:
+            if (coords.get('y', 0) + tall) < vh:
+                # Only a box that fully reaches the viewport bottom leaves no
+                # canvas row unpainted.
+                continue
+            anchor = 0 if coords.get('y', 0) >= vh * 0.05 else 1
         below = max(0, scroll.get('bottom', 0))
         above = max(0, scroll.get('top', 0))
         if (below + above) <= 0:
             continue
-        anchor = 0 if coords.get('y', 0) >= vh * 0.05 else 1
         candidates.append((anchor, -(below + above), coords, above, below))
     if not candidates:
         return None
@@ -292,15 +327,12 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
                            {'name': shot_name,
                             'wait_idle': wait_idle})['path']
 
-    tree = runner.call('sim.tree')['tree']
-    for node in _walk_on_screen(tree):
-        flags = node.get('flags') or {}
-        box = node.get('coords') or {}
-        if (flags.get('floating') and flags.get('clickable') and
-                box.get('w', 0) >= vw and box.get('h', 0) >= vh):
-            return _shot(name + '.png'), 'modal surface: single frame'
-    owner = _scroll_owner(tree, vw, vh)
+    tree = _review_tree(runner)
+    modal = _modal_surface(tree, vw, vh)
+    owner = _scroll_owner(tree, vw, vh, allow_embedded=modal)
     if owner is None:
+        if modal:
+            return _shot(name + '.png'), 'modal surface: single frame'
         return _shot(name + '.png'), None
     box, _offset, below = owner
 
@@ -316,7 +348,8 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
         # Anchor at the top so the canvas has no unpainted rows. Skipped when
         # already at the top: a pointless downward drag just bounces off the
         # elastic edge, and reading the tree mid-settle reports `below == 0`.
-        anchored = _scroll_to_top(runner, box, vw, vh)
+        anchored = _scroll_to_top(runner, box, vw, vh,
+                                  allow_embedded=modal)
         if anchored is None:
             # Without a verified top anchor a composite would be misaligned;
             # the single frame is the honest artifact instead.
@@ -332,10 +365,16 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
             break
         # Over-drag on purpose: lv_obj_scroll_by_bounded clamps to the real
         # bottom, while a hop under LVGL's 10 px scroll limit would be swallowed
-        # as a tap and leave the last few pixels uncaptured.
-        _scroll_owner_drag(runner, box, max(40, box['h'] - 24))
+        # as a tap and leave the last few pixels uncaptured. A modal stripe is
+        # shorter so consecutive stripes overlap by the edge band that each one
+        # has to discard.
+        step = box['h'] - 24
+        if modal:
+            step = box['h'] - 2 * MODAL_EDGE_BAND
+        _scroll_owner_drag(runner, box, max(40, step))
         runner.call('sim.wait_idle', {'timeout_ms': 4000})
-        fresh = _scroll_owner(runner.call('sim.tree')['tree'], vw, vh)
+        fresh = _scroll_owner(_review_tree(runner), vw, vh,
+                              allow_embedded=modal)
         if fresh is None or fresh[1] <= y_off:
             break
         remaining, y_off = fresh[2], fresh[1]
@@ -349,26 +388,42 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
 
     canvas = Image.new('RGB', (vw, vh + y_off), (0, 0, 0))
     canvas.paste(Image.open(stripes[0][1]).convert('RGB'), (0, 0))
-    reached = vh
-    for offset, path in stripes[1:]:
-        # Frame row (top - offset) shows the content row that belongs on canvas
-        # row `top`; rows the first stripe already covered are left untouched.
-        first = offset + box['y']
-        if first > reached:
-            # A stripe that advanced more than the box height would leave the
-            # rows between them unpainted, and that hole would be baked into the
-            # snapshot as black.
-            raise RuntimeError('full-page capture left %d canvas rows unpainted'
-                               % (first - reached))
-        top = max(first, reached)
-        bottom = offset + box['y'] + box['h']
-        if top < bottom:
-            canvas.paste(Image.open(path).convert('RGB').crop(
-                (0, top - offset, vw, bottom - offset)), (0, top))
-            reached = bottom
-    if reached != vh + y_off:
+    # Content rows painted so far. The closing rows of every stripe carry the
+    # panel's rounded bottom edge, which must not land in the middle of the
+    # expanded page, so only the clean interior counts as painted.
+    painted = max(0, box['h'] - MODAL_EDGE_BAND) if modal else box['h']
+    for index, (offset, path) in enumerate(stripes[1:], 1):
+        last = index == len(stripes) - 1
+        content_start = offset + (MODAL_EDGE_BAND if modal else 0)
+        content_end = offset + box['h']
+        if modal and not last:
+            content_end -= MODAL_EDGE_BAND
+        if content_end <= painted:
+            continue
+        start = max(content_start, painted)
+        if start > painted:
+            raise RuntimeError('full-page capture left %d content rows unpainted'
+                               % (start - painted))
+        source_top = box['y'] + (start - offset)
+        source_bottom = box['y'] + (content_end - offset)
+        canvas.paste(Image.open(path).convert('RGB').crop(
+            (0, source_top, vw, source_bottom)), (0, box['y'] + start))
+        painted = content_end
+    content_end = box['y'] + box['h'] + y_off
+    if box['y'] + painted != content_end:
+        raise RuntimeError('full-page capture painted %d of %d content rows'
+                           % (box['y'] + painted, content_end))
+    lower_chrome = vh - (box['y'] + box['h'])
+    if lower_chrome > 0:
+        # An inset modal panel still needs the screen rows below it. They do not
+        # scroll, so append the final stripe's untouched lower chrome below the
+        # expanded panel.
+        tail = Image.open(stripes[-1][1]).convert('RGB').crop(
+            (0, box['y'] + box['h'], vw, vh))
+        canvas.paste(tail, (0, content_end))
+    if content_end + lower_chrome != vh + y_off:
         raise RuntimeError('full-page capture painted %d of %d canvas rows'
-                           % (reached, vh + y_off))
+                           % (content_end + lower_chrome, vh + y_off))
     out = os.path.join(os.path.dirname(stripes[0][1]), name + '_full.png')
     canvas.save(out)
     for _offset, path in stripes:
@@ -412,7 +467,7 @@ def _scroll_owner_drag(runner, box, distance):
     runner.call('sim.step', {'ms': 33 * 4})
 
 
-def _scroll_to_top(runner, box, vw, vh):
+def _scroll_to_top(runner, box, vw, vh, allow_embedded=False):
     """Anchor the page scroller at its top, undoing any mid-scroll seed.
 
     The finger can only travel one panel height per drag, so a deep seed needs
@@ -421,7 +476,8 @@ def _scroll_to_top(runner, box, vw, vh):
     assumed 0 anyway would misalign every stripe.
     """
     for _ in range(6):
-        fresh = _scroll_owner(runner.call('sim.tree')['tree'], vw, vh)
+        fresh = _scroll_owner(_review_tree(runner), vw, vh,
+                              allow_embedded=allow_embedded)
         if fresh is None:
             return None
         if fresh[1] <= 0:
@@ -435,7 +491,8 @@ def _walk_annotated(node, ancestors=(), in_hidden=False):
     flags = node.get('flags') or {}
     hidden = in_hidden or bool(flags.get('hidden'))
     yield node, ancestors, hidden
-    for child in node.get('children') or []:
+    for child in ((node.get('children') or []) +
+                  (node.get('overlays') or [])):
         yield from _walk_annotated(child, ancestors + (node,), hidden)
 
 
@@ -819,7 +876,7 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
                         runner.call('sim.step', {'ms': 33 * 2})
                     else:
                         _wait_idle(runner)
-                    tree = runner.call('sim.tree')['tree']
+                    tree = _review_tree(runner)
                     if not want:
                         break
                     have = ' | '.join(l.get('text', '')
