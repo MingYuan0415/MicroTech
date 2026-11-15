@@ -1,0 +1,13 @@
+# Optional crash-debug overlay. This file is not part of the committed
+# sdkconfig.defaults baseline; use it only for a local coredump build:
+#   python3 tools/agent/mt.py build idf --coredump
+# The wrapper keeps the generated config in build/sdkconfig.coredump so a
+# plain build cannot inherit these values from the local sdkconfig.
+# Task stacks may live in PSRAM, so the dump runs on its own DRAM stack instead
+# of the crashed task's stack.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_CHECK_BOOT=y
+CONFIG_ESP_COREDUMP_LOGS=y
+CONFIG_ESP_COREDUMP_USE_STACK_SIZE=y
+CONFIG_ESP_COREDUMP_STACK_SIZE=1792
+CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=32

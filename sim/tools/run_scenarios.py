@@ -4,8 +4,14 @@
 Scenario JSON:
   {
     "name": "...",
+    "timeout_seconds": 60,
+    "checks": {"clock_visible": {"description": "..."}},
+    "check_coverage": ["clock_visible"],
+    "failure_evidence": {"screenshot": true, "tree": true},
     "steps": [
       {"cmd": "navigate", "app": "clock"},
+      {"cmd": "wait_text", "text": "时钟", "timeout_ms": 3000,
+       "check": "clock_visible"},
       {"cmd": "step", "ms": 33, "times": 20},
       {"cmd": "wait_idle", "timeout_ms": 4000},
       {"cmd": "set_power", "voltage": 3900, "pct": 66, "charging": false},
@@ -16,6 +22,13 @@ Scenario JSON:
        "hold_steps": 1}   # hold the press one frame so it lands at (x0, y0)
     ]
   }
+
+`wait_text` polls visible text by default; `wait_tree` polls a `contains` /
+`absent` map. Root `checks` / `check_coverage` require each declared check to be
+claimed by a passing step; missing, failed, or unplanned checks fail the
+scenario. On failure the runner writes `failure_<scenario>_<step>.png` and
+`.tree.json` under `--out-dir`; evidence capture is a separate best-effort
+15-second budget per artifact and can outlive the scenario budget.
 
 tree_assert: contains asserts that a node matching ALL given key/values exists;
 absent asserts that no node matches ALL given key/values
@@ -38,6 +51,8 @@ import argparse
 import glob
 import json
 import os
+import re
+import shutil
 import socket
 import sys
 import time  # noqa: E401
@@ -88,6 +103,18 @@ def _walk_actionable(node, blocked=False):
         yield from _walk_actionable(child, blocked)
 
 
+def _walk_visible(node, hidden=False):
+    hidden = hidden or node.get('flags', {}).get('hidden', False)
+    if not hidden and node.get('flags', {}).get('visible', True):
+        yield node
+    for child in node.get('children', []) + node.get('overlays', []):
+        yield from _walk_visible(child, hidden)
+
+
+def _safe_evidence_name(name):
+    return re.sub(r'[^A-Za-z0-9_.-]+', '_', name).strip('._') or 'scenario'
+
+
 def _text_targets(node, text, ancestors=(), blocked=False):
     """Yield the nearest actionable ancestor (or the text node itself)."""
     blocked = blocked or node.get('flags', {}).get('hidden', False) or node.get('state', {}).get('disabled', False)
@@ -102,44 +129,414 @@ def _text_targets(node, text, ancestors=(), blocked=False):
         yield from _text_targets(child, text, ancestors + (node,), blocked)
 
 
+class ScenarioTimeout(AssertionError):
+    """The scenario exceeded its root ``timeout_seconds`` budget."""
+
+
 class Runner:
     def __init__(self, host, port, out_dir):
         self.host, self.port = host, port
         self.out_dir = out_dir
         self.sock = None
+        self._lost_connection = False
         self.width = 368
         self.height = 448
+        self.deadline = None
+        self._timeout_seconds = 0.0
+        self._scenario_name = 'scenario'
+        self._checks = {}
+        self._check_states = {}
+        self._failure_evidence = {}
 
     def connect(self):
         self.sock = socket.create_connection((self.host, self.port), timeout=60)
+        self._lost_connection = False
         ping = self.call('sim.ping')
         self.width = int(ping.get('width', self.width))
         self.height = int(ping.get('height', self.height))
 
-    def call(self, method, params=None):
-        reply = rpc(self.sock, method, params)
+    def _rpc_reply(self, method, params=None, timeout=None,
+                   ignore_deadline=False):
+        """Send one RPC while honoring the scenario and socket deadlines."""
+        budget = timeout
+        if not ignore_deadline and self.deadline is not None:
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise ScenarioTimeout('scenario timeout after %.1fs' %
+                                      self._timeout_seconds)
+            budget = remaining if budget is None else min(budget, remaining)
+        if budget is None:
+            budget = 60.0
+        if self.sock is None:
+            if self._lost_connection:
+                # Reconnecting is part of the same RPC budget. A fixed 15s
+                # connect could otherwise outlive a short wait/scenario
+                # deadline and turn a precise timeout into a long stall.
+                self._reconnect(timeout=budget)
+            else:
+                self._lost_connection = True
+                raise RuntimeError('simulator connection is not established')
+        old_timeout = self.sock.gettimeout()
+        self.sock.settimeout(max(0.001, budget))
+        try:
+            return rpc(self.sock, method, params)
+        except (OSError, RuntimeError, ValueError):
+            # A timed-out RPC may still produce a late response. Reusing this
+            # socket would deliver that response to the next request (often
+            # failure evidence), so drop it and let the caller reconnect.
+            self._lost_connection = True
+            self.close()
+            raise
+        finally:
+            if self.sock is not None:
+                self.sock.settimeout(old_timeout)
+
+    def call(self, method, params=None, timeout=None, ignore_deadline=False):
+        reply = self._rpc_reply(method, params, timeout, ignore_deadline)
         if not reply.get('ok'):
             raise RuntimeError('%s failed: %s' % (method, reply))
         return reply['result']
+
+    def _check_deadline(self):
+        if (self.deadline is not None and
+                time.monotonic() >= self.deadline):
+            raise ScenarioTimeout('scenario timeout after %.1fs' %
+                                  self._timeout_seconds)
 
     def close(self):
         if self.sock:
             self.sock.close()
             self.sock = None
 
+    def _reconnect(self, timeout=None):
+        self.close()
+        connect_timeout = 15.0 if timeout is None else max(
+            0.001, min(15.0, float(timeout)))
+        self.sock = socket.create_connection(
+            (self.host, self.port), timeout=connect_timeout)
+        self._lost_connection = False
+
+    def _tree(self, include_layers=False, timeout=None):
+        return self.call('sim.tree',
+                         {'include_layers': bool(include_layers)},
+                         timeout=timeout)['tree']
+
+    def _find(self, query, include_layers=False, limit=1, visible_only=False,
+              timeout=None):
+        return self.call('sim.find', {
+            'query': query,
+            'include_layers': bool(include_layers),
+            'limit': int(limit),
+            'visible_only': bool(visible_only),
+        }, timeout=timeout)
+
+    def _find_or_none(self, query, include_layers=False, limit=1,
+                      visible_only=False, timeout=None):
+        try:
+            result = self._find(query, include_layers, limit, visible_only,
+                                timeout=timeout)
+        except RuntimeError as exc:
+            message = str(exc)
+            if 'unsupported query' in message or 'unknown method' in message:
+                return None
+            raise
+        return result if 'total' in result else None
+
+    @staticmethod
+    def _wait_budget(deadline):
+        """Return the remaining local wait budget for one RPC."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return 0.0
+        return max(0.001, remaining)
+
+    def _wait_tree(self, step):
+        timeout_ms = int(step.get('timeout_ms', 5000))
+        interval_ms = max(1, int(step.get('interval_ms', 33)))
+        include_layers = bool(step.get('include_layers', False))
+        assert timeout_ms > 0, 'wait_tree timeout_ms must be greater than zero'
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        present = step.get('contains')
+        absent = step.get('absent')
+        assert isinstance(present, dict) or isinstance(absent, dict), \
+            'wait_tree needs a contains or absent map'
+        while True:
+            budget = self._wait_budget(deadline)
+            if budget <= 0.0:
+                self._raise_wait_tree_timeout(present, absent, present_ok=True,
+                                              absent_ok=True)
+            present_ok = True
+            absent_ok = True
+            result = None
+            if present is not None:
+                result = self._find_or_none(present,
+                                            include_layers=include_layers,
+                                            limit=1, timeout=budget)
+            if result is None and present is not None:
+                budget = self._wait_budget(deadline)
+                if budget <= 0.0:
+                    self._raise_wait_tree_timeout(
+                        present, absent, present_ok=True, absent_ok=True)
+                tree = self._tree(include_layers, timeout=budget)
+                present_ok = any(_flat_matches(node, present)
+                                 for node in _walk(tree))
+            elif result is not None and present is not None:
+                present_ok = int(result.get('total', 0)) > 0
+            if absent is not None:
+                budget = self._wait_budget(deadline)
+                if budget <= 0.0:
+                    self._raise_wait_tree_timeout(
+                        present, absent, present_ok, absent_ok=True)
+                absent_result = self._find_or_none(
+                    absent, include_layers=include_layers, limit=1,
+                    timeout=budget)
+                if absent_result is None:
+                    budget = self._wait_budget(deadline)
+                    if budget <= 0.0:
+                        self._raise_wait_tree_timeout(
+                            present, absent, present_ok, absent_ok=True)
+                    tree = self._tree(include_layers, timeout=budget)
+                    absent_ok = not any(_flat_matches(node, absent)
+                                        for node in _walk(tree))
+                else:
+                    absent_ok = int(absent_result.get('total', 0)) == 0
+            if present_ok and absent_ok:
+                return
+            budget = self._wait_budget(deadline)
+            if budget <= 0.0:
+                self._raise_wait_tree_timeout(present, absent, present_ok,
+                                              absent_ok)
+            self.call('sim.step', {'ms': interval_ms}, timeout=budget)
+
+    @staticmethod
+    def _raise_wait_tree_timeout(present, absent, present_ok, absent_ok):
+        if present is not None and not present_ok:
+            raise AssertionError(
+                'wait_tree timeout: no node matches %s' %
+                json.dumps(present, ensure_ascii=False))
+        if absent is not None and not absent_ok:
+            raise AssertionError(
+                'wait_tree timeout: unexpected node matches %s' %
+                json.dumps(absent, ensure_ascii=False))
+        if present is not None:
+            raise AssertionError(
+                'wait_tree timeout: no node matches %s' %
+                json.dumps(present, ensure_ascii=False))
+        raise AssertionError(
+            'wait_tree timeout: unexpected node matches %s' %
+            json.dumps(absent, ensure_ascii=False))
+
+    def _wait_text(self, step):
+        text = step['text']
+        timeout_ms = int(step.get('timeout_ms', 5000))
+        interval_ms = max(1, int(step.get('interval_ms', 33)))
+        include_layers = bool(step.get('include_layers', False))
+        visible_only = bool(step.get('visible_only', True))
+        assert timeout_ms > 0, 'wait_text timeout_ms must be greater than zero'
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while True:
+            budget = self._wait_budget(deadline)
+            if budget <= 0.0:
+                raise AssertionError('wait_text timeout: %r not found' % text)
+            result = self._find_or_none({'text': text},
+                                        include_layers=include_layers,
+                                        limit=1,
+                                        visible_only=visible_only,
+                                        timeout=budget)
+            if result is not None:
+                found = int(result.get('total', 0)) > 0
+            else:
+                budget = self._wait_budget(deadline)
+                if budget <= 0.0:
+                    raise AssertionError(
+                        'wait_text timeout: %r not found' % text)
+                tree = self._tree(include_layers, timeout=budget)
+                nodes = (_walk_visible(tree) if visible_only
+                         else _walk(tree))
+                found = any(node.get('text') == text for node in nodes)
+            if found:
+                return
+            budget = self._wait_budget(deadline)
+            if budget <= 0.0:
+                raise AssertionError('wait_text timeout: %r not found' % text)
+            self.call('sim.step', {'ms': interval_ms}, timeout=budget)
+
+    def _mark_check(self, check, status, step_index):
+        if not check:
+            return
+        if check not in self._checks:
+            self._check_states.setdefault(
+                check, {'status': 'unplanned', 'step': step_index})
+            return
+        state = self._check_states[check]
+        if state['status'] == 'fail':
+            return
+        state['status'] = status
+        state['step'] = step_index
+
+    def _coverage(self):
+        if not self._checks and not self._check_states:
+            return None
+        for check in self._checks:
+            self._check_states.setdefault(
+                check, {'status': 'not_run', 'step': None})
+        counts = {'pass': 0, 'fail': 0, 'not_run': 0, 'unplanned': 0}
+        for state in self._check_states.values():
+            counts[state['status']] = counts.get(state['status'], 0) + 1
+        return {
+            'planned': len(self._checks),
+            'passed': counts['pass'],
+            'failed': counts['fail'],
+            'not_run': counts['not_run'],
+            'unplanned': counts['unplanned'],
+            'ok': (counts['pass'] == len(self._checks) and
+                   counts['fail'] == 0 and counts['not_run'] == 0 and
+                   counts['unplanned'] == 0),
+        }
+
+    def _capture_failure_evidence(self, step_index):
+        options = self._failure_evidence
+        if not options:
+            return None
+        stem = '%s_step_%d' % (_safe_evidence_name(self._scenario_name),
+                               step_index)
+        evidence = {'screenshot': None, 'tree': None, 'errors': []}
+        try:
+            os.makedirs(self.out_dir, exist_ok=True)
+        except OSError as exc:
+            evidence['errors'].append('output directory: %s' % exc)
+            return evidence
+        if self.sock is None and self._lost_connection:
+            try:
+                self._reconnect()
+            except OSError as exc:
+                evidence['errors'].append('reconnect: %s' % exc)
+                return evidence
+        if options.get('screenshot', True):
+            try:
+                result = self.call('sim.screenshot',
+                                   {'name': 'failure_%s.png' % stem,
+                                    'wait_idle': False},
+                                   timeout=15, ignore_deadline=True)
+                source = result.get('path')
+                if source and os.path.isfile(source):
+                    target = os.path.join(self.out_dir,
+                                          os.path.basename(source))
+                    if os.path.abspath(source) != os.path.abspath(target):
+                        shutil.copy2(source, target)
+                    evidence['screenshot'] = target
+                else:
+                    evidence['screenshot'] = source
+            except Exception as exc:  # evidence must not mask the failure
+                evidence['errors'].append('screenshot: %s' % exc)
+        if options.get('tree', True):
+            try:
+                tree = self.call(
+                    'sim.tree',
+                    {'include_layers': options.get('include_layers', True)},
+                    timeout=15, ignore_deadline=True)['tree']
+                path = os.path.join(self.out_dir, 'failure_%s.tree.json' % stem)
+                with open(path, 'w', encoding='utf-8') as handle:
+                    json.dump(tree, handle, ensure_ascii=False)
+                evidence['tree'] = path
+            except Exception as exc:  # evidence must not mask the failure
+                evidence['errors'].append('tree: %s' % exc)
+        return evidence
+
     def run(self, scenario):
         failures = []
         name = scenario.get('name', 'scenario')
-        for idx, step in enumerate(scenario.get('steps', [])):
+        self.deadline = None
+        self._scenario_name = name
+        self._checks = {}
+        raw_checks = scenario.get('checks') or {}
+        if isinstance(raw_checks, list):
+            raw_checks = {item: {'description': item} for item in raw_checks}
+        if isinstance(raw_checks, dict):
+            for check_id, config in raw_checks.items():
+                if isinstance(config, str):
+                    config = {'description': config}
+                if not isinstance(config, dict):
+                    config = {}
+                self._checks[str(check_id)] = config
+        self._check_states = {
+            check: {'status': 'not_run', 'step': None}
+            for check in self._checks
+        }
+        declared_checks = dict(self._checks)
+        planned = scenario.get('check_coverage')
+        if planned is None:
+            planned = list(declared_checks)
+        else:
+            if isinstance(planned, str):
+                planned = [planned]
+            planned = list(dict.fromkeys(
+                [*declared_checks, *(str(item) for item in planned)]))
+        self._checks = {
+            check: declared_checks.get(check, {}) for check in planned
+        }
+        self._check_states = {
+            check: self._check_states.get(check,
+                                          {'status': 'not_run', 'step': None})
+            for check in planned
+        }
+        raw_evidence = scenario.get('failure_evidence', True)
+        if raw_evidence is False:
+            self._failure_evidence = {}
+        elif isinstance(raw_evidence, dict):
+            self._failure_evidence = {
+                'screenshot': raw_evidence.get('screenshot', True),
+                'tree': raw_evidence.get('tree', True),
+                'include_layers': raw_evidence.get('include_layers', True),
+            }
+        else:
+            self._failure_evidence = {
+                'screenshot': True, 'tree': True, 'include_layers': True,
+            }
+        self._timeout_seconds = 0.0
+        raw_timeout = scenario.get('timeout_seconds', 0)
+        try:
+            self._timeout_seconds = max(0.0, float(raw_timeout or 0))
+        except (TypeError, ValueError):
+            failures.append('invalid timeout_seconds: %r' % raw_timeout)
+            return name, failures, {}, None, None, 0.0
+        started = time.monotonic()
+        if self._timeout_seconds > 0:
+            self.deadline = started + self._timeout_seconds
+        else:
+            self.deadline = None
+        evidence = None
+        steps = scenario.get('steps', [])
+        for idx, step in enumerate(steps):
             try:
+                self._check_deadline()
                 self._step(step)
+                self._check_deadline()
             except AssertionError as exc:
-                failures.append('step %d (%s): %s' % (idx, step.get('cmd'), exc))
+                failures.append('step %d (%s): %s' %
+                                (idx, step.get('cmd'), exc))
+                self._mark_check(step.get('check'), 'fail', idx)
+                evidence = self._capture_failure_evidence(idx)
                 break
             except Exception as exc:  # transport/setup errors abort scenario
-                failures.append('step %d (%s): %s' % (idx, step.get('cmd'), exc))
+                failures.append('step %d (%s): %s' %
+                                (idx, step.get('cmd'), exc))
+                self._mark_check(step.get('check'), 'fail', idx)
+                evidence = self._capture_failure_evidence(idx)
                 break
-        return name, failures
+            else:
+                self._mark_check(step.get('check'), 'pass', idx)
+        coverage = self._coverage()
+        if coverage is not None and not coverage['ok']:
+            missing = [check for check, state in self._check_states.items()
+                       if state['status'] in ('not_run', 'unplanned', 'fail')]
+            if missing:
+                failures.append('coverage: %s' % ', '.join(missing))
+            if evidence is None:
+                evidence = self._capture_failure_evidence(
+                    max(0, len(steps) - 1))
+        duration = time.monotonic() - started
+        return name, failures, self._check_states, coverage, evidence, duration
 
     def _flybirds_restart_regression(self):
         # Paths retain inherited hidden flags, but deliberately ignore clipping:
@@ -291,6 +688,10 @@ class Runner:
             result = self.call('sim.wait_idle',
                                {'timeout_ms': step.get('timeout_ms', 5000)})
             assert result.get('idle'), 'not idle: %s' % result
+        elif cmd == 'wait_text':
+            self._wait_text(step)
+        elif cmd == 'wait_tree':
+            self._wait_tree(step)
         elif cmd == 'pm':
             result = self.call('sim.pm', {k: step[k] for k in
                                           ('off_ms', 'standby_ms', 'get')
@@ -301,7 +702,14 @@ class Runner:
                     assert result.get('pm_state') == want, \
                         'pm_state %s != %s' % (result.get('pm_state'), want)
         elif cmd == 'sleep_ms':
-            time.sleep(step['ms'] / 1000.0)
+            seconds = max(0.0, step['ms'] / 1000.0)
+            if self.deadline is not None:
+                remaining = self.deadline - time.monotonic()
+                if remaining <= 0:
+                    self._check_deadline()
+                seconds = min(seconds, remaining)
+            time.sleep(seconds)
+            self._check_deadline()
         elif cmd == 'files_root':
             self.call('sim.navigate', {'app': 'files', 'page': 'browse'})
             for _ in range(16):
@@ -502,7 +910,7 @@ class Runner:
                                          'wait_idle': step.get(
                                              'wait_idle', False)})
         elif cmd == 'expect_error':
-            reply = rpc(self.sock, step['method'], step.get('params'))
+            reply = self._rpc_reply(step['method'], step.get('params'))
             assert not reply.get('ok'), 'request unexpectedly succeeded: %s' % reply
             assert 'result' not in reply, 'failure returned result: %s' % reply
             want = step.get('error')
@@ -510,25 +918,106 @@ class Runner:
                 assert reply.get('error') == want, \
                     'error %r != %r' % (reply.get('error'), want)
         elif cmd == 'tree_assert':
-            tree = self.call('sim.tree', step.get('params') or {})['tree']
             present = step.get('contains')
             absent = step.get('absent')
             assert isinstance(present, dict) or isinstance(absent, dict), \
                 'tree_assert needs a contains or absent map'
-            if present is not None:
-                assert any(_flat_matches(node, present)
-                           for node in _walk(tree)), \
-                    'no node matches %s' % json.dumps(present,
-                                                      ensure_ascii=False)
-            if absent is not None:
-                assert not any(_flat_matches(node, absent)
+            include_layers = bool((step.get('params') or {}).get(
+                'include_layers', False))
+            present_result = (self._find_or_none(
+                present, include_layers=include_layers, limit=1)
+                if present is not None else None)
+            absent_result = (self._find_or_none(
+                absent, include_layers=include_layers, limit=1)
+                if absent is not None else None)
+            if ((present is not None and present_result is None) or
+                    (absent is not None and absent_result is None)):
+                tree = self._tree(include_layers)
+                if present is not None:
+                    assert any(_flat_matches(node, present)
                                for node in _walk(tree)), \
-                    'unexpected node matches %s' % json.dumps(absent,
-                                                              ensure_ascii=False)
+                        'no node matches %s' % json.dumps(
+                            present, ensure_ascii=False)
+                if absent is not None:
+                    assert not any(_flat_matches(node, absent)
+                                   for node in _walk(tree)), \
+                        'unexpected node matches %s' % json.dumps(
+                            absent, ensure_ascii=False)
+            else:
+                if present is not None:
+                    assert int(present_result.get('total', 0)) > 0, \
+                        'no node matches %s' % json.dumps(
+                            present, ensure_ascii=False)
+                if absent is not None:
+                    assert int(absent_result.get('total', 0)) == 0, \
+                        'unexpected node matches %s' % json.dumps(
+                            absent, ensure_ascii=False)
+        elif cmd == 'find_assert':
+            query = step.get('query')
+            assert isinstance(query, dict) and query, \
+                'find_assert needs a non-empty query'
+            result = self._find(
+                query,
+                include_layers=bool(step.get('include_layers', False)),
+                limit=int(step.get('limit', 1)),
+                visible_only=bool(step.get('visible_only', False)),
+            )
+            total = int(result.get('total', 0))
+            expect = step.get('expect', 'present')
+            if expect == 'present':
+                assert total > 0, 'no node matches %s' % json.dumps(
+                    query, ensure_ascii=False)
+            elif expect == 'absent':
+                assert total == 0, 'unexpected node matches %s' % json.dumps(
+                    query, ensure_ascii=False)
+            elif expect == 'count':
+                assert total == int(step['count']), \
+                    'match count %d != %d' % (total, int(step['count']))
+            else:
+                raise AssertionError('unknown find_assert expect: %s' % expect)
+        elif cmd == 'inspect_assert':
+            path = step.get('path')
+            assert isinstance(path, list), 'inspect_assert needs a path list'
+            result = self.call('sim.inspect', {
+                'layer': step.get('layer', 'screen'),
+                'path': path,
+                'depth': int(step.get('depth', 3)),
+                'max_nodes': int(step.get('max_nodes', 256)),
+            })
+            node = result.get('node') or {}
+            present = step.get('contains')
+            absent = step.get('absent')
+            assert isinstance(present, dict) or isinstance(absent, dict), \
+                'inspect_assert needs a contains or absent map'
+            if present is not None:
+                assert any(_flat_matches(item, present)
+                           for item in _walk(node)), \
+                    'no inspected node matches %s' % json.dumps(
+                        present, ensure_ascii=False)
+            if absent is not None:
+                assert not any(_flat_matches(item, absent)
+                               for item in _walk(node)), \
+                    'unexpected inspected node matches %s' % json.dumps(
+                        absent, ensure_ascii=False)
+        elif cmd == 'hit_test_assert':
+            result = self.call('sim.hit_test', {
+                'x': int(step['x']), 'y': int(step['y']),
+            })
+            assert result.get('found'), \
+                'no hit-test object at (%d,%d)' % (int(step['x']),
+                                                   int(step['y']))
+            node = result.get('node') or {}
+            contains = step.get('contains')
+            if contains is not None:
+                assert _flat_matches(node, contains), \
+                    'hit-test node does not match %s' % json.dumps(
+                        contains, ensure_ascii=False)
         elif cmd == 'call':
             self.call(step['method'], step.get('params'))
         elif cmd == 'assert_result':
             res = self.call(step['method'], step.get('params'))
+            for key in (step.get('expect_present') or []):
+                assert key in res, 'result missing key %r: %r' % (key, res)
             for key, want in (step.get('expect') or {}).items():
                 assert res.get(key) == want, \
                     'result[%s] %r != %r' % (key, res.get(key), want)
@@ -572,16 +1061,28 @@ def main():
     failed = False
     for path in files:
         scenario = json.load(open(path))
-        name, failures = r.run(scenario)
-        report[os.path.basename(path)] = {'ok': not failures,
-                                          'failures': failures}
+        name, failures, checks, coverage, evidence, duration = r.run(scenario)
+        report[os.path.basename(path)] = {
+            'ok': not failures,
+            'failures': failures,
+            'checks': checks,
+            'coverage': coverage,
+            'evidence': evidence,
+            'duration_s': round(duration, 3),
+        }
         print('%-40s %s' % (os.path.basename(path),
                             'PASS' if not failures else 'FAIL'))
+        if coverage is not None:
+            print('   checks: %d/%d pass, %d fail, %d not_run, %d unplanned' %
+                  (coverage['passed'], coverage['planned'], coverage['failed'],
+                   coverage['not_run'], coverage['unplanned']))
         for f in failures:
             print('   -', f)
         failed = failed or bool(failures)
     try:
-        r.call('sim.exit')
+        if r.sock is None and r._lost_connection:
+            r._reconnect()
+        r.call('sim.exit', ignore_deadline=True)
     except Exception:
         pass
     r.close()

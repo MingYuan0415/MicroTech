@@ -30,6 +30,7 @@
 #include "lvgl.h"
 
 #include "sim_agent.h"
+#include "sim_agent_query.h"
 #include "sim_agent_tree.h"
 #include "sim_backends.h"
 #include "file_service.h"
@@ -135,6 +136,65 @@ static bool _number_in_range(const cJSON *item, double minimum,
 {
     return cJSON_IsNumber(item) && (item->valuedouble >= minimum) &&
            (item->valuedouble <= maximum);
+}
+
+static bool _integer_in_range(const cJSON *item, double minimum,
+                              double maximum)
+{
+    return _number_in_range(item, minimum, maximum) &&
+           (item->valuedouble == (double)(int32_t)item->valuedouble);
+}
+
+static bool _layer_name_valid(const char *layer)
+{
+    return (layer != NULL) &&
+           ((strcmp(layer, "screen") == 0) ||
+            (strcmp(layer, "top") == 0) ||
+            (strcmp(layer, "sys") == 0) ||
+            (strcmp(layer, "bottom") == 0));
+}
+
+static bool _path_from_json(const cJSON *value, int32_t *path,
+                            size_t *path_len)
+{
+    if (!cJSON_IsArray(value))
+    {
+        return false;
+    }
+    const size_t count = (size_t)cJSON_GetArraySize(value);
+    if (count > 64U)
+    {
+        return false;
+    }
+    for (size_t i = 0U; i < count; i++)
+    {
+        const cJSON *item = cJSON_GetArrayItem(value, (int)i);
+        if (!_number_in_range(item, 0.0, INT32_MAX) ||
+                (item->valuedouble != (double)(int32_t)item->valuedouble))
+        {
+            return false;
+        }
+        path[i] = (int32_t)item->valuedouble;
+    }
+    *path_len = count;
+    return true;
+}
+
+static void _merge_object(cJSON *target, const cJSON *source)
+{
+    const cJSON *item = NULL;
+
+    cJSON_ArrayForEach(item, source)
+    {
+        if (item->string != NULL)
+        {
+            cJSON *copy = cJSON_Duplicate(item, true);
+            if (copy != NULL)
+            {
+                cJSON_AddItemToObject(target, item->string, copy);
+            }
+        }
+    }
 }
 
 static bool _optional_bool(const cJSON *item)
@@ -414,6 +474,21 @@ static sim_wait_idle_result_t _wait_idle(uint32_t timeout_ms,
     return SIM_WAIT_IDLE_TIMEOUT;
 }
 
+static const char *_product_target_name(void)
+{
+#ifdef MT_PRODUCT_DEVICE_PLATFORM
+    if (strcmp(MT_PRODUCT_DEVICE_PLATFORM, "ESP32-S3") == 0)
+    {
+        return "esp32s3";
+    }
+    if (strcmp(MT_PRODUCT_DEVICE_PLATFORM, "ESP32-P4") == 0)
+    {
+        return "esp32p4";
+    }
+#endif
+    return CONFIG_IDF_TARGET;
+}
+
 static cJSON *_handle(cJSON *request, bool *ok)
 {
     const char *method = cJSON_GetStringValue(
@@ -435,8 +510,23 @@ static cJSON *_handle(cJSON *request, bool *ok)
     if (strcmp(method, "sim.ping") == 0)
     {
         cJSON_AddStringToObject(result, "version", "sim-m6");
+        cJSON_AddNumberToObject(result, "agent_api_version", 2);
+        cJSON_AddStringToObject(result, "product", MT_PRODUCT_NAME);
+        cJSON_AddStringToObject(result, "target", _product_target_name());
+        cJSON *panel = cJSON_AddObjectToObject(result, "panel");
+        if (panel != NULL)
+        {
+            cJSON_AddNumberToObject(panel, "width", SIM_BSP_H_RES);
+            cJSON_AddNumberToObject(panel, "height", SIM_BSP_V_RES);
+        }
+#ifdef SIM_MUSIC_REAL
+        cJSON_AddStringToObject(result, "music_backend", "real");
+#else
+        cJSON_AddStringToObject(result, "music_backend", "fake");
+#endif
         cJSON_AddNumberToObject(result, "width", SIM_BSP_H_RES);
         cJSON_AddNumberToObject(result, "height", SIM_BSP_V_RES);
+        cJSON_AddNumberToObject(result, "pid", (double)getpid());
         cJSON_AddBoolToObject(result, "ci", sim_lv_ci_enabled());
         cJSON_AddNumberToObject(result, "frames",
                                 (double)sim_lv_frame_count());
@@ -629,6 +719,280 @@ static cJSON *_handle(cJSON *request, bool *ok)
             else
             {
                 cJSON_AddItemToObject(result, "tree", parsed);
+            }
+        }
+    }
+    else if (strcmp(method, "sim.find") == 0)
+    {
+        const cJSON *query = params != NULL ?
+                             cJSON_GetObjectItemCaseSensitive(params, "query") :
+                             NULL;
+        const cJSON *limit_item = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "limit") : NULL;
+        const cJSON *layers = params != NULL ?
+                              cJSON_GetObjectItemCaseSensitive(
+                                  params, "include_layers") : NULL;
+        const cJSON *visible = params != NULL ?
+                               cJSON_GetObjectItemCaseSensitive(
+                                   params, "visible_only") : NULL;
+        uint32_t limit = 20U;
+        char *query_text = NULL;
+        char *text = NULL;
+        const char *error = NULL;
+
+        if ((query == NULL) || !cJSON_IsObject(query) ||
+                (cJSON_GetArraySize(query) == 0))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "empty query");
+        }
+        else if (((limit_item != NULL) &&
+                  !_integer_in_range(limit_item, 1.0, 200.0)) ||
+                 ((layers != NULL) && !cJSON_IsBool(layers)) ||
+                 ((visible != NULL) && !cJSON_IsBool(visible)))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid find params");
+        }
+        else
+        {
+            if (limit_item != NULL)
+            {
+                limit = (uint32_t)limit_item->valuedouble;
+            }
+            query_text = cJSON_PrintUnformatted(query);
+            if (query_text == NULL)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        "find serialization failed");
+                return result;
+            }
+            (void)esp_lv_adapter_lock(-1);
+            text = sim_agent_query_find_active_screen(
+                       query_text, cJSON_IsTrue(layers), limit,
+                       cJSON_IsTrue(visible), &error);
+            (void)esp_lv_adapter_unlock();
+            free(query_text);
+            if (text == NULL)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        error != NULL ? error : "find failed");
+            }
+            else
+            {
+                cJSON *parsed = cJSON_Parse(text);
+                free(text);
+                if (parsed == NULL)
+                {
+                    *ok = false;
+                    cJSON_AddStringToObject(result, "error",
+                                            "find serialization failed");
+                }
+                else
+                {
+                    _merge_object(result, parsed);
+                    cJSON_Delete(parsed);
+                }
+            }
+        }
+    }
+    else if (strcmp(method, "sim.inspect") == 0)
+    {
+        const cJSON *layer_item = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "layer") : NULL;
+        const cJSON *path_item = params != NULL ?
+                                 cJSON_GetObjectItemCaseSensitive(
+                                     params, "path") : NULL;
+        const cJSON *depth_item = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "depth") : NULL;
+        const cJSON *nodes_item = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "max_nodes") : NULL;
+        const char *layer = (layer_item != NULL &&
+                             cJSON_IsString(layer_item)) ?
+                            layer_item->valuestring : "screen";
+        int32_t path[64];
+        size_t path_len = 0U;
+        uint32_t depth = 3U;
+        uint32_t max_nodes = 256U;
+        bool truncated = false;
+        char *text = NULL;
+        const char *error = NULL;
+
+        if (!_path_from_json(path_item, path, &path_len) ||
+                ((layer_item != NULL) &&
+                 (!cJSON_IsString(layer_item) ||
+                  !_layer_name_valid(layer_item->valuestring))) ||
+                ((depth_item != NULL) &&
+                 !_integer_in_range(depth_item, 0.0, 16.0)) ||
+                ((nodes_item != NULL) &&
+                 !_integer_in_range(nodes_item, 1.0, 4096.0)))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error", "invalid inspect params");
+        }
+        else
+        {
+            if (depth_item != NULL)
+            {
+                depth = (uint32_t)depth_item->valuedouble;
+            }
+            if (nodes_item != NULL)
+            {
+                max_nodes = (uint32_t)nodes_item->valuedouble;
+            }
+            (void)esp_lv_adapter_lock(-1);
+            text = sim_agent_query_inspect_active_screen(
+                       layer, path, path_len, depth, max_nodes, &truncated,
+                       &error);
+            (void)esp_lv_adapter_unlock();
+            if (text == NULL)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        error != NULL ? error : "inspect failed");
+            }
+            else
+            {
+                cJSON *parsed = cJSON_Parse(text);
+                free(text);
+                if (parsed == NULL)
+                {
+                    *ok = false;
+                    cJSON_AddStringToObject(result, "error",
+                                            "inspect serialization failed");
+                }
+                else
+                {
+                    _merge_object(result, parsed);
+                    cJSON_Delete(parsed);
+                }
+            }
+        }
+    }
+    else if (strcmp(method, "sim.hit_test") == 0)
+    {
+        const cJSON *x = params != NULL ?
+                         cJSON_GetObjectItemCaseSensitive(params, "x") : NULL;
+        const cJSON *y = params != NULL ?
+                         cJSON_GetObjectItemCaseSensitive(params, "y") : NULL;
+        char *text = NULL;
+        const char *error = NULL;
+
+        if (!_integer_in_range(x, 0.0, SIM_BSP_H_RES - 1U) ||
+                !_integer_in_range(y, 0.0, SIM_BSP_V_RES - 1U))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error",
+                                    "invalid hit-test params");
+        }
+        else
+        {
+            (void)esp_lv_adapter_lock(-1);
+            text = sim_agent_query_hit_test((int32_t)x->valuedouble,
+                                            (int32_t)y->valuedouble,
+                                            &error);
+            (void)esp_lv_adapter_unlock();
+            if (text == NULL)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        error != NULL ? error :
+                                        "hit-test failed");
+            }
+            else
+            {
+                cJSON *parsed = cJSON_Parse(text);
+                free(text);
+                if (parsed == NULL)
+                {
+                    *ok = false;
+                    cJSON_AddStringToObject(result, "error",
+                                            "hit-test serialization failed");
+                }
+                else
+                {
+                    _merge_object(result, parsed);
+                    cJSON_Delete(parsed);
+                }
+            }
+        }
+    }
+    else if (strcmp(method, "sim.query_geometry") == 0)
+    {
+        const cJSON *x = params != NULL ?
+                         cJSON_GetObjectItemCaseSensitive(params, "x") : NULL;
+        const cJSON *y = params != NULL ?
+                         cJSON_GetObjectItemCaseSensitive(params, "y") : NULL;
+        const cJSON *layer_item = params != NULL ?
+                                  cJSON_GetObjectItemCaseSensitive(
+                                      params, "layer") : NULL;
+        const cJSON *path_item = params != NULL ?
+                                 cJSON_GetObjectItemCaseSensitive(
+                                     params, "path") : NULL;
+        const char *layer = (layer_item != NULL &&
+                             cJSON_IsString(layer_item)) ?
+                            layer_item->valuestring : "screen";
+        int32_t path[64];
+        size_t path_len = 0U;
+        bool use_point = (x != NULL) || (y != NULL);
+        char *text = NULL;
+        const char *error = NULL;
+
+        if ((layer_item != NULL &&
+                (!cJSON_IsString(layer_item) ||
+                 !_layer_name_valid(layer_item->valuestring))) ||
+                (use_point && layer_item != NULL) ||
+                (use_point && path_item != NULL) ||
+                (use_point &&
+                 (!_integer_in_range(x, 0.0, SIM_BSP_H_RES - 1U) ||
+                  !_integer_in_range(y, 0.0, SIM_BSP_V_RES - 1U))))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error",
+                                    "invalid geometry params");
+        }
+        else if (!use_point && !_path_from_json(path_item, path, &path_len))
+        {
+            *ok = false;
+            cJSON_AddStringToObject(result, "error",
+                                    "invalid geometry params");
+        }
+        else
+        {
+            (void)esp_lv_adapter_lock(-1);
+            text = sim_agent_query_geometry(
+                       use_point ? (int32_t)x->valuedouble : 0,
+                       use_point ? (int32_t)y->valuedouble : 0,
+                       use_point, layer, path, path_len, &error);
+            (void)esp_lv_adapter_unlock();
+            if (text == NULL)
+            {
+                *ok = false;
+                cJSON_AddStringToObject(result, "error",
+                                        error != NULL ? error :
+                                        "geometry failed");
+            }
+            else
+            {
+                cJSON *parsed = cJSON_Parse(text);
+                free(text);
+                if (parsed == NULL)
+                {
+                    *ok = false;
+                    cJSON_AddStringToObject(result, "error",
+                                            "geometry serialization failed");
+                }
+                else
+                {
+                    _merge_object(result, parsed);
+                    cJSON_Delete(parsed);
+                }
             }
         }
     }

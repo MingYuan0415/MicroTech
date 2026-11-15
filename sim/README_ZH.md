@@ -59,6 +59,9 @@ python3 tools/agent/mt.py build sim
 
 该命令在 `build/sim-gate/` 下构建规范产品：`s3_reference`（fake 与真实音乐）、
 `p4_reference`（fake 音乐）和 `minimal`（fake 音乐）；任一配置失败即返回失败。
+成功时写入 `build/sim-gate/build-context.json`，记录每个配置的 product、panel
+和二进制 SHA-256。`sim/ci/run_ci.sh` 在日志目录写入同一份 manifest，对应实际
+运行场景的二进制；`mt.py ui` 会把它复制到快照目录。
 
 ## 日常开发（推荐入口）
 
@@ -275,7 +278,11 @@ JSON-RPC：`{"id":1,"method":"sim.ping","params":{...}}` →
 `error`）、
 `sim.screenshot {name,wait_idle}`、`sim.tree {include_layers?}`（绝对坐标 +
 `LV_PART_MAIN` 计算样式 + 类型值 + 图像语义 ID；`include_layers:true` 时在
-`overlays` 数组附 top/sys 层，任务切换器位于 sys 层）、`sim.touch {action,x,y}`、
+`overlays` 数组附 top/sys 层，任务切换器位于 sys 层）、`sim.find {query,limit?,
+include_layers?,visible_only?}`（扁平字段查询，只返回匹配节点的浅层摘要、`total`
+和 `truncated`）、`sim.inspect {layer?,path,depth?,max_nodes?}`（指定路径子树）、
+`sim.hit_test {x,y}`（最上层触摸目标）、`sim.query_geometry {x,y}` 或
+`{layer,path}`（坐标、内容区、点击区、滚动和溢出状态）、`sim.touch {action,x,y}`、
 `sim.key {button,action}`
 （press/release/click）、`sim.navigate {app}`（投 mailbox，不阻塞）、`sim.apps`、
 `sim.set_time {epoch}`、`sim.set_power {voltage?,pct?,charging,vbus}`（voltage/pct 可各自省略；缺 pct 走电压回退显示）、
@@ -308,11 +315,14 @@ generation；`svc` 同时返回目标路径列表、operation_id/pending/last_er
  也可用 `touch`/`drag` 复现）、
 `sim.set_bluetooth {enabled?,bound?,active?,client_connected?,window_remaining_ms?}`、
 `sim.offer_pairing {token?,passkey?}`、`sim.exit`。客户端：
-`python3 sim/tools/simctl.py <command>`。
+`python3 sim/tools/simctl.py <command>`；查询客户端还接受
+`simctl find`、`simctl inspect`、`simctl hit-test` 和 `simctl query-geometry`。
 
 `sim.ping` 返回 `network_ready`、`weather_state`、`weather_failure`、`active_app`、
-`ci`、`frames` 和 `paused`。CI 会话与暂停期间 `active_app` 恒为 `null`（生命周期
-查询会经 mailbox 阻塞），此时改用 `sim.tree`/`sim.switcher` 判断当前页面。
+`ci`、`frames` 和 `paused`，以及 `agent_api_version`、`product`、`target`、
+`panel {width,height}`、`pid`（可用时为主机进程号）和 `music_backend`。CI 会话与暂停期间 `active_app` 恒为
+`null`（生命周期查询会经 mailbox 阻塞），此时改用 `sim.tree`/`sim.find`/`sim.switcher`
+判断当前页面。
 `simctl` 无法连接时会快速失败并提示启动 `python3 sim/dev.py`；端口冲突时先停止
 开发会话再运行 CI。真实联网请求失败时，优先检查 `network_ready`、天气状态和
 `build/sim/dev_session.log`。
@@ -346,6 +356,19 @@ slider/bar/arc 提供 `value`/`min`/`max`；switch/checkbox 提供 `checked`；
 dropdown/roller 提供 `selected`。场景的 `tree_assert.contains` 和
 `tree_assert.absent` 对节点字段做超集匹配，分别要求至少存在一个匹配节点、
 不存在任何匹配节点。
+
+`sim.find` 接受与 `tree_assert` 相同的扁平字段子集：`type`、`text`、`app_id`、
+`coords.x/y/w/h`、`flags.visible/hidden/clickable/scrollable/floating`、
+`state.pressed/checked/focused/disabled`；数值可用 `{min,max}`。返回
+`matches: [{layer, path, node}]`、`total` 和 `truncated`；空 query 会被拒绝，
+确实需要全树时使用 `sim.tree`。`sim.inspect` 解析 `layer`（`screen`、`top`、`sys`、`bottom`）
+和 `path`（子索引数组），返回受限子树；`depth:0` 只返回节点摘要。path 只在当前帧内
+有效。
+
+`sim.hit_test` 按显示输入顺序（`sys`、`top`、`screen`、`bottom`）返回最上层触摸目标及路径。
+`sim.query_geometry` 返回 `{found, layer, path, geometry}`；`geometry` 包含绝对
+`coords`、`content`、`click_area`、`scroll`、`ext_click_pad` 和
+`overflow_visible`。参数可以是点，也可以是 `layer`/`path`。
 
 锁纪律：tree/screenshot/hash 持 `esp_lv_adapter_lock` 只读/拷贝；step/navigate 不持锁；
 touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停期间 `wait_idle`
@@ -409,7 +432,13 @@ label 的显示规则直接读 `sim.tree` 的渲染结构（`long_mode`、`lines
 NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`unmounted` 介质结尾
 的页面会被下一个页面继承，快照不再描述它自己的页面——这个污染曾表现为
 `recorder/files/detail` 稳定多出「存储卡或音频不可用」。代价是每页一次冷启动；
-`--no-launch` 驱动外部 sim 时保持单会话，不做此隔离。SD 背景目录使用较短的
+`--no-launch` 驱动外部 sim 时保持单会话，不做此隔离。该模式还需标识被审查的
+二进制：传入 `--build-context PATH`（可以描述另一个 build），或让匹配的
+`build-context.json` 位于所选 `--build` 目录；也可以让工具从 `--build` 自动生成
+清单。若平台提供 `/proc/<pid>/exe`，工具会通过 `sim.ping` 的 pid 校验实时进程
+二进制与清单中的 artifact hash；否则回退到实时 `sim.ping` 的
+product/target/panel 身份核对。外部 sim 必须以 `--ci` 启动，审查工具会在驱动
+任何页面前先检查。SD 背景目录使用较短的
 `/tmp` 路径，因为 `sd_storage_service` 的挂载路径缓冲仅 64 字节；截图与 NVS 仍位于
 调用方指定的 `--shots` 目录。正因为会放弃这层隔离，
 它是接入本次未自建会话的唯一方式：agent 端口被占用时直接报错，而不是隐式附着，
@@ -428,8 +457,11 @@ NVS 与 SD 目录），启动后重建文件夹具。否则一个以 `faulted`/`
 `sim_http` 脚本层灌入 `sim/ci/fixtures/*.json`，验证 location→current/hourly/
 `daily` 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）、
 `recorder_playback_pm.json`（播放中息屏再唤醒：详情页保持「播放中/停止」，且停止后回到
-「播放」；息屏不得终止 recorder_service 的播放）和
-`agent_contract.json`（参数错误、暂停和截图契约）。树断言为主门禁。
+「播放」；息屏不得终止 recorder_service 的播放）、
+`agent_contract.json`（参数错误、暂停、截图和 ping capability 契约）、
+`acceptance_contract.json`（checks/coverage 与 `wait_*`）和
+`agent_query_contract.json`（`sim.find` / `sim.inspect` / `sim.hit_test` /
+`sim.query_geometry`）。树断言为主门禁。
 
 `flybirds.json` 的 `flybirds_restart_regression` 动作只通过实时树和触摸闭环得 1 分，随后验证重开 HUD 为 0、第二次零分结算与最高分 1；不设置种子或生产作弊入口。HUD/结算数值限定所属可见容器，隐藏祖先下的数字不参与断言。评分最多推进 360 个 33 ms 帧，每次结算最多等待 120 帧；RPC 错误、提前死亡或超时直接失败。场内触点避开系统左缘返回手势区，短 tap 不额外快进一秒；结算截图等待卡片淡入完成。
 

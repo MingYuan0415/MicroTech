@@ -349,7 +349,8 @@ static void _add_type_value(cJSON *node, lv_obj_t *obj,
 }
 
 static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
-                        size_t alias_count)
+                        size_t alias_count, int depth, uint32_t *budget,
+                        bool *truncated)
 {
     cJSON *node = cJSON_CreateObject();
     lv_area_t coords;
@@ -358,6 +359,19 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     if (node == NULL)
     {
         return NULL;
+    }
+    if (budget != NULL)
+    {
+        if (*budget == 0U)
+        {
+            if (truncated != NULL)
+            {
+                *truncated = true;
+            }
+            cJSON_Delete(node);
+            return NULL;
+        }
+        (*budget)--;
     }
     const lv_obj_class_t *cls = lv_obj_get_class(obj);
     cJSON_AddStringToObject(node, "type",
@@ -416,13 +430,31 @@ static cJSON *_dump_obj(lv_obj_t *obj, const image_alias_t *aliases,
     _add_type_value(node, obj, aliases, alias_count);
 
     const uint32_t child_count = lv_obj_get_child_count(obj);
-    if (child_count > 0U)
+    if (child_count > 0U && depth != 0)
     {
         cJSON *children = cJSON_AddArrayToObject(node, "children");
+        if (children == NULL)
+        {
+            if (truncated != NULL)
+            {
+                *truncated = true;
+            }
+            return node;
+        }
         for (uint32_t i = 0; i < child_count; i++)
         {
+            if (budget != NULL && *budget == 0U)
+            {
+                if (truncated != NULL)
+                {
+                    *truncated = true;
+                }
+                break;
+            }
             lv_obj_t *child = lv_obj_get_child(obj, i);
-            cJSON *kid = _dump_obj(child, aliases, alias_count);
+            cJSON *kid = _dump_obj(child, aliases, alias_count,
+                                   depth < 0 ? -1 : depth - 1,
+                                   budget, truncated);
             if (kid != NULL && children != NULL)
             {
                 cJSON_AddItemToArray(children, kid);
@@ -466,7 +498,7 @@ char *sim_agent_tree_dump_active_screen(bool include_layers)
         }
     }
 #endif
-    cJSON *root = _dump_obj(scr, aliases, alias_count);
+    cJSON *root = _dump_obj(scr, aliases, alias_count, -1, NULL, NULL);
     if ((root != NULL) && include_layers)
     {
         cJSON *overlays = cJSON_AddArrayToObject(root, "overlays");
@@ -476,7 +508,8 @@ char *sim_agent_tree_dump_active_screen(bool include_layers)
             for (size_t i = 0U; i < (sizeof(layers) / sizeof(layers[0])); i++)
             {
                 cJSON *dump = (layers[i] != NULL)
-                              ? _dump_obj(layers[i], aliases, alias_count)
+                              ? _dump_obj(layers[i], aliases, alias_count, -1,
+                                          NULL, NULL)
                               : NULL;
                 if (dump != NULL)
                 {
@@ -485,6 +518,48 @@ char *sim_agent_tree_dump_active_screen(bool include_layers)
             }
         }
     }
+    if (root != NULL)
+    {
+        text = cJSON_PrintUnformatted(root);
+        cJSON_Delete(root);
+    }
+    return text;
+}
+
+char *sim_agent_tree_dump_object(lv_obj_t *obj, int depth,
+                                 uint32_t max_nodes, bool *truncated)
+{
+    image_alias_t aliases[APP_RESOURCES_IMAGE_COUNT + 1];
+    size_t alias_count = 0U;
+    uint32_t budget = max_nodes;
+    cJSON *root;
+    char *text = NULL;
+
+    if (obj == NULL)
+    {
+        return NULL;
+    }
+    if (truncated != NULL)
+    {
+        *truncated = false;
+    }
+#if APP_RESOURCES_ENABLED
+    const app_manager_image_resource_config_t *table =
+        APP_RESOURCES_IMAGE_TABLE;
+    for (size_t i = 0U; i < APP_RESOURCES_IMAGE_COUNT &&
+            alias_count < (sizeof(aliases) / sizeof(aliases[0])); i++)
+    {
+        const lv_image_dsc_t *image = NULL;
+        if (app_manager_get_image(table[i].semantic_id, &image) == ESP_OK &&
+                image != NULL)
+        {
+            aliases[alias_count].dsc = image;
+            aliases[alias_count].semantic_id = table[i].semantic_id;
+            alias_count++;
+        }
+    }
+#endif
+    root = _dump_obj(obj, aliases, alias_count, depth, &budget, truncated);
     if (root != NULL)
     {
         text = cJSON_PrintUnformatted(root);

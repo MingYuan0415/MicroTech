@@ -105,6 +105,11 @@ isolated NVS/SD directories; an occupied port is an error, not permission to
 reuse or terminate its owner. For deliberate interactive reuse pass
 `--no-launch` after confirming the process/binary and seeded state yourself;
 this mode has no per-page process isolation and never stops the external sim.
+The harness derives `build-context.json` from `--build` when no explicit
+`--build-context` exists, then compares its product/target/panel with the live
+`sim.ping` response. An explicit `--build-context` may describe another build;
+when the live response exposes a pid, the harness also compares the process
+binary hash. External `--no-launch` sessions must be started with `--ci`.
 `--keep-sim` retains the final owned instance and its temporary data for probing;
 end it explicitly when finished. Detailed operation lives in `sim/README.md`.
 

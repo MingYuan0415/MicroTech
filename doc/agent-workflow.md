@@ -1,10 +1,11 @@
 # Agent Workflow
 
 `tools/agent/mt.py` is the command-line entry point for agent-facing build,
-test, formatting, Git, simulator, and page-review output. It is a presentation
-layer: the wrapped command decides pass or fail. What to run and when is
-defined in [`doc/verification.md`](verification.md); this document covers
-command behavior and output.
+test, formatting, Git, simulator, page-review, environment-check, and
+device-debug output. It is a presentation layer: the wrapped command decides
+pass or fail. What to run and when is defined in
+[`doc/verification.md`](verification.md); this document covers command behavior
+and output.
 
 ## Why
 
@@ -30,14 +31,26 @@ python3 tools/agent/mt.py git diff
 python3 tools/agent/mt.py git diff --patch -- <paths>
 python3 tools/agent/mt.py sim --scenario agent_contract
 python3 tools/agent/mt.py ui --pages settings/wifi
+python3 tools/agent/mt.py doctor --json
+python3 tools/agent/mt.py inspect --last
+python3 tools/agent/mt.py build idf --coredump
+python3 tools/agent/mt.py device status
+python3 tools/agent/mt.py device logs --snapshot --seconds 10
+python3 tools/agent/mt.py device monitor --expect 'boot id=' --timeout 20
+python3 tools/agent/mt.py device crash
+python3 tools/agent/mt.py device smoke
 ```
 
 `build` accepts a suite alias, `idf`, or `sim`. `build sim` is the mandatory
 simulator build gate defined in [`doc/verification.md`](verification.md): it
 configures every canonical simulator product and derives each configuration's
-panel geometry from its product's board manifest. `test` builds first, then runs
-CTest. `--profile none|address|thread` selects the sanitizer profile supported
-by that suite; each profile uses a separate build directory.
+panel geometry from its product's board manifest. `build idf --coredump`
+optionally applies `sdkconfig.coredump.defaults` for crash capture; it is not
+part of the committed baseline and keeps its generated configuration in
+`build/sdkconfig.coredump` so a later plain build is unaffected. `test` builds
+first, then runs CTest.
+`--profile none|address|thread` selects the sanitizer profile supported by that
+suite; each profile uses a separate build directory.
 
 ## Suites
 
@@ -130,6 +143,30 @@ problems:
 - uninitialized `contracts/device_link`;
 - missing Pillow for page review;
 - AStyle other than 3.6.19.
+
+`doctor` checks those items plus the simulator libraries, monitor/coredump
+tools, serial ports, and writable build/log directories. `--json` is the
+machine-readable form; a required failure returns 1, warnings alone return 0.
+
+`inspect` reads the latest log (or `--log PATH`) and prints the first build
+error category, source location, and context. `--json` returns
+`{category,first_error,diagnostics,log}`.
+
+## Device Commands
+
+`device status` reads the local build identity and coredump partition without
+touching the board. `device logs --snapshot` captures a bounded monitor session
+and fails when no serial output was captured; `--follow` streams until
+interrupted. `device monitor --expect REGEX` uses the monitor's non-interactive
+stdin command stream and returns `124` on timeout. `device crash` decodes the
+flash coredump; build the firmware with `build idf --coredump` first so
+`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH` is enabled. `device flash` requires
+`--yes` and is never run automatically; `--monitor` verifies the boot identity
+after writing and reports a verification failure as `verify (image written)`.
+`device smoke` resets the board and waits for the boot banner. The banner's
+`elf=` field is the configured short prefix of the ELF SHA-256; compare it as a
+prefix of the full `ELF file SHA256` from `device status`. See
+`device-operations` for the triage order.
 
 ## Adding a Suite
 

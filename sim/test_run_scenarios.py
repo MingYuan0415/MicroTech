@@ -1,5 +1,9 @@
 """False-success regressions for the Flybirds scenario's closed-loop action."""
 import importlib.util
+import json
+import os
+import socket
+import time
 from pathlib import Path
 import tempfile
 import unittest
@@ -141,6 +145,7 @@ class FlybirdsRPC:
 class TreeAssertTest(unittest.TestCase):
     def setUp(self):
         self.runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        self.runner.sock = _AcceptanceSocket()
         self.tree = _node('lv_obj', 0, 0, 368, 448, children=[
             _label('已选择 3/3', 16, 80),
             _label('天气', 16, 120)])
@@ -175,6 +180,7 @@ class TreeAssertTest(unittest.TestCase):
 class WeatherStepTest(unittest.TestCase):
     def _run(self, step):
         runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
         with patch.object(scenarios, 'rpc',
                           return_value={'ok': True, 'result': {}}) as rpc:
             runner._step(step)
@@ -214,6 +220,7 @@ class WeatherStepTest(unittest.TestCase):
 class FlybirdsRestartRegressionTest(unittest.TestCase):
     def _run(self, surface):
         runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
         with patch.object(scenarios, 'rpc', side_effect=surface.rpc):
             runner._step({'cmd': 'flybirds_restart_regression'})
 
@@ -265,6 +272,370 @@ class FlybirdsRestartRegressionTest(unittest.TestCase):
         self.assertLess(surface.restart_frames, 5,
                         'stale HUD must be rejected immediately after restart')
         self.assertNotIn('flybirds_second_over_zero.png', surface.screenshots)
+
+
+class _AcceptanceSocket:
+    def __init__(self):
+        self.timeout = 60.0
+
+    def settimeout(self, value):
+        self.timeout = value
+
+    def gettimeout(self):
+        return self.timeout
+
+    def close(self):
+        pass
+
+
+class AcceptanceRPC:
+    """Small deterministic RPC surface for the scenario acceptance contract."""
+
+    def __init__(self, text='时钟'):
+        self.frames = 0
+        self.text = text
+        self.screenshots = []
+        self.calls = []
+
+    def tree(self):
+        return _node('lv_obj', 0, 0, 368, 448, children=[
+            _label(self.text if self.frames else '准备', 16, 80),
+        ])
+
+    def rpc(self, _sock, method, params=None):
+        self.calls.append((method, dict(params or {})))
+        if method == 'sim.ping':
+            return {'ok': True, 'result': {'width': 368, 'height': 448}}
+        if method == 'sim.tree':
+            return {'ok': True, 'result': {'tree': self.tree()}}
+        if method == 'sim.find':
+            query = params.get('query') or {}
+            found = (self.frames > 0 and
+                     query.get('text') == self.text)
+            return {'ok': True, 'result': {
+                'matches': [], 'total': 1 if found else 0,
+                'truncated': False,
+            }}
+        if method == 'sim.inspect':
+            return {'ok': True, 'result': {'node': self.tree()}}
+        if method == 'sim.step':
+            self.frames += 1
+            return {'ok': True, 'result': {}}
+        if method == 'sim.screenshot':
+            self.screenshots.append(params['name'])
+            return {'ok': True, 'result': {'path': params['name']}}
+        if method == 'sim.wait_idle':
+            return {'ok': True, 'result': {'idle': True}}
+        raise AssertionError('unexpected RPC: %s' % method)
+
+
+class ScenarioAcceptanceTest(unittest.TestCase):
+    def _run(self, scenario, fake=None):
+        fake = fake or AcceptanceRPC()
+        runner = scenarios.Runner('127.0.0.1', 5002, tempfile.mkdtemp())
+        runner.sock = _AcceptanceSocket()
+        with patch.object(scenarios, 'rpc', side_effect=fake.rpc):
+            return runner.run(scenario), fake
+
+    def test_checks_pass_and_coverage_is_complete(self):
+        result, _ = self._run({
+            'name': 'accept',
+            'checks': {'visible': 'clock visible'},
+            'steps': [{'cmd': 'wait_text', 'text': '时钟',
+                       'timeout_ms': 500, 'check': 'visible'}],
+        })
+        _, failures, checks, coverage, _, _ = result
+        self.assertEqual(failures, [])
+        self.assertEqual(checks['visible']['status'], 'pass')
+        self.assertTrue(coverage['ok'])
+        self.assertEqual(coverage['passed'], 1)
+
+    def test_missing_coverage_check_fails(self):
+        result, _ = self._run({
+            'name': 'accept',
+            'checks': {'visible': 'clock visible', 'absent': 'no error'},
+            'steps': [{'cmd': 'wait_text', 'text': '时钟',
+                       'timeout_ms': 500, 'check': 'visible'}],
+        })
+        _, failures, checks, coverage, _, _ = result
+        self.assertEqual(checks['absent']['status'], 'not_run')
+        self.assertFalse(coverage['ok'])
+        self.assertTrue(any('coverage:' in item for item in failures))
+
+    def test_unplanned_step_check_fails(self):
+        result, _ = self._run({
+            'name': 'accept',
+            'checks': {'visible': 'clock visible'},
+            'steps': [{'cmd': 'wait_text', 'text': '时钟',
+                       'timeout_ms': 500, 'check': 'unexpected'}],
+        })
+        _, failures, checks, coverage, _, _ = result
+        self.assertEqual(checks['unexpected']['status'], 'unplanned')
+        self.assertFalse(coverage['ok'])
+        self.assertTrue(any('coverage:' in item for item in failures))
+
+    def test_repeated_unplanned_check_stays_unplanned(self):
+        result, _ = self._run({
+            'name': 'accept',
+            'checks': {'visible': 'clock visible'},
+            'steps': [
+                {'cmd': 'wait_text', 'text': '时钟',
+                 'timeout_ms': 500, 'check': 'visible'},
+                {'cmd': 'wait_text', 'text': '时钟',
+                 'timeout_ms': 500, 'check': 'unexpected'},
+                {'cmd': 'wait_text', 'text': '时钟',
+                 'timeout_ms': 500, 'check': 'unexpected'},
+            ],
+        })
+        _, failures, checks, coverage, _, _ = result
+        self.assertEqual(checks['unexpected']['status'], 'unplanned')
+        self.assertFalse(coverage['ok'])
+        self.assertTrue(any('coverage:' in item for item in failures))
+
+    def test_step_check_without_declared_checks_is_unplanned(self):
+        result, _ = self._run({
+            'name': 'accept',
+            'steps': [{'cmd': 'wait_text', 'text': '时钟',
+                       'timeout_ms': 500, 'check': 'unexpected'}],
+        })
+        _, failures, checks, coverage, _, _ = result
+        self.assertEqual(checks['unexpected']['status'], 'unplanned')
+        self.assertIsNotNone(coverage)
+        self.assertFalse(coverage['ok'])
+        self.assertTrue(any('coverage:' in item for item in failures))
+
+    def test_failure_evidence_writes_screenshot_and_tree(self):
+        tmp = tempfile.mkdtemp()
+        fake = AcceptanceRPC(text='其他')
+        runner = scenarios.Runner('127.0.0.1', 5002, tmp)
+        runner.sock = _AcceptanceSocket()
+        scenario = {
+            'name': 'accept',
+            'failure_evidence': {'screenshot': True, 'tree': True},
+            'steps': [{'cmd': 'tree_assert',
+                       'contains': {'type': 'lv_label', 'text': '不存在'}}],
+        }
+        with patch.object(scenarios, 'rpc', side_effect=fake.rpc):
+            _, failures, _, _, evidence, _ = runner.run(scenario)
+        self.assertTrue(failures)
+        self.assertIsNotNone(evidence)
+        self.assertTrue(os.path.isfile(os.path.join(
+            tmp, 'failure_accept_step_0.tree.json')))
+        self.assertEqual(evidence['screenshot'], 'failure_accept_step_0.png')
+
+    def test_scenario_timeout_is_a_failure(self):
+        fake = AcceptanceRPC(text='其他')
+        result, _ = self._run({
+            'name': 'accept',
+            'timeout_seconds': 0.001,
+            'steps': [{'cmd': 'wait_text', 'text': '时钟',
+                       'timeout_ms': 2000}],
+        }, fake)
+        _, failures, _, _, _, _ = result
+        self.assertTrue(any('timeout' in item.lower() for item in failures))
+
+    def test_sleep_step_cannot_exceed_scenario_timeout(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, tempfile.mkdtemp())
+        runner.sock = _AcceptanceSocket()
+        started = time.monotonic()
+        _, failures, _, _, _, _ = runner.run({
+            'name': 'sleep',
+            'timeout_seconds': 0.05,
+            'steps': [{'cmd': 'sleep_ms', 'ms': 500}],
+        })
+        self.assertTrue(any('timeout' in item.lower() for item in failures))
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_expect_error_honors_scenario_deadline(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        runner._timeout_seconds = 1.0
+        runner.deadline = time.monotonic() - 1
+        with self.assertRaises(scenarios.ScenarioTimeout):
+            runner._step({'cmd': 'expect_error', 'method': 'sim.find',
+                          'params': {'query': {}}, 'error': 'empty query'})
+
+    def test_coverage_failure_captures_evidence(self):
+        tmp = tempfile.mkdtemp()
+        fake = AcceptanceRPC(text='时钟')
+        fake.frames = 1
+        runner = scenarios.Runner('127.0.0.1', 5002, tmp)
+        runner.sock = _AcceptanceSocket()
+        scenario = {
+            'name': 'coverage',
+            'checks': {'visible': 'clock visible'},
+            'steps': [{'cmd': 'wait_text', 'text': '时钟',
+                       'timeout_ms': 500}],
+        }
+        with patch.object(scenarios, 'rpc', side_effect=fake.rpc):
+            _, failures, _, coverage, evidence, _ = runner.run(scenario)
+        self.assertTrue(any('coverage:' in item for item in failures))
+        self.assertFalse(coverage['ok'])
+        self.assertIsNotNone(evidence)
+        self.assertTrue(os.path.isfile(os.path.join(
+            tmp, 'failure_coverage_step_0.tree.json')))
+
+
+class ScenarioValidationTest(unittest.TestCase):
+    def test_invalid_timeout_is_reported(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        result = runner.run({'name': 'bad', 'timeout_seconds': 'soon',
+                             'steps': []})
+        _, failures, _, _, _, _ = result
+        self.assertTrue(any('invalid timeout_seconds' in item
+                            for item in failures))
+
+    def test_wait_text_rejects_nonpositive_timeout(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        with self.assertRaisesRegex(AssertionError,
+                                    'timeout_ms must be greater than zero'):
+            runner._wait_text({'text': '时钟', 'timeout_ms': 0})
+
+    def test_wait_tree_rejects_nonpositive_timeout(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        with self.assertRaisesRegex(AssertionError,
+                                    'timeout_ms must be greater than zero'):
+            runner._wait_tree({'contains': {'type': 'lv_label'},
+                               'timeout_ms': 0})
+
+    def test_wait_text_recomputes_budget_before_tree_fallback(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        tree_calls = []
+
+        def slow_find(_query, include_layers=False, limit=1,
+                      visible_only=False, timeout=None):
+            time.sleep(0.06)
+            return None
+
+        runner._find_or_none = slow_find
+        runner._tree = lambda *_args, **_kwargs: tree_calls.append(True)
+        with self.assertRaisesRegex(AssertionError, 'wait_text timeout'):
+            runner._wait_text({'text': 'never', 'timeout_ms': 50,
+                               'interval_ms': 1})
+        self.assertEqual(tree_calls, [])
+
+    def test_wait_passes_remaining_budget_to_every_rpc(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        find_timeouts = []
+        step_timeouts = []
+
+        def fake_find(_query, include_layers=False, limit=1,
+                      visible_only=False, timeout=None):
+            find_timeouts.append(timeout)
+            return {'total': 0, 'matches': [], 'truncated': False}
+
+        def fake_call(method, params=None, timeout=None):
+            step_timeouts.append(timeout)
+            return {}
+
+        runner._find_or_none = fake_find
+        runner._tree = lambda *_args, **_kwargs: _node(
+            'lv_obj', 0, 0, 368, 448)
+        runner.call = fake_call
+        with self.assertRaisesRegex(AssertionError, 'wait_text timeout'):
+            runner._wait_text({'text': 'never', 'timeout_ms': 150,
+                               'interval_ms': 1})
+        self.assertTrue(find_timeouts)
+        self.assertTrue(step_timeouts)
+        self.assertTrue(all(value is not None and value <= 0.15
+                            for value in find_timeouts + step_timeouts))
+
+
+class QueryStepTest(unittest.TestCase):
+    def _runner(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        runner.sock = _AcceptanceSocket()
+        return runner
+
+    def test_find_assert_present_and_absent(self):
+        runner = self._runner()
+        fake = AcceptanceRPC(text='时钟')
+        fake.frames = 1
+        with patch.object(scenarios, 'rpc', side_effect=fake.rpc):
+            runner._step({'cmd': 'find_assert',
+                          'query': {'text': '时钟'},
+                          'expect': 'present'})
+            runner._step({'cmd': 'find_assert',
+                          'query': {'text': '不存在'},
+                          'expect': 'absent'})
+
+    def test_inspect_assert_checks_subtree(self):
+        runner = self._runner()
+        fake = AcceptanceRPC(text='时钟')
+        with patch.object(scenarios, 'rpc', side_effect=fake.rpc):
+            runner._step({'cmd': 'inspect_assert', 'layer': 'screen',
+                          'path': [], 'depth': 2,
+                          'contains': {'type': 'lv_obj'}})
+
+    def test_tree_assert_uses_find_when_supported(self):
+        runner = self._runner()
+        fake = AcceptanceRPC(text='时钟')
+        fake.frames = 1
+        with patch.object(scenarios, 'rpc', side_effect=fake.rpc):
+            runner._step({'cmd': 'tree_assert',
+                          'contains': {'type': 'lv_label',
+                                       'text': '时钟'}})
+        self.assertIn(('sim.find', {'query': {'type': 'lv_label',
+                                               'text': '时钟'},
+                                    'include_layers': False,
+                                    'limit': 1,
+                                    'visible_only': False}),
+                      fake.calls)
+        self.assertNotIn('sim.tree', [call[0] for call in fake.calls])
+
+
+class RpcTimeoutSocketTest(unittest.TestCase):
+    def test_timeout_drops_socket_for_reconnect(self):
+        class LostSocket:
+            def __init__(self):
+                self.closed = False
+            def gettimeout(self):
+                return 60.0
+            def settimeout(self, _value):
+                pass
+            def close(self):
+                self.closed = True
+
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        sock = LostSocket()
+        runner.sock = sock
+        with patch.object(scenarios, 'rpc', side_effect=socket.timeout('late')):
+            with self.assertRaises(socket.timeout):
+                runner._rpc_reply('sim.wait_idle')
+        self.assertTrue(sock.closed)
+        self.assertIsNone(runner.sock)
+        self.assertTrue(runner._lost_connection)
+
+    def test_missing_socket_fails_without_calling_rpc(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        with patch.object(scenarios, 'rpc') as rpc:
+            with self.assertRaisesRegex(RuntimeError,
+                                        'connection is not established'):
+                runner._rpc_reply('sim.ping')
+        rpc.assert_not_called()
+        self.assertTrue(runner._lost_connection)
+
+    def test_reconnect_inherits_rpc_budget(self):
+        runner = scenarios.Runner('127.0.0.1', 5002, '.')
+        sock = _AcceptanceSocket()
+        seen = []
+
+        def fake_reconnect(timeout=None):
+            seen.append(timeout)
+            runner.sock = sock
+            runner._lost_connection = False
+
+        runner._lost_connection = True
+        runner._reconnect = fake_reconnect
+        with patch.object(scenarios, 'rpc',
+                          return_value={'ok': True, 'result': {}}):
+            runner._rpc_reply('sim.ping', timeout=0.25)
+        self.assertEqual(seen, [0.25])
 
 
 if __name__ == '__main__':

@@ -10,6 +10,10 @@ Commands:
   wait [--timeout-ms N]
   screenshot <name> [--no-wait]
   tree [> file.json]
+  find [--query JSON|FILE] [--type TYPE] [--text TEXT] [--app-id ID] [--limit N] [--include-layers] [--visible-only]
+  inspect [--layer screen|top|sys|bottom] --path 0,2,1 [--depth N] [--max-nodes N]
+  hit-test <x> <y>
+  query-geometry <x> <y> | [--layer L] --path 0,2
   touch <down|move|up> <x> <y>
   key <boot|power> <press|release|click>
   navigate <app_id> [page_id]
@@ -101,7 +105,35 @@ def main():
     wp = sub.add_parser("wait"); wp.add_argument("--timeout-ms", type=int, default=5000)
     scp = sub.add_parser("screenshot"); scp.add_argument("name"); scp.add_argument("--no-wait", action="store_true")
     sub.add_parser("tree")
-    tp = sub.add_parser("touch"); tp.add_argument("action"); tp.add_argument("x", type=int); tp.add_argument("y", type=int)
+    fp = sub.add_parser("find")
+    fp.add_argument("--query", default=None,
+                    help="JSON object or a path to a JSON file")
+    fp.add_argument("--type", default=None)
+    fp.add_argument("--text", default=None)
+    fp.add_argument("--app-id", default=None)
+    fp.add_argument("--limit", type=int, default=20)
+    fp.add_argument("--include-layers", action="store_true")
+    fp.add_argument("--visible-only", action="store_true")
+    ip = sub.add_parser("inspect")
+    ip.add_argument("--layer", choices=["screen", "top", "sys", "bottom"],
+                    default="screen")
+    ip.add_argument("--path", required=True,
+                    help="comma-separated child indices, for example 0,2,1")
+    ip.add_argument("--depth", type=int, default=3)
+    ip.add_argument("--max-nodes", type=int, default=256)
+    hp = sub.add_parser("hit-test")
+    hp.add_argument("x", type=int)
+    hp.add_argument("y", type=int)
+    gp = sub.add_parser("query-geometry")
+    gp.add_argument("x", nargs="?", type=int)
+    gp.add_argument("y", nargs="?", type=int)
+    gp.add_argument("--layer",
+                    choices=["screen", "top", "sys", "bottom"],
+                    default=None,
+                    help="layer for --path; point mode follows input order")
+    gp.add_argument("--path", default=None,
+                    help="comma-separated child indices for a path query")
+    tp = sub.add_parser("touch"); tp.add_argument("action"); tp.add_argument("x", type=float); tp.add_argument("y", type=float)
     kp = sub.add_parser("key"); kp.add_argument("button"); kp.add_argument("action")
     np_ = sub.add_parser("navigate"); np_.add_argument("app"); np_.add_argument("page", nargs="?")
     sw = sub.add_parser("set-wifi"); sw.add_argument("state")
@@ -128,6 +160,9 @@ def main():
     sub.add_parser("exit")
     pm = sub.add_parser("pm"); pm.add_argument("--off-ms", type=int, default=None); pm.add_argument("--standby-ms", type=int, default=None); pm.add_argument("--get", action="store_true")
     args = ap.parse_args()
+    if (args.cmd == "find" and not args.query and
+            not any((args.type, args.text, args.app_id))):
+        ap.error("find needs --query or one of --type/--text/--app-id")
 
     try:
         sock = socket.create_connection((args.host, args.port), timeout=3)
@@ -150,6 +185,51 @@ def main():
             req = ("sim.screenshot", {"name": args.name, "wait_idle": not args.no_wait})
         elif args.cmd == "tree":
             req = ("sim.tree", {})
+        elif args.cmd == "find":
+            if args.query:
+                raw = args.query
+                if os.path.exists(raw):
+                    with open(raw, encoding="utf-8") as handle:
+                        raw = handle.read()
+                query = json.loads(raw)
+            else:
+                query = {}
+                if args.type:
+                    query["type"] = args.type
+                if args.text:
+                    query["text"] = args.text
+                if args.app_id:
+                    query["app_id"] = args.app_id
+            req = ("sim.find", {
+                "query": query,
+                "limit": args.limit,
+                "include_layers": args.include_layers,
+                "visible_only": args.visible_only,
+            })
+        elif args.cmd == "inspect":
+            path = [int(part) for part in args.path.split(",") if part]
+            req = ("sim.inspect", {
+                "layer": args.layer, "path": path,
+                "depth": args.depth, "max_nodes": args.max_nodes,
+            })
+        elif args.cmd == "hit-test":
+            req = ("sim.hit_test", {"x": args.x, "y": args.y})
+        elif args.cmd == "query-geometry":
+            if args.x is not None or args.y is not None:
+                if args.x is None or args.y is None:
+                    ap.error("query-geometry needs both x and y")
+                if args.layer is not None:
+                    ap.error("--layer is only valid with --path")
+                if args.path is not None:
+                    ap.error("--path is not valid with x/y")
+                req = ("sim.query_geometry", {"x": args.x, "y": args.y})
+            else:
+                if args.path is None:
+                    ap.error("query-geometry needs x/y or --path")
+                path = [int(part) for part in args.path.split(",") if part]
+                req = ("sim.query_geometry", {
+                    "layer": args.layer or "screen", "path": path,
+                })
         elif args.cmd == "touch":
             req = ("sim.touch", {"action": args.action, "x": args.x, "y": args.y})
         elif args.cmd == "key":

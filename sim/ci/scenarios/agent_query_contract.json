@@ -1,0 +1,201 @@
+{
+ "name": "agent-query-contract",
+ "steps": [
+  {
+   "cmd": "navigate",
+   "app": "clock"
+  },
+  {
+   "cmd": "step",
+   "times": 10
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {}
+   },
+   "error": "empty query"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {
+     "type": "lv_obj"
+    },
+    "limit": 0
+   },
+   "error": "invalid find params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {
+     "type": "lv_obj"
+    },
+    "include_layers": "true"
+   },
+   "error": "invalid find params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {
+     "type": "lv_obj"
+    },
+    "visible_only": "false"
+   },
+   "error": "invalid find params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {
+     "type": 123
+    }
+   },
+   "error": "invalid query"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {
+     "type": "lv_obj",
+     "bogus": 1
+    }
+   },
+   "error": "unsupported query"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.find",
+   "params": {
+    "query": {
+     "flags.visible": "true"
+    }
+   },
+   "error": "invalid query"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.inspect",
+   "params": {
+    "layer": "screen",
+    "path": [
+     999
+    ]
+   },
+   "error": "object not found"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.hit_test",
+   "params": {
+    "x": -1,
+    "y": 0
+   },
+   "error": "invalid hit-test params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.query_geometry",
+   "params": {},
+   "error": "invalid geometry params"
+  },
+  {
+   "cmd": "expect_error",
+   "method": "sim.query_geometry",
+   "params": {
+    "x": 184,
+    "y": 224,
+    "path": []
+   },
+   "error": "invalid geometry params"
+  },
+  {
+   "cmd": "find_assert",
+   "query": {
+    "type": "lv_label",
+    "text": "秒表"
+   },
+   "expect": "present"
+  },
+  {
+   "cmd": "find_assert",
+   "query": {
+    "type": "lv_label",
+    "text": "秒表",
+    "coords.y": {
+     "min": 0
+    }
+   },
+   "expect": "present"
+  },
+  {
+   "cmd": "find_assert",
+   "query": {
+    "type": "lv_label",
+    "text": "不存在"
+   },
+   "expect": "absent"
+  },
+  {
+   "cmd": "inspect_assert",
+   "layer": "screen",
+   "path": [
+    0,
+    1,
+    1,
+    1,
+    0,
+    0
+   ],
+   "depth": 0,
+   "contains": {
+    "type": "lv_label",
+    "text": "秒表"
+   }
+  },
+  {
+   "cmd": "assert_result",
+   "method": "sim.query_geometry",
+   "params": {
+    "layer": "screen",
+    "path": [
+     0,
+     1,
+     1,
+     1,
+     0,
+     0
+    ]
+   },
+   "expect": {
+    "found": true
+   },
+   "expect_present": [
+    "layer",
+    "path",
+    "geometry"
+   ]
+  },
+  {
+   "cmd": "hit_test_assert",
+   "x": 184,
+   "y": 224
+  },
+  {
+   "cmd": "call",
+   "method": "sim.query_geometry",
+   "params": {
+    "x": 184,
+    "y": 224
+   }
+  }
+ ]
+}

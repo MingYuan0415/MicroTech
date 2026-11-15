@@ -70,7 +70,11 @@ python3 tools/agent/mt.py build sim
 
 It builds the canonical products under `build/sim-gate/`: `s3_reference` with
 fake and real music, `p4_reference` and `minimal` with fake music; any
-configuration failure fails the command.
+configuration failure fails the command. A successful gate writes
+`build/sim-gate/build-context.json` with each configuration's product, panel,
+and binary SHA-256. `sim/ci/run_ci.sh` writes the same manifest under its log
+directory for the exact binary that ran the scenarios; `mt.py ui` copies it into
+the snapshot directory.
 
 ## Daily Development (Recommended Entry)
 
@@ -358,7 +362,12 @@ Methods: `sim.ping`, `sim.step {ms}` (multiples of 33, CI only), `sim.wait_idle
 `sim.screenshot {name,wait_idle}`, `sim.tree {include_layers?}` (absolute
 coordinates + computed `LV_PART_MAIN` style + type value + image semantic ID;
 with `include_layers:true` the top/sys layers are appended in an `overlays`
-array, and the task switcher lives on the sys layer), `sim.touch {action,x,y}`,
+array, and the task switcher lives on the sys layer), `sim.find {query,limit?,
+include_layers?,visible_only?}` (flat field query; returns only matching
+shallow nodes, `total`, and `truncated`), `sim.inspect {layer?,path,depth?,
+max_nodes?}` (one path subtree), `sim.hit_test {x,y}` (topmost touch target),
+`sim.query_geometry {x,y}` or `{layer,path}` (coords, content coords, click
+area, scroll and overflow state), `sim.touch {action,x,y}`,
 `sim.key {button,action}` (press/release/click), `sim.navigate {app}` (posts to
 the mailbox, does not block), `sim.apps` (the registered App list plus
 `active_page`, `page_stack_valid`, `page_stack_transitioning`,
@@ -411,16 +420,19 @@ visibility/display/clear), `sim.control_center {get?|action: show|hide}`
 reproduced with `touch`/`drag`), `sim.set_bluetooth
 {enabled?,bound?,active?,client_connected?,window_remaining_ms?}`,
 `sim.offer_pairing {token?,passkey?}`, `sim.exit`. Client:
-`python3 sim/tools/simctl.py <command>`.
+`python3 sim/tools/simctl.py <command>`; the query client also accepts
+`simctl find`, `simctl inspect`, `simctl hit-test`, and `simctl query-geometry`.
 
 `sim.ping` returns `network_ready`, `weather_state`, `weather_failure`,
-`active_app`, `ci`, `frames`, and `paused`. In CI sessions and while paused,
-`active_app` is always `null` (a lifecycle query blocks through the mailbox);
-use `sim.tree`/`sim.switcher` to determine the current page instead. `simctl`
-fails fast when it cannot connect and suggests starting `python3 sim/dev.py`; on
-a port conflict, stop the development session before running CI. When a real
-networked request fails, check `network_ready`, the weather state, and
-`build/sim/dev_session.log` first.
+`active_app`, `ci`, `frames`, and `paused`, plus `agent_api_version`, `product`,
+`target`, `panel {width,height}`, `pid` (host process ID when available), and
+`music_backend`. In CI sessions and while
+paused, `active_app` is always `null` (a lifecycle query blocks through the
+mailbox); use `sim.tree`/`sim.find`/`sim.switcher` to determine the current page
+instead. `simctl` fails fast when it cannot connect and suggests starting
+`python3 sim/dev.py`; on a port conflict, stop the development session before
+running CI. When a real networked request fails, check `network_ready`, the
+weather state, and `build/sim/dev_session.log` first.
 
 Failure responses use a top-level `error` and carry no `result`; success
 responses use `result`. `sim.wait_idle` returns `error: "adapter paused"` while
@@ -458,6 +470,21 @@ provide `checked`; dropdown/roller provide `selected`. A scenario's
 `tree_assert.contains` and `tree_assert.absent` do superset matching against
 node fields, requiring at least one matching node or no matching node
 respectively.
+
+`sim.find` accepts the same flat keys limited to `type`, `text`, `app_id`,
+`coords.x/y/w/h`, `flags.visible/hidden/clickable/scrollable/floating`, and
+`state.pressed/checked/focused/disabled`; numeric values may use `{min,max}`.
+It returns `matches: [{layer, path, node}]`, `total`, and `truncated`. An empty
+query is rejected; use `sim.tree` when the whole tree is genuinely needed.
+`sim.inspect` resolves `layer` (`screen`, `top`, `sys`, `bottom`) plus `path` (child
+indices) and returns a bounded subtree; `depth:0` returns only the node summary.
+Paths are stable only for the current frame.
+
+`sim.hit_test` follows the display input order (`sys`, `top`, `screen`, `bottom`) and
+returns the topmost touch target plus its path. `sim.query_geometry` returns
+`{found, layer, path, geometry}`; `geometry` contains absolute `coords`,
+`content`, `click_area`, `scroll`, `ext_click_pad`, and `overflow_visible`. It
+accepts either a point or a `layer`/`path`.
 
 Lock discipline: tree/screenshot/hash hold `esp_lv_adapter_lock` read-only/copy;
 step/navigate take no lock; touch/key only write atomic state. `pause` completes
@@ -552,6 +579,14 @@ snapshot would no longer describe its own page — this pollution once manifeste
 as `recorder/files/detail` consistently gaining an extra "storage card or audio
 unavailable". The cost is one cold start per page; when driving an external sim
 with `--no-launch` a single session is kept and this isolation is not applied.
+That mode must also identify the reviewed binary: pass `--build-context PATH`
+(it may describe a build other than the selected `--build` directory), keep the
+matching `build-context.json` in the selected `--build` directory, or let the
+harness derive the manifest from `--build`. The live process is checked against
+the manifest artifact hash through the `sim.ping` pid when the platform exposes
+`/proc/<pid>/exe`; otherwise the check falls back to the live
+product/target/panel identity. The external simulator must be started with
+`--ci`; the review harness verifies this before driving any page.
 The SD backing directory is a short `/tmp` path because
 `sd_storage_service` keeps its mount path in a 64-byte buffer; screenshots and
 NVS remain under the requested `--shots` directory.
@@ -576,9 +611,11 @@ fed `sim/ci/fixtures/*.json`, validating location→current/hourly/`daily` parsi
 and rendering, and opening the forecast subpage), `pm_lifecycle.json` (screen
 off/wake), `recorder_playback_pm.json` (screen off then wake during playback:
 the detail page keeps "playing/stopped", and returns to "play" after stopping;
-screen off must not terminate recorder_service playback), and
-`agent_contract.json` (parameter errors, pause, and screenshot contracts). Tree
-assertions are the primary gate.
+screen off must not terminate recorder_service playback),
+`agent_contract.json` (parameter errors, pause, screenshot, and ping capability
+contracts), `acceptance_contract.json` (checks/coverage and `wait_*`), and
+`agent_query_contract.json` (`sim.find` / `sim.inspect` / `sim.hit_test` /
+`sim.query_geometry`). Tree assertions are the primary gate.
 
 The `flybirds_restart_regression` action in `flybirds.json` only scores 1
 through the live tree and the touch closed loop, then verifies that reopening

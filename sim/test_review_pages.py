@@ -1,11 +1,13 @@
 """Regressions for false-success cases in simulator review tooling."""
+import hashlib
 import importlib.util
+import json
 import os
 import socket
 import tempfile
 from pathlib import Path
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
@@ -113,6 +115,139 @@ class ReviewPagesTest(unittest.TestCase):
         runner = FakePageRunner(travel, **kwargs)
         self.addCleanup(runner.dir.cleanup)
         return runner
+
+    def test_build_context_requires_matching_artifact_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / 'build'
+            build.mkdir()
+            artifact = build / 'microtech_sim'
+            artifact.write_bytes(b'binary')
+            shots = Path(tmp) / 'shots'
+            shots.mkdir()
+            context = {
+                'artifact': str(artifact),
+                'artifact_sha256': hashlib.sha256(b'binary').hexdigest(),
+            }
+            (shots / 'build-context.json').write_text(
+                json.dumps(context), encoding='utf-8')
+            self.assertEqual(review._load_build_context(str(shots), str(build)),
+                             context)
+            context['artifact_sha256'] = '0' * 64
+            (shots / 'build-context.json').write_text(
+                json.dumps(context), encoding='utf-8')
+            self.assertIsNone(review._load_build_context(str(shots),
+                                                          str(build)))
+
+    def test_build_context_can_come_from_build_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / 'build'
+            build.mkdir()
+            artifact = build / 'microtech_sim'
+            artifact.write_bytes(b'binary')
+            now = hashlib.sha256(b'binary').hexdigest()
+            context = {'artifact': str(artifact), 'artifact_sha256': now}
+            (build / 'build-context.json').write_text(
+                json.dumps(context), encoding='utf-8')
+            self.assertEqual(
+                review._load_build_context(str(Path(tmp) / 'shots'),
+                                           str(build)),
+                context)
+
+    def test_build_context_explicit_path_overrides_shots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / 'build'
+            build.mkdir()
+            artifact = build / 'microtech_sim'
+            artifact.write_bytes(b'binary')
+            context = {
+                'artifact': str(artifact),
+                'artifact_sha256': hashlib.sha256(b'binary').hexdigest(),
+            }
+            explicit = Path(tmp) / 'explicit.json'
+            explicit.write_text(json.dumps(context), encoding='utf-8')
+            self.assertEqual(
+                review._load_build_context(str(Path(tmp) / 'shots'),
+                                           str(build), str(explicit)),
+                context)
+
+    def test_explicit_context_can_describe_another_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / 'review-build'
+            build.mkdir()
+            (build / 'microtech_sim').write_bytes(b'review-binary')
+            other = Path(tmp) / 'other-build'
+            other.mkdir()
+            artifact = other / 'microtech_sim'
+            artifact.write_bytes(b'other-binary')
+            context = {
+                'artifact': str(artifact),
+                'artifact_sha256': hashlib.sha256(b'other-binary').hexdigest(),
+            }
+            explicit = Path(tmp) / 'explicit.json'
+            explicit.write_text(json.dumps(context), encoding='utf-8')
+            self.assertEqual(
+                review._load_build_context(str(Path(tmp) / 'shots'),
+                                           str(build), str(explicit)),
+                context)
+
+    def test_context_ci_error_requires_ci_driver(self):
+        self.assertIsNone(review._context_ci_error({'ci': True}))
+        self.assertIn('--ci', review._context_ci_error({'ci': False}))
+        self.assertIn('--ci', review._context_ci_error({}))
+
+    def test_context_process_error_checks_live_binary(self):
+        process_path = '/proc/%d/exe' % os.getpid()
+        if not os.path.exists(process_path):
+            self.skipTest('procfs is unavailable')
+        digest = review._sha256_file(process_path)
+        self.assertIsNone(review._context_process_error(
+            {'artifact_sha256': digest}, {'pid': os.getpid()}))
+        self.assertIn('binary mismatch', review._context_process_error(
+            {'artifact_sha256': '0' * 64}, {'pid': os.getpid()}))
+
+    def test_context_process_error_fails_closed_when_binary_is_unreadable(self):
+        with patch.object(review.os.path, 'exists', return_value=True), \
+                patch.object(review, '_sha256_file',
+                             side_effect=OSError('permission denied')):
+            error = review._context_process_error(
+                {'artifact_sha256': '0' * 64}, {'pid': 123})
+        self.assertIn('cannot read simulator binary', error)
+
+    def test_build_context_can_be_derived_from_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / 'build'
+            build.mkdir()
+            artifact = build / 'microtech_sim'
+            artifact.write_bytes(b'binary')
+            (build / 'mt_product_profile.h').write_text(
+                '#define MT_PRODUCT_NAME "s3_reference"\n'
+                '#define MT_PRODUCT_DEVICE_PLATFORM "esp32s3"\n'
+                '#define MT_PRODUCT_DEVICE_PANEL "368x448"\n',
+                encoding='utf-8')
+            config = build / 'config'
+            config.mkdir()
+            (config / 'sdkconfig.h').write_text(
+                '#define CONFIG_IDF_TARGET "esp32s3"\n', encoding='utf-8')
+            context = review._write_build_context(build)
+            self.assertEqual(context['product'], 's3_reference')
+            self.assertEqual(context['target'], 'esp32s3')
+            self.assertEqual(context['panel'], {'width': 368, 'height': 448})
+            self.assertTrue((build / 'build-context.json').is_file())
+            self.assertEqual(context['artifact_sha256'],
+                             hashlib.sha256(b'binary').hexdigest())
+
+    def test_context_ping_checks_product_target_and_panel(self):
+        context = {'product': 's3_reference', 'target': 'esp32s3',
+                   'panel': {'width': 368, 'height': 448}}
+        ping = {'product': 's3_reference', 'target': 'esp32-s3',
+                'panel': {'width': 368, 'height': 448}}
+        self.assertIsNone(review._context_ping_error(context, ping))
+        self.assertIn('product', review._context_ping_error(
+            context, dict(ping, product='p4_reference')))
+        self.assertIn('target', review._context_ping_error(
+            context, dict(ping, target='esp32p4')))
+        self.assertIn('panel', review._context_ping_error(
+            context, dict(ping, panel={'width': 320, 'height': 480})))
 
     def test_viewport_comes_from_ping(self):
         self.assertEqual(

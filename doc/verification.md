@@ -85,4 +85,24 @@ Do not re-run a gate when the artifact under test did not change; validating a f
 
 ## Device Faults
 
-Use only the logs the user currently provides, and check in order: reset reason, panic backtrace, heap headroom, task WDT, boot placement, app state transitions. Built-in UI host regression uses `sim/ci/run_ci.sh`.
+Use the logs the user currently provides first, then the device commands when a
+board is connected:
+
+```sh
+python3 tools/agent/mt.py device status
+python3 tools/agent/mt.py device logs --snapshot --seconds 10
+python3 tools/agent/mt.py device crash
+```
+
+Check in order: reset reason, boot id, panic backtrace, heap headroom, task WDT,
+boot placement, app state transitions. The boot banner is implemented in
+`main/app_main.c`; build coredump firmware explicitly with
+`mt.py build idf --coredump` (the optional `sdkconfig.coredump.defaults`
+overlay, not the baseline; the generated config stays in
+`build/sdkconfig.coredump`) and `device crash` requires the flash coredump
+partition to contain a dump. A plain build uses the repository `sdkconfig`; if
+that local file still contains `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y` from an
+older manual build, remove the setting before diagnosing the default build.
+Hardware checks are not
+part of the default verification tier; run them only when the user asks for
+acceptance or a hardware diagnosis.

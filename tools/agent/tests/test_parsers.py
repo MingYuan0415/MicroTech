@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
+import io
 import sys
 import tempfile
 import time
 import unittest
 import xml.etree.ElementTree as ET
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -78,6 +81,11 @@ class BuildParserTest(unittest.TestCase):
         self.assertLess(max(len(line) for line in lines), 5000)
         self.assertIn("see log", "\n".join(lines))
 
+    def test_build_idf_accepts_coredump_overlay(self):
+        args = mt.build_parser().parse_args(
+            ["build", "idf", "--coredump"])
+        self.assertTrue(args.coredump)
+
 
 class SimBuildGateTest(unittest.TestCase):
     def test_failure_stops_after_the_failing_configuration(self):
@@ -142,6 +150,16 @@ class TestResultTest(unittest.TestCase):
 
 
 class OutputContractTest(unittest.TestCase):
+    def test_log_body_strips_short_monitor_header_without_eating_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'monitor.log'
+            path.write_text(
+                '# command: monitor\n# cwd: /repo\n\nFIRST SERIAL LINE\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(mt._read_body(path).splitlines()[0],
+                             'FIRST SERIAL LINE')
+
     def test_cap_lines_is_bounded(self):
         lines = [f"line {index}" for index in range(100)]
         capped = mt._cap_lines(lines)
@@ -171,6 +189,12 @@ class OutputContractTest(unittest.TestCase):
                                    Path(tmp) / "ui.log")
             self.assertTrue(lines[0].startswith("[PASS] ui 4 states"))
             self.assertIn("snapshots=2", lines[0])
+            report.write_text(
+                '{"checked": 4, "snapshots": 2, "failures": [],'
+                ' "build_context_error": "missing"}', encoding="utf-8")
+            lines = mt._ui_summary(0, 0.1, report, Path(tmp) / "shots",
+                                   Path(tmp) / "ui.log")
+            self.assertTrue(lines[0].startswith("[FAIL] ui"))
 
     def test_run_timeout_returns_124_and_keeps_partial_log(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,6 +207,50 @@ class OutputContractTest(unittest.TestCase):
             )
             self.assertEqual(rc, 124)
             self.assertIn("partial", mt._read_log(path))
+
+
+class ErrorClassifierTest(unittest.TestCase):
+    def test_compile_link_and_cmake_categories(self):
+        self.assertEqual(mt._classify_build_error(GCC_ERROR), "compile")
+        self.assertEqual(mt._classify_build_error(LINK_ERROR), "link")
+        self.assertEqual(
+            mt._classify_build_error("CMake Error at CMakeLists.txt:1:"),
+            "cmake")
+
+    def test_ninja_error_is_not_classified_as_compile(self):
+        self.assertEqual(
+            mt._classify_build_error("ninja: error: build stopped"), "ninja")
+
+    def test_unknown_error_is_explicit(self):
+        self.assertEqual(mt._classify_build_error("something odd"), "unknown")
+
+
+class InspectCommandTest(unittest.TestCase):
+    def test_inspect_reports_category_and_first_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "build.log"
+            log.write_text(GCC_ERROR, encoding="utf-8")
+            output = io.StringIO()
+            with mock.patch.object(mt, "LOG_ROOT", Path(tmp)), \
+                    redirect_stdout(output):
+                rc = mt._cmd_inspect(argparse.Namespace(
+                    log=str(log), grep=None, context=0, json=False))
+        self.assertEqual(rc, 0)
+        self.assertIn("category: compile", output.getvalue())
+        self.assertIn("demo.c:42:5: error:", output.getvalue())
+
+    def test_inspect_grep_keeps_diagnostic_context(self):
+        log_text = "In file included from demo.h:1\ndemo.c:42:5: error: bad\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "build.log"
+            log.write_text(log_text, encoding="utf-8")
+            output = io.StringIO()
+            with mock.patch.object(mt, "LOG_ROOT", Path(tmp)), \
+                    redirect_stdout(output):
+                rc = mt._cmd_inspect(argparse.Namespace(
+                    log=str(log), grep="error:", context=0, json=False))
+        self.assertEqual(rc, 0)
+        self.assertIn("In file included from demo.h:1", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ Load `.agents/skills/` on demand; do not preload everything:
 | Press feedback, transitions, gestures and embedded motion budgets | `motion-interaction` |
 | Task clarity, labels, errors, navigation and usability heuristics | `ux-heuristics` |
 | Board pins, buses, hardware constraints | `esp32` |
+| Real-device serial logs, boot identity, coredump, explicit flashing | `device-operations` |
 | Display pipeline ownership, draw submission, flush handshake | `lvgl-integration` |
 | Firmware code size, map/archive analysis, build size comparison | `codesize` |
 

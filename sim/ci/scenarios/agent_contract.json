@@ -121,6 +121,14 @@
    "method": "sim.ping"
   },
   {
+   "cmd": "assert_result",
+   "method": "sim.ping",
+   "expect": {
+    "agent_api_version": 2
+   },
+   "expect_present": ["product", "target", "panel", "music_backend"]
+  },
+  {
    "cmd": "call",
    "method": "sim.apps"
   },

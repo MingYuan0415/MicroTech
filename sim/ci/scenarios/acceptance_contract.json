@@ -1,0 +1,25 @@
+{
+  "name": "acceptance-contract",
+  "timeout_seconds": 60,
+  "checks": {
+    "clock_page": "clock page is reachable",
+    "clock_label": "clock title renders as a label"
+  },
+  "failure_evidence": {
+    "screenshot": true,
+    "tree": true,
+    "include_layers": true
+  },
+  "steps": [
+    {"cmd": "set_time", "epoch": 1775000000},
+    {"cmd": "set_power", "voltage": 3900, "pct": 66, "charging": false},
+    {"cmd": "step", "times": 15},
+    {"cmd": "wait_idle", "timeout_ms": 5000},
+    {"cmd": "navigate", "app": "clock"},
+    {"cmd": "wait_text", "text": "秒表", "timeout_ms": 5000,
+     "check": "clock_page"},
+    {"cmd": "wait_tree", "contains": {"type": "lv_label", "text": "秒表"},
+     "timeout_ms": 5000, "check": "clock_label"},
+    {"cmd": "screenshot", "name": "acceptance_clock.png"}
+  ]
+}

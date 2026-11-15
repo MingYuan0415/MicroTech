@@ -340,7 +340,8 @@ set(SIM_PORT_SOURCES
     "ports/sim_platform.c"
     "ports/sim_png.c"
     "agent/sim_agent_server.c"
-    "agent/sim_agent_tree.c")
+    "agent/sim_agent_tree.c"
+    "agent/sim_agent_query.c")
 
 if(SIM_MUSIC_BACKEND STREQUAL "real")
     list(APPEND SIM_PORT_SOURCES

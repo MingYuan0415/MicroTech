@@ -41,6 +41,9 @@ idf_component_register(
         app_theme
         esp_timer
         esp_hw_support
+        esp_system
+        esp_app_format
+        app_update
         freertos
         heap
         lwip

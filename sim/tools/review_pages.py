@@ -36,14 +36,15 @@ Spec schema (JSON):
 Usage:
   python3 sim/tools/review_pages.py --spec sim/ci/review/spec.json
       [--pages settings/wifi,...] [--shots DIR]
-      [--build build/sim] [--port 0|N] [--no-launch] [--keep-sim]
-      [--report out.json]
+      [--build build/sim] [--build-context PATH] [--port 0|N]
+      [--no-launch] [--keep-sim] [--report out.json]
 
 Exit non-zero on any lint or driver failure. Snapshots are always written to
 the selected shots directory and are never compared with a stored baseline.
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import shutil
@@ -56,6 +57,7 @@ import time
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 MT_ROOT = os.path.dirname(os.path.dirname(TOOLS_DIR))
 sys.path.insert(0, TOOLS_DIR)
+import build_context as build_context_lib  # noqa: E402
 from run_scenarios import Runner  # noqa: E402
 
 INTERACTIVE = {'lv_button', 'lv_switch', 'lv_slider', 'lv_roller',
@@ -731,6 +733,9 @@ def main():
     ap.add_argument('--spec', default='sim/ci/review/spec.json')
     ap.add_argument('--build', default='build/sim')
     ap.add_argument('--shots', default=None)
+    ap.add_argument('--build-context', default=None,
+                    help='explicit build-context.json; otherwise derived '
+                         'from --build when needed')
     ap.add_argument('--port', type=int, default=0,
                     help='agent port; 0 allocates an isolated loopback port')
     ap.add_argument('--pages', default=None, help='app/page,app/page filter')
@@ -795,15 +800,208 @@ def _viewport_from_ping(ping):
     return vw, vh
 
 
+def _write_build_context(build):
+    """Derive build-context.json from a local simulator build if possible."""
+    build = os.path.abspath(os.path.expanduser(str(build)))
+    artifact = os.path.join(build, 'microtech_sim')
+    if not os.path.isfile(artifact):
+        return None
+    try:
+        context = build_context_lib.collect(
+            build_context_lib.Path(build),
+            build_context_lib.Path(artifact),
+            'sim')
+        path = os.path.join(build, 'build-context.json')
+        with open(path, 'w', encoding='utf-8') as handle:
+            json.dump(context, handle, ensure_ascii=False, indent=1)
+            handle.write('\n')
+        return context
+    except (OSError, ValueError):
+        return None
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _context_artifact_path(context):
+    artifact = context.get('artifact', '')
+    if not isinstance(artifact, str) or not artifact:
+        return None
+    if not os.path.isabs(artifact):
+        artifact = os.path.join(MT_ROOT, artifact)
+    return os.path.abspath(artifact)
+
+
+def _context_process_error(context, ping):
+    """Check the live process binary when sim.ping exposes its pid.
+
+    On Linux /proc/<pid>/exe resolves the executable actually serving the
+    socket, so an external --no-launch simulator can be verified against the
+    reviewed artifact even when its build directory is not --build. Platforms
+    without /proc keep the product/target/panel contract.
+    """
+    pid_value = ping.get('pid')
+    if isinstance(pid_value, bool) or not isinstance(pid_value, (int, float)):
+        return None
+    try:
+        pid = int(pid_value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if pid != pid_value or pid <= 0:
+        return None
+    process_path = '/proc/%d/exe' % pid
+    if not os.path.exists(process_path):
+        return None
+    expected = str(context.get('artifact_sha256') or '')
+    if not expected:
+        return 'build-context has no artifact hash'
+    try:
+        actual = _sha256_file(process_path)
+    except OSError as error:
+        return 'cannot read simulator binary: %s' % error
+    if actual != expected:
+        return 'binary mismatch: context=%s sim=%s' % (
+            expected[:16], actual[:16])
+    return None
+
+
+def _context_ci_error(ping):
+    """Return why a live simulator cannot be driven through sim.step."""
+    if not isinstance(ping, dict) or not ping.get('ci'):
+        return 'simulator is not in --ci mode; start it with --ci'
+    return None
+
+
+def _context_ping_error(context, ping):
+    """Return an identity mismatch between the manifest and live sim.ping."""
+    if not isinstance(context, dict) or not isinstance(ping, dict):
+        return 'build-context or sim.ping is not an object'
+    product = str(context.get('product') or '')
+    live_product = str(ping.get('product') or '')
+    if not product or product != live_product:
+        return 'product mismatch: context=%r sim=%r' % (product, live_product)
+    target = str(context.get('target') or '').replace('-', '').lower()
+    live_target = str(ping.get('target') or '').replace('-', '').lower()
+    if not target or target != live_target:
+        return 'target mismatch: context=%r sim=%r' % (target, live_target)
+    panel = context.get('panel')
+    if not isinstance(panel, dict):
+        return 'build-context has no panel identity'
+    live_panel = ping.get('panel')
+    if not isinstance(live_panel, dict):
+        live_panel = {'width': ping.get('width'), 'height': ping.get('height')}
+    try:
+        expected = (int(panel.get('width')), int(panel.get('height')))
+        actual = (int(live_panel.get('width')), int(live_panel.get('height')))
+    except (TypeError, ValueError):
+        return 'panel identity is not numeric'
+    if expected != actual:
+        return 'panel mismatch: context=%dx%d sim=%dx%d' % (
+            expected[0], expected[1], actual[0], actual[1])
+    return _context_process_error(context, ping)
+
+
+def _load_build_context(shots, build, explicit=None):
+    candidates = []
+    if explicit:
+        candidates.append(os.path.abspath(
+            os.path.expanduser(str(explicit))))
+        require_build_artifact = False
+    else:
+        candidates.append(os.path.join(shots, 'build-context.json'))
+        build_context = os.path.join(build, 'build-context.json')
+        if os.path.abspath(build_context) != os.path.abspath(candidates[0]):
+            candidates.append(build_context)
+        require_build_artifact = True
+    for context_path in candidates:
+        if not os.path.isfile(context_path):
+            continue
+        try:
+            with open(context_path, encoding='utf-8') as handle:
+                context = json.load(handle)
+            if not isinstance(context, dict):
+                continue
+            artifact = _context_artifact_path(context)
+            if artifact is None or not os.path.isfile(artifact):
+                continue
+            if require_build_artifact:
+                expected = os.path.abspath(os.path.join(build, 'microtech_sim'))
+                if artifact != expected:
+                    continue
+            if context.get('artifact_sha256') != _sha256_file(artifact):
+                continue
+            return context
+        except (OSError, ValueError, TypeError):
+            continue
+    return None
+
+
+def _report_review(args, checked, snapshots, hardware_only, failures,
+                   vw, vh, build_context, build_context_error):
+    print('ui-review: %d states checked, %d snapshots, %d failures'
+          % (checked, snapshots, len(failures)))
+    print('  hardware-only=%d' % len(hardware_only))
+    for failure in failures:
+        print('   -', failure)
+    if args.report:
+        with open(args.report, 'w') as handle:
+            json.dump({
+                'checked': checked,
+                'snapshots': snapshots,
+                'hardware_only': hardware_only,
+                'failures': failures,
+                'shots': os.path.abspath(args.shots),
+                'viewport': {'w': vw, 'h': vh},
+                'build_context': build_context,
+                'build_context_error': build_context_error,
+            }, handle, indent=1)
+    return 1 if failures else 0
+
+
 def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
     runner.connect()
-    vw, vh = _viewport_from_ping(runner.call('sim.ping'))
+    ping = runner.call('sim.ping')
+    vw, vh = _viewport_from_ping(ping)
     os.makedirs(args.shots, exist_ok=True)
 
     failures = []
     checked = 0
     snapshots = 0
     hardware_only = []
+    explicit_context = getattr(args, 'build_context', None)
+    build_context = _load_build_context(args.shots, args.build,
+                                        explicit_context)
+    if build_context is None and not explicit_context:
+        # `--no-launch` and direct script use may not have a pre-written
+        # manifest; derive one from the selected build instead of rejecting a
+        # documented command just because mt.py did not create it.
+        build_context = _write_build_context(args.build)
+    build_context_error = None
+    if build_context is None:
+        build_context_error = (
+            'build-context.json is missing or does not describe '
+            'the reviewed simulator binary')
+    else:
+        identity_error = _context_ping_error(build_context, ping)
+        if identity_error:
+            build_context_error = 'build-context identity: %s' % identity_error
+    if build_context_error:
+        failures.append('build-context: %s' % build_context_error)
+    ci_error = _context_ci_error(ping)
+    if ci_error:
+        failures.append('driver: %s' % ci_error)
+    # Resolve the identity contract before driving pages. Running the whole
+    # state matrix first only to report a missing or mismatched manifest hides
+    # the real problem behind dozens of secondary driver failures.
+    if failures:
+        sys.exit(_report_review(
+            args, checked, snapshots, hardware_only, failures,
+            vw, vh, build_context, build_context_error))
     page_index = 0
     for page in spec['pages']:
         key = '%s/%s' % (page['app'], page.get('page', 'root'))
@@ -896,22 +1094,9 @@ def _run_spec(runner, spec, args, proc, owns_sim=False, sd_dir=None):
             except Exception as exc:  # noqa: BLE001
                 failures.append('%s: driver error: %s' % (name, exc))
 
-    print('ui-review: %d states checked, %d snapshots, %d failures'
-          % (checked, snapshots, len(failures)))
-    print('  hardware-only=%d' % len(hardware_only))
-    for f in failures:
-        print('   -', f)
-    if args.report:
-        with open(args.report, 'w') as fh:
-            json.dump({
-                'checked': checked,
-                'snapshots': snapshots,
-                'hardware_only': hardware_only,
-                'failures': failures,
-                'shots': os.path.abspath(args.shots),
-                'viewport': {'w': vw, 'h': vh},
-            }, fh, indent=1)
-    sys.exit(1 if failures else 0)
+    sys.exit(_report_review(
+        args, checked, snapshots, hardware_only, failures,
+        vw, vh, build_context, build_context_error))
 
 
 if __name__ == '__main__':

@@ -77,6 +77,9 @@ if ! cmake --build "$BUILD" -- --quiet; then
     exit 1
 fi
 python3 "$ROOT/sim/ci/check_lv_conf.py" --mirror "$BUILD/gen_inc/sdkconfig.h"
+python3 "$ROOT/sim/tools/build_context.py" \
+    --build "$BUILD" --artifact "$BUILD/microtech_sim" \
+    --out "$LOG_DIR/build-context.json" >/dev/null
 flock -u 9
 
 RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mt-ci.XXXXXX")"
@@ -103,7 +106,7 @@ run_scenario() {
     nvs="$RUN_DIR/nvs_$name"
     sd="$RUN_DIR/sd_$name"
     data="$RUN_DIR/data_$name"
-    shots="$RUN_DIR/shots_$name"
+    shots="$LOG_DIR/snapshots_$name"
     log="$LOG_DIR/sim_$name.log"
     report="$LOG_DIR/$name.json"
     rm -rf "$nvs" "$sd" "$data" "$shots"
@@ -139,11 +142,9 @@ PY
     flock -u 8
     runner_args="--port $PORT --out-dir $shots --report $report"
     if ! python3 "$ROOT/sim/tools/run_scenarios.py" "$scenario" $runner_args; then
-        cp -r "$shots" "$LOG_DIR/snapshots_$name" 2>/dev/null || true
         echo "ERROR: scenario $name failed (logs: $LOG_DIR)"
         exit 1
     fi
-    cp -r "$shots" "$LOG_DIR/snapshots_$name" 2>/dev/null || true
     kill -9 "$SIM_PID" 2>/dev/null || true
     SIM_PID=""
 }
