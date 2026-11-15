@@ -299,6 +299,10 @@ bool host_lv_active_screen_snapshot(
  * @return true when visible; false otherwise.
  */
 bool host_lv_has_text(const char *text);
+/** @brief Set the first visible text area's text in the fake page. */
+bool host_lv_set_first_visible_textarea_text(const char *text);
+/** @brief Set one visible text area's text by visible index. */
+bool host_lv_set_visible_textarea_text(size_t index, const char *text);
 /** @brief Count visible labels whose text exactly matches the query. */
 size_t host_lv_visible_text_count(const char *text);
 /** @brief Check the explicit font bound to a visible exact-text label. */

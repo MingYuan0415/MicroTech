@@ -793,6 +793,17 @@ class Runner:
             self.call('sim.step', {'ms': int(step.get('settle_ms', 330))})
         elif cmd == 'touch':
             self.call('sim.touch', {k: step[k] for k in ('action', 'x', 'y')})
+        elif cmd == 'touch_pct':
+            x = int(round(float(step['x_pct']) * self.width / 100.0))
+            y = int(round(float(step['y_pct']) * self.height / 100.0))
+            self.call('sim.touch', {'action': step['action'], 'x': x, 'y': y})
+        elif cmd == 'touch_bottom':
+            if 'x_pct' in step:
+                x = int(round(float(step['x_pct']) * self.width / 100.0))
+            else:
+                x = int(step['x'])
+            y = self.height - int(step['y_from_bottom'])
+            self.call('sim.touch', {'action': step['action'], 'x': x, 'y': y})
         elif cmd == 'long_press':
             # A long press is a hold, not a click: LVGL reports LONG_PRESSED
             # once long_press_time (400 ms) elapses and still reports CLICKED on

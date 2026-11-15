@@ -184,6 +184,7 @@ static lifecycle_observation_t
 s_lifecycle_observations[LIFECYCLE_OBSERVATION_CAPACITY];
 static size_t s_lifecycle_observation_count;
 static first_frame_probe_t s_first_frame_probe;
+static lv_indev_read_cb_t s_original_touch_read_cb;
 
 static uint64_t _first_frame_next_sequence(void)
 {
@@ -1082,8 +1083,7 @@ static esp_err_t _query_system_gesture_on_ui(void *arg)
                 state->right_edge_found = true;
                 state->right_edge = object;
             }
-            if (object.visible &&
-                    (object.flags & LV_OBJ_FLAG_CLICKABLE) != 0U)
+            if (object.visible)
             {
                 ++state->visible_edge_count;
             }
@@ -1143,6 +1143,43 @@ static esp_err_t _back_gesture_init_on_ui(void *arg)
     (void)arg;
     return app_manager_back_gesture_init(lv_display_get_default(),
                                          host_lv_pointer_indev());
+}
+
+static lv_obj_t *s_modal_probe;
+
+static esp_err_t _create_modal_probe_on_ui(void *arg)
+{
+    (void)arg;
+    lv_obj_t *layer = lv_display_get_layer_top(lv_display_get_default());
+    if (layer == NULL)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    s_modal_probe = lv_obj_create(layer);
+    if (s_modal_probe == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    lv_obj_set_pos(s_modal_probe, 0, 0);
+    lv_obj_set_size(s_modal_probe,
+                    lv_display_get_horizontal_resolution(
+                        lv_display_get_default()),
+                    lv_display_get_vertical_resolution(
+                        lv_display_get_default()));
+    lv_obj_set_clickable(s_modal_probe, true);
+    lv_obj_set_user_flag(s_modal_probe, 1U, true);
+    return ESP_OK;
+}
+
+static esp_err_t _delete_modal_probe_on_ui(void *arg)
+{
+    (void)arg;
+    if (s_modal_probe != NULL)
+    {
+        lv_obj_delete(s_modal_probe);
+        s_modal_probe = NULL;
+    }
+    return ESP_OK;
 }
 
 static esp_err_t _switcher_init_on_ui(void *arg)
@@ -1874,6 +1911,7 @@ static void _initialize_stack(void)
                NULL, NULL, NULL, NULL) == ESP_OK);
     assert(app_manager_lifecycle_init() == ESP_OK);
     assert(app_manager_navigation_init() == ESP_OK);
+    s_original_touch_read_cb = lv_indev_get_read_cb(host_lv_pointer_indev());
     assert(app_manager_ui_call(_back_gesture_init_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(app_manager_ui_call(_switcher_init_on_ui, NULL,
@@ -3872,12 +3910,14 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
            ESP_OK);
     assert(app_manager_back_gesture_is_enabled());
     system_gesture_snapshot_t system = _system_gesture_snapshot();
-    /* Sys Layer holds the two gesture strips, the indicator, its arrow,
-     * the permanent task-switcher tree (header, title, count, clear
-     * button/label, content, empty-state group, memory footer) and the
-     * persistent snapshot-transition overlay. */
+    /* Sys Layer holds the two non-clickable gesture-edge availability markers,
+     * the indicator, its arrow, the permanent task-switcher tree (header,
+     * title, count, clear button/label, content, empty-state group, memory
+     * footer) and the persistent snapshot-transition overlay. */
     assert(system.object_count == 27U);
     assert(system.left_edge_found && system.right_edge_found);
+    assert((system.left_edge.flags & LV_OBJ_FLAG_CLICKABLE) == 0U);
+    assert((system.right_edge.flags & LV_OBJ_FLAG_CLICKABLE) == 0U);
     assert(system.indicator_found && system.arrow_found);
     assert(system.indicator.canvas);
     assert(system.indicator.canvas_color_format == LV_COLOR_FORMAT_A8);
@@ -3893,17 +3933,22 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     _assert_indicator_hidden();
 
     /* Home's root page remains non-interactive even when an App history target
-     * exists. */
+     * exists. A press at the edge must still reach the screen as an ordinary
+     * touch, not a gesture capture. */
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
     system = _system_gesture_snapshot();
     assert(system.visible_edge_count == 0U);
-    assert(!_touch(TOUCH_ACTION_PRESS, 0, 220));
-    assert(!_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    system = _system_gesture_snapshot();
+    assert(system.pointer_target_found);
+    assert(system.pointer_target.object != system.left_edge.object);
+    _assert_indicator_hidden();
+    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(!_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
     assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_MENU, NULL) ==
            ESP_OK);
@@ -3916,8 +3961,22 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
                                  HOME_SHORTCUTS_PAGE_ID));
     system = _system_gesture_snapshot();
     assert(system.visible_edge_count == 2U);
+
+    /* A modal scrim on the top layer (for example a system-surface sheet)
+     * must make the pass-through gate decline before it captures the press. */
+    assert(app_manager_ui_call(_create_modal_probe_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
     assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
-    assert(_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 220));
+    assert(app_page_is_actived(APP_MANAGER_ID_HOME,
+                               HOME_SHORTCUTS_PAGE_ID));
+    assert(app_manager_ui_call(_delete_modal_probe_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(!_system_gesture_snapshot().indicator_visible);
     assert(_touch(TOUCH_ACTION_MOVE, GESTURE_TRIGGER_DISTANCE, 220));
     assert(_system_gesture_snapshot().arrow_visible);
     assert(_touch(TOUCH_ACTION_RELEASE, GESTURE_TRIGGER_DISTANCE, 220));
@@ -3935,8 +3994,7 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
     system = _system_gesture_snapshot();
     assert(system.pointer_target_found);
-    assert(system.pointer_target.object == system.left_edge.object);
-    assert(system.indicator_visible);
+    assert(system.pointer_target.object != system.left_edge.object);
     assert(system.indicator.x == -GESTURE_CANVAS_WIDTH);
     assert(system.indicator.y == 148);
     assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
@@ -3944,13 +4002,21 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(system.indicator.image_opacity == 220);
     assert(system.indicator.canvas_flush_count == 1U);
     assert(system.indicator.invalidation_count == 1U);
+    _assert_indicator_hidden();
     const gesture_curve_snapshot_t left_curve =
         _gesture_curve_snapshot(system.indicator.object);
     _assert_left_gesture_curve(&left_curve);
     _assert_same_screen(&menu_screen, &system.active_screen);
-    assert(_touch(TOUCH_ACTION_MOVE, 28, 230));
+
+    /* A short horizontal wobble inside the edge is not a back gesture. */
+    assert(_touch(TOUCH_ACTION_MOVE, 28, 220));
+    assert(!_system_gesture_snapshot().indicator_visible);
+
+    /* Crossing the start distance takes over the press only now. */
+    assert(_touch(TOUCH_ACTION_MOVE, 33, 230));
     system = _system_gesture_snapshot();
-    assert(system.indicator.x == -31);
+    assert(system.indicator_visible);
+    assert(system.indicator.x == -26);
     assert(system.indicator.y == 148);
     assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
     assert(system.indicator.image_opacity == 220);
@@ -3974,31 +4040,33 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     _assert_same_screen(&menu_screen, &system.active_screen);
 
     assert(_touch(TOUCH_ACTION_PRESS, 0, 0));
+    assert(!_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 33, 10));
     system = _system_gesture_snapshot();
     assert(system.indicator_visible && system.indicator.y == 8);
-    assert(_touch(TOUCH_ACTION_MOVE, 33, 10));
-    assert(_system_gesture_snapshot().indicator.y == 8);
     assert(_touch(TOUCH_ACTION_RELEASE, 33, 10));
     _assert_indicator_hidden();
     assert(_touch(TOUCH_ACTION_PRESS, 0, 447));
+    assert(!_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 33, 437));
     system = _system_gesture_snapshot();
     assert(system.indicator_visible && system.indicator.y == 296);
-    assert(_touch(TOUCH_ACTION_MOVE, 33, 437));
-    assert(_system_gesture_snapshot().indicator.y == 296);
     assert(_touch(TOUCH_ACTION_RELEASE, 33, 437));
     _assert_indicator_hidden();
 
-    /* The 29 px left strip includes x=28 and excludes x=29. */
-    assert(!_touch(TOUCH_ACTION_PRESS, 29, 220));
-    assert(!_touch(TOUCH_ACTION_MOVE, 84, 220));
+    /* The 29 px left start region includes x=28 and excludes x=29. */
+    assert(_touch(TOUCH_ACTION_PRESS, 29, 220));
+    assert(!_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 84, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(!_touch(TOUCH_ACTION_RELEASE, 84, 220));
+    assert(_touch(TOUCH_ACTION_RELEASE, 84, 220));
     assert(_wait_for_active(APP_MANAGER_ID_MENU));
 
     assert(_touch(TOUCH_ACTION_PRESS, 28, 220));
     system = _system_gesture_snapshot();
     assert(system.pointer_target_found);
-    assert(system.pointer_target.object == system.left_edge.object);
+    assert(system.pointer_target.object != system.left_edge.object);
+    assert(!system.indicator_visible);
     assert(_touch(TOUCH_ACTION_MOVE, 83, 220));
     assert(_system_gesture_snapshot().arrow_visible);
     assert(_touch(TOUCH_ACTION_MOVE, 72, 220));
@@ -4013,8 +4081,7 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     lv_resource_counts_t resources_before = _lv_resource_counts();
     assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
     assert(_touch(TOUCH_ACTION_MOVE, GESTURE_DIRECTION_SLOP, 242));
-    assert(_system_gesture_snapshot().indicator_visible);
-    assert(!_system_gesture_snapshot().arrow_visible);
+    assert(!_system_gesture_snapshot().indicator_visible);
     assert(_touch(TOUCH_ACTION_MOVE, 54, 328));
     assert(_system_gesture_snapshot().indicator_visible);
     assert(!_system_gesture_snapshot().arrow_visible);
@@ -4093,10 +4160,10 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(app_manager_back_gesture_set_enabled(false) == ESP_OK);
     assert(!app_manager_back_gesture_is_enabled());
     assert(_system_gesture_snapshot().visible_edge_count == 0U);
-    assert(!_touch(TOUCH_ACTION_PRESS, 0, 220));
-    assert(!_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(!_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
 
     assert(app_manager_back_gesture_set_enabled(true) == ESP_OK);
@@ -4128,17 +4195,19 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     system = _system_gesture_snapshot();
     assert(system.visible_edge_count == 2U);
 
-    /* The 29 px right strip includes x=339 and excludes x=338. */
-    assert(!_touch(TOUCH_ACTION_PRESS, 338, 220));
-    assert(!_touch(TOUCH_ACTION_MOVE, 283, 220));
+    /* The 29 px right start region includes x=339 and excludes x=338. */
+    assert(_touch(TOUCH_ACTION_PRESS, 338, 220));
+    assert(!_system_gesture_snapshot().indicator_visible);
+    assert(_touch(TOUCH_ACTION_MOVE, 283, 220));
     assert(!_system_gesture_snapshot().arrow_visible);
-    assert(!_touch(TOUCH_ACTION_RELEASE, 283, 220));
+    assert(_touch(TOUCH_ACTION_RELEASE, 283, 220));
     assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
 
     assert(_touch(TOUCH_ACTION_PRESS, 339, 220));
     system = _system_gesture_snapshot();
     assert(system.pointer_target_found);
-    assert(system.pointer_target.object == system.right_edge.object);
+    assert(system.pointer_target.object != system.right_edge.object);
+    assert(!system.indicator_visible);
     assert(_touch(TOUCH_ACTION_MOVE, 284, 220));
     assert(_system_gesture_snapshot().arrow_visible);
     assert(_touch(TOUCH_ACTION_MOVE, 296, 220));
@@ -4151,7 +4220,7 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(_touch(TOUCH_ACTION_PRESS, 367, 220));
     system = _system_gesture_snapshot();
     assert(system.pointer_target_found);
-    assert(system.pointer_target.object == system.right_edge.object);
+    assert(system.pointer_target.object != system.right_edge.object);
     assert(system.indicator.x == 368);
     assert(system.indicator.y == 148);
     assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
@@ -4159,12 +4228,14 @@ static void MT_TEST_MAYBE_UNUSED _test_system_edge_back_gesture(void)
     assert(system.indicator.image_opacity == 220);
     assert(system.indicator.canvas_flush_count == 2U);
     assert(system.indicator.invalidation_count == 2U);
+    _assert_indicator_hidden();
     const gesture_curve_snapshot_t right_curve =
         _gesture_curve_snapshot(system.indicator.object);
     _assert_mirrored_gesture_curve(&left_curve, &right_curve);
-    assert(_touch(TOUCH_ACTION_MOVE, 339, 230));
+    assert(_touch(TOUCH_ACTION_MOVE, 338, 230));
     system = _system_gesture_snapshot();
-    assert(system.indicator.x == 335 && system.indicator.y == 148);
+    assert(system.indicator.visible);
+    assert(system.indicator.x == 334 && system.indicator.y == 148);
     assert(system.indicator.width == GESTURE_CANVAS_WIDTH);
     assert(system.indicator.image_opacity == 220);
     _assert_same_screen(&settings_screen, &system.active_screen);
@@ -5062,6 +5133,17 @@ static void MT_TEST_MAYBE_UNUSED _test_control_center_band_and_entering_toggle(v
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(!app_manager_control_center_is_visible());
 
+    /* An edge swipe over an open Control Center closes only that surface;
+     * it must not submit a page BACK behind the overlay. */
+    assert(app_manager_ui_call(_cc_show_settled_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    assert(app_manager_control_center_is_visible());
+    assert(_touch(TOUCH_ACTION_PRESS, 0, 220));
+    assert(_touch(TOUCH_ACTION_MOVE, 80, 220));
+    assert(_touch(TOUCH_ACTION_RELEASE, 80, 220));
+    assert(!app_manager_control_center_is_visible());
+    assert(_wait_for_active(APP_MANAGER_ID_WEATHER));
+
     assert(app_manager_ui_call(_control_center_deinit_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
@@ -5951,6 +6033,119 @@ static void _test_settings_sound_page_volume(void)
     assert(_wait_for_active(APP_MANAGER_ID_HOME));
 }
 
+static void _test_settings_wifi_credentials_page(void)
+{
+    assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_SETTINGS));
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS,
+                     "wifi-credentials") == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "wifi-credentials"));
+    host_lv_complete_generic_animations();
+
+    assert(_ui_has_text("连接网络"));
+    assert(!_ui_has_text("完成"));
+
+    /* Open networks hide the password row and expose the policy hint. */
+    _click_action("开放");
+    assert(_wait_for_text("开放网络，无需密码"));
+
+    /* The page submits a valid open-network target through the manager. */
+    assert(host_lv_set_first_visible_textarea_text("OpenNet"));
+    _click_action("连接");
+    assert(_wait_for_text("连接中…"));
+
+    /* Switching security during a pending flow cancels it instead of
+     * leaving the old operation behind. */
+    _click_action("加密");
+    assert(_wait_for_text("已取消连接"));
+    assert(_ui_has_text("密码"));
+
+    /* An empty SSID is rejected through the transient toast, and the page
+     * still owns its stable layout without a status row. */
+    _click_action("开放");
+    assert(_wait_for_text("开放网络，无需密码"));
+    assert(host_lv_set_first_visible_textarea_text(""));
+    _click_action("连接");
+    assert(_wait_for_text("请输入网络名称"));
+
+    /* A terminal success scrubs the password and returns to the Wi-Fi page. */
+    assert(host_lv_set_first_visible_textarea_text("OpenNet"));
+    _click_action("连接");
+    assert(_wait_for_text("连接中…"));
+    const connectivity_manager_operation_id_t success_operation =
+        host_connectivity_manager_current_operation();
+    assert(success_operation != 0U);
+    connectivity_manager_status_snapshot_t success_status =
+    {
+        .operation_id = success_operation,
+        .state = CONNECTIVITY_MANAGER_STATE_IP_READY,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_NONE,
+        .last_error = ESP_OK,
+        .available = true,
+        .radio_available = true,
+        .wifi_enabled = true,
+        .operation_complete = true,
+    };
+    assert(host_connectivity_manager_publish_status(&success_status) ==
+           ESP_OK);
+    assert(app_manager_ui_call(_step_lv_timers_on_ui, NULL,
+                               UI_TIMEOUT_MS) == ESP_OK);
+    for (unsigned attempt = 0U; attempt < 20U &&
+            !app_page_is_actived(APP_MANAGER_ID_SETTINGS, "root"); ++attempt)
+    {
+        host_lv_complete_generic_animations();
+        _sleep_one_ms();
+    }
+    assert(app_page_is_actived(APP_MANAGER_ID_SETTINGS, "root"));
+
+    /* Authentication failure restores the password field and keyboard. */
+    assert(_navigate(APP_MANAGER_NAV_OP_OPEN_PAGE, APP_MANAGER_ID_SETTINGS,
+                     "wifi-credentials") == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS,
+                                 "wifi-credentials"));
+    host_lv_complete_generic_animations();
+    assert(host_lv_set_visible_textarea_text(0U, "HomeNet"));
+    assert(host_lv_set_visible_textarea_text(1U, "password1"));
+    _click_action("连接");
+    assert(_wait_for_text("连接中…"));
+    const connectivity_manager_operation_id_t failed_operation =
+        host_connectivity_manager_current_operation();
+    assert(failed_operation != 0U);
+    connectivity_manager_status_snapshot_t failed_status =
+    {
+        .operation_id = failed_operation,
+        .state = CONNECTIVITY_MANAGER_STATE_OFFLINE,
+        .failure = CONNECTIVITY_MANAGER_FAILURE_AUTHENTICATION,
+        .last_error = -1,
+        .available = true,
+        .radio_available = true,
+        .wifi_enabled = true,
+        .operation_complete = true,
+    };
+    assert(host_connectivity_manager_publish_status(&failed_status) ==
+           ESP_OK);
+    assert(_wait_for_text_with_timers("密码错误，请重试"));
+    assert(_ui_has_text("密码"));
+
+    /* A missing terminal event leaves the page flow pending until its own
+     * timeout expires; it must report timeout and cancel the manager op. */
+    _click_action("连接");
+    assert(_wait_for_text("连接中…"));
+    const connectivity_manager_operation_id_t timeout_operation =
+        host_connectivity_manager_current_operation();
+    assert(timeout_operation != 0U);
+    assert(_wait_for_text_with_timers("连接超时"));
+    assert(host_connectivity_manager_call_count(
+               HOST_CONNECTIVITY_MANAGER_CALL_CANCEL) > 0U);
+
+    assert(_navigate(APP_MANAGER_NAV_OP_BACK, NULL, NULL) == ESP_OK);
+    assert(_wait_for_page_active(APP_MANAGER_ID_SETTINGS, "root"));
+    assert(_navigate(APP_MANAGER_NAV_OP_EXIT, APP_MANAGER_ID_SETTINGS, NULL) ==
+           ESP_OK);
+    assert(_wait_for_active(APP_MANAGER_ID_HOME));
+}
+
 int main(void)
 {
     _test_fake_vertical_scroll_bounds();
@@ -5998,6 +6193,7 @@ int main(void)
 #endif
     _test_standby_capability_ui();
     _test_settings_sound_page_volume();
+    _test_settings_wifi_credentials_page();
 #else
     assert(_navigate(APP_MANAGER_NAV_OP_RUN, APP_MANAGER_ID_HOME, NULL) ==
            ESP_OK);
@@ -6016,6 +6212,7 @@ int main(void)
 #endif
     _test_standby_capability_ui();
     _test_settings_sound_page_volume();
+    _test_settings_wifi_credentials_page();
 #endif
 
     assert(app_manager_back_gesture_shutdown_begin() == ESP_OK);
@@ -6023,6 +6220,8 @@ int main(void)
     assert(app_manager_lifecycle_shutdown_begin_and_wait() == ESP_OK);
     assert(app_manager_ui_call(_runtime_deinit_on_ui, NULL,
                                UI_TIMEOUT_MS) == ESP_OK);
+    assert(lv_indev_get_read_cb(host_lv_pointer_indev()) ==
+           s_original_touch_read_cb);
     assert(timer_service_deinit() == ESP_OK);
     assert(!app_manager_back_gesture_is_enabled());
     assert(_lv_resource_counts().screens == 0U);

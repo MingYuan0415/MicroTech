@@ -89,6 +89,30 @@
           ]
         },
         {
+          "name": "manual_entry",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "手动添加网络"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "网络名称"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [
+            "网络名称"
+          ],
+          "allow_disabled": []
+        },
+        {
           "name": "saved_profiles",
           "seed": [
             {
@@ -262,6 +286,1311 @@
           "allow_disabled": [
             "忘记网络"
           ]
+        }
+      ]
+    },
+    {
+      "app": "settings",
+      "page": "wifi-credentials",
+      "states": [
+        {
+          "name": "manual",
+          "seed": [],
+          "expect_visible": [
+            "连接网络",
+            "网络名称",
+            "安全类型",
+            "密码",
+            "连接",
+            "开放",
+            "加密",
+            "中"
+          ],
+          "single_line": [
+            "网络名称",
+            "安全类型",
+            "密码",
+            "连接"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "uppercase_input",
+          "seed": [
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x": 28,
+              "y_from_bottom": 66
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x": 28,
+              "y_from_bottom": 66
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x": 20,
+              "y_from_bottom": 154
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x": 20,
+              "y_from_bottom": 154
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "连接网络"
+          ],
+          "tree_assert": {
+            "contains": {
+              "text": "Q"
+            }
+          },
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "same_field_surface_hold",
+          "seed": [
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x": 28,
+              "y_from_bottom": 66
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x": 28,
+              "y_from_bottom": 66
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_pct",
+              "action": "down",
+              "x_pct": 50.0,
+              "y_pct": 26.5
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_pct",
+              "action": "up",
+              "x_pct": 50.0,
+              "y_pct": 26.5
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络"
+          ],
+          "tree_assert": {
+            "contains": {
+              "text": "Q"
+            }
+          },
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "k9_zero",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 88.5,
+              "y_from_bottom": 75
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 88.5,
+              "y_from_bottom": 75
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "吧0"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "zh_idle",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "网络名称",
+            "安全类型",
+            "密码",
+            "EN"
+          ],
+          "expect_absent": [
+            ">",
+            "完成"
+          ],
+          "single_line": [
+            "网络名称",
+            "安全类型",
+            "密码"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "language_switch",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "tap_text",
+              "text": "EN"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x": 1,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x": 1,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "EN"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "ca_alt",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 7.0,
+              "y_from_bottom": 89
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 7.0,
+              "y_from_bottom": 89
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "type": "lv_label",
+                "text": "擦"
+              }
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 8.0,
+              "y_from_bottom": 242
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 8.0,
+              "y_from_bottom": 242
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "type": "lv_label",
+                "text": "擦"
+              }
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "pinyin_rail_page",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "tap_text",
+              "text": "PQRS"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tap_text",
+              "text": "…"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "pao",
+            "pei"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "password_symbol_return",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "tap_text",
+              "text": "符"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 92.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 92.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 28.5,
+              "y_from_bottom": 26
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 28.5,
+              "y_from_bottom": 26
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 28.5,
+              "y_from_bottom": 26
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 28.5,
+              "y_from_bottom": 26
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 66.0,
+              "y_from_bottom": 26
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 66.0,
+              "y_from_bottom": 26
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": [],
+          "tree_assert": {
+            "contains": {
+              "type": "lv_keyboard",
+              "flags.visible": true,
+              "coords.h": 220
+            }
+          }
+        },
+        {
+          "name": "candidate_expand",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 46.5,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 94.0,
+              "y_from_bottom": 242
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 94.0,
+              "y_from_bottom": 242
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "下一页"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "number_page",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 28.4,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 28.4,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "type": "lv_keyboard",
+                "flags.visible": true,
+                "coords.h": 220
+              }
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "number_to_symbol",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 28.4,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 28.4,
+              "y_from_bottom": 188
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 28.4,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "type": "lv_keyboard",
+                "flags.visible": true
+              }
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 28.4,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            },
+            {
+              "cmd": "tree_assert",
+              "absent": {
+                "type": "lv_keyboard",
+                "flags.visible": true
+              }
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "（",
+            "《"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "invalid_pinyin_ignored",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "tap_text",
+              "text": "PQRS"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tap_text",
+              "text": "PQRS"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "啪"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "k9_long_press_digit",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "long_press_text",
+              "text": "PQRS",
+              "ms": 700
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "text": "7"
+              }
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "7"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "symbol_page",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 25.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 25.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "symbol_scroll",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 25.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 25.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "drag",
+              "x0": 160,
+              "y0": 400,
+              "x1": 160,
+              "y1": 280,
+              "steps": 12
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "@"
+          ],
+          "expect_absent": [
+            "中",
+            "完成"
+          ],
+          "single_line": [],
+          "allow_disabled": []
+        },
+        {
+          "name": "validation_error",
+          "animated": true,
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开放"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "连接"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "请输入网络名称"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [
+            "请输入网络名称"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "open_network",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "开放"
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            }
+          ],
+          "expect_visible": [
+            "开放网络，无需密码",
+            "开放"
+          ],
+          "expect_absent": [
+            "完成"
+          ],
+          "single_line": [
+            "开放网络，无需密码"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "cancel_pending",
+          "seed": [
+            {
+              "cmd": "touch",
+              "action": "down",
+              "x": 160,
+              "y": 150
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch",
+              "action": "up",
+              "x": 160,
+              "y": 150
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x": 20,
+              "y_from_bottom": 168
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x": 20,
+              "y_from_bottom": 168
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tap_text",
+              "text": "开放"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "连接"
+            },
+            {
+              "cmd": "tap_text",
+              "text": "加密"
+            }
+          ],
+          "expect_visible": [
+            "已取消连接",
+            "加密"
+          ],
+          "expect_absent": [
+            "连接中…",
+            "完成"
+          ],
+          "single_line": [
+            "已取消连接"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "pinyin_done",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 25.5,
+              "y_from_bottom": 128
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 25.5,
+              "y_from_bottom": 128
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 90.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 90.0,
+              "y_from_bottom": 22
+            },
+            {
+              "cmd": "step",
+              "ms": 990
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "text": "噶"
+              },
+              "absent": {
+                "text": "g"
+              }
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "密码"
+          ],
+          "expect_absent": [
+            "EN",
+            "中",
+            "完成"
+          ],
+          "single_line": [
+            "密码"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "punctuation_composition",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "中"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 25.5,
+              "y_from_bottom": 128
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 25.5,
+              "y_from_bottom": 128
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 8.0,
+              "y_from_bottom": 242
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 8.0,
+              "y_from_bottom": 242
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "down",
+              "x_pct": 7.0,
+              "y_from_bottom": 195
+            },
+            {
+              "cmd": "step",
+              "ms": 66
+            },
+            {
+              "cmd": "touch_bottom",
+              "action": "up",
+              "x_pct": 7.0,
+              "y_from_bottom": 195
+            },
+            {
+              "cmd": "step",
+              "ms": 330
+            },
+            {
+              "cmd": "tree_assert",
+              "contains": {
+                "text": "噶，"
+              },
+              "absent": {
+                "text": "g"
+              }
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 2000
+            }
+          ],
+          "expect_visible": [
+            "连接网络",
+            "噶，"
+          ],
+          "expect_absent": [
+            "g"
+          ],
+          "single_line": [],
+          "allow_disabled": []
         }
       ]
     },

@@ -91,6 +91,22 @@ typedef enum
     LV_INDEV_STATE_PRESSED,
 } lv_indev_state_t;
 
+/** @brief Minimal input sample consumed by a fake indev read callback. */
+typedef struct lv_indev_data_t
+{
+    lv_point_t point;
+    lv_indev_state_t state;
+    uint32_t timestamp;
+} lv_indev_data_t;
+
+/** @brief Fake input-device read callback. */
+typedef void (*lv_indev_read_cb_t)(lv_indev_t *indev, lv_indev_data_t *data);
+
+/** @brief Allocate memory through the fake LVGL allocator. */
+void *lv_malloc(size_t size);
+/** @brief Free memory through the fake LVGL allocator. */
+void lv_free(void *pointer);
+
 /** @brief Fake LVGL font object. */
 typedef struct lv_font_t
 {
@@ -107,6 +123,15 @@ typedef struct lv_style_t
 typedef uint32_t lv_color_t;
 typedef int32_t lv_event_code_t;
 typedef uint8_t lv_opa_t;
+typedef uint16_t lv_buttonmatrix_ctrl_t;
+#define LV_BUTTONMATRIX_CTRL_NO_REPEAT   0x0020U
+#define LV_BUTTONMATRIX_CTRL_CHECKED     0x0100U
+#define LV_BUTTONMATRIX_CTRL_CLICK_TRIG  0x0200U
+#define LV_BUTTONMATRIX_CTRL_POPOVER     0x0400U
+#define LV_BUTTONMATRIX_BUTTON_NONE      0xFFFFU
+#define LV_KEYBOARD_CTRL_BUTTON_FLAGS \
+    (LV_BUTTONMATRIX_CTRL_NO_REPEAT | LV_BUTTONMATRIX_CTRL_CLICK_TRIG | \
+     LV_BUTTONMATRIX_CTRL_CHECKED)
 typedef uint32_t lv_obj_flag_t;
 typedef uint32_t lv_part_t;
 typedef uint32_t lv_style_selector_t;
@@ -214,9 +239,14 @@ typedef int lv_text_align_t;
 #define LV_ALIGN_BOTTOM_RIGHT         6
 #define LV_ALIGN_CENTER               1
 #define LV_ALIGN_TOP_MID              3
+#define LV_ALIGN_LEFT_MID             4
+#define LV_ALIGN_RIGHT_MID            8
+#define LV_ALIGN_OUT_TOP_MID          5
 #define LV_ALIGN_BOTTOM_MID          7
 #define LV_ALIGN_BOTTOM_LEFT          4
 #define LV_ALIGN_OUT_BOTTOM_LEFT      5
+#define LV_ALIGN_OUT_LEFT_MID          17
+#define LV_ALIGN_OUT_RIGHT_MID         20
 #define LV_IMAGE_ALIGN_COVER          12
 #define LV_ANIM_OFF                   0
 #define LV_ANIM_ON                    1
@@ -244,6 +274,9 @@ typedef int lv_text_align_t;
 #define LV_EVENT_PRESS_LOST           10
 #define LV_EVENT_INDEV_RESET          11
 #define LV_EVENT_CANCEL               12
+#define LV_EVENT_FOCUSED              21
+#define LV_EVENT_READY                22
+#define LV_EVENT_SIZE_CHANGED         23
 #define LV_EVENT_DELETE               13
 #define LV_EVENT_SHORT_CLICKED        14
 #define LV_EVENT_LONG_PRESSED         15
@@ -298,12 +331,16 @@ typedef int lv_text_align_t;
 #define LV_PART_KNOB                  2
 #define LV_PART_SELECTED              3
 #define LV_PART_ITEMS                 4
+#define LV_PART_CURSOR                5
+#define LV_PART_TEXTAREA_PLACEHOLDER  6
+#define LV_PART_SCROLLBAR             7
 #define LV_SCROLLBAR_MODE_AUTO        0
 #define LV_SCROLLBAR_MODE_OFF         1
 #define LV_SIZE_CONTENT               (-1)
 
 #define LV_RADIUS_CIRCLE              32767
 #define LV_STATE_PRESSED              1
+#define LV_STATE_FOCUSED              (1U << 3)
 #define LV_STATE_CHECKED              (1U << 5)
 #define LV_STATE_DISABLED             (1U << 7)
 #define LV_TEXT_ALIGN_LEFT           2
@@ -324,12 +361,15 @@ typedef int lv_text_align_t;
 #define LV_SYMBOL_GPS       "gps"
 #define LV_SYMBOL_HOME      "home"
 #define LV_SYMBOL_IMAGE     "image"
+#define LV_SYMBOL_KEYBOARD  "keyboard"
 #define LV_SYMBOL_LEFT      "left"
+#define LV_SYMBOL_NEW_LINE  "newline"
 #define LV_SYMBOL_LIST      "list"
 #define LV_SYMBOL_LOOP      "loop"
 #define LV_SYMBOL_MUTE      "mute"
 #define LV_SYMBOL_OK        "ok"
 #define LV_SYMBOL_MINUS     "minus"
+#define LV_SYMBOL_PLUS      "plus"
 #define LV_SYMBOL_PAUSE     "pause"
 #define LV_SYMBOL_PLAY      "play"
 #define LV_SYMBOL_PREV      "previous"
@@ -470,6 +510,12 @@ lv_event_dsc_t *lv_obj_add_event_cb(lv_obj_t *object,
                                     lv_event_code_t code, void *user_data);
 /** @brief Remove one fake object event descriptor. */
 bool lv_obj_remove_event_dsc(lv_obj_t *object, lv_event_dsc_t *descriptor);
+/** @brief Remove all fake callbacks matching callback and user data. */
+uint32_t lv_obj_remove_event_cb_with_user_data(lv_obj_t *object,
+        lv_event_cb_t callback, void *user_data);
+/** @brief Remove all fake callbacks matching callback. */
+uint32_t lv_obj_remove_event_cb(lv_obj_t *object,
+                                lv_event_cb_t callback);
 /** @brief Add behavior flags to a fake object. */
 void lv_obj_add_flag(lv_obj_t *object, lv_obj_flag_t flags);
 /** @brief Remove behavior flags from a fake object. */
@@ -544,6 +590,8 @@ MT_FAKE_FLAG_IS(overflow_visible, LV_OBJ_FLAG_OVERFLOW_VISIBLE)
  * snapshot rebuild preserves the user's list position. Keep these out of the
  * inline no-op set so tests can observe the actual value. */
 void lv_obj_scroll_to_y(lv_obj_t *object, int32_t y, int anim);
+void lv_obj_scroll_to_view(lv_obj_t *object, int anim);
+void lv_obj_scroll_to_view_recursive(lv_obj_t *object, int anim);
 /** @brief Add state flags to a fake object. */
 void lv_obj_add_state(lv_obj_t *object, lv_state_t state);
 /** @brief Remove state flags from a fake object. */
@@ -642,6 +690,8 @@ lv_obj_t *lv_event_get_current_target_obj(lv_event_t *event);
 lv_indev_t *lv_event_get_indev(lv_event_t *event);
 /** @brief Return the fake event parameter. */
 void *lv_event_get_param(lv_event_t *event);
+/** @brief Stop dispatching the current fake event to later callbacks. */
+void lv_event_stop_processing(lv_event_t *event);
 
 /** @brief Return the input device currently dispatching an event. */
 lv_indev_t *lv_indev_active(void);
@@ -655,8 +705,14 @@ lv_event_dsc_t *lv_indev_add_event_cb(lv_indev_t *indev,
 uint32_t lv_indev_remove_event_cb_with_user_data(lv_indev_t *indev,
         lv_event_cb_t callback,
         void *user_data);
+/** @brief Set the fake input device read callback. */
+void lv_indev_set_read_cb(lv_indev_t *indev, lv_indev_read_cb_t read_cb);
+/** @brief Return the fake input device read callback. */
+lv_indev_read_cb_t lv_indev_get_read_cb(lv_indev_t *indev);
 /** @brief Return the fake pointer's current logical point. */
 void lv_indev_get_point(const lv_indev_t *indev, lv_point_t *point);
+/** @brief Hit-test a subtree like LVGL's public indev search. */
+lv_obj_t *lv_indev_search_obj(lv_obj_t *object, lv_point_t *point);
 /** @brief Return the fake pointer's latest movement vector. */
 void lv_indev_get_vect(const lv_indev_t *indev, lv_point_t *vector);
 /** @brief Return the fake pointer's active scroll object. */
@@ -926,6 +982,7 @@ HOST_LV_NOOP_3(lv_obj_set_style_pad_column, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_gap, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_left, lv_obj_t *, int32_t, int)
 HOST_LV_NOOP_3(lv_obj_set_style_pad_right, lv_obj_t *, int32_t, int)
+HOST_LV_NOOP_3(lv_obj_set_style_width, lv_obj_t *, int32_t, int)
 void lv_obj_set_style_pad_row(lv_obj_t *object, int32_t pad, int selector);
 void lv_obj_set_style_pad_top(lv_obj_t *object, int32_t pad, int selector);
 HOST_LV_NOOP_3(lv_obj_set_style_radius, lv_obj_t *, int32_t, int)
@@ -1043,6 +1100,91 @@ void lv_text_get_size(lv_point_t *size_res, const char *text,
                       int32_t line_space, int32_t max_width, int flag);
 #define LV_TEXT_FLAG_NONE             0
 #define LV_COORD_MAX                  32767
+
+/** @brief Fake pinyin dictionary entry used by app_ui_ime. */
+typedef struct lv_pinyin_dict_t
+{
+    const char *py;
+    const char *py_mb;
+} lv_pinyin_dict_t;
+
+/** @brief Fake keyboard modes used by app_ui_ime. */
+typedef enum lv_keyboard_mode_t
+{
+    LV_KEYBOARD_MODE_TEXT_LOWER = 0,
+    LV_KEYBOARD_MODE_TEXT_UPPER,
+    LV_KEYBOARD_MODE_SPECIAL,
+    LV_KEYBOARD_MODE_NUMBER,
+    LV_KEYBOARD_MODE_USER_1,
+    LV_KEYBOARD_MODE_USER_2,
+    LV_KEYBOARD_MODE_USER_3,
+    LV_KEYBOARD_MODE_USER_4,
+} lv_keyboard_mode_t;
+
+/** @brief Fake pinyin IME modes used by app_ui_ime. */
+typedef enum lv_ime_pinyin_mode_t
+{
+    LV_IME_PINYIN_MODE_K26 = 0,
+    LV_IME_PINYIN_MODE_K9,
+    LV_IME_PINYIN_MODE_K9_NUMBER,
+} lv_ime_pinyin_mode_t;
+
+#define LV_IME_PINYIN_CAND_TEXT_NUM 6
+
+#define LV_TEXTAREA_CURSOR_LAST (-1)
+/** @brief Create a fake text area. */
+lv_obj_t *lv_textarea_create(lv_obj_t *parent);
+/** @brief Replace a fake text area's text. */
+void lv_textarea_set_text(lv_obj_t *object, const char *text);
+/** @brief Append text to a fake text area. */
+void lv_textarea_add_text(lv_obj_t *object, const char *text);
+/** @brief Read a fake text area's text. */
+const char *lv_textarea_get_text(const lv_obj_t *object);
+/** @brief Set a fake text area's one-line mode. */
+void lv_textarea_set_one_line(lv_obj_t *object, bool enabled);
+/** @brief Set a fake text area's character limit. */
+void lv_textarea_set_max_length(lv_obj_t *object, uint32_t length);
+/** @brief Set a fake text area's password mode. */
+void lv_textarea_set_password_mode(lv_obj_t *object, bool enabled);
+/** @brief Set a fake text area's password reveal delay. */
+void lv_textarea_set_password_show_time(lv_obj_t *object, uint32_t time_ms);
+/** @brief Set a fake text area's placeholder. */
+void lv_textarea_set_placeholder_text(lv_obj_t *object, const char *text);
+/** @brief Set a fake text area's cursor position. */
+void lv_textarea_set_cursor_pos(lv_obj_t *object, int32_t position);
+/** @brief Read a fake text area's cursor position. */
+uint32_t lv_textarea_get_cursor_pos(const lv_obj_t *object);
+/** @brief Delete the character before the fake text area's cursor. */
+void lv_textarea_delete_char(lv_obj_t *object);
+void lv_textarea_cursor_left(lv_obj_t *object);
+void lv_textarea_cursor_right(lv_obj_t *object);
+/** @brief Create a fake keyboard. */
+lv_obj_t *lv_keyboard_create(lv_obj_t *parent);
+/** @brief Bind a fake keyboard to a text area. */
+void lv_keyboard_set_textarea(lv_obj_t *keyboard, lv_obj_t *textarea);
+/** @brief Set a fake keyboard's mode. */
+void lv_keyboard_set_mode(lv_obj_t *keyboard, lv_keyboard_mode_t mode);
+void lv_keyboard_set_map(lv_obj_t *keyboard, lv_keyboard_mode_t mode,
+                         const char *const map[],
+                         const lv_buttonmatrix_ctrl_t ctrl_map[]);
+/** @brief Read a fake keyboard's mode. */
+lv_keyboard_mode_t lv_keyboard_get_mode(const lv_obj_t *keyboard);
+/** @brief Fake default keyboard event callback used as a removal marker. */
+void lv_keyboard_def_event_cb(lv_event_t *event);
+const char *lv_buttonmatrix_get_button_text(const lv_obj_t *object,
+        uint32_t button_id);
+uint32_t lv_buttonmatrix_get_selected_button(const lv_obj_t *object);
+void lv_buttonmatrix_set_selected_button(lv_obj_t *object, uint32_t button_id);
+/** @brief Create a fake pinyin IME. */
+lv_obj_t *lv_ime_pinyin_create(lv_obj_t *parent);
+/** @brief Bind a fake pinyin IME to a keyboard. */
+void lv_ime_pinyin_set_keyboard(lv_obj_t *ime, lv_obj_t *keyboard);
+/** @brief Assign a fake pinyin dictionary. */
+void lv_ime_pinyin_set_dict(lv_obj_t *ime, lv_pinyin_dict_t *dict);
+/** @brief Set a fake pinyin IME mode. */
+void lv_ime_pinyin_set_mode(lv_obj_t *ime, lv_ime_pinyin_mode_t mode);
+/** @brief Return a fake pinyin candidate panel. */
+lv_obj_t *lv_ime_pinyin_get_cand_panel(lv_obj_t *ime);
 
 /** @brief Center a fake object. */
 static inline void lv_obj_center(lv_obj_t *object)

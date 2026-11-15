@@ -44,6 +44,7 @@ typedef enum
     HOST_LV_OBJECT_IMAGE,
     HOST_LV_OBJECT_SCREEN,
     HOST_LV_OBJECT_LAYER,
+    HOST_LV_OBJECT_TEXTAREA,
 } host_lv_object_kind_t;
 
 struct lv_event_dsc_t
@@ -65,6 +66,7 @@ struct lv_obj_t
     host_lv_object_kind_t kind;
     lv_obj_t *parent;
     char text[HOST_LV_TEXT_BYTES];
+    uint32_t text_cursor;
     int32_t slider_minimum;
     int32_t slider_maximum;
     int32_t slider_value;
@@ -123,6 +125,7 @@ struct lv_indev_t
     lv_point_t point;
     lv_indev_state_t state;
     lv_obj_t *active_object;
+    lv_indev_read_cb_t read_cb;
     bool sequence_active;
     bool wait_release;
     bool moved;
@@ -153,6 +156,7 @@ struct lv_event_t
     lv_obj_t *target;
     lv_indev_t *indev;
     void *param;
+    bool stop_processing;
 };
 
 typedef struct host_lv_transition
@@ -323,8 +327,12 @@ static lv_obj_t *_host_lv_allocate_object(host_lv_object_kind_t kind,
             object->z_order = ++s_z_order;
             if (kind == HOST_LV_OBJECT_BUTTON ||
                     kind == HOST_LV_OBJECT_SWITCH ||
-                    kind == HOST_LV_OBJECT_GENERIC)
+                    kind == HOST_LV_OBJECT_GENERIC ||
+                    kind == HOST_LV_OBJECT_SCREEN)
             {
+                /* LVGL's base object constructor starts clickable; screens
+                 * are clickable too and are the fallback pointer target when
+                 * no child widget owns the point. */
                 object->flags = LV_OBJ_FLAG_CLICKABLE;
             }
             object->flags |= LV_OBJ_FLAG_SCROLLABLE;
@@ -658,6 +666,12 @@ static lv_obj_t *_host_lv_find_pointer_target(const lv_point_t *point)
     if (target == NULL && s_active_screen != NULL)
     {
         target = _host_lv_find_pointer_target_in(s_active_screen, point);
+        if (target == NULL &&
+                (s_active_screen->flags & LV_OBJ_FLAG_CLICKABLE) != 0U &&
+                _host_lv_is_visible(s_active_screen))
+        {
+            target = s_active_screen;
+        }
     }
     return target;
 }
@@ -807,6 +821,10 @@ static bool _host_lv_emit_with_input(lv_obj_t *object, lv_event_code_t code,
             binding.callback(&event);
             s_event_indev = previous_indev;
             emitted = true;
+            if (event.stop_processing)
+            {
+                break;
+            }
         }
     }
     return emitted;
@@ -1066,6 +1084,7 @@ void host_lv_reset(void)
     memset(&s_initial_screen, 0, sizeof(s_initial_screen));
     s_initial_screen.live = true;
     s_initial_screen.kind = HOST_LV_OBJECT_SCREEN;
+    s_initial_screen.flags = LV_OBJ_FLAG_CLICKABLE;
     s_initial_screen.width = HOST_LV_HOR_RES;
     s_initial_screen.height = HOST_LV_VER_RES;
     s_initial_screen.opacity = LV_OPA_COVER;
@@ -1751,6 +1770,49 @@ bool lv_obj_remove_event_dsc(lv_obj_t *object, lv_event_dsc_t *descriptor)
     return false;
 }
 
+uint32_t lv_obj_remove_event_cb_with_user_data(lv_obj_t *object,
+        lv_event_cb_t callback, void *user_data)
+{
+    if (object == NULL || !object->live)
+    {
+        return 0U;
+    }
+    uint32_t removed = 0U;
+    for (size_t index = 0; index < HOST_LV_EVENT_CAPACITY; ++index)
+    {
+        lv_event_dsc_t *descriptor = &object->bindings[index];
+        if (descriptor->live && descriptor->callback == callback &&
+                descriptor->user_data == user_data)
+        {
+            memset(descriptor, 0, sizeof(*descriptor));
+            --object->binding_count;
+            ++removed;
+        }
+    }
+    return removed;
+}
+
+uint32_t lv_obj_remove_event_cb(lv_obj_t *object,
+                                lv_event_cb_t callback)
+{
+    if (object == NULL || !object->live)
+    {
+        return 0U;
+    }
+    uint32_t removed = 0U;
+    for (size_t index = 0; index < HOST_LV_EVENT_CAPACITY; ++index)
+    {
+        lv_event_dsc_t *descriptor = &object->bindings[index];
+        if (descriptor->live && descriptor->callback == callback)
+        {
+            memset(descriptor, 0, sizeof(*descriptor));
+            --object->binding_count;
+            ++removed;
+        }
+    }
+    return removed;
+}
+
 void lv_obj_add_flag(lv_obj_t *object, lv_obj_flag_t flags)
 {
     if (object != NULL && object->live)
@@ -2202,6 +2264,14 @@ void *lv_event_get_param(lv_event_t *event)
     return event == NULL ? NULL : event->param;
 }
 
+void lv_event_stop_processing(lv_event_t *event)
+{
+    if (event != NULL)
+    {
+        event->stop_processing = true;
+    }
+}
+
 lv_indev_t *lv_indev_active(void)
 {
     return s_event_indev;
@@ -2262,6 +2332,29 @@ uint32_t lv_indev_remove_event_cb_with_user_data(lv_indev_t *indev,
     return removed;
 }
 
+void *lv_malloc(size_t size)
+{
+    return malloc(size);
+}
+
+void lv_free(void *pointer)
+{
+    free(pointer);
+}
+
+void lv_indev_set_read_cb(lv_indev_t *indev, lv_indev_read_cb_t read_cb)
+{
+    if (indev == &s_pointer_indev)
+    {
+        indev->read_cb = read_cb;
+    }
+}
+
+lv_indev_read_cb_t lv_indev_get_read_cb(lv_indev_t *indev)
+{
+    return indev == &s_pointer_indev ? indev->read_cb : NULL;
+}
+
 void lv_indev_stop_processing(lv_indev_t *indev)
 {
     if (indev == &s_pointer_indev)
@@ -2281,6 +2374,15 @@ void lv_indev_get_point(const lv_indev_t *indev, lv_point_t *point)
         .x = 0,
         .y = 0,
     };
+}
+
+lv_obj_t *lv_indev_search_obj(lv_obj_t *object, lv_point_t *point)
+{
+    if (object == NULL || point == NULL)
+    {
+        return NULL;
+    }
+    return _host_lv_find_pointer_target_in(object, point);
 }
 
 void lv_indev_get_vect(const lv_indev_t *indev, lv_point_t *vector)
@@ -2547,8 +2649,14 @@ bool host_lv_object_scroll_snapshot(const lv_obj_t *object,
     return true;
 }
 
+static void _host_lv_feed_read_cb(lv_indev_state_t state, int32_t x,
+                                  int32_t y);
+
 void lv_indev_reset(lv_indev_t *indev, lv_obj_t *object)
 {
+    const bool was_active = indev == &s_pointer_indev &&
+                            s_pointer_indev.sequence_active;
+    const lv_point_t reset_point = s_pointer_indev.point;
     if (indev == &s_pointer_indev)
     {
         indev->scroll_object = NULL;
@@ -2572,7 +2680,16 @@ void lv_indev_reset(lv_indev_t *indev, lv_obj_t *object)
     {
         return;
     }
+    if (indev == &s_pointer_indev)
+    {
+        (void)_host_lv_dispatch_indev(indev, LV_EVENT_INDEV_RESET, object);
+    }
     _host_lv_reset_pointer_target(object);
+    if (was_active)
+    {
+        _host_lv_feed_read_cb(LV_INDEV_STATE_RELEASED, reset_point.x,
+                              reset_point.y);
+    }
 }
 
 void lv_indev_wait_release(lv_indev_t *indev)
@@ -3587,6 +3704,22 @@ bool host_lv_snapshot_allocation_call_at(
     return true;
 }
 
+static void _host_lv_feed_read_cb(lv_indev_state_t state, int32_t x,
+                                  int32_t y)
+{
+    if (s_pointer_indev.read_cb == NULL)
+    {
+        return;
+    }
+    lv_indev_data_t data =
+    {
+        .point = {.x = x, .y = y},
+        .state = state,
+        .timestamp = 0U,
+    };
+    s_pointer_indev.read_cb(&s_pointer_indev, &data);
+}
+
 bool host_lv_touch_press(int32_t x, int32_t y)
 {
     if (s_pointer_indev.sequence_active)
@@ -3635,6 +3768,7 @@ bool host_lv_touch_press_object(lv_obj_t *object, int32_t x, int32_t y)
     };
     s_pointer_indev.scroll_begin_sent = false;
     s_pointer_indev.last_point = s_pointer_indev.point;
+    _host_lv_feed_read_cb(LV_INDEV_STATE_PRESSED, x, y);
     (void)_host_lv_emit_with_input(object, LV_EVENT_PRESSED,
                                    &s_pointer_indev, NULL);
     return true;
@@ -3719,6 +3853,11 @@ bool host_lv_touch_move(int32_t x, int32_t y)
         .x = s_pointer_indev.point.x - s_pointer_indev.last_point.x,
         .y = s_pointer_indev.point.y - s_pointer_indev.last_point.y,
     };
+    _host_lv_feed_read_cb(LV_INDEV_STATE_PRESSED, x, y);
+    if (s_pointer_indev.wait_release)
+    {
+        return true;
+    }
     lv_obj_t *target = s_pointer_indev.active_object;
     if (target == NULL || !target->live)
     {
@@ -3768,12 +3907,23 @@ bool host_lv_touch_release(int32_t x, int32_t y)
         .x = x,
         .y = y,
     };
+    s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
+    _host_lv_feed_read_cb(LV_INDEV_STATE_RELEASED, x, y);
     lv_obj_t *target = s_pointer_indev.active_object;
     const bool wait_release = s_pointer_indev.wait_release;
     s_pointer_indev.sequence_active = false;
     s_pointer_indev.wait_release = false;
-    s_pointer_indev.state = LV_INDEV_STATE_RELEASED;
-    if (target == NULL || !target->live || wait_release)
+    if (wait_release)
+    {
+        if (target != NULL && target->live)
+        {
+            (void)_host_lv_emit_with_input(target, LV_EVENT_PRESS_LOST,
+                                           &s_pointer_indev, NULL);
+        }
+        s_pointer_indev.active_object = NULL;
+        return true;
+    }
+    if (target == NULL || !target->live)
     {
         s_pointer_indev.active_object = NULL;
         return true;
@@ -4467,6 +4617,32 @@ bool host_lv_click_back(void)
     return false;
 }
 
+bool host_lv_set_first_visible_textarea_text(const char *text)
+{
+    return host_lv_set_visible_textarea_text(0U, text);
+}
+
+bool host_lv_set_visible_textarea_text(size_t index, const char *text)
+{
+    size_t visible = 0U;
+    for (size_t object_index = 0U; object_index < HOST_LV_OBJECT_CAPACITY;
+            ++object_index)
+    {
+        lv_obj_t *object = &s_objects[object_index];
+        if (object->live && object->kind == HOST_LV_OBJECT_TEXTAREA &&
+                _host_lv_is_visible(object))
+        {
+            if (visible == index)
+            {
+                lv_textarea_set_text(object, text);
+                return true;
+            }
+            ++visible;
+        }
+    }
+    return false;
+}
+
 bool host_lv_has_text(const char *text)
 {
     if (text == NULL)
@@ -4821,4 +4997,235 @@ void host_lv_dump_labels(void)
             fprintf(stderr, "[dbg-label] %s\\n", s_objects[index].text);
         }
     }
+}
+
+lv_obj_t *lv_textarea_create(lv_obj_t *parent)
+{
+    lv_obj_t *object = lv_obj_create(parent);
+    if (object != NULL)
+    {
+        object->kind = HOST_LV_OBJECT_TEXTAREA;
+    }
+    return object;
+}
+
+void lv_textarea_set_text(lv_obj_t *object, const char *text)
+{
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    snprintf(object->text, sizeof(object->text), "%s", text != NULL ? text : "");
+    object->text_cursor = (uint32_t)strlen(object->text);
+}
+
+void lv_textarea_add_text(lv_obj_t *object, const char *text)
+{
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    const size_t used = strlen(object->text);
+    snprintf(object->text + used, sizeof(object->text) - used, "%s",
+             text != NULL ? text : "");
+    object->text_cursor = (uint32_t)strlen(object->text);
+}
+
+const char *lv_textarea_get_text(const lv_obj_t *object)
+{
+    return object != NULL && object->live ? object->text : "";
+}
+
+void lv_textarea_set_one_line(lv_obj_t *object, bool enabled)
+{
+    (void)object;
+    (void)enabled;
+}
+
+void lv_textarea_set_max_length(lv_obj_t *object, uint32_t length)
+{
+    (void)object;
+    (void)length;
+}
+
+void lv_textarea_set_password_mode(lv_obj_t *object, bool enabled)
+{
+    (void)object;
+    (void)enabled;
+}
+
+void lv_textarea_set_password_show_time(lv_obj_t *object, uint32_t time_ms)
+{
+    (void)object;
+    (void)time_ms;
+}
+
+void lv_textarea_set_placeholder_text(lv_obj_t *object, const char *text)
+{
+    (void)object;
+    (void)text;
+}
+
+void lv_textarea_set_cursor_pos(lv_obj_t *object, int32_t position)
+{
+    if (object == NULL || !object->live)
+    {
+        return;
+    }
+    const size_t length = strlen(object->text);
+    if (position < 0)
+    {
+        position = 0;
+    }
+    if ((size_t)position > length)
+    {
+        position = (int32_t)length;
+    }
+    object->text_cursor = (uint32_t)position;
+}
+
+uint32_t lv_textarea_get_cursor_pos(const lv_obj_t *object)
+{
+    return object != NULL && object->live ? object->text_cursor : 0U;
+}
+
+void lv_textarea_delete_char(lv_obj_t *object)
+{
+    if (object == NULL || !object->live || object->text_cursor == 0U)
+    {
+        return;
+    }
+    const size_t length = strlen(object->text);
+    const size_t cursor = object->text_cursor <= length ?
+                          object->text_cursor : length;
+    memmove(object->text + cursor - 1U, object->text + cursor,
+            length - cursor + 1U);
+    object->text_cursor = (uint32_t)(cursor - 1U);
+}
+
+void lv_textarea_cursor_left(lv_obj_t *object)
+{
+    if (object != NULL && object->live && object->text_cursor > 0U)
+    {
+        --object->text_cursor;
+    }
+}
+
+void lv_textarea_cursor_right(lv_obj_t *object)
+{
+    if (object != NULL && object->live &&
+            object->text_cursor < strlen(object->text))
+    {
+        ++object->text_cursor;
+    }
+}
+
+lv_obj_t *lv_keyboard_create(lv_obj_t *parent)
+{
+    return lv_obj_create(parent);
+}
+
+void lv_keyboard_set_textarea(lv_obj_t *keyboard, lv_obj_t *textarea)
+{
+    if (keyboard != NULL && keyboard->live)
+    {
+        keyboard->user_data = textarea;
+    }
+}
+
+void lv_keyboard_set_mode(lv_obj_t *keyboard, lv_keyboard_mode_t mode)
+{
+    (void)keyboard;
+    (void)mode;
+}
+
+void lv_keyboard_set_map(lv_obj_t *keyboard, lv_keyboard_mode_t mode,
+                         const char *const map[],
+                         const lv_buttonmatrix_ctrl_t ctrl_map[])
+{
+    (void)keyboard;
+    (void)mode;
+    (void)map;
+    (void)ctrl_map;
+}
+
+lv_keyboard_mode_t lv_keyboard_get_mode(const lv_obj_t *keyboard)
+{
+    (void)keyboard;
+    return LV_KEYBOARD_MODE_TEXT_LOWER;
+}
+
+void lv_keyboard_def_event_cb(lv_event_t *event)
+{
+    (void)event;
+}
+
+const char *lv_buttonmatrix_get_button_text(const lv_obj_t *object,
+        uint32_t button_id)
+{
+    (void)object;
+    (void)button_id;
+    return NULL;
+}
+
+uint32_t lv_buttonmatrix_get_selected_button(const lv_obj_t *object)
+{
+    (void)object;
+    return LV_BUTTONMATRIX_BUTTON_NONE;
+}
+
+void lv_buttonmatrix_set_selected_button(lv_obj_t *object, uint32_t button_id)
+{
+    (void)object;
+    (void)button_id;
+}
+
+lv_obj_t *lv_ime_pinyin_create(lv_obj_t *parent)
+{
+    return lv_obj_create(parent);
+}
+
+void lv_ime_pinyin_set_keyboard(lv_obj_t *ime, lv_obj_t *keyboard)
+{
+    if (ime != NULL && ime->live)
+    {
+        ime->image_source = keyboard;
+    }
+}
+
+void lv_ime_pinyin_set_dict(lv_obj_t *ime, lv_pinyin_dict_t *dict)
+{
+    (void)ime;
+    (void)dict;
+}
+
+void lv_ime_pinyin_set_mode(lv_obj_t *ime, lv_ime_pinyin_mode_t mode)
+{
+    (void)ime;
+    (void)mode;
+}
+
+lv_obj_t *lv_ime_pinyin_get_cand_panel(lv_obj_t *ime)
+{
+    if (ime == NULL || !ime->live)
+    {
+        return NULL;
+    }
+    if (ime->user_data == NULL)
+    {
+        ime->user_data = lv_obj_create(ime);
+    }
+    return ime->user_data;
+}
+
+void lv_obj_scroll_to_view(lv_obj_t *object, int anim)
+{
+    (void)object;
+    (void)anim;
+}
+
+void lv_obj_scroll_to_view_recursive(lv_obj_t *object, int anim)
+{
+    (void)object;
+    (void)anim;
 }
