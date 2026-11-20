@@ -3158,6 +3158,8 @@ static void MT_TEST_MAYBE_UNUSED _test_other_real_app_screen_lifecycles(void)
         APP_MANAGER_ID_SETTINGS, "factory-reset",
         "确认恢复出厂设置", 0U, 0U, 0U, 0U);
     _click_action("确认恢复出厂设置");
+    assert(host_factory_reset_service_request_count() == 0U);
+    _click_action("恢复出厂设置");
     assert(host_factory_reset_service_request_count() == 1U);
     assert(_ui_has_text("恢复请求已受理，正在重启"));
     assert(app_manager_ui_call(

@@ -36,12 +36,35 @@
           "expect_visible": [
             "显示与电源",
             "亮度",
-            "自动熄屏",
+            "自动熄屏"
+          ],
+          "expect_absent": [
             "熄屏后待机"
           ],
           "single_line": [
             "拖动即时预览",
             "亮度"
+          ],
+          "allow_disabled": []
+        },
+        {
+          "name": "standby_available",
+          "seed": [
+            {
+              "cmd": "tap_text",
+              "text": "30 秒"
+            },
+            {
+              "cmd": "step",
+              "ms": 660
+            }
+          ],
+          "expect_visible": [
+            "自动熄屏",
+            "熄屏后待机"
+          ],
+          "single_line": [
+            "拖动即时预览"
           ],
           "allow_disabled": []
         }
@@ -77,16 +100,13 @@
             "Wi-Fi 开关",
             "状态",
             "网络",
-            "IP 地址",
-            "忘记网络"
+            "IP 地址"
           ],
           "single_line": [
             "关闭后保持离线",
-            "清除本机保存"
+            "尚未保存任何网络"
           ],
-          "allow_disabled": [
-            "忘记网络"
-          ]
+          "allow_disabled": []
         },
         {
           "name": "manual_entry",
@@ -1612,8 +1632,7 @@
             "蓝牙开关",
             "状态",
             "详情",
-            "配对手机",
-            "解除绑定"
+            "配对手机"
           ],
           "single_line": [
             "关闭后暂停配对",
