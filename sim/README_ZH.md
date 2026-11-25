@@ -470,6 +470,7 @@ product/target/panel 身份核对。外部 sim 必须以 `--ci` 启动，审查�
 `sim_http` 脚本层灌入 `sim/ci/fixtures/*.json`，验证 location→current/hourly/
 `daily` 解析与渲染，并打开 forecast 子页）、`pm_lifecycle.json`（息屏/唤醒）、
 `scroll_persistence_pm.json`（长设置页滚动后息屏再唤醒，验证滚动偏移和内容恢复）、
+`scroll_inertia.json`（长文件列表快速拖拽，验证松手后列表继续运动并最终停稳）、
 `recorder_playback_pm.json`（播放中息屏再唤醒：详情页保持「播放中/停止」，且停止后回到
 「播放」；息屏不得终止 recorder_service 的播放）、
 `agent_contract.json`（参数错误、暂停、截图和 ping capability 契约）、

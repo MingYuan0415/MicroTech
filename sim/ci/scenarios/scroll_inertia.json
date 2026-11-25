@@ -1,0 +1,69 @@
+{
+ "name": "scroll-inertia",
+ "steps": [
+  {
+   "cmd": "sd",
+   "action": "fixture"
+  },
+  {
+   "cmd": "files_root"
+  },
+  {
+   "cmd": "tap_text",
+   "text": "审查目录"
+  },
+  {
+   "cmd": "step",
+   "times": 60
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "text": "第 1 批 · 16 项"
+   }
+  },
+  {
+   "cmd": "drag",
+   "x0": 185,
+   "y0": 360,
+   "x1": 185,
+   "y1": 100,
+   "steps": 8,
+   "settle_ms": 33
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "scroll.y": {
+     "min": 20,
+     "max": 310
+    }
+   }
+  },
+  {
+   "cmd": "step",
+   "ms": 330
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "scroll.y": {
+     "min": 320
+    }
+   }
+  },
+  {
+   "cmd": "step",
+   "ms": 1188
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "text": "第 1 批 · 16 项"
+   }
+  }
+ ]
+}

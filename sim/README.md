@@ -637,6 +637,8 @@ fed `sim/ci/fixtures/*.json`, validating location→current/hourly/`daily` parsi
 and rendering, and opening the forecast subpage), `pm_lifecycle.json` (screen
 off/wake), `scroll_persistence_pm.json` (scroll a long settings page, screen
 off/wake, verify the same scroll offset and content are restored),
+`scroll_inertia.json` (fast drag on a long file list; verify the list continues
+to move after release and then settles),
 `recorder_playback_pm.json` (screen off then wake during playback:
 the detail page keeps "playing/stopped", and returns to "play" after stopping;
 screen off must not terminate recorder_service playback),

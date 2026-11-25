@@ -415,6 +415,14 @@ class ReviewPagesTest(unittest.TestCase):
                         'canvas row %d must show content row %d'
                         % (BOX_Y + row, row))
 
+    def test_very_long_page_is_stitched_beyond_old_stripe_cap(self):
+        """The dynamic stripe budget must not truncate a long page at 40."""
+        runner = self._fake_page(5000)
+        path, note = review._capture_full_page(runner, 'page', 368, VH)
+        with Image.open(path) as handle:
+            self.assertEqual(handle.size, (368, VH + 5000))
+        self.assertIn('page content 5384 px', note)
+
     def test_tail_shorter_than_one_scroll_step_stays_a_single_frame(self):
         """A tail below LVGL's drag limit is unreachable, so the faithful
         artifact is the plain frame, not a composite with a missing strip."""

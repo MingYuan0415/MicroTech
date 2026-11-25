@@ -359,21 +359,22 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
             return frame, 'full-page skipped: page top not reachable'
         remaining = anchored[2]
 
+    step = max(40, (box['h'] - 24) // 4)
+    if modal:
+        step = max(40, box['h'] - 2 * MODAL_EDGE_BAND)
+    stripe_limit = max(40, (remaining + step - 1) // step + 2)
+
     stripes = []
     y_off = 0
-    for index in range(40):
+    for index in range(stripe_limit):
         stripes.append((y_off, _shot('%s__%02d.png' % (name, index))))
         if remaining <= 0:
             break
-        # Over-drag on purpose: lv_obj_scroll_by_bounded clamps to the real
-        # bottom, while a hop under LVGL's 10 px scroll limit would be swallowed
-        # as a tap and leave the last few pixels uncaptured. A modal stripe is
-        # shorter so consecutive stripes overlap by the edge band that each one
-        # has to discard.
-        step = box['h'] - 24
-        if modal:
-            step = box['h'] - 2 * MODAL_EDGE_BAND
-        _scroll_owner_drag(runner, box, max(40, step))
+        # A quarter-page stripe keeps the momentum overshoot below one
+        # viewport; the dynamic limit lets very long pages still be stitched
+        # without silently truncating them at the old 40-stripe cap. A modal
+        # stripe is shorter so consecutive stripes overlap by its edge band.
+        _scroll_owner_drag(runner, box, step, vw, vh, modal)
         runner.call('sim.wait_idle', {'timeout_ms': 4000})
         fresh = _scroll_owner(_review_tree(runner), vw, vh,
                               allow_embedded=modal)
@@ -381,7 +382,8 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
             break
         remaining, y_off = fresh[2], fresh[1]
     else:
-        raise RuntimeError('full-page capture did not settle after 40 stripes')
+        raise RuntimeError('full-page capture did not settle after %d stripes'
+                           % stripe_limit)
     if remaining > MIN_REACHABLE_TRAVEL:
         # The stripe loop stopped with content still reachable; a shorter canvas
         # would silently drop it.
@@ -437,7 +439,7 @@ def _capture_full_page(runner, name, vw, vh, wait_idle=True):
                  % (box['h'] + y_off, box['h'], y_off))
 
 
-def _scroll_owner_drag(runner, box, distance):
+def _scroll_owner_drag(runner, box, distance, vw, vh, allow_embedded=False):
     """Drag the owner's content by `distance` panel pixels (positive scrolls up).
 
     The finger travels the long way inside the panel for the given direction:
@@ -449,6 +451,10 @@ def _scroll_owner_drag(runner, box, distance):
     368-wide page leaves `scroll.y` unchanged), and the left edge strip belongs
     to the edge-back gesture. Rows are inset from the box, so their horizontal
     middle is off any trailing switch or chevron.
+
+    Momentum continues after the finger is released. Step frames until the
+    owner offset is stable for two consecutive frames so full-page stitching
+    never samples a moving page.
     """
     x = box['x'] + box['w'] // 2
     if distance >= 0:
@@ -466,7 +472,20 @@ def _scroll_owner_drag(runner, box, distance):
                                   'y': start + (end - start) * i // moves})
         runner.call('sim.step', {'ms': 33})
     runner.call('sim.touch', {'action': 'up', 'x': x, 'y': end})
-    runner.call('sim.step', {'ms': 33 * 4})
+    previous = None
+    stable = 0
+    for _ in range(40):
+        runner.call('sim.step', {'ms': 33})
+        fresh = _scroll_owner(_review_tree(runner), vw, vh, allow_embedded)
+        offset = fresh[1] if fresh is not None else None
+        if offset == previous:
+            stable += 1
+        else:
+            stable = 0
+        previous = offset
+        if stable >= 2:
+            break
+    runner.call('sim.wait_idle', {'timeout_ms': 4000})
 
 
 def _scroll_to_top(runner, box, vw, vh, allow_embedded=False):
@@ -484,7 +503,8 @@ def _scroll_to_top(runner, box, vw, vh, allow_embedded=False):
             return None
         if fresh[1] <= 0:
             return fresh
-        _scroll_owner_drag(runner, box, -box['h'])
+        _scroll_owner_drag(runner, box, -box['h'], vw, vh,
+                           allow_embedded=allow_embedded)
         runner.call('sim.wait_idle', {'timeout_ms': 4000})
     return None
 
