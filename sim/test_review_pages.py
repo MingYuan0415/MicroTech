@@ -105,6 +105,24 @@ class FakePageRunner:
 
 
 class ReviewPagesTest(unittest.TestCase):
+    def test_filter_states_preserves_order(self):
+        states = [
+            {'name': 'first'},
+            {'name': 'second'},
+            {'name': 'third'},
+        ]
+        selected = review._filter_states(states, ['third', 'first'])
+        self.assertEqual([state['name'] for state in selected],
+                         ['first', 'third'])
+
+    def test_filter_states_empty_returns_all(self):
+        states = [{'name': 'first'}, {'name': 'second'}]
+        self.assertEqual(review._filter_states(states, []), states)
+
+    def test_filter_states_rejects_unknown(self):
+        with self.assertRaisesRegex(ValueError, 'unknown states: missing'):
+            review._filter_states([{'name': 'first'}], ['missing'])
+
     def test_default_port_allocator_returns_bindable_loopback_port(self):
         port = review._allocate_port()
         self.addCleanup(review._release_port_allocator)

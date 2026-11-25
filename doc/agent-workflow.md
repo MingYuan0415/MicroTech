@@ -22,6 +22,7 @@ python3 tools/agent/mt.py build apps
 python3 tools/agent/mt.py build sim
 python3 tools/agent/mt.py test apps
 python3 tools/agent/mt.py test integration
+python3 tools/agent/mt.py test integration --no-build
 python3 tools/agent/mt.py test weather-service --profile address
 python3 tools/agent/mt.py py configuration resources docs
 python3 tools/agent/mt.py py design-skills docs skill-tools
@@ -30,7 +31,10 @@ python3 tools/agent/mt.py git status
 python3 tools/agent/mt.py git diff
 python3 tools/agent/mt.py git diff --patch -- <paths>
 python3 tools/agent/mt.py sim --scenario agent_contract
+python3 tools/agent/mt.py sim --no-build --scenario all_apps
+python3 tools/agent/mt.py sim --jobs 4 --no-build
 python3 tools/agent/mt.py ui --pages settings/wifi
+python3 tools/agent/mt.py ui --pages settings/wifi --state scan_truncated --no-build
 python3 tools/agent/mt.py doctor --json
 python3 tools/agent/mt.py inspect --last
 python3 tools/agent/mt.py build idf --coredump
@@ -48,9 +52,24 @@ panel geometry from its product's board manifest. `build idf --coredump`
 optionally applies `sdkconfig.coredump.defaults` for crash capture; it is not
 part of the committed baseline and keeps its generated configuration in
 `build/sdkconfig.coredump` so a later plain build is unaffected. `test` builds
-first, then runs CTest.
+first, then runs CTest. `test --no-build` reuses the existing suite build and
+runs CTest only; it requires a prior `build` or `test` for the same suite and
+profile.
 `--profile none|address|thread` selects the sanitizer profile supported by that
 suite; each profile uses a separate build directory.
+
+`sim --no-build` reuses `build/sim` after verifying its configured product
+fixture, resources, config header, and `build-context.json`; use it for repeated
+scenario runs.
+Set `SIM_PRODUCT` when reusing a non-default product build. `sim --jobs N`
+runs up to eight scenarios concurrently and `sim --keep-going` continues after
+read-only assertion failures for diagnosis, stopping before the next
+side-effect step; with `--jobs`, a hard failure prevents queued
+scenarios from starting while already-running scenarios finish. These are
+development-loop options: the default `mt.py sim` still performs the full gate,
+and `mt.py build sim` remains the L3 acceptance command. `ui --state` restricts
+a page review to named states for targeted debugging; a full page review is
+still required before acceptance.
 
 ## Suites
 

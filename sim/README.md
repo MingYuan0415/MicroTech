@@ -73,8 +73,9 @@ fake and real music, `p4_reference` and `minimal` with fake music; any
 configuration failure fails the command. A successful gate writes
 `build/sim-gate/build-context.json` with each configuration's product, panel,
 and binary SHA-256. `sim/ci/run_ci.sh` writes the same manifest under its log
-directory for the exact binary that ran the scenarios; `mt.py ui` copies it into
-the snapshot directory.
+directory for the exact binary that ran the scenarios and copies it beside the
+artifact as `build/sim/build-context.json`; `mt.py ui` copies it into the
+snapshot directory.
 
 ## Daily Development (Recommended Entry)
 
@@ -96,7 +97,19 @@ gets an isolated port and `build/sim/instances/<port>/` state. Set
 `SIM_AGENT_PORT=N` to request a fixed port, or pass `--port N` to `simctl.py`
 when driving an automatically allocated session. When there is no graphical
 display environment, starting automatically falls back to headless residency.
-For CI regression and review snapshots, use `sh sim/ci/run_ci.sh [--scenario NAME]... [--log-dir DIR]`.
+For CI regression and review snapshots, use
+`sh sim/ci/run_ci.sh [--scenario NAME]... [--log-dir DIR] [--no-build] [--jobs N] [--keep-going]`.
+The script also accepts `--no-build` (reuse the verified `build/sim`), `--jobs N`
+(run up to eight scenarios concurrently; each scenario keeps its own sim,
+NVS/SD/data, port, and log), and `--keep-going` (continue after read-only
+assertion failures for diagnosis, stopping before a side-effect step). The
+default remains a serial, fail-fast run. With `--jobs`, a hard
+failure prevents queued scenarios from starting, while already-running
+scenarios finish; `mt.py sim --no-build` validates the cached build against
+`SIM_PRODUCT` (default `s3_reference`). `mt.py build sim` remains the mandatory
+build gate. Page review can use
+`mt.py ui --pages ... --state NAME --no-build` for targeted debugging; a full
+page review is still required before acceptance.
 Development sessions allocate distinct ports and per-instance state; CI runs
 allocate per-invocation ports and private NVS/SD/data/screenshot directories.
 Concurrent CI invocations serialize only their shared CMake/Ninja build. Page
@@ -497,6 +510,10 @@ while paused. A CI session stays resident until `sim.exit` or a signal.
 sim/ci/run_ci.sh                    # port preflight + check_lv_conf + build + staged parity + all scenarios
 sim/ci/run_ci.sh --scenario smoke_pages
                                     # one scenario; repeat --scenario for more
+sim/ci/run_ci.sh --no-build --scenario smoke_pages
+                                    # reuse the verified build/sim
+sim/ci/run_ci.sh --no-build --jobs 4
+                                    # run up to four scenarios concurrently
 SIM_PRODUCT=p4_reference sim/ci/run_ci.sh --scenario p4_smoke
                                     # P4 product-neutral smoke
 sim/ci/run_ci.sh build/sim          # build a custom simulator directory
@@ -507,6 +524,15 @@ snapshots under `DIR` (default `build/agent/sim/<timestamp>-<pid>`). The build
 step uses Ninja's quiet mode, so progress lines are omitted while diagnostics
 remain. `mt.py sim` wraps the same entry point and prints only scenario failures
 plus the log directory.
+
+Fast-loop options: `--no-build` reuses the verified `build/sim`; `--jobs N`
+runs up to eight scenarios concurrently; `--keep-going` continues after
+read-only assertion failures for diagnosis, stopping before a side-effect step.
+The default remains serial and fail-fast. With `--jobs`,
+a hard failure prevents queued scenarios from starting, while already-running
+scenarios finish. `mt.py sim --no-build` validates the cached `build/sim`
+against `SIM_PRODUCT` (default `s3_reference`); set `SIM_PRODUCT` to reuse a
+non-default product build.
 
 **Scenario screenshots are review artifacts**: screenshots are copied under
 `$LOG_DIR/snapshots_<scenario>/`; only tree and behavior assertions can fail a

@@ -61,7 +61,8 @@ python3 tools/agent/mt.py build sim
 `p4_reference`（fake 音乐）和 `minimal`（fake 音乐）；任一配置失败即返回失败。
 成功时写入 `build/sim-gate/build-context.json`，记录每个配置的 product、panel
 和二进制 SHA-256。`sim/ci/run_ci.sh` 在日志目录写入同一份 manifest，对应实际
-运行场景的二进制；`mt.py ui` 会把它复制到快照目录。
+运行场景的二进制，并将它复制到构建目录下的 `build-context.json`；`mt.py ui`
+会把它复制到快照目录。
 
 ## 日常开发（推荐入口）
 
@@ -78,10 +79,13 @@ python3 sim/dev.py
 `build/sim/...`）；如果端口已被占用，后续启动会自动分配独立端口，并使用
 `build/sim/instances/<port>/` 下的状态。可用 `SIM_AGENT_PORT=N` 请求固定端口；驱动自动分配的会话时，
 将该端口传给 `simctl.py` 的 `--port N`。无图形显示环境时启动自动转无头驻留。
-CI 回归与审查快照使用 `sh sim/ci/run_ci.sh [--scenario NAME]... [--log-dir DIR]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
-独立端口及 NVS/SD/数据/截图目录。并发 CI 只在共享 CMake/Ninja 构建阶段串行。页面审查默认分配独立端口和运行目录；
-仅在使用 `--no-launch` 有意连接现有会话，或需要固定端点时才显式传入 `--port`。联网会话使用宿主机真实 HTTP/HTTPS；
-离线无头会话使用 CI 时钟，不会发起天气请求。
+CI 回归与审查快照使用 `sh sim/ci/run_ci.sh [--scenario NAME]... [--log-dir DIR] [--no-build] [--jobs N] [--keep-going]`。开发会话使用不同端口和实例状态；每次 CI 执行也分配
+独立端口及 NVS/SD/数据/截图目录。`--no-build` 复用已验证的 `build/sim`；`--jobs N`
+最多并行 N 条场景；`--keep-going` 在只读断言失败后继续诊断，遇到下一个有副作用的步骤前停止。默认仍为串行、遇错停止；使用
+`--jobs` 时失败后不会再启动排队中的场景，但已运行的场景会完成。页面审查默认分配独立端口和运行目录；
+仅在使用 `--no-launch` 有意连接现有会话，或需要固定端点时才显式传入 `--port`；可用
+`mt.py ui --pages ... --state NAME --no-build` 做定向调试，完整页面审查仍是验收必需。联网会话使用宿主机真实 HTTP/HTTPS；
+离线无头会话使用 CI 时钟，不会发起天气请求。并发 CI 调用仍只在共享 CMake/Ninja 构建阶段串行。
 
 开发入口同时记录会话启动时的 `DISPLAY`、`WAYLAND_DISPLAY`、`XDG_RUNTIME_DIR` 和
 `SDL_VIDEODRIVER`。远程桌面重连或切换图形会话后再次启动时，如果旧 PID 已确认是本项目
@@ -380,6 +384,10 @@ touch/key 只写原子态。`pause` 返回前完成 worker/flush 栅栏；暂停
 sim/ci/run_ci.sh                    # 端口预检 + check_lv_conf + 构建 + staged parity + 全部场景
 sim/ci/run_ci.sh --scenario smoke_pages
                                     # 只跑一条场景；可重复传 --scenario
+sim/ci/run_ci.sh --no-build --scenario smoke_pages
+                                    # 复用已验证的 build/sim
+sim/ci/run_ci.sh --no-build --jobs 4
+                                    # 最多并行 4 条场景
 SIM_PRODUCT=p4_reference sim/ci/run_ci.sh --scenario p4_smoke
                                     # P4 产品无关冒烟
 sim/ci/run_ci.sh build/sim          # 构建自定义模拟器目录
@@ -388,6 +396,11 @@ sim/ci/run_ci.sh build/sim          # 构建自定义模拟器目录
 `--log-dir DIR` 把每条场景的模拟器日志、JSON 报告和审查快照保存在 `DIR`
 （默认 `build/agent/sim/<timestamp>-<pid>`）。构建使用 Ninja 静默模式，只省略进度行，
 诊断信息仍会保留。`mt.py sim` 封装同一入口，只打印失败场景与日志目录。
+
+快速循环选项：`--no-build` 复用已验证的 `build/sim`；`--jobs N` 最多并行 N 条场景；
+`--keep-going` 在只读断言失败后继续诊断，遇到下一个有副作用的步骤前停止。默认仍是串行、遇错停止；使用 `--jobs` 时，
+失败后不会再启动排队中的场景，但已运行的场景会完成。`mt.py sim --no-build` 会按
+`SIM_PRODUCT` 校验 `build/sim` 的缓存配置；需要复用非默认产品构建时显式设置该环境变量。
 
 **场景截图是审查产物**：截图复制到 `$LOG_DIR/snapshots_<scenario>/`；
 只有树和行为断言会令场景失败。`review_pages.py` 独立负责页面状态矩阵、几何 lint

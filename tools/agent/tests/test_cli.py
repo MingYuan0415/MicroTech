@@ -30,6 +30,34 @@ class CliTest(unittest.TestCase):
         self.assertIn("build", result.stdout)
         self.assertIn("test", result.stdout)
 
+    def test_sim_help_exposes_fast_flags(self):
+        result = self._run("sim", "--help")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        for flag in ("--no-build", "--jobs", "--keep-going"):
+            self.assertIn(flag, result.stdout)
+
+    def test_test_help_exposes_no_build(self):
+        result = self._run("test", "--help")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("--no-build", result.stdout)
+
+    def test_ui_help_exposes_state(self):
+        result = self._run("ui", "--help")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("--state", result.stdout)
+
+    def test_sim_no_build_rejects_product_mismatch(self):
+        build = MT.parents[2] / "build/sim"
+        if not (build / "microtech_sim").is_file():
+            self.skipTest("build/sim is not available")
+        env = os.environ.copy()
+        env["SIM_PRODUCT"] = "p4_reference"
+        result = self._run(
+            "sim", "--no-build", "--scenario", "smoke_pages", env=env,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("configured for", result.stdout)
+
     def test_list_and_git_status_use_isolated_logs(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()

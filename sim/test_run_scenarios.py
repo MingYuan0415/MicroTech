@@ -177,6 +177,79 @@ class TreeAssertTest(unittest.TestCase):
             self._step({'cmd': 'tree_assert'})
 
 
+class KeepGoingTest(unittest.TestCase):
+    def _run(self, keep_going, steps, error=None):
+        runner = scenarios.Runner(
+            '127.0.0.1', 5002, '.', keep_going=keep_going)
+        runner._capture_failure_evidence = lambda idx: {'step': idx}
+        calls = []
+
+        def fail(step):
+            calls.append(step.get('cmd'))
+            if error is not None:
+                raise error
+            raise AssertionError('forced failure')
+
+        runner._step = fail
+        result = runner.run({'name': 'keep-going-test', 'steps': steps})
+        return result, calls
+
+    def test_default_stops_after_first_assertion(self):
+        steps = [{'cmd': 'tree_assert'}, {'cmd': 'find_assert'}]
+        result, calls = self._run(False, steps)
+        self.assertEqual(result[1], ['step 0 (tree_assert): forced failure'])
+        self.assertEqual(calls, ['tree_assert'])
+
+    def test_keep_going_collects_read_only_assertions(self):
+        steps = [{'cmd': 'tree_assert'}, {'cmd': 'find_assert'}]
+        result, calls = self._run(True, steps)
+        self.assertEqual(len(result[1]), 2)
+        self.assertEqual(calls, ['tree_assert', 'find_assert'])
+
+    def test_keep_going_stops_before_side_effect_step(self):
+        steps = [
+            {'cmd': 'tree_assert'},
+            {'cmd': 'tap'},
+            {'cmd': 'tree_assert'},
+        ]
+        result, calls = self._run(True, steps)
+        self.assertEqual(result[1], [
+            'step 0 (tree_assert): forced failure',
+            'step 1 (tap): skipped after a failed soft assertion',
+        ])
+        self.assertEqual(calls, ['tree_assert'])
+
+    def test_keep_going_collects_sd_assertions(self):
+        steps = [
+            {'cmd': 'tree_assert'},
+            {'cmd': 'sd_assert'},
+            {'cmd': 'tree_assert'},
+        ]
+        result, calls = self._run(True, steps)
+        self.assertEqual(len(result[1]), 3)
+        self.assertEqual(calls, ['tree_assert', 'sd_assert', 'tree_assert'])
+
+    def test_assert_result_is_not_executed_after_soft_failure(self):
+        steps = [
+            {'cmd': 'tree_assert'},
+            {'cmd': 'assert_result', 'method': 'sim.sd'},
+            {'cmd': 'tree_assert'},
+        ]
+        result, calls = self._run(True, steps)
+        self.assertEqual(result[1], [
+            'step 0 (tree_assert): forced failure',
+            'step 1 (assert_result): skipped after a failed soft assertion',
+        ])
+        self.assertEqual(calls, ['tree_assert'])
+
+    def test_timeout_is_not_a_soft_assertion(self):
+        steps = [{'cmd': 'tree_assert'}, {'cmd': 'tree_assert'}]
+        result, calls = self._run(
+            True, steps, error=scenarios.ScenarioTimeout('deadline'))
+        self.assertEqual(len(result[1]), 1)
+        self.assertEqual(calls, ['tree_assert'])
+
+
 class WeatherStepTest(unittest.TestCase):
     def _run(self, step):
         runner = scenarios.Runner('127.0.0.1', 5002, '.')

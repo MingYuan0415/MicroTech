@@ -77,9 +77,11 @@ are documented in [`doc/agent-workflow.md`](agent-workflow.md).
 **Tiers** (matching "minimal verification"):
 
 - L0 per edit batch: run `python3 tools/agent/mt.py fmt` over the changed files (idempotent) plus `python3 tools/agent/mt.py build <suite>` for each affected host suite.
-- L1 per task: run `python3 tools/agent/mt.py test <suite>` once for each affected host suite.
-- L2 before a UI change is done: `python3 tools/agent/mt.py sim` ×1 and `python3 tools/agent/mt.py ui --pages <affected>` ×1; the final review scope follows the scope table in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
+- L1 per task: run `python3 tools/agent/mt.py test <suite>` once for each affected host suite. After the same suite was just built by L0, `test <suite> --no-build` reuses that build and avoids a duplicate configure/build.
+- L2 before a UI change is done: `python3 tools/agent/mt.py sim` ×1 and `python3 tools/agent/mt.py ui --pages <affected>` ×1; the first run builds, later iterations may use `--no-build`, and `--jobs 4` may shorten a full simulator pass. The final review scope follows the scope table in `ui-review` and becomes full only when the change touches shared pieces (`app_ui`/`app_theme`/viewport copy), adds a page, or re-lays out a page.
 - L3 commit/acceptance: `python3 tools/agent/mt.py fmt --check`, `python3 tools/agent/mt.py git diff --check`, `python3 tools/agent/mt.py build sim`, and the affected host suites; `--full` when reviewing formatting or sanitizer evidence.
+
+`sim --no-build` and `test --no-build` are development-loop accelerators, not replacements for the L3 gate: the final commit/acceptance run still executes `build sim` and every affected host suite. `sim --jobs` only changes scenario scheduling; it does not change which scenarios or assertions run. With `--jobs`, a hard failure prevents queued scenarios from starting while already-running scenarios finish. `sim --keep-going` collects read-only assertion failures and stops before a side-effect step. `ui --state` is a diagnostic filter, not a full page review.
 
 Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run. When a gate fails, read the summary first, then `python3 tools/agent/mt.py log --last --grep 'error:|FAILED'`; do not rerun only to see output.
 

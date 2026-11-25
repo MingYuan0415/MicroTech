@@ -24,9 +24,10 @@ A full review protocol is not the same as the full repository page set.
 | Global font/theme/viewport or navigation foundation | Cross-page/full coverage as required by impact | Cross-page state and input regressions |
 | Pure logic with no visible/input impact | Owning host tests | No automatic screenshot matrix |
 
-`review_pages.py --pages` selects pages, not individual states: automated runs
-execute the selected pages' executable spec states. Human screenshot review may
-focus on the affected states. Related scenarios can be selected with
+`review_pages.py --pages` selects pages; `--state` narrows executable states to
+named states for targeted debugging. Automated full-page review executes all
+selected pages' executable spec states. Human screenshot review may focus on the
+affected states. Related scenarios can be selected with
 `sim/ci/run_ci.sh --scenario <name>`; omit the filter for the full scenario set.
 Do not assume every service call change necessarily changes the interface.
 
@@ -81,7 +82,9 @@ Do not assume every service call change necessarily changes the interface.
 
 ```sh
 python3 tools/agent/mt.py ui --pages settings/wifi,settings/bluetooth
+python3 tools/agent/mt.py ui --pages settings/wifi --state scan_truncated --no-build
 python3 tools/agent/mt.py sim --scenario smoke_pages
+python3 tools/agent/mt.py sim --jobs 4 --no-build
 ```
 
 `mt.py ui` builds the current simulator, runs the affected-page check on an

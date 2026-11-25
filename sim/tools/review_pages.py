@@ -579,6 +579,21 @@ def _selected_pages(spec, pages):
     return selected
 
 
+def _filter_states(states, names):
+    """Filter states preserving order, rejecting unknown names."""
+    if not names:
+        return list(states)
+    wanted = set(names)
+    available = {state.get('name') for state in states}
+    unknown = wanted - available
+    if unknown:
+        raise ValueError('unknown states: %s' % ', '.join(sorted(unknown)))
+    selected = [state for state in states if state.get('name') in wanted]
+    if not selected:
+        raise ValueError('state selection is empty')
+    return selected
+
+
 def _wait_idle(runner):
     result = runner.call('sim.wait_idle', {'timeout_ms': 5000})
     if result.get('idle') is not True:
@@ -739,6 +754,8 @@ def main():
     ap.add_argument('--port', type=int, default=0,
                     help='agent port; 0 allocates an isolated loopback port')
     ap.add_argument('--pages', default=None, help='app/page,app/page filter')
+    ap.add_argument('--state', action='append', default=[],
+                    help='state name filter (repeatable; for targeted review)')
     ap.add_argument('--no-launch', action='store_true')
     ap.add_argument('--keep-sim', action='store_true',
                     help='leave the sim running after the review for interactive '
@@ -757,6 +774,27 @@ def main():
     spec = _apply_product_overrides(spec, _build_product(args.build))
     try:
         spec['pages'] = _selected_pages(spec, args.pages)
+        if args.state:
+            wanted = set(args.state)
+            found = set()
+            filtered_pages = []
+            for page in spec['pages']:
+                names = wanted & {
+                    state.get('name') for state in page.get('states', [])
+                }
+                if not names:
+                    continue
+                page['states'] = _filter_states(
+                    page.get('states', []), sorted(names))
+                found.update(names)
+                filtered_pages.append(page)
+            unknown = wanted - found
+            if unknown:
+                raise ValueError(
+                    'unknown states: %s' % ', '.join(sorted(unknown)))
+            if not filtered_pages:
+                raise ValueError('state selection is empty')
+            spec['pages'] = filtered_pages
     except ValueError as error:
         ap.error(str(error))
 

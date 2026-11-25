@@ -817,13 +817,24 @@ def _test_summary(alias: str, rc: int, seconds: float, build: Path,
 
 def _test_host(suite: Suite, profile: str, clean: bool, timeout: int,
                filter_re: str | None, repeat: str | None,
-               full: bool) -> tuple[int, list[str], Path, float]:
-    rc, build_lines, build_log, build_seconds = _build_host(
-        suite, profile, clean, timeout, full
-    )
-    if rc != 0:
-        return rc, build_lines, build_log, build_seconds
+               full: bool, no_build: bool = False
+               ) -> tuple[int, list[str], Path, float]:
     build = _build_dir(suite.alias, profile)
+    if no_build:
+        if not (build / "CTestTestfile.cmake").is_file():
+            raise UsageError(
+                f"build/agent/host/{suite.alias}/{profile} is not configured; "
+                "run `mt.py build` or `mt.py test` without --no-build first"
+            )
+        build_lines: list[str] = []
+        build_log = _new_log(f"test-{suite.alias}-{profile}-reuse")
+        build_seconds = 0.0
+    else:
+        rc, build_lines, build_log, build_seconds = _build_host(
+            suite, profile, clean, timeout, full
+        )
+        if rc != 0:
+            return rc, build_lines, build_log, build_seconds
     log = _new_log(f"test-{suite.alias}-{profile}")
     xml = log.with_suffix(".xml")
     cmd = [
@@ -2183,10 +2194,12 @@ def _cmd_test(args: argparse.Namespace) -> int:
     suite = SUITES.get(args.suite)
     if suite is None:
         raise UsageError(f"unknown suite {args.suite!r}; run `mt.py list`")
+    if args.clean and args.no_build:
+        raise UsageError("--clean and --no-build cannot be combined")
     started = time.monotonic()
     rc, lines, log, _ = _test_host(
         suite, args.profile, args.clean, args.timeout,
-        args.filter, args.repeat, args.full,
+        args.filter, args.repeat, args.full, args.no_build,
     )
     return _finish(lines, log, "test", args.suite, rc, started, args.full)
 
@@ -2230,32 +2243,90 @@ def _cmd_fmt(args: argparse.Namespace) -> int:
     return _finish(lines, log, "fmt", "", rc, started, args.full)
 
 
-def _cmd_sim(args: argparse.Namespace) -> int:
-    if not os.environ.get("IDF_PATH"):
-        raise UsageError("IDF_PATH is unset; source the ESP-IDF export script first")
-    if not (ROOT / "build/config/sdkconfig.h").is_file():
+def _require_reusable_sim_build() -> None:
+    """Validate the reusable scenario build before skipping its build gate."""
+    build = ROOT / "build/sim"
+    artifact = build / "microtech_sim"
+    if not artifact.is_file() or not os.access(artifact, os.X_OK):
         raise UsageError(
-            "build/config/sdkconfig.h is missing; run `idf.py build` once"
+            "build/sim/microtech_sim is missing; run `mt.py sim` without "
+            "--no-build first"
         )
+    if not (build / "sim_res_fs").is_dir():
+        raise UsageError(
+            "build/sim/sim_res_fs is missing; run `mt.py sim` without "
+            "--no-build first"
+        )
+    if not (build / "gen_inc/sdkconfig.h").is_file():
+        raise UsageError(
+            "build/sim/gen_inc/sdkconfig.h is missing; run `mt.py sim` "
+            "without --no-build first"
+        )
+    cache = build / "CMakeCache.txt"
+    product = ""
+    try:
+        match = re.search(
+            r"^SIM_PRODUCT:STRING=(.*)$",
+            cache.read_text(encoding="utf-8", errors="replace"),
+            re.MULTILINE,
+        )
+        if match:
+            product = match.group(1).strip()
+    except OSError:
+        pass
+    expected_product = os.environ.get("SIM_PRODUCT", "s3_reference").strip()
+    if not expected_product:
+        expected_product = "s3_reference"
+    if product != expected_product:
+        raise UsageError(
+            f"build/sim is configured for '{product or 'unknown'}', but "
+            f"the scenario run expects '{expected_product}'; rebuild without "
+            "--no-build or set SIM_PRODUCT to match"
+        )
+    if not _context_matches_artifact(
+            build / "build-context.json", artifact):
+        raise UsageError(
+            "build/sim/build-context.json does not match the current "
+            "binary; run `mt.py sim` without --no-build first"
+        )
+
+
+def _cmd_sim(args: argparse.Namespace) -> int:
+    if not args.no_build:
+        _require_sim_env()
     started = time.monotonic()
     _prune_run_dirs("*-sim", 10)
-    rc, gate_lines, gate_log, _ = _build_sim_gate(False, args.timeout)
-    if rc != 0:
-        return _finish(
-            gate_lines, gate_log, "sim gate", "", rc, started, args.full
-        )
+    if args.no_build:
+        _require_reusable_sim_build()
+        gate_lines: list[str] = []
+        gate_log = None
+    else:
+        rc, gate_lines, gate_log, _ = _build_sim_gate(False, args.timeout)
+        if rc != 0:
+            return _finish(
+                gate_lines, gate_log, "sim gate", "", rc, started, args.full
+            )
     log = _new_log("sim")
     log_dir = LOG_ROOT / f"{_timestamp()}-sim"
     log_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "sh", str(ROOT / "sim/ci/run_ci.sh"), "--log-dir", str(log_dir),
     ]
+    if args.no_build:
+        cmd.append("--no-build")
+    if args.jobs != 1:
+        cmd.extend(["--jobs", str(args.jobs)])
+    if args.keep_going:
+        cmd.append("--keep-going")
     for scenario in args.scenario:
         cmd.extend(["--scenario", scenario])
     rc, seconds, _ = _run(cmd, log, args.timeout)
     lines = _sim_summary(rc, seconds, log, log_dir)
     if rc == 0:
-        lines.insert(0, gate_lines[0])
+        if gate_lines:
+            lines.insert(0, gate_lines[0])
+        else:
+            lines.insert(0, "build reused: build/sim")
     return _finish(
         lines, log, "sim", ",".join(args.scenario) or "all", rc, started,
         args.full,
@@ -2304,6 +2375,8 @@ def _cmd_ui(args: argparse.Namespace) -> int:
     ]
     if args.pages:
         cmd.extend(["--pages", args.pages])
+    for state in args.state:
+        cmd.extend(["--state", state])
     rc, seconds, _ = _run(cmd, log, args.timeout)
     return _finish(
         _ui_summary(rc, seconds, report, shots, log),
@@ -2450,6 +2523,8 @@ def build_parser() -> argparse.ArgumentParser:
     test.add_argument("--profile", default="none",
                       choices=("none", "address", "thread"))
     test.add_argument("--clean", action="store_true")
+    test.add_argument("--no-build", action="store_true",
+                      help="run CTest in the existing build without rebuilding")
     test.add_argument("--filter", default=None,
                       help="ctest -R regular expression")
     test.add_argument("--repeat", default=None,
@@ -2470,11 +2545,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     sim = sub.add_parser("sim", help="run simulator CI scenarios")
     sim.add_argument("--scenario", action="append", default=[])
+    sim.add_argument("--no-build", action="store_true",
+                     help="reuse build/sim and its build context")
+    sim.add_argument("--jobs", type=int, choices=range(1, 9), default=1,
+                     help="run up to N scenarios concurrently")
+    sim.add_argument("--keep-going", action="store_true",
+                     help="continue after a scenario failure for diagnosis")
     _add_common(sim)
     sim.set_defaults(func=_cmd_sim, timeout=1800)
 
     ui = sub.add_parser("ui", help="run page review")
     ui.add_argument("--pages", default=None)
+    ui.add_argument("--state", action="append", default=[],
+                    help="review only this state name (repeatable)")
     ui.add_argument("--no-build", action="store_true")
     _add_common(ui)
     ui.set_defaults(func=_cmd_ui, timeout=1200)

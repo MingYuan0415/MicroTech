@@ -133,10 +133,24 @@ class ScenarioTimeout(AssertionError):
     """The scenario exceeded its root ``timeout_seconds`` budget."""
 
 
+# These commands only inspect state; after one of their assertions fails, the
+# remaining steps may still provide useful diagnostic evidence. Commands with
+# side effects (tap, step, navigate, ...) must still abort the scenario before
+# they execute.
+SOFT_ASSERT_COMMANDS = frozenset({
+    'tree_assert',
+    'find_assert',
+    'inspect_assert',
+    'hit_test_assert',
+    'sd_assert',
+})
+
+
 class Runner:
-    def __init__(self, host, port, out_dir):
+    def __init__(self, host, port, out_dir, keep_going=False):
         self.host, self.port = host, port
         self.out_dir = out_dir
+        self.keep_going = keep_going
         self.sock = None
         self._lost_connection = False
         self.width = 368
@@ -507,7 +521,13 @@ class Runner:
             self.deadline = None
         evidence = None
         steps = scenario.get('steps', [])
+        soft_failed = False
         for idx, step in enumerate(steps):
+            if soft_failed and step.get('cmd') not in SOFT_ASSERT_COMMANDS:
+                failures.append(
+                    'step %d (%s): skipped after a failed soft assertion' %
+                    (idx, step.get('cmd')))
+                break
             try:
                 self._check_deadline()
                 self._step(step)
@@ -517,7 +537,11 @@ class Runner:
                                 (idx, step.get('cmd'), exc))
                 self._mark_check(step.get('check'), 'fail', idx)
                 evidence = self._capture_failure_evidence(idx)
-                break
+                if not (self.keep_going and
+                        not isinstance(exc, ScenarioTimeout) and
+                        step.get('cmd') in SOFT_ASSERT_COMMANDS):
+                    break
+                soft_failed = True
             except Exception as exc:  # transport/setup errors abort scenario
                 failures.append('step %d (%s): %s' %
                                 (idx, step.get('cmd'), exc))
@@ -1060,13 +1084,16 @@ def main():
     ap.add_argument('--port', type=int, default=5002)
     ap.add_argument('--out-dir', default='build/sim/shots')
     ap.add_argument('--report', default=None)
+    ap.add_argument('--keep-going', action='store_true',
+                    help='continue after read-only assertion failures')
     args = ap.parse_args()
 
     files = []
     for pattern in args.scenarios:
         files.extend(sorted(glob.glob(pattern)) or [pattern])
 
-    r = Runner(args.host, args.port, args.out_dir)
+    r = Runner(args.host, args.port, args.out_dir,
+               keep_going=args.keep_going)
     r.connect()
     report = {}
     failed = False
