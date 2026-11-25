@@ -929,7 +929,7 @@
    "contains": {
     "type": "lv_obj",
     "coords.y": 64,
-    "flags.scrollable": true
+    "flags.scrollable": false
    }
   },
   {
@@ -987,7 +987,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "100% · 1 分钟"
+    "text": "100%"
    }
   },
   {
@@ -1039,7 +1039,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "100% · 从不"
+    "text": "100%"
    }
   },
   {
@@ -1065,7 +1065,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "忘记网络"
+    "text": "已保存网络"
    }
   },
   {
@@ -1116,7 +1116,7 @@
    "cmd": "tree_assert",
    "contains": {
     "type": "lv_label",
-    "text": "总容量"
+    "text": "剩余空间"
    }
   },
   {

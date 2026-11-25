@@ -109,6 +109,60 @@
           "allow_disabled": []
         },
         {
+          "name": "scan_truncated",
+          "seed": [
+            {
+              "cmd": "set_wifi_scan",
+              "records": [
+                {
+                  "ssid": "HomeNet",
+                  "rssi": -40,
+                  "security": "personal"
+                },
+                {
+                  "ssid": "Cafe Guest",
+                  "rssi": -52,
+                  "security": "personal"
+                },
+                {
+                  "ssid": "中文路由器",
+                  "rssi": -55,
+                  "security": "personal"
+                },
+                {
+                  "ssid": "Office_5G",
+                  "rssi": -60,
+                  "security": "personal"
+                },
+                {
+                  "ssid": "Neighbour",
+                  "rssi": -66,
+                  "security": "open"
+                }
+              ],
+              "truncated": true,
+              "trigger": true,
+              "wait_scan": true,
+              "request": true
+            },
+            {
+              "cmd": "step",
+              "ms": 33000
+            },
+            {
+              "cmd": "wait_idle",
+              "timeout_ms": 20000
+            }
+          ],
+          "expect_visible": [
+            "发现 5 个以上网络"
+          ],
+          "single_line": [
+            "发现 5 个以上网络"
+          ],
+          "allow_disabled": []
+        },
+        {
           "name": "manual_entry",
           "seed": [
             {
