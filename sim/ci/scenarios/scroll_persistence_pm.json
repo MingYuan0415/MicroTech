@@ -1,0 +1,134 @@
+{
+ "name": "scroll-persistence-pm",
+ "steps": [
+  {
+   "cmd": "set_wifi_scan",
+   "records": [
+    {
+     "ssid": "HomeNet",
+     "rssi": -40,
+     "security": "personal"
+    },
+    {
+     "ssid": "Cafe Guest",
+     "rssi": -52,
+     "security": "personal"
+    },
+    {
+     "ssid": "中文路由器",
+     "rssi": -55,
+     "security": "personal"
+    },
+    {
+     "ssid": "Office_5G",
+     "rssi": -60,
+     "security": "personal"
+    },
+    {
+     "ssid": "Neighbour",
+     "rssi": -66,
+     "security": "open"
+    }
+   ],
+   "trigger": true,
+   "wait_scan": true,
+   "request": true
+  },
+  {
+   "cmd": "navigate",
+   "app": "settings",
+   "page": "wifi"
+  },
+  {
+   "cmd": "step",
+   "ms": 990
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "drag",
+   "x0": 184,
+   "y0": 380,
+   "x1": 184,
+   "y1": 140,
+   "steps": 12
+  },
+  {
+   "cmd": "step",
+   "ms": 990
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "HomeNet"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "scroll.y": {
+     "min": 20
+    }
+   }
+  },
+  {
+   "cmd": "pm",
+   "off_ms": 15000,
+   "standby_ms": -1
+  },
+  {
+   "cmd": "sleep_ms",
+   "ms": 22000
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "pm",
+   "get": true,
+   "pm_state": 2
+  },
+  {
+   "cmd": "key",
+   "button": "power",
+   "action": "click"
+  },
+  {
+   "cmd": "step",
+   "times": 40
+  },
+  {
+   "cmd": "wait_idle"
+  },
+  {
+   "cmd": "pm",
+   "get": true,
+   "pm_state": 0
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "type": "lv_label",
+    "text": "HomeNet"
+   }
+  },
+  {
+   "cmd": "tree_assert",
+   "contains": {
+    "scroll.y": {
+     "min": 20
+    }
+   }
+  },
+  {
+   "cmd": "pm",
+   "off_ms": -1
+  }
+ ]
+}

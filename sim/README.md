@@ -635,7 +635,9 @@ variant; run with `SIM_PRODUCT=p4_reference`),
 `weather_flow.json` (the real weather pipeline: the `sim_http` script layer is
 fed `sim/ci/fixtures/*.json`, validating location→current/hourly/`daily` parsing
 and rendering, and opening the forecast subpage), `pm_lifecycle.json` (screen
-off/wake), `recorder_playback_pm.json` (screen off then wake during playback:
+off/wake), `scroll_persistence_pm.json` (scroll a long settings page, screen
+off/wake, verify the same scroll offset and content are restored),
+`recorder_playback_pm.json` (screen off then wake during playback:
 the detail page keeps "playing/stopped", and returns to "play" after stopping;
 screen off must not terminate recorder_service playback),
 `agent_contract.json` (parameter errors, pause, screenshot, and ping capability
