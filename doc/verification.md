@@ -83,7 +83,7 @@ are documented in [`doc/agent-workflow.md`](agent-workflow.md).
 
 `sim --no-build` and `test --no-build` are development-loop accelerators, not replacements for the L3 gate: the final commit/acceptance run still executes `build sim` and every affected host suite. `sim --jobs` only changes scenario scheduling; it does not change which scenarios or assertions run. With `--jobs`, a hard failure prevents queued scenarios from starting while already-running scenarios finish. `sim --keep-going` collects read-only assertion failures and stops before a side-effect step. `ui --state` is a diagnostic filter, not a full page review.
 
-Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run. When a gate fails, read the summary first, then `python3 tools/agent/mt.py log --last --grep 'error:|FAILED'`; do not rerun only to see output.
+Do not re-run a gate when the artifact under test did not change; validating a flaky fix means one serial run plus one parallel run. When a gate fails, read the summary first, then `python3 tools/agent/mt.py log --last --grep 'error:|FAILED'`; do not rerun only to see output. A `[LOOP]` line means the same command and suite produced the same normalized failure before: read the referenced prior log before retrying, and use `python3 tools/agent/mt.py stats --failures --since YYYY-MM-DD` to review recurring failures.
 
 ## Device Faults
 

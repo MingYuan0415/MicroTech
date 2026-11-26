@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import sys
 import tempfile
 import time
@@ -209,6 +210,24 @@ class DoctorTest(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 rc = mt._cmd_doctor(argparse.Namespace(json=True))
         self.assertEqual(rc, 1)
+
+    def test_doctor_failure_records_failure_metadata(self):
+        checks = [mt._doctor_check("demo", "fail", "missing")]
+        with tempfile.TemporaryDirectory() as tmp:
+            stats = Path(tmp) / "stats.jsonl"
+            with mock.patch.object(mt, "_doctor_checks", return_value=checks), \
+                    mock.patch.object(mt, "STATS_PATH", stats):
+                with redirect_stdout(io.StringIO()):
+                    rc = mt._cmd_doctor(argparse.Namespace(json=True))
+            records = [
+                json.loads(line)
+                for line in stats.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        self.assertEqual(rc, 1)
+        self.assertEqual(records[-1]["failure_label"], "doctor: demo: missing")
+        self.assertIsNotNone(records[-1]["failure_signature"])
+        self.assertEqual(records[-1]["repeat_count"], 1)
 
 
 class DeviceFailureRegressionTest(unittest.TestCase):

@@ -100,6 +100,13 @@ log path. Failures print `[FAIL]` or `[TIMEOUT]`, the extracted diagnostics, and
 the log path. Summaries are capped at 40 lines / 4 KiB. A compiler line is
 capped at 2 KiB; the complete line stays in the log.
 
+When a failing command repeats the same normalized failure for the same command
+and suite, the summary also prints `[LOOP] same failure xN for <command>
+<suite>; previous: <timestamp> <log>; step back and try a materially different
+hypothesis` after the headline. `N` is the consecutive count. The hint is
+advisory; it does not retry, cache, or change the wrapped command's result or
+exit code.
+
 Exit codes:
 
 - `0`: command passed;
@@ -116,17 +123,30 @@ environment override.
 
 Complete output is written to `.cache/agent/logs/` (ignored by Git). Logs are
 created with mode `0600`; keep them local and do not paste them into commits or
-pull requests. `stats.jsonl` records only byte counts, line counts, duration, and
-the exit code.
+pull requests. `stats.jsonl` records output byte counts, duration, the exit
+code, and on failure `failure_signature`, `failure_label`, and `repeat_count`;
+passing entries store `null` signature/label and `0` repeats.
 
 ```sh
 python3 tools/agent/mt.py log --last
 python3 tools/agent/mt.py log --last --grep 'error:' --tail 20
 python3 tools/agent/mt.py stats
+python3 tools/agent/mt.py stats --failures
+python3 tools/agent/mt.py stats --failures --json
+python3 tools/agent/mt.py stats --failures --since 2026-11-01
 ```
+
+`stats --failures` groups failures by command, suite, and normalized failure
+signature. Entries written before signatures existed are grouped separately and
+labeled `(legacy: no signature)`; `--since YYYY-MM-DD` filters by entry date.
+The report itself returns `0` even when it lists failures, so use the grouped
+rows rather than its exit code.
 
 When a failure is not clear from the summary, read the log with `mt.py log` or
 `rg -n -C2 'error:|FAILED' <log>`; do not rerun the gate just to see output.
+After a repeated failure, read the latest retained log, verify the cause, and
+write one verified lesson to the owning document or skill. Do not create a
+generated fact cache or copy unverified guesses into versioned documentation.
 
 ## Never Compress
 

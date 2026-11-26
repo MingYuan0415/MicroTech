@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -45,6 +46,75 @@ class CliTest(unittest.TestCase):
         result = self._run("ui", "--help")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("--state", result.stdout)
+
+    def test_stats_help_exposes_failure_flags(self):
+        result = self._run("stats", "--help")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        for flag in ("--failures", "--since", "--json"):
+            self.assertIn(flag, result.stdout)
+
+    def test_stats_failures_json_reads_isolated_stats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stats = Path(tmp) / "stats.jsonl"
+            stats.write_text(
+                "\n".join(json.dumps(entry) for entry in [
+                    {
+                        "timestamp": "2026-11-01T10:00:00",
+                        "command": "test",
+                        "suite": "apps",
+                        "rc": 0,
+                        "failure_signature": None,
+                        "failure_label": None,
+                        "repeat_count": 0,
+                    },
+                    {
+                        "timestamp": "2026-11-01T10:01:00",
+                        "command": "test",
+                        "suite": "apps",
+                        "rc": 1,
+                        "failure_signature": "abc",
+                        "failure_label": "AssertionError: boom",
+                        "repeat_count": 1,
+                    },
+                    {
+                        "timestamp": "2026-11-01T10:02:00",
+                        "command": "test",
+                        "suite": "apps",
+                        "rc": 1,
+                        "failure_signature": "abc",
+                        "failure_label": "AssertionError: boom",
+                        "repeat_count": 2,
+                    },
+                    {
+                        "timestamp": "2026-11-01T10:03:00",
+                        "command": "test",
+                        "suite": "apps",
+                        "rc": 1,
+                    },
+                ]) + "\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["MT_STATS_PATH"] = str(stats)
+            result = self._run("stats", "--failures", "--json", env=env)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["runs"], 4)
+        self.assertEqual(payload["failures"], 3)
+        self.assertEqual(payload["legacy"], 1)
+        self.assertEqual(len(payload["groups"]), 2)
+        self.assertEqual(payload["groups"][0]["count"], 2)
+        self.assertEqual(payload["groups"][0]["signature"], "abc")
+
+    def test_stats_rejects_invalid_since(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stats = Path(tmp) / "stats.jsonl"
+            stats.write_text("{}\n", encoding="utf-8")
+            env = os.environ.copy()
+            env["MT_STATS_PATH"] = str(stats)
+            result = self._run("stats", "--since", "not-a-date", env=env)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("--since must be YYYY-MM-DD", result.stdout)
 
     def test_sim_no_build_rejects_product_mismatch(self):
         build = MT.parents[2] / "build/sim"

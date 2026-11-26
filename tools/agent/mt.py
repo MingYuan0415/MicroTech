@@ -52,6 +52,13 @@ SUMMARY_MAX_BYTES = 4096
 DIAGNOSTIC_LINE_MAX = 2048
 PATCH_MAX_LINES = 200
 
+FAILURE_WARN_REPEAT = 2
+FAILURE_LABEL_MAX = 160
+FAILURE_SUBJECT_MAX = 240
+FAILURE_HASH_LEN = 16
+STATS_SCAN_LIMIT = 5000
+FAILURE_GROUP_LIMIT = 20
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 ERROR_RE = re.compile(
     r"(?:^|\s)(?:fatal error|error):|^FAILED:|undefined reference to|"
@@ -278,6 +285,29 @@ def _append_stats(payload: dict[str, object]) -> None:
         fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+def _load_stats(limit: int = 0) -> list[dict[str, object]]:
+    if not STATS_PATH.is_file():
+        return []
+    entries: list[dict[str, object]] = []
+    try:
+        with STATS_PATH.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(entry, dict):
+                    entries.append(entry)
+    except OSError:
+        return []
+    if limit > 0:
+        entries = entries[-limit:]
+    return entries
+
+
 @contextlib.contextmanager
 def _exclusive_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,14 +407,121 @@ def _read_body(path: Path) -> str:
     return _log_body(_read_log(path))
 
 
+def _failure_subject(lines: list[str]) -> str:
+    cleaned = [_strip_ansi(line).strip() for line in lines if line.strip()]
+    for line in cleaned:
+        if line.startswith("- "):
+            return line[2:].strip()
+    for line in cleaned:
+        if line.startswith((
+            "FAILED ", "FAIL:", "ERROR:", "AssertionError",
+        )):
+            return line
+    for line in cleaned:
+        if line.startswith("Traceback (most recent call last)"):
+            return line
+    for line in cleaned:
+        if ERROR_RE.search(line):
+            return line
+    for line in cleaned:
+        if line.startswith(("[FAIL]", "[TIMEOUT]")):
+            return line
+    return cleaned[0] if cleaned else ""
+
+
+def _normalize_failure(text: str, *, keep_numbers: bool) -> str:
+    text = _strip_ansi(text)
+    text = re.sub(r"(?:[A-Za-z]:)?(?:/[^\s:]+)+/", "", text)
+    text = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", text)
+    if not keep_numbers:
+        text = re.sub(r"\b\d+(?:\.\d+)?(?:ms|s)?\b", "#", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    limit = FAILURE_LABEL_MAX if keep_numbers else FAILURE_SUBJECT_MAX
+    return text[:limit]
+
+
+def _failure_signature(lines: list[str]) -> str | None:
+    subject = _failure_subject(lines)
+    if not subject:
+        return None
+    normalized = _normalize_failure(subject, keep_numbers=False)
+    if not normalized:
+        return None
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[
+        :FAILURE_HASH_LEN
+    ]
+
+
+def _failure_streak(
+    command: str, suite: str, signature: str | None
+) -> tuple[int, dict[str, object] | None]:
+    if not signature:
+        return 1, None
+    count = 0
+    previous: dict[str, object] | None = None
+    for entry in reversed(_load_stats(STATS_SCAN_LIMIT)):
+        if (str(entry.get("command", "")) != command or
+                str(entry.get("suite", "")) != suite):
+            continue
+        if int(entry.get("rc", 0) or 0) == 0:
+            break
+        if str(entry.get("failure_signature") or "") != signature:
+            break
+        if previous is None:
+            previous = entry
+        count += 1
+    return count + 1, previous
+
+
+def _loop_hint(
+    command: str, suite: str, count: int, previous: dict[str, object] | None
+) -> str | None:
+    if count < FAILURE_WARN_REPEAT or previous is None:
+        return None
+    gate = f"{command} {suite}".strip()
+    timestamp = str(previous.get("timestamp", "unknown"))
+    log = str(previous.get("log") or "")
+    suffix = f" {log}" if log else ""
+    return _cap_line(
+        f"[LOOP] same failure x{count} for {gate}; previous: "
+        f"{timestamp}{suffix}; step back and try a materially different "
+        "hypothesis",
+        300,
+    )
+
+
 def _finish(lines: list[str], log_path: Path, command: str, suite: str,
             rc: int, started: float, full: bool = False) -> int:
     if rc == 124:
         lines = lines + [f"[TIMEOUT] {command} {suite} exceeded its time limit"]
+    failure_label: str | None = None
+    failure_signature: str | None = None
+    repeat_count = 0
+    loop_line: str | None = None
+    if rc != 0:
+        failure_label = _normalize_failure(
+            _failure_subject(lines), keep_numbers=True
+        ) or None
+        failure_signature = _failure_signature(lines)
+        repeat_count, previous = _failure_streak(
+            command, suite, failure_signature
+        )
+        loop_line = _loop_hint(command, suite, repeat_count, previous)
     if full:
         body = _read_log(log_path).rstrip().splitlines()
+        if loop_line:
+            body.insert(0, loop_line)
         lines = body + [f"log: {_rel(log_path)}"]
     else:
+        if loop_line:
+            if lines:
+                anchor = 0
+                for index, line in enumerate(lines):
+                    if line.startswith("[FAIL]"):
+                        anchor = index
+                lines = [*lines[:anchor + 1], loop_line, *lines[anchor + 1:]]
+            else:
+                lines = [loop_line]
         lines = _cap_lines(lines)
         if log_path:
             lines.append(f"log: {_rel(log_path)}")
@@ -399,6 +536,9 @@ def _finish(lines: list[str], log_path: Path, command: str, suite: str,
             "raw_bytes": log_path.stat().st_size if log_path.exists() else 0,
             "emitted_bytes": len(("\n".join(lines)).encode("utf-8")),
             "log": _rel(log_path),
+            "failure_signature": failure_signature,
+            "failure_label": failure_label,
+            "repeat_count": repeat_count,
         }
     )
     return rc
@@ -2134,11 +2274,26 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     failed = [item for item in checks
               if item["required"] and item["status"] == "fail"]
     ok = not failed
+    failure_label: str | None = None
+    failure_signature: str | None = None
+    repeat_count = 0
+    loop_line: str | None = None
+    if not ok:
+        first = failed[0]
+        subject = f"doctor: {first['id']}: {first['detail']}"
+        failure_label = _normalize_failure(subject, keep_numbers=True) or None
+        failure_signature = _failure_signature([subject])
+        repeat_count, previous = _failure_streak(
+            "doctor", "", failure_signature
+        )
+        loop_line = _loop_hint("doctor", "", repeat_count, previous)
     if args.json:
         print(json.dumps({"ok": ok, "checks": checks},
                          ensure_ascii=False, indent=1))
     else:
         print("[PASS] doctor" if ok else "[FAIL] doctor")
+        if loop_line:
+            print(loop_line)
         for item in checks:
             print(f"  [{str(item['status']).upper()}] {item['id']}: "
                   f"{item['detail']}")
@@ -2151,6 +2306,9 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         "raw_bytes": 0,
         "emitted_bytes": 0,
         "log": "",
+        "failure_signature": failure_signature,
+        "failure_label": failure_label,
+        "repeat_count": repeat_count,
     })
     return 0 if ok else 1
 
@@ -2464,29 +2622,111 @@ def _cmd_stats(args: argparse.Namespace) -> int:
     if not STATS_PATH.is_file():
         print("[ENV] no stats yet")
         return 2
-    entries = []
-    for line in STATS_PATH.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
+    entries = _load_stats()
+    if not entries:
+        print("[ENV] no stats yet")
+        return 2
+    since = getattr(args, "since", None)
+    if since:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+            print("[ENV] --since must be YYYY-MM-DD")
+            return 2
         try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    if args.last:
-        entries = entries[-args.last:]
-    raw = sum(int(entry.get("raw_bytes", 0)) for entry in entries)
-    emitted = sum(int(entry.get("emitted_bytes", 0)) for entry in entries)
+            datetime.strptime(since, "%Y-%m-%d")
+        except ValueError:
+            print("[ENV] --since must be YYYY-MM-DD")
+            return 2
+        entries = [
+            entry for entry in entries
+            if str(entry.get("timestamp", ""))[:10] >= since
+        ]
+    last = getattr(args, "last", 0)
+    if last:
+        entries = entries[-last:]
+    failures = [
+        entry for entry in entries
+        if int(entry.get("rc", 0) or 0) != 0
+    ]
+    raw = sum(int(entry.get("raw_bytes", 0) or 0) for entry in entries)
+    emitted = sum(int(entry.get("emitted_bytes", 0) or 0) for entry in entries)
     ratio = (1 - emitted / raw) * 100 if raw else 0.0
-    print(
-        f"runs={len(entries)} raw={raw} B emitted={emitted} B "
-        f"reduction={ratio:.1f}%"
+    legacy = sum(
+        1 for entry in failures if not entry.get("failure_signature")
     )
-    for entry in entries[-10:]:
+    groups: list[dict[str, object]] = []
+    if getattr(args, "failures", False):
+        grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+        for entry in failures:
+            command = str(entry.get("command", ""))
+            suite = str(entry.get("suite", ""))
+            signature = str(entry.get("failure_signature") or "")
+            key = (command, suite, signature)
+            record = grouped.get(key)
+            if record is None:
+                record = {
+                    "command": command,
+                    "suite": suite,
+                    "signature": signature or None,
+                    "label": str(entry.get("failure_label") or
+                                 ("(legacy: no signature)" if not signature
+                                  else "(unlabeled)")),
+                    "count": 0,
+                    "first": "",
+                    "last": "",
+                    "last_log": "",
+                }
+                grouped[key] = record
+            record["count"] = int(record["count"]) + 1
+            timestamp = str(entry.get("timestamp", ""))
+            if not str(record["first"]) or timestamp < str(record["first"]):
+                record["first"] = timestamp
+            if not str(record["last"]) or timestamp >= str(record["last"]):
+                record["last"] = timestamp
+                record["last_log"] = str(entry.get("log") or "")
+        groups = list(grouped.values())
+        groups.sort(key=lambda item: str(item["last"]), reverse=True)
+        groups.sort(key=lambda item: int(item["count"]), reverse=True)
+
+    if getattr(args, "json", False):
+        print(json.dumps(
+            {
+                "runs": len(entries),
+                "failures": len(failures),
+                "legacy": legacy,
+                "raw_bytes": raw,
+                "emitted_bytes": emitted,
+                "reduction": round(ratio, 1),
+                "groups": groups,
+            },
+            ensure_ascii=False,
+            indent=1,
+        ))
+        return 0
+
+    print(
+        f"runs={len(entries)} failures={len(failures)} raw={raw} B "
+        f"emitted={emitted} B reduction={ratio:.1f}%"
+    )
+    if getattr(args, "failures", False):
         print(
-            f"  {entry.get('timestamp')} {entry.get('command')} "
-            f"{entry.get('suite')} rc={entry.get('rc')} "
-            f"{entry.get('raw_bytes')}->{entry.get('emitted_bytes')} B"
+            f"[FAILURES] failed={len(failures)} groups={len(groups)} "
+            f"legacy={legacy}"
         )
+        for item in groups[:FAILURE_GROUP_LIMIT]:
+            label = str(item["label"]).replace("\n", " ")[:FAILURE_LABEL_MAX]
+            print(
+                f"  {item['count']}x {item['command']} {item['suite']} "
+                f"{item['first']} -> {item['last']} \"{label}\""
+            )
+        if len(groups) > FAILURE_GROUP_LIMIT:
+            print(f"  ... {len(groups) - FAILURE_GROUP_LIMIT} more groups")
+    else:
+        for entry in entries[-10:]:
+            print(
+                f"  {entry.get('timestamp')} {entry.get('command')} "
+                f"{entry.get('suite')} rc={entry.get('rc')} "
+                f"{entry.get('raw_bytes')}->{entry.get('emitted_bytes')} B"
+            )
     return 0
 
 
@@ -2666,6 +2906,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     stats = sub.add_parser("stats", help="show wrapper output statistics")
     stats.add_argument("--last", type=int, default=0)
+    stats.add_argument("--failures", action="store_true",
+                       help="group repeated failures by signature")
+    stats.add_argument("--since", default=None,
+                       help="only include entries on or after YYYY-MM-DD")
+    stats.add_argument("--json", action="store_true",
+                       help="print machine-readable statistics")
     stats.set_defaults(func=_cmd_stats)
     return parser
 
